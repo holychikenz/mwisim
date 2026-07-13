@@ -1,0 +1,19 @@
+{
+  "name": "csim-api",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Combat Simulator API Server",
+  "main": "server.js",
+  "scripts": {
+    "start": "node --import ./register-loader.js server.js",
+    "dev": "node --watch --import ./register-loader.js server.js",
+    "test": "node --import ./register-loader.js --test tests/*.test.mjs",
+    "lab:check": "node --import ./register-loader.js lab-parity.mjs check",
+    "lab:record": "node --import ./register-loader.js lab-parity.mjs record"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "heap-js": "^2.2.0"
+  }
+}

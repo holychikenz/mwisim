@@ -1,0 +1,1054 @@
+{
+  "label": "holychikenz @ shadow_archer (game)",
+  "capturedAt": "2026-06-08T19:37:17.081Z",
+  "monster": {
+    "hrid": "/monsters/shadow_archer",
+    "roomLevel": null
+  },
+  "player": {
+    "dto": {
+      "hrid": "player",
+      "staminaLevel": 129,
+      "intelligenceLevel": 130,
+      "attackLevel": 138,
+      "meleeLevel": 117,
+      "defenseLevel": 129,
+      "rangedLevel": 126,
+      "magicLevel": 146,
+      "loadout": {
+        "id": 534898,
+        "name": "L10-Poke",
+        "actionTypeHrid": "/action_types/combat",
+        "isDefault": false
+      },
+      "equipment": {
+        "/equipment_types/back": {
+          "hrid": "/items/sinister_cape",
+          "enhancementLevel": 3
+        },
+        "/equipment_types/body": {
+          "hrid": "/items/anchorbound_plate_body",
+          "enhancementLevel": 7
+        },
+        "/equipment_types/charm": {
+          "hrid": "/items/expert_attack_charm",
+          "enhancementLevel": 5
+        },
+        "/equipment_types/earrings": {
+          "hrid": "/items/earrings_of_critical_strike",
+          "enhancementLevel": 3
+        },
+        "/equipment_types/feet": {
+          "hrid": "/items/pathbreaker_boots_refined",
+          "enhancementLevel": 5
+        },
+        "/equipment_types/hands": {
+          "hrid": "/items/dodocamel_gauntlets",
+          "enhancementLevel": 7
+        },
+        "/equipment_types/head": {
+          "hrid": "/items/corsair_helmet",
+          "enhancementLevel": 7
+        },
+        "/equipment_types/legs": {
+          "hrid": "/items/anchorbound_plate_legs",
+          "enhancementLevel": 7
+        },
+        "/equipment_types/main_hand": {
+          "hrid": "/items/furious_spear",
+          "enhancementLevel": 7
+        },
+        "/equipment_types/neck": {
+          "hrid": "/items/philosophers_necklace",
+          "enhancementLevel": 3
+        },
+        "/equipment_types/off_hand": {
+          "hrid": "/items/knights_aegis",
+          "enhancementLevel": 7
+        },
+        "/equipment_types/pouch": {
+          "hrid": "/items/guzzling_pouch",
+          "enhancementLevel": 5
+        },
+        "/equipment_types/ring": {
+          "hrid": "/items/philosophers_ring",
+          "enhancementLevel": 3
+        },
+        "/equipment_types/trinket": {
+          "hrid": "/items/expert_task_badge",
+          "enhancementLevel": 2
+        }
+      },
+      "food": [
+        {
+          "hrid": "/items/marsberry_donut",
+          "triggers": [
+            {
+              "dependencyHrid": "/combat_trigger_dependencies/self",
+              "conditionHrid": "/combat_trigger_conditions/missing_hp",
+              "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+              "value": 350
+            }
+          ]
+        },
+        {
+          "hrid": "/items/dragon_fruit_gummy",
+          "triggers": [
+            {
+              "dependencyHrid": "/combat_trigger_dependencies/self",
+              "conditionHrid": "/combat_trigger_conditions/missing_mp",
+              "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+              "value": 350
+            }
+          ]
+        },
+        {
+          "hrid": "/items/dragon_fruit_yogurt",
+          "triggers": [
+            {
+              "dependencyHrid": "/combat_trigger_dependencies/self",
+              "conditionHrid": "/combat_trigger_conditions/missing_mp",
+              "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+              "value": 500
+            }
+          ]
+        }
+      ],
+      "drinks": [
+        {
+          "hrid": "/items/ultra_melee_coffee",
+          "triggers": [
+            {
+              "dependencyHrid": "/combat_trigger_dependencies/self",
+              "conditionHrid": "/combat_trigger_conditions/melee_coffee",
+              "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "hrid": "/items/swiftness_coffee",
+          "triggers": [
+            {
+              "dependencyHrid": "/combat_trigger_dependencies/self",
+              "conditionHrid": "/combat_trigger_conditions/swiftness_coffee",
+              "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "hrid": "/items/wisdom_coffee",
+          "triggers": [
+            {
+              "dependencyHrid": "/combat_trigger_dependencies/self",
+              "conditionHrid": "/combat_trigger_conditions/wisdom_coffee",
+              "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+              "value": 0
+            }
+          ]
+        }
+      ],
+      "abilities": [
+        {
+          "hrid": "/abilities/fierce_aura",
+          "level": 32,
+          "triggers": [
+            {
+              "dependencyHrid": "/combat_trigger_dependencies/self",
+              "conditionHrid": "/combat_trigger_conditions/fierce_aura",
+              "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "hrid": "/abilities/frenzy",
+          "level": 54,
+          "triggers": [
+            {
+              "dependencyHrid": "/combat_trigger_dependencies/self",
+              "conditionHrid": "/combat_trigger_conditions/frenzy",
+              "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "hrid": "/abilities/berserk",
+          "level": 56,
+          "triggers": [
+            {
+              "dependencyHrid": "/combat_trigger_dependencies/self",
+              "conditionHrid": "/combat_trigger_conditions/berserk",
+              "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "hrid": "/abilities/precision",
+          "level": 57,
+          "triggers": [
+            {
+              "dependencyHrid": "/combat_trigger_dependencies/self",
+              "conditionHrid": "/combat_trigger_conditions/precision",
+              "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+              "value": 0
+            }
+          ]
+        },
+        {
+          "hrid": "/abilities/puncture",
+          "level": 43,
+          "triggers": [
+            {
+              "dependencyHrid": "/combat_trigger_dependencies/targeted_enemy",
+              "conditionHrid": "/combat_trigger_conditions/current_hp",
+              "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+              "value": 1
+            }
+          ]
+        }
+      ],
+      "houseRooms": {
+        "/house_rooms/archery_range": 4,
+        "/house_rooms/armory": 5,
+        "/house_rooms/brewery": 4,
+        "/house_rooms/dairy_barn": 5,
+        "/house_rooms/dining_room": 6,
+        "/house_rooms/dojo": 7,
+        "/house_rooms/forge": 5,
+        "/house_rooms/garden": 5,
+        "/house_rooms/gym": 5,
+        "/house_rooms/kitchen": 5,
+        "/house_rooms/laboratory": 5,
+        "/house_rooms/library": 7,
+        "/house_rooms/log_shed": 5,
+        "/house_rooms/mystical_study": 8,
+        "/house_rooms/observatory": 8,
+        "/house_rooms/sewing_parlor": 5,
+        "/house_rooms/workshop": 5
+      },
+      "_skipped": {
+        "equipment": [],
+        "abilities": [],
+        "houseRooms": [],
+        "food": [],
+        "drinks": []
+      },
+      "achievements": [
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/bestiary_points_400",
+          "progress": 400,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/cheesesmith_azure_tool",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/cook_spaceberry_cake",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/defeat_dusk_revenant",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/equip_ginkgo_weapon",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/learn_special_ability",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/tailor_gluttonous_or_guzzling_pouch",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/total_level_1500",
+          "progress": 1500,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/buy_trainee_charm",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/defeat_shoebill",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/enhance_to_6",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/labyrinth_floor_8",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/woodcut_arcane_tree",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/bestiary_points_200",
+          "progress": 200,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/collection_points_100",
+          "progress": 100,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/complete_tutorial",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/labyrinth_floor_6",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/build_room_level_6",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/coinify_coins_1m",
+          "progress": 1000000,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/collection_points_2000",
+          "progress": 2000,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/craft_master_charm",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/craft_wooden_bow",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/enhance_level_90_to_10",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/tailor_umbral_tunic",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/clear_t1_dungeon_10_times",
+          "progress": 10,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/collection_points_500",
+          "progress": 500,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/decompose_bamboo_gloves",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/defeat_stalactite_golem_t5",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/enhance_to_3",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/labyrinth_floor_4",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/bestiary_points_20",
+          "progress": 20,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/collect_branch_of_insight",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/collect_thread_of_expertise",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/cook_peach_yogurt",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/defeat_gobo_chieftain",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/defeat_luna_empress",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/bestiary_points_100",
+          "progress": 100,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/bestiary_points_40",
+          "progress": 40,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/collect_butter_of_proficiency",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/clear_enchanted_fortress",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/defeat_the_watcher",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/enhance_level_80_to_10",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/total_level_1800",
+          "progress": 1800,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/total_level_250",
+          "progress": 250,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/total_level_500",
+          "progress": 500,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/build_room_level_1",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/defeat_chronofrost_sorcerer",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/refine_dungeon_equipment",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/tailor_medium_pouch",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/cook_apple_gummy",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/defeat_red_panda",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/labyrinth_floor_2",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/total_level_100",
+          "progress": 100,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/build_room_level_3",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/clear_sinister_circus",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/defeat_jerry_t5",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/brew_gourmet_tea",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/defeat_marine_huntress",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/task_tokens_10",
+          "progress": 10,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/brew_ultra_magic_coffee",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/collection_points_1000",
+          "progress": 1000,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/collection_points_200",
+          "progress": 200,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/craft_celestial_tool_or_outfit",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/craft_dungeon_equipment",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/defeat_jerry",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/gather_milk",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/total_level_1000",
+          "progress": 1000,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/clear_chimerical_den",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/clear_pirate_cove",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/craft_jewelry",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/enhance_to_10",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/learn_ability",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/transmute_philosophers_stone",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/build_room_level_8",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/defeat_crystal_colossus",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/defeat_demonic_overlord_t1",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        },
+        {
+          "characterID": 17,
+          "achievementHrid": "/achievements/equip_expert_task_badge",
+          "progress": 1,
+          "isCompleted": true,
+          "isSteamGranted": false
+        }
+      ],
+      "debuffOnLevelGap": false
+    },
+    "crates": [
+      "/items/expert_coffee_crate",
+      "/items/expert_food_crate",
+      "/items/expert_tea_crate"
+    ],
+    "labUpgrades": {
+      "combatDamage": 12,
+      "attackSpeed": 12,
+      "castSpeed": 10,
+      "criticalRate": 12
+    },
+    "loadoutId": 534898
+  },
+  "tolerance": {
+    "abs": 0.5,
+    "rel": 0.005
+  },
+  "expected": {
+    "source": "game",
+    "player": {
+      "maxHitpoints": 2648,
+      "maxManapoints": 1900,
+      "attackInterval": 1818568518,
+      "totalCastSpeed": 0.4049,
+      "stabAccuracyRating": 815.8206,
+      "slashAccuracyRating": 393.8466,
+      "smashAccuracyRating": 393.8466,
+      "rangedAccuracyRating": 179.044,
+      "magicAccuracyRating": 5.644,
+      "defensiveMaxDamage": 255.6759,
+      "stabMaxDamage": 489.2607,
+      "slashMaxDamage": 291.1811,
+      "smashMaxDamage": 291.1811,
+      "rangedMaxDamage": 186.1004,
+      "magicMaxDamage": 214.916,
+      "stabEvasionRating": 493.5281,
+      "slashEvasionRating": 493.5281,
+      "smashEvasionRating": 493.5281,
+      "rangedEvasionRating": 493.5281,
+      "magicEvasionRating": 281.1597,
+      "totalArmor": 237.2394,
+      "totalWaterResistance": 144.16,
+      "totalNatureResistance": 105.154,
+      "totalFireResistance": 144.16,
+      "totalThreat": 159.1,
+      "combatLevel": 140.2,
+      "staminaLevel": 150,
+      "intelligenceLevel": 152,
+      "attackLevel": 160,
+      "meleeLevel": 137,
+      "defenseLevel": 149,
+      "rangedLevel": 145,
+      "magicLevel": 169,
+      "attackIntervalSeconds": 2.5631
+    },
+    "monster": {
+      "maxHitpoints": 10680,
+      "maxManapoints": 10680,
+      "attackInterval": 2658396101,
+      "totalCastSpeed": 0.1285,
+      "stabAccuracyRating": 267,
+      "slashAccuracyRating": 267,
+      "smashAccuracyRating": 267,
+      "rangedAccuracyRating": 587.4,
+      "magicAccuracyRating": 267,
+      "defensiveMaxDamage": 267,
+      "stabMaxDamage": 10,
+      "slashMaxDamage": 10,
+      "smashMaxDamage": 10,
+      "rangedMaxDamage": 534,
+      "magicMaxDamage": 10,
+      "stabEvasionRating": 587.4,
+      "slashEvasionRating": 801,
+      "smashEvasionRating": 4272,
+      "rangedEvasionRating": 8277,
+      "magicEvasionRating": 4272,
+      "totalArmor": 411.2,
+      "totalWaterResistance": 3135.4,
+      "totalNatureResistance": 3135.4,
+      "totalFireResistance": 822.4,
+      "totalThreat": 100,
+      "combatLevel": 257,
+      "staminaLevel": 257,
+      "intelligenceLevel": 257,
+      "attackLevel": 257,
+      "meleeLevel": 0,
+      "defenseLevel": 257,
+      "rangedLevel": 257,
+      "magicLevel": 0,
+      "attackIntervalSeconds": 3,
+      "abilities": [
+        {
+          "hrid": "/abilities/critical_aura",
+          "level": 102
+        },
+        {
+          "hrid": "/abilities/elusiveness",
+          "level": 154
+        },
+        {
+          "hrid": "/abilities/rain_of_arrows",
+          "level": 154
+        },
+        {
+          "hrid": "/abilities/penetrating_shot",
+          "level": 154
+        },
+        {
+          "hrid": "/abilities/steady_shot",
+          "level": 154
+        }
+      ]
+    }
+  },
+  "_consistency": {
+    "sheetSource": "new_battle",
+    "monsterHrid": "/monsters/shadow_archer",
+    "simCombatStyle": "/combat_styles/stab",
+    "gameCombatStyle": "/combat_styles/stab",
+    "styleMatches": true,
+    "loadoutId": 534898,
+    "loadoutName": "L10-Poke"
+  },
+  "_gameRaw": {
+    "playerCombatDetails": {
+      "currentHitpoints": 2648,
+      "maxHitpoints": 2648,
+      "currentManapoints": 1900,
+      "maxManapoints": 1900,
+      "attackInterval": 1818568518,
+      "totalCastSpeed": 0.40490000000000004,
+      "stabAccuracyRating": 815.820616,
+      "slashAccuracyRating": 393.846616,
+      "smashAccuracyRating": 393.846616,
+      "rangedAccuracyRating": 179.04399999999998,
+      "magicAccuracyRating": 5.644000000000001,
+      "defensiveMaxDamage": 255.67593047999998,
+      "stabMaxDamage": 489.260669184,
+      "slashMaxDamage": 291.181109184,
+      "smashMaxDamage": 291.181109184,
+      "rangedMaxDamage": 186.10044,
+      "magicMaxDamage": 214.915992,
+      "stabEvasionRating": 493.5281136,
+      "slashEvasionRating": 493.5281136,
+      "smashEvasionRating": 493.5281136,
+      "rangedEvasionRating": 493.5281136,
+      "magicEvasionRating": 281.1597,
+      "totalArmor": 237.23936,
+      "totalWaterResistance": 144.16,
+      "totalNatureResistance": 105.154,
+      "totalFireResistance": 144.16,
+      "totalThreat": 159.1,
+      "combatLevel": 140.2,
+      "staminaLevel": 150,
+      "intelligenceLevel": 152,
+      "attackLevel": 160,
+      "meleeLevel": 137,
+      "defenseLevel": 149,
+      "rangedLevel": 145,
+      "magicLevel": 169,
+      "combatStats": {
+        "combatStyleHrids": [
+          "/combat_styles/stab"
+        ],
+        "damageType": "/damage_types/physical",
+        "attackInterval": 2563090471,
+        "autoAttackDamage": 0.33489840000000004,
+        "castSpeed": 0.0399,
+        "criticalRate": 0.28048,
+        "criticalDamage": 0.1,
+        "stabAccuracy": 3.7989448,
+        "slashAccuracy": 1.3167448,
+        "smashAccuracy": 1.3167448,
+        "rangedAccuracy": 0.0532,
+        "magicAccuracy": -0.9668,
+        "stabDamage": 1.9195647999999998,
+        "slashDamage": 0.7375647999999999,
+        "smashDamage": 0.7375647999999999,
+        "rangedDamage": 0.0532,
+        "magicDamage": 0.0532,
+        "defensiveDamage": 0.410548,
+        "taskDamage": 0.1815,
+        "armorPenetration": 0.2364,
+        "maxHitpoints": 1048.3,
+        "maxManapoints": 280,
+        "stabEvasion": 2.1039504,
+        "slashEvasion": 2.1039504,
+        "smashEvasion": 2.1039504,
+        "rangedEvasion": 2.1039504,
+        "magicEvasion": 0.7683,
+        "armor": 207.43936,
+        "waterResistance": 114.35999999999999,
+        "natureResistance": 75.354,
+        "fireResistance": 114.35999999999999,
+        "tenacity": 164.298,
+        "threat": 59.1,
+        "hpRegenPer10": 0.07686,
+        "mpRegenPer10": 0.07476,
+        "drinkConcentration": 0.112,
+        "combatDropQuantity": 0.29500000000000004,
+        "combatRareFind": 0.3144,
+        "primaryTraining": "/skills/attack",
+        "focusTraining": "/skills/attack",
+        "combatExperience": 0.5619000000000001,
+        "attackExperience": 0.08000000000000002,
+        "foodSlots": 2,
+        "drinkSlots": 2,
+        "fury": 0.03
+      }
+    },
+    "monster": {
+      "hrid": "/monsters/shadow_archer",
+      "combatDetails": {
+        "currentHitpoints": 10680,
+        "maxHitpoints": 10680,
+        "currentManapoints": 10680,
+        "maxManapoints": 10680,
+        "attackInterval": 2658396101,
+        "totalCastSpeed": 0.1285,
+        "stabAccuracyRating": 267,
+        "slashAccuracyRating": 267,
+        "smashAccuracyRating": 267,
+        "rangedAccuracyRating": 587.4000000000001,
+        "magicAccuracyRating": 267,
+        "defensiveMaxDamage": 267,
+        "stabMaxDamage": 10,
+        "slashMaxDamage": 10,
+        "smashMaxDamage": 10,
+        "rangedMaxDamage": 534,
+        "magicMaxDamage": 10,
+        "stabEvasionRating": 587.4000000000001,
+        "slashEvasionRating": 801,
+        "smashEvasionRating": 4272,
+        "rangedEvasionRating": 8277,
+        "magicEvasionRating": 4272,
+        "totalArmor": 411.19999999999993,
+        "totalWaterResistance": 3135.4,
+        "totalNatureResistance": 3135.4,
+        "totalFireResistance": 822.4,
+        "totalThreat": 100,
+        "combatLevel": 257,
+        "staminaLevel": 257,
+        "intelligenceLevel": 257,
+        "attackLevel": 257,
+        "meleeLevel": 0,
+        "defenseLevel": 257,
+        "rangedLevel": 257,
+        "magicLevel": 0,
+        "combatStats": {
+          "combatStyleHrids": [
+            "/combat_styles/ranged"
+          ],
+          "damageType": "/damage_types/physical",
+          "attackInterval": 3000000000,
+          "rangedAccuracy": 1.2,
+          "rangedDamage": 1,
+          "maxHitpointsRatio": 3,
+          "maxManapointsRatio": 3,
+          "stabEvasion": 1.2,
+          "slashEvasion": 2,
+          "smashEvasion": 15,
+          "rangedEvasion": 30,
+          "magicEvasion": 15,
+          "armor": 359.79999999999995,
+          "waterResistance": 3084,
+          "natureResistance": 3084,
+          "fireResistance": 771
+        }
+      }
+    }
+  }
+}

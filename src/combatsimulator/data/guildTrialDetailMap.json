@@ -1,0 +1,151 @@
+{
+    "/guild_combat/badger": {
+        "hrid": "/guild_combat/badger",
+        "name": "Trial Badger",
+        "kind": "combat",
+        "actionTypeHrid": "/action_types/combat",
+        "skillHrid": "",
+        "monsterHrids": [
+            "/monsters/trial_badger",
+            "/monsters/trial_badger"
+        ],
+        "sortIndex": 1
+    },
+    "/guild_combat/chameleon": {
+        "hrid": "/guild_combat/chameleon",
+        "name": "Trial Chameleon",
+        "kind": "combat",
+        "actionTypeHrid": "/action_types/combat",
+        "skillHrid": "",
+        "monsterHrids": [
+            "/monsters/trial_chameleon"
+        ],
+        "sortIndex": 2
+    },
+    "/guild_combat/hedgehog": {
+        "hrid": "/guild_combat/hedgehog",
+        "name": "Trial Hedgehog",
+        "kind": "combat",
+        "actionTypeHrid": "/action_types/combat",
+        "skillHrid": "",
+        "monsterHrids": [
+            "/monsters/trial_hedgehog"
+        ],
+        "sortIndex": 4
+    },
+    "/guild_combat/jellyfish": {
+        "hrid": "/guild_combat/jellyfish",
+        "name": "Trial Jellyfish",
+        "kind": "combat",
+        "actionTypeHrid": "/action_types/combat",
+        "skillHrid": "",
+        "monsterHrids": [
+            "/monsters/trial_jellyfish"
+        ],
+        "sortIndex": 3
+    },
+    "/guild_combat/swarm": {
+        "hrid": "/guild_combat/swarm",
+        "name": "Trial Swarm",
+        "kind": "combat",
+        "actionTypeHrid": "/action_types/combat",
+        "skillHrid": "",
+        "monsterHrids": [
+            "/monsters/trial_beetle",
+            "/monsters/trial_dragonfly",
+            "/monsters/trial_wasp",
+            "/monsters/trial_firefly"
+        ],
+        "sortIndex": 5
+    },
+    "/guild_skilling/alchemy": {
+        "hrid": "/guild_skilling/alchemy",
+        "name": "Alchemy",
+        "kind": "skilling",
+        "actionTypeHrid": "/action_types/alchemy",
+        "skillHrid": "/skills/alchemy",
+        "monsterHrids": null,
+        "sortIndex": 9
+    },
+    "/guild_skilling/brewing": {
+        "hrid": "/guild_skilling/brewing",
+        "name": "Brewing",
+        "kind": "skilling",
+        "actionTypeHrid": "/action_types/brewing",
+        "skillHrid": "/skills/brewing",
+        "monsterHrids": null,
+        "sortIndex": 8
+    },
+    "/guild_skilling/cheesesmithing": {
+        "hrid": "/guild_skilling/cheesesmithing",
+        "name": "Cheesesmithing",
+        "kind": "skilling",
+        "actionTypeHrid": "/action_types/cheesesmithing",
+        "skillHrid": "/skills/cheesesmithing",
+        "monsterHrids": null,
+        "sortIndex": 4
+    },
+    "/guild_skilling/cooking": {
+        "hrid": "/guild_skilling/cooking",
+        "name": "Cooking",
+        "kind": "skilling",
+        "actionTypeHrid": "/action_types/cooking",
+        "skillHrid": "/skills/cooking",
+        "monsterHrids": null,
+        "sortIndex": 7
+    },
+    "/guild_skilling/crafting": {
+        "hrid": "/guild_skilling/crafting",
+        "name": "Crafting",
+        "kind": "skilling",
+        "actionTypeHrid": "/action_types/crafting",
+        "skillHrid": "/skills/crafting",
+        "monsterHrids": null,
+        "sortIndex": 5
+    },
+    "/guild_skilling/enhancing": {
+        "hrid": "/guild_skilling/enhancing",
+        "name": "Enhancing",
+        "kind": "skilling",
+        "actionTypeHrid": "/action_types/enhancing",
+        "skillHrid": "/skills/enhancing",
+        "monsterHrids": null,
+        "sortIndex": 10
+    },
+    "/guild_skilling/foraging": {
+        "hrid": "/guild_skilling/foraging",
+        "name": "Foraging",
+        "kind": "skilling",
+        "actionTypeHrid": "/action_types/foraging",
+        "skillHrid": "/skills/foraging",
+        "monsterHrids": null,
+        "sortIndex": 2
+    },
+    "/guild_skilling/milking": {
+        "hrid": "/guild_skilling/milking",
+        "name": "Milking",
+        "kind": "skilling",
+        "actionTypeHrid": "/action_types/milking",
+        "skillHrid": "/skills/milking",
+        "monsterHrids": null,
+        "sortIndex": 1
+    },
+    "/guild_skilling/tailoring": {
+        "hrid": "/guild_skilling/tailoring",
+        "name": "Tailoring",
+        "kind": "skilling",
+        "actionTypeHrid": "/action_types/tailoring",
+        "skillHrid": "/skills/tailoring",
+        "monsterHrids": null,
+        "sortIndex": 6
+    },
+    "/guild_skilling/woodcutting": {
+        "hrid": "/guild_skilling/woodcutting",
+        "name": "Woodcutting",
+        "kind": "skilling",
+        "actionTypeHrid": "/action_types/woodcutting",
+        "skillHrid": "/skills/woodcutting",
+        "monsterHrids": null,
+        "sortIndex": 3
+    }
+}

@@ -1,0 +1,5 @@
+/* Global resets — all component styling is handled by Mantine. */
+body {
+  margin: 0;
+  min-width: 320px;
+}

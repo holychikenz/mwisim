@@ -1,0 +1,38 @@
+# Dependencies (matches node_modules at any depth: root, ui/, api/)
+node_modules/
+
+# Local prettier override
+.prettierrc
+
+# upstream-update.sh's clone of shykai/MWICombatSimulatorTest
+.upstream/
+
+# Build artefacts (webpack root build + Vite ui build)
+dist/
+dist-ssr/
+ui/dist/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Local env / secrets
+*.local
+.env
+.env.*
+!.env.example
+
+# OS / editor cruft
+.DS_Store
+.vscode/*
+!.vscode/extensions.json
+.idea
+*.sw?
+
+# Re-include genuine API source: the user's global ignore (~/.gitignore_global)
+# excludes any directory named lib/, which would otherwise drop api/lib/.
+!api/lib/
+
