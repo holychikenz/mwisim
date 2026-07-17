@@ -184,7 +184,7 @@ function AbilitySlot({ index, abilities, selected, onChange, onTriggersChange, l
   );
 }
 
-export function PlayerConfig({ gameData, player, onPlayerChange, playerId = 1 }) {
+export function PlayerConfig({ gameData, player, onPlayerChange, playerId = 1, hideConsumables = false }) {
   const items = gameData?.items;
   const abilities = gameData?.abilities;
 
@@ -386,6 +386,10 @@ export function PlayerConfig({ gameData, player, onPlayerChange, playerId = 1 })
         </Accordion.Panel>
       </Accordion.Item>
 
+      {/* Trials strip every consumable (the engine ignores food/drinks — see
+          toPlayerDTO(..., { stripConsumables: true }) in App's trial path), so
+          the guild-trial build editor hides this section entirely. */}
+      {!hideConsumables && (
       <Accordion.Item value="consumables">
         <Accordion.Control>
           <Group gap="xs">
@@ -426,6 +430,7 @@ export function PlayerConfig({ gameData, player, onPlayerChange, playerId = 1 })
           </Stack>
         </Accordion.Panel>
       </Accordion.Item>
+      )}
 
       <Accordion.Item value="abilities">
         <Accordion.Control>

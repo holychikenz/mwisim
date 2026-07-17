@@ -30,7 +30,10 @@ export const MAX_ROW_COUNT = 99;
 export const DEFAULT_TRIAL_CONFIG = {
   trialHrid: '/guild_combat/badger',
   startTier: 100,
-  iterations: 1000,
+  // Trials are deterministic-ish and slow per run — default to a single pass so
+  // a fresh session gives instant feedback; users can crank iterations for a
+  // smoother distribution. (Persisted csim_guild_trial keeps any saved value.)
+  iterations: 1,
   participantCount: null, // null ⇒ auto (roster size = sum of row counts)
   buildersHallBonus: 0, // percent
   treasuryBonus: 0, // percent

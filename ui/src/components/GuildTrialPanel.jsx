@@ -16,6 +16,15 @@ import {
   Tooltip
 } from '@mantine/core';
 import { listRosterEntries, buildSummary, loadSavedLoadouts, MAX_ROW_COUNT } from '../utils/roster';
+import { exportFormatToPlayer } from '../utils/importSet';
+
+// Group export format = all keys are player IDs ("1".."5") with no `player`
+// key (same detection as ImportExport.isGroupFormat). Values may be nested
+// JSON strings, one per participant.
+function isGroupFormat(data) {
+  const keys = Object.keys(data);
+  return keys.length > 0 && keys.every(k => /^[1-5]$/.test(k)) && !data.player;
+}
 
 // =============================================================================
 // GuildTrialPanel — the trial-mode navbar view: a compact, scrollable roster
@@ -46,12 +55,17 @@ export function GuildTrialPanel({
   onAddBuildFromSlot,
   onAddBuildFromLoadout,
   onAddBlankBuild,
-  onImportRoster
+  onImportRoster,
+  onImportBuild
 }) {
   const [dupCount, setDupCount] = useState(20);
   const [existingBuildId, setExistingBuildId] = useState(null);
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState('');
+  // Separate modal from the roster import: this brings in a single BUILD (or a
+  // group of builds) in the game/simulator export format, not a whole roster.
+  const [showBuildImport, setShowBuildImport] = useState(false);
+  const [buildImportText, setBuildImportText] = useState('');
   const [message, setMessage] = useState(null);
   // Saved zone/lab loadouts (LoadoutManager's store) — re-read every time the
   // "Add build" menu opens so freshly-saved loadouts appear without a reload.
@@ -99,6 +113,33 @@ export function GuildTrialPanel({
     }
   }, [importText, onImportRoster, showMessage]);
 
+  // Import a build (or a group of builds) from the game/simulator export
+  // format via exportFormatToPlayer — the same shape ImportExport accepts on
+  // the other pages. Group format seeds one build per entry.
+  const handleImportBuild = useCallback(() => {
+    try {
+      const data = JSON.parse(buildImportText);
+      if (!data || typeof data !== 'object') {
+        throw new Error('Expected an export-format JSON object');
+      }
+      if (isGroupFormat(data)) {
+        const entries = Object.entries(data);
+        entries.forEach(([playerId, playerJson]) => {
+          const playerData = typeof playerJson === 'string' ? JSON.parse(playerJson) : playerJson;
+          onImportBuild?.(exportFormatToPlayer(playerData, playerId), 'Imported build');
+        });
+        setShowBuildImport(false);
+        showMessage(`Imported ${entries.length} build${entries.length === 1 ? '' : 's'}`);
+      } else {
+        onImportBuild?.(exportFormatToPlayer(data, 1), 'Imported build');
+        setShowBuildImport(false);
+        showMessage('Imported 1 build');
+      }
+    } catch (err) {
+      showMessage('Import failed: ' + err.message, true);
+    }
+  }, [buildImportText, onImportBuild, showMessage]);
+
   const slotIds = Object.keys(players || {}).map(Number).sort((a, b) => a - b);
 
   return (
@@ -124,6 +165,9 @@ export function GuildTrialPanel({
           <Menu.Dropdown>
             <Menu.Label>New master build</Menu.Label>
             <Menu.Item onClick={onAddBlankBuild}>Blank build</Menu.Item>
+            <Menu.Item onClick={() => { setBuildImportText(''); setShowBuildImport(true); }}>
+              Import from JSON…
+            </Menu.Item>
             <Menu.Divider />
             <Menu.Label>Import from zone/lab slots</Menu.Label>
             {slotIds.map(id => (
@@ -196,8 +240,9 @@ export function GuildTrialPanel({
       {entries.length === 0 ? (
         <Paper p="md" radius="md" withBorder>
           <Text size="sm" c="dimmed">
-            Roster is empty. Add a build from P1–P5, a saved loadout, or a
-            character import above — then crank its ×N count to fill the guild.
+            Roster is empty. Add a build from P1–P5, a saved loadout, or import
+            one from JSON via the “Add build” menu above — then crank its ×N
+            count to fill the guild.
           </Text>
         </Paper>
       ) : (
@@ -321,6 +366,33 @@ export function GuildTrialPanel({
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setShowImport(false)}>Cancel</Button>
             <Button onClick={handleImport} disabled={!importText.trim()}>Import</Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal
+        opened={showBuildImport}
+        onClose={() => setShowBuildImport(false)}
+        title="Import build from JSON"
+        size="lg"
+      >
+        <Stack gap="sm">
+          <Text size="sm" c="dimmed">
+            Paste a character export from the game or the combat simulator
+            (single player, or a group of players). Each becomes a new master
+            build added to the roster.
+          </Text>
+          <Textarea
+            value={buildImportText}
+            onChange={(e) => setBuildImportText(e.target.value)}
+            placeholder="Paste export JSON here…"
+            autosize
+            minRows={8}
+            maxRows={16}
+          />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setShowBuildImport(false)}>Cancel</Button>
+            <Button onClick={handleImportBuild} disabled={!buildImportText.trim()}>Import</Button>
           </Group>
         </Stack>
       </Modal>

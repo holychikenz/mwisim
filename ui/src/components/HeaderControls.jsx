@@ -406,6 +406,10 @@ export function HeaderControls({
         />
       )}
 
+      {/* Buffs (community buffs / seals / MooPass) do NOT apply inside guild
+          trials — the trial worker sends a neutral extra — so the button is
+          hidden in trial mode to avoid implying otherwise. */}
+      {simMode !== 'guildTrial' && (
       <Popover width={280} position="bottom-end" shadow="md">
         <Popover.Target>
           <Indicator disabled={activeBuffCount === 0} label={activeBuffCount} size={16}>
@@ -473,6 +477,7 @@ export function HeaderControls({
           </Stack>
         </Popover.Dropdown>
       </Popover>
+      )}
 
       <Button onClick={onStart} loading={loading} size="sm">
         Run

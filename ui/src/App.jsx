@@ -23,6 +23,7 @@ import { PlayerConfig } from './components/PlayerConfig';
 import { SimulationResults } from './components/SimulationResults';
 import { GuildTrialResults } from './components/GuildTrialResults';
 import { GuildTrialPanel } from './components/GuildTrialPanel';
+import { TrialMonsterCards } from './components/TrialMonsterCards';
 import { ImportExport } from './components/ImportExport';
 import { ProgressBar } from './components/ProgressBar';
 import { LoadoutManager } from './components/LoadoutManager';
@@ -193,6 +194,8 @@ function App() {
   // Participants = SUM of row counts (each participant adds +1% monster HP),
   // unless explicitly overridden in trial options.
   const participantCount = trialConfig.participantCount ?? rosterSize(roster);
+  // The selected trial's monster reference (rendered as cards in the viewport).
+  const selectedTrialDetail = (gameData?.guildTrials || []).find(t => t.hrid === trialConfig.trialHrid) || null;
 
   // -- Guild-trial roster operations ----------------------------------------
 
@@ -221,10 +224,6 @@ function App() {
     if (!src) return;
     addBuildFromPlayer(src, `P${slotId} build`);
   }, [players, addBuildFromPlayer]);
-
-  const importCharacterBuild = useCallback((playerObj, meta) => {
-    addBuildFromPlayer(playerObj, meta?.name || 'Imported build');
-  }, [addBuildFromPlayer]);
 
   // Saved zone/lab loadout (LoadoutManager store) → new master build + row.
   // The stored player object is already in the UI-internal shape; hrid is
@@ -383,13 +382,14 @@ function App() {
         trialOptions: { enemyScale }
       },
       guildBuffs: resolveGuildBuffs(trialConfig.guildBuffLevels),
-      // Community buffs / seals apply in trials; lab-shop upgrades do not (the
-      // trial worker only reads comExp/comDrop/mooPass/personalBuffs).
+      // Community buffs / seals / MooPass do NOT apply inside guild trials —
+      // the game does not grant them, so the UI hides the Buffs control in
+      // trial mode and sends a neutral extra here to match.
       extra: {
-        comExp: extraOptions.comExp,
-        comDrop: extraOptions.comDrop,
-        mooPass: extraOptions.mooPass,
-        personalBuffs: extraOptions.personalBuffs
+        comExp: 0,
+        comDrop: 0,
+        mooPass: false,
+        personalBuffs: []
       },
       iterations: trialConfig.iterations,
       aggregateOptions: {
@@ -409,7 +409,7 @@ function App() {
         hridToBuild
       }
     });
-  }, [roster, masterBuilds, trialConfig, extraOptions, gameData, runGuildTrial]);
+  }, [roster, masterBuilds, trialConfig, gameData, runGuildTrial]);
 
   const handleStartSimulation = useCallback(() => {
     if (simMode === 'guildTrial') {
@@ -505,12 +505,6 @@ function App() {
           <Stack gap="sm" p="md">
             {simMode === 'guildTrial' ? (
               <>
-                <CharacterImport
-                  activeTab={activeTab}
-                  targetLabel="new build"
-                  onLoadPlayer={importCharacterBuild}
-                />
-
                 <GuildTrialPanel
                   masterBuilds={masterBuilds}
                   roster={roster}
@@ -529,6 +523,7 @@ function App() {
                   onAddBuildFromLoadout={addBuildFromLoadout}
                   onAddBlankBuild={addBlankBuild}
                   onImportRoster={handleImportRoster}
+                  onImportBuild={(player, name) => addBuildFromPlayer(player, name || 'Imported build')}
                 />
 
                 <Divider />
@@ -549,6 +544,7 @@ function App() {
                       player={selectedBuild}
                       onPlayerChange={handleBuildChange}
                       playerId={roster.findIndex(e => e.id === selectedEntryId) + 1}
+                      hideConsumables
                     />
                   </>
                 ) : (
@@ -665,6 +661,14 @@ function App() {
             <Alert color="red" title="Simulation error" variant="light">
               {simError.message}
             </Alert>
+          )}
+
+          {simMode === 'guildTrial' && gameData && (
+            <TrialMonsterCards
+              trial={selectedTrialDetail}
+              monsters={gameData.monsters}
+              abilities={gameData.abilities}
+            />
           )}
 
           {results && results.__kind === 'guildTrial' ? (
