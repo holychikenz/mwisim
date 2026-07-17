@@ -51,6 +51,7 @@ export function GuildTrialPanel({
   onSetCount,
   onSaveAsNew,
   onDelete,
+  onDeleteBuild,
   onAddEntryFromBuild,
   onAddBuildFromSlot,
   onAddBuildFromLoadout,
@@ -140,6 +141,30 @@ export function GuildTrialPanel({
     }
   }, [buildImportText, onImportBuild, showMessage]);
 
+  // Permanently delete the master build chosen in the "Existing build" picker.
+  // If it is currently rostered, deleting also removes its row(s), so confirm
+  // first; orphaned builds (no rows) delete without ceremony.
+  const handleDeleteExistingBuild = useCallback(() => {
+    if (!existingBuildId) return;
+    const build = masterBuilds?.[existingBuildId];
+    const name = build?.name || 'this build';
+    const rosteredCount = (roster || [])
+      .filter(e => e.buildId === existingBuildId)
+      .reduce((sum, e) => sum + (Number(e.count) || 1), 0);
+    if (
+      rosteredCount > 0 &&
+      !window.confirm(
+        `Delete build “${name}”? It is on the roster (${rosteredCount} participant` +
+          `${rosteredCount === 1 ? '' : 's'}) — that row will be removed too.`
+      )
+    ) {
+      return;
+    }
+    onDeleteBuild?.(existingBuildId);
+    setExistingBuildId(null);
+    showMessage(`Deleted build “${name}”`);
+  }, [existingBuildId, masterBuilds, roster, onDeleteBuild, showMessage]);
+
   const slotIds = Object.keys(players || {}).map(Number).sort((a, b) => a - b);
 
   return (
@@ -210,6 +235,18 @@ export function GuildTrialPanel({
             >
               Add entry
             </Button>
+            <Tooltip label="Delete this build permanently" withinPortal={false}>
+              <ActionIcon
+                size="lg"
+                variant="subtle"
+                color="red"
+                disabled={!existingBuildId}
+                onClick={handleDeleteExistingBuild}
+                aria-label="Delete selected build"
+              >
+                🗑
+              </ActionIcon>
+            </Tooltip>
           </Group>
         )}
       </Group>

@@ -44,6 +44,32 @@ import {
 
 const ONE_HOUR = 60 * 60 * 1e9;
 
+// -- Resizable left column (AppShell navbar) ---------------------------------
+// Width is user-draggable within [NAV_MIN, NAV_MAX] and persisted so the choice
+// survives reloads. Double-clicking the handle restores NAV_DEFAULT.
+const NAV_MIN = 300;
+const NAV_MAX = 760;
+const NAV_DEFAULT = 430;
+const NAV_WIDTH_KEY = 'csim_navbar_width';
+
+function loadNavbarWidth() {
+  try {
+    const v = Number(localStorage.getItem(NAV_WIDTH_KEY));
+    if (Number.isFinite(v) && v >= NAV_MIN && v <= NAV_MAX) return v;
+  } catch {
+    /* ignore — fall through to default */
+  }
+  return NAV_DEFAULT;
+}
+
+function saveNavbarWidth(w) {
+  try {
+    localStorage.setItem(NAV_WIDTH_KEY, String(w));
+  } catch {
+    /* ignore — persistence is best-effort */
+  }
+}
+
 const createDefaultPlayer = (id) => ({
   hrid: `player${id}`,
   staminaLevel: 1,
@@ -83,6 +109,7 @@ function App() {
   } = useSimulation();
 
   const [players, setPlayers] = useState(createInitialPlayers);
+  const [navbarWidth, setNavbarWidth] = useState(loadNavbarWidth);
   const [activeTab, setActiveTab] = useState(1);
   const [selectedPlayers, setSelectedPlayers] = useState([1]);
   const [simMode, setSimMode] = useState('zone');
@@ -182,6 +209,34 @@ function App() {
   const handleSelectedPlayersChange = useCallback((values) => {
     if (values.length === 0) return; // Must have at least one player
     setSelectedPlayers(values.map(Number).sort((a, b) => a - b));
+  }, []);
+
+  // Drag-to-resize the left column. The navbar hugs the viewport's left edge,
+  // so pointer clientX IS the desired width (clamped). We persist only on
+  // pointer-up (via the functional setState) to avoid a localStorage write per
+  // mouse-move frame.
+  const handleNavbarResizeStart = useCallback((e) => {
+    e.preventDefault();
+    const onMove = (ev) => {
+      const w = Math.max(NAV_MIN, Math.min(NAV_MAX, Math.round(ev.clientX)));
+      setNavbarWidth(w);
+    };
+    const onUp = () => {
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onUp);
+      document.body.style.cursor = '';
+      document.body.style.userSelect = '';
+      setNavbarWidth(w => { saveNavbarWidth(w); return w; });
+    };
+    document.body.style.cursor = 'col-resize';
+    document.body.style.userSelect = 'none';
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp);
+  }, []);
+
+  const handleNavbarResizeReset = useCallback(() => {
+    setNavbarWidth(NAV_DEFAULT);
+    saveNavbarWidth(NAV_DEFAULT);
   }, []);
 
   // -- Guild-trial persistence (mirrors ImportExport's localStorage pattern) --
@@ -298,6 +353,26 @@ function App() {
       setRoster(prev => prev.map(e => (e.id === entryId ? { ...e, buildId: newBuildId } : e)));
     }
   }, [roster, masterBuilds]);
+
+  // Permanently delete a MASTER BUILD (not just a roster row). Unlike
+  // handleDeleteEntry — which keeps the build as a re-addable orphan — this
+  // removes the build from the store AND drops every roster row linked to it,
+  // mending the selection if the selected row was one of them.
+  const handleDeleteBuild = useCallback((buildId) => {
+    if (!buildId) return;
+    const nextRoster = roster.filter(e => e.buildId !== buildId);
+    setMasterBuilds(prev => {
+      const next = { ...prev };
+      delete next[buildId];
+      return next;
+    });
+    setRoster(nextRoster);
+    // If the currently-selected row linked to this build, it no longer exists —
+    // fall back to the first remaining row (or nothing on an empty roster).
+    if (selectedEntry && selectedEntry.buildId === buildId) {
+      setSelectedEntryId(nextRoster[0]?.id ?? null);
+    }
+  }, [roster, selectedEntry]);
 
   // Remove a whole row (all N participants). The master build is intentionally
   // KEPT even when this was its only row (it becomes a re-addable orphan).
@@ -456,7 +531,7 @@ function App() {
   return (
     <AppShell
       header={{ height: 64 }}
-      navbar={{ width: 430, breakpoint: 'sm' }}
+      navbar={{ width: navbarWidth, breakpoint: 'sm' }}
       padding="md"
     >
       <AppShell.Header>
@@ -501,6 +576,18 @@ function App() {
       </AppShell.Header>
 
       <AppShell.Navbar>
+        {/* Drag-to-resize handle pinned to the navbar's right edge. Double-click
+            restores the default width. Hidden below the navbar breakpoint,
+            where the column collapses and dragging is meaningless. */}
+        <div
+          className="nav-resize-handle"
+          onPointerDown={handleNavbarResizeStart}
+          onDoubleClick={handleNavbarResizeReset}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize sidebar (double-click to reset)"
+          title="Drag to resize · double-click to reset"
+        />
         <ScrollArea type="hover" style={{ height: '100%' }}>
           <Stack gap="sm" p="md">
             {simMode === 'guildTrial' ? (
@@ -518,6 +605,7 @@ function App() {
                   onSetCount={handleSetCount}
                   onSaveAsNew={handleSaveAsNew}
                   onDelete={handleDeleteEntry}
+                  onDeleteBuild={handleDeleteBuild}
                   onAddEntryFromBuild={addEntriesForBuild}
                   onAddBuildFromSlot={addBuildFromSlot}
                   onAddBuildFromLoadout={addBuildFromLoadout}

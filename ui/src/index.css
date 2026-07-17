@@ -3,3 +3,31 @@ body {
   margin: 0;
   min-width: 320px;
 }
+
+/* Drag-to-resize handle for the AppShell navbar (left column). Pinned to the
+   navbar's right edge; widens/tints on hover and while dragging. */
+.nav-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 6px;
+  cursor: col-resize;
+  z-index: 5;
+  background: transparent;
+  border-right: 2px solid transparent;
+  transition: border-color 120ms ease, background-color 120ms ease;
+  touch-action: none; /* let pointer drags work on touch devices */
+}
+.nav-resize-handle:hover,
+.nav-resize-handle:active {
+  background-color: var(--mantine-color-indigo-light);
+  border-right-color: var(--mantine-color-indigo-5);
+}
+
+/* Below the navbar breakpoint the column collapses, so resizing is moot. */
+@media (max-width: 768px) {
+  .nav-resize-handle {
+    display: none;
+  }
+}

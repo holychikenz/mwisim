@@ -39,22 +39,59 @@ function createTrialWorker() {
   });
 }
 
+// Watchdog: the engine emits a progress event every 1000 ticks (see
+// combatSimulator.simulate) and caps runaway loops at MAX_TICKS, so in normal
+// operation the worker is never silent for long. If NO message (progress or
+// result) arrives within this window we treat the worker as hung or silently
+// crashed, terminate it, and reset the UI to a usable state instead of leaving
+// a spinner (and a wedged tab) forever.
+const STALL_TIMEOUT_MS = 30_000;
+
 export function useSimulation() {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
   const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
   const workerRef = useRef(null);
+  const watchdogRef = useRef(null);
+
+  const clearWatchdog = useCallback(() => {
+    if (watchdogRef.current) {
+      clearTimeout(watchdogRef.current);
+      watchdogRef.current = null;
+    }
+  }, []);
 
   const stopWorker = useCallback(() => {
+    clearWatchdog();
     if (workerRef.current) {
       workerRef.current.terminate();
       workerRef.current = null;
     }
-  }, []);
+  }, [clearWatchdog]);
 
-  // Terminate any in-flight worker on unmount
+  // Terminate any in-flight worker (and its watchdog) on unmount.
   useEffect(() => stopWorker, [stopWorker]);
+
+  // Kill the worker and surface a friendly error without wedging the UI.
+  const failAndReset = useCallback((message) => {
+    setError(new Error(message));
+    setLoading(false);
+    setProgress(0);
+    stopWorker();
+  }, [stopWorker]);
+
+  // (Re)arm the inactivity watchdog. Called after posting the job and on every
+  // message from the worker, so a healthy, chatty worker never trips it.
+  const armWatchdog = useCallback(() => {
+    clearWatchdog();
+    watchdogRef.current = setTimeout(() => {
+      failAndReset(
+        `Simulation stalled — the worker went silent for ${STALL_TIMEOUT_MS / 1000}s and was reset. ` +
+          `Try reducing the duration or iteration count and run again.`
+      );
+    }, STALL_TIMEOUT_MS);
+  }, [clearWatchdog, failAndReset]);
 
   const runSimulation = useCallback((params) => {
     // One worker per run: cheap to spawn, and guarantees no stale engine
@@ -65,10 +102,18 @@ export function useSimulation() {
     setError(null);
     setResults(null);
 
-    const worker = createSimWorker();
+    let worker;
+    try {
+      worker = createSimWorker();
+    } catch (e) {
+      failAndReset('Could not start the simulation worker: ' + (e?.message || e));
+      return;
+    }
     workerRef.current = worker;
 
     worker.onmessage = (event) => {
+      // Any message means the worker is alive — push the watchdog back.
+      armWatchdog();
       switch (event.data.type) {
         case 'simulation_progress':
           // Worker reports a 0-1 fraction; UI displays 0-100.
@@ -93,9 +138,7 @@ export function useSimulation() {
     };
 
     worker.onerror = (e) => {
-      setError(new Error(e.message || 'Simulation worker crashed'));
-      setLoading(false);
-      stopWorker();
+      failAndReset(e.message || 'Simulation worker crashed');
     };
 
     worker.postMessage({
@@ -106,7 +149,9 @@ export function useSimulation() {
       simulationTimeLimit: params.simulationTimeLimit,
       extra: params.extra ?? {}
     });
-  }, [stopWorker]);
+    // Guard the gap between dispatch and the first progress tick, too.
+    armWatchdog();
+  }, [stopWorker, armWatchdog, failAndReset]);
 
   const runGuildTrial = useCallback((params) => {
     stopWorker();
@@ -115,10 +160,18 @@ export function useSimulation() {
     setError(null);
     setResults(null);
 
-    const worker = createTrialWorker();
+    let worker;
+    try {
+      worker = createTrialWorker();
+    } catch (e) {
+      failAndReset('Could not start the trial worker: ' + (e?.message || e));
+      return;
+    }
     workerRef.current = worker;
 
     worker.onmessage = (event) => {
+      // Any message means the worker pool is alive — push the watchdog back.
+      armWatchdog();
       switch (event.data.type) {
         case 'simulation_progress':
           setProgress(event.data.progress * 100);
@@ -149,9 +202,7 @@ export function useSimulation() {
     };
 
     worker.onerror = (e) => {
-      setError(new Error(e.message || 'Simulation worker crashed'));
-      setLoading(false);
-      stopWorker();
+      failAndReset(e.message || 'Trial worker crashed');
     };
 
     worker.postMessage({
@@ -163,8 +214,13 @@ export function useSimulation() {
       iterations: params.iterations || 1000,
       aggregateOptions: params.aggregateOptions || {}
     });
-  }, [stopWorker]);
+    // Guard the gap before the first shard reports in, too.
+    armWatchdog();
+  }, [stopWorker, armWatchdog, failAndReset]);
 
+  // Hard reset: kill any in-flight worker/watchdog and wipe results back to a
+  // clean slate. Bound to the header's Stop button; also the recovery path a
+  // user can invoke if a run ever misbehaves.
   const clearResults = useCallback(() => {
     stopWorker();
     setResults(null);
@@ -173,5 +229,5 @@ export function useSimulation() {
     setLoading(false);
   }, [stopWorker]);
 
-  return { loading, progress, results, error, runSimulation, runGuildTrial, clearResults };
+  return { loading, progress, results, error, runSimulation, runGuildTrial, clearResults, reset: clearResults };
 }
