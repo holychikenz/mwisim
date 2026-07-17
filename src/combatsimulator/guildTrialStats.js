@@ -5,13 +5,22 @@
 // API. No DOM / worker globals so it is unit-testable directly under node.
 //
 //   extractTrialSummary(simResult)      → lightweight per-iteration record
-//   computeTrialRewards(tiers, opts)    → { points, tokensPerParticipant }
+//   computeTrialRewards(tiers, opts)    → { points, tokensPerEligibleMember, tokensPerParticipant }
 //   aggregateTrialResults(summaries, o) → cross-iteration statistics
 // =============================================================================
 
 import GuildTrial from "./guildTrial";
 
 const ONE_SECOND_NS = 1e9;
+
+// Guild-token payout tuning (7/15/2026 "Guild Trials" patch). Kept as named
+// constants so the next balance patch is a one-line change here.
+//   TOKENS_BASE_POINTS_SHARE       — fraction of TOTAL BASE Guild Points every
+//                                     eligible member receives as tokens.
+//   TOKENS_PARTICIPATION_MULTIPLIER — extra payout for members who signed up for
+//                                     at least one trial (participation bonus).
+export const TOKENS_BASE_POINTS_SHARE = 0.5;
+export const TOKENS_PARTICIPATION_MULTIPLIER = 1.5;
 
 /**
  * Total damage `sourceHrid` dealt TO ENEMIES over the run, summed from the
@@ -80,9 +89,18 @@ export function extractTrialSummary(simResult) {
 
 /**
  * Rewards for clearing `tiersCleared` tiers.
- *   Combat points  = 400 (first tier) + 200 × (tiersCleared - 1)
- *   Guild tokens   = 200 (first tier) + 100 × (tiersCleared - 1)  [per participant]
- * Multipliers: points × (1 + buildersHallBonus), tokens × (1 + treasuryBonus).
+ *   Combat points  = 400 (first tier) + 200 × (tiersCleared - 1)  [base Guild Points]
+ *   points         = basePoints × (1 + buildersHallBonus)         [Builders' Hall boost]
+ *
+ * Guild-token payout (7/15/2026 "Guild Trials" patch): tokens are now granted
+ * EQUALLY to every eligible member rather than scaling with each member's own
+ * ladder progress. Every eligible member receives tokens equal to
+ * TOKENS_BASE_POINTS_SHARE (50%) of the TOTAL BASE Guild Points earned
+ * (pre-Builders'-Hall), increased by the Treasury bonus. Members who signed up
+ * for at least one trial receive an ADDITIONAL payout via
+ * TOKENS_PARTICIPATION_MULTIPLIER (×1.5) as a participation bonus.
+ *   tokensPerEligibleMember = TOKENS_BASE_POINTS_SHARE × basePoints × (1 + treasuryBonus)
+ *   tokensPerParticipant    = tokensPerEligibleMember × TOKENS_PARTICIPATION_MULTIPLIER
  * Zero tiers cleared ⇒ no reward.
  *
  * The trial is a single weekly attempt with no re-clear of any tier (the run
@@ -91,13 +109,14 @@ export function extractTrialSummary(simResult) {
  */
 export function computeTrialRewards(tiersCleared, { buildersHallBonus = 0, treasuryBonus = 0 } = {}) {
     if (!tiersCleared || tiersCleared <= 0) {
-        return { points: 0, tokensPerParticipant: 0 };
+        return { points: 0, tokensPerEligibleMember: 0, tokensPerParticipant: 0 };
     }
     const basePoints = 400 + 200 * (tiersCleared - 1);
-    const baseTokens = 200 + 100 * (tiersCleared - 1);
+    const tokensPerEligibleMember = TOKENS_BASE_POINTS_SHARE * basePoints * (1 + treasuryBonus);
     return {
         points: basePoints * (1 + buildersHallBonus),
-        tokensPerParticipant: baseTokens * (1 + treasuryBonus),
+        tokensPerEligibleMember,
+        tokensPerParticipant: tokensPerEligibleMember * TOKENS_PARTICIPATION_MULTIPLIER,
     };
 }
 
@@ -133,6 +152,7 @@ export function aggregateTrialResults(summaries, opts = {}) {
             avgPlayerDps: {},
             avgPartyDps: 0,
             expectedGuildPoints: 0,
+            expectedTokensPerEligibleMember: 0,
             expectedTokensPerParticipant: 0,
         };
     }
@@ -170,6 +190,7 @@ export function aggregateTrialResults(summaries, opts = {}) {
     let sumMaxTier = 0;
     let sumTiersCleared = 0;
     let sumPoints = 0;
+    let sumTokensEligible = 0;
     let sumTokens = 0;
 
     for (const s of summaries) {
@@ -226,6 +247,7 @@ export function aggregateTrialResults(summaries, opts = {}) {
         const distinctTiersCleared = maxT >= startTier ? (maxT - startTier) / step + 1 : 0;
         const rw = computeTrialRewards(distinctTiersCleared, opts);
         sumPoints += rw.points;
+        sumTokensEligible += rw.tokensPerEligibleMember;
         sumTokens += rw.tokensPerParticipant;
     }
 
@@ -278,6 +300,7 @@ export function aggregateTrialResults(summaries, opts = {}) {
         avgPlayerDps,
         avgPartyDps: partyDpsSum / n,
         expectedGuildPoints: sumPoints / n,
+        expectedTokensPerEligibleMember: sumTokensEligible / n,
         expectedTokensPerParticipant: sumTokens / n,
     };
 }

@@ -151,6 +151,13 @@ class CombatUnit {
         },
     };
     combatBuffs = {};
+    // MWIX adaptation (7/15/2026 patch parity): in a party a weaker source's
+    // aura/debuff no longer replaces a stronger one — the strongest ACTIVE source
+    // of a buff takes effect, and when it expires the next strongest takes over.
+    // We track every source's instance here (uniqueHrid -> [instance, ...]);
+    // `combatBuffs` becomes the derived "effective" view (uniqueHrid -> strongest
+    // active instance) that all existing readers keep consuming UNCHANGED.
+    buffInstances = {};
     permanentBuffs = {};
     // MWIX adaptation: zoneBuffs / extraBuffs are iterated with `.forEach`
     // in generatePermanentBuffs(). Upstream defaults them to `{}` because
@@ -377,15 +384,140 @@ class CombatUnit {
         this.combatDetails.combatStats.tenacity += this.getBuffBoost("/buff_types/tenacity").flatBoost;
     }
 
-    addBuffs(buffs, currentTime) {
-        buffs.forEach(buff => buff.startTime = currentTime);
+    // ---- MWIX adaptation (7/15/2026 patch parity): per-source buff instance
+    // tracking ------------------------------------------------------------------
+    //
+    // An "instance" is a COPY of the incoming buff's enumerable fields plus
+    // bookkeeping (startTime, expireTime, sourceKey). We never mutate the passed
+    // buff object — callers frequently pass SHARED ability-effect data (see
+    // combatSimulator.processAbilityBuffEffect / addBuff at ~line 1600), so
+    // mutating it would corrupt the source-of-truth for every future application.
+    //
+    // Load-bearing NaN semantics: enrage applies buffs WITHOUT a currentTime, so
+    // startTime is undefined and expireTime becomes NaN. Every `expireTime <= t`
+    // comparison against NaN is false, so those instances NEVER expire. Preserve it.
+    _makeBuffInstance(buff, startTime, sourceKey) {
+        let instance = { ...buff };
+        instance.startTime = startTime; // keep startTime for shape parity with upstream buff objects
+        instance.expireTime = startTime + buff.duration; // NaN when startTime === undefined
+        instance.sourceKey = sourceKey;
+        return instance;
+    }
 
+    // An instance is active while it has NOT expired. The NEGATED form is
+    // load-bearing: a NaN expireTime (enrage-style never-expires) makes
+    // `expireTime <= currentTime` false, so !(false) === true keeps it alive.
+    _isActive(inst, currentTime) {
+        return !(inst.expireTime <= currentTime);
+    }
+
+    // The effective (strongest-active) view changed iff its magnitude changed.
+    // Shared changed-predicate for every commit path.
+    _effectChanged(prev, effective) {
+        return !prev || prev.ratioBoost !== effective.ratioBoost || prev.flatBoost !== effective.flatBoost;
+    }
+
+    // Strongest = larger |ratioBoost|, then larger |flatBoost|, then later
+    // expireTime (NaN — a never-expiring source — wins as +Infinity). Magnitude
+    // matters because debuffs (weaken) carry NEGATIVE boosts and "stronger" means
+    // larger magnitude. Assumes instances of one uniqueHrid never trade a
+    // ratioBoost against a flatBoost (each buff is single-component or uniformly
+    // scaled today), so the two components are compared independently.
+    _strongerInstance(a, b) {
+        let ar = Math.abs(a.ratioBoost ?? 0);
+        let br = Math.abs(b.ratioBoost ?? 0);
+        if (ar !== br) return ar > br ? a : b;
+        let af = Math.abs(a.flatBoost ?? 0);
+        let bf = Math.abs(b.flatBoost ?? 0);
+        if (af !== bf) return af > bf ? a : b;
+        let ae = Number.isNaN(a.expireTime) ? Infinity : a.expireTime;
+        let be = Number.isNaN(b.expireTime) ? Infinity : b.expireTime;
+        return ae >= be ? a : b;
+    }
+
+    _effectiveInstance(instances) {
+        let best = null;
+        for (const inst of instances) {
+            best = best === null ? inst : this._strongerInstance(best, inst);
+        }
+        return best;
+    }
+
+    // Write buffInstances[hrid] / combatBuffs[hrid] from `arr` and report whether
+    // the effective view changed vs. the previous combatBuffs entry. When arr is
+    // empty BOTH maps are deleted, and deleting a previously-present entry counts
+    // as a change. Recomputes the effective view via _effectiveInstance. Does NOT
+    // call updateCombatDetails so callers can batch it.
+    _commitInstances(hrid, arr) {
+        let prev = this.combatBuffs[hrid];
+        if (arr.length === 0) {
+            delete this.buffInstances[hrid];
+            delete this.combatBuffs[hrid];
+            return prev !== undefined;
+        }
+        this.buffInstances[hrid] = arr;
+        let effective = this._effectiveInstance(arr);
+        this.combatBuffs[hrid] = effective;
+        return this._effectChanged(prev, effective);
+    }
+
+    // Apply one buff and return whether the effective view changed (needs a
+    // recompute). Does NOT call updateCombatDetails so callers can batch it.
+    _applyBuff(buff, currentTime, sourceRef) {
+        let hrid = buff.uniqueHrid;
+        let arr = this.buffInstances[hrid];
+        // Single pass (one allocation): drop expired instances AND this source's
+        // prior instance. Same-source re-apply REPLACES its own instance (preserves
+        // buff refresh AND fury's decay-on-miss, where a weaker self-buff must win).
+        // Expiry is skipped entirely when currentTime is undefined (enrage).
+        let next = [];
+        if (arr) {
+            for (const inst of arr) {
+                if (inst.sourceKey === sourceRef) continue;
+                if (currentTime !== undefined && !this._isActive(inst, currentTime)) continue;
+                next.push(inst);
+            }
+        }
+        // Push the new instance ({...buff} copy — never mutate the incoming buff).
+        next.push(this._makeBuffInstance(buff, currentTime, sourceRef));
+        return this._commitInstances(hrid, next);
+    }
+
+    // Remove sourceRef's instance for this buff and return whether the effective
+    // view changed. The next strongest surviving source is promoted.
+    _removeBuffInstance(buff, sourceRef) {
+        let hrid = buff.uniqueHrid;
+        let arr = this.buffInstances[hrid];
+        if (!arr || arr.length === 0) {
+            return false;
+        }
+        // Plain-loop scan first: the fury decay-on-miss path calls this often with
+        // nothing to remove. Bail with zero allocations when the source is absent.
+        let found = false;
+        for (let i = 0; i < arr.length; i++) {
+            if (arr[i].sourceKey === sourceRef) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            return false;
+        }
+        let filtered = arr.filter((inst) => inst.sourceKey !== sourceRef);
+        return this._commitInstances(hrid, filtered);
+    }
+
+    addBuffs(buffs, currentTime, sourceRef = this) {
+        // sourceRef identifies the APPLYING unit; multiple sources of the same
+        // buff arbitrate by strength (strongest active wins). Callers applying a
+        // buff to a DIFFERENT unit MUST pass the applying unit as sourceRef —
+        // omitting it defaults to the receiving unit and silently restores
+        // last-writer-wins for that effect.
         let needUpdate = false;
         for (const buff of buffs) {
-            if (!this.combatBuffs[buff.uniqueHrid] || this.combatBuffs[buff.uniqueHrid].ratioBoost != buff.ratioBoost || this.combatBuffs[buff.uniqueHrid].flatBoost != buff.flatBoost) {
+            if (this._applyBuff(buff, currentTime, sourceRef)) {
                 needUpdate = true;
             }
-            this.combatBuffs[buff.uniqueHrid] = buff;
         }
 
         if (needUpdate) {
@@ -393,44 +525,25 @@ class CombatUnit {
         }
     }
 
-    addBuff(buff, currentTime) {
-        buff.startTime = currentTime;
-
-        let needUpdate = true;
-        if (this.combatBuffs[buff.uniqueHrid] && this.combatBuffs[buff.uniqueHrid].ratioBoost === buff.ratioBoost && this.combatBuffs[buff.uniqueHrid].flatBoost === buff.flatBoost) {
-            needUpdate = false;
-        }
-
-        this.combatBuffs[buff.uniqueHrid] = buff;
-
-        if (needUpdate) {
-            this.updateCombatDetails();
-        }
+    addBuff(buff, currentTime, sourceRef = this) {
+        this.addBuffs([buff], currentTime, sourceRef);
     }
 
-    removeBuffs(buffs) {
+    removeBuffs(buffs, sourceRef = this) {
         let needUpdate = false;
-        buffs.forEach(buff => {
-            if (!this.combatBuffs[buff.uniqueHrid]) {
-                return;
+        for (const buff of buffs) {
+            if (this._removeBuffInstance(buff, sourceRef)) {
+                needUpdate = true;
             }
-            delete this.combatBuffs[buff.uniqueHrid];
-            needUpdate = true;
-        })
+        }
 
         if (needUpdate) {
             this.updateCombatDetails();
         }
-
     }
 
-    removeBuff(buff) {
-        if (!this.combatBuffs[buff.uniqueHrid]) {
-            return;
-        }
-        delete this.combatBuffs[buff.uniqueHrid];
-
-        this.updateCombatDetails();
+    removeBuff(buff, sourceRef = this) {
+        this.removeBuffs([buff], sourceRef);
     }
 
     addPermanentBuff(buff) {
@@ -474,17 +587,34 @@ class CombatUnit {
     }
 
     removeExpiredBuffs(currentTime) {
-        let expiredBuffs = Object.values(this.combatBuffs).filter(
-            (buff) => buff.startTime + buff.duration <= currentTime
-        );
-        expiredBuffs.forEach((buff) => {
-            delete this.combatBuffs[buff.uniqueHrid];
-        });
+        // Iterate instance sources only. combatBuffs entries WITHOUT a backing
+        // instance array are permanent buffs (keyed by typeHrid, no startTime) —
+        // they must survive untouched.
+        for (const hrid of Object.keys(this.buffInstances)) {
+            let arr = this.buffInstances[hrid];
+            // Hot path: plain-loop scan first and SKIP the hrid entirely when
+            // nothing expired — no filter allocation, no effective recompute, no
+            // reassignment. This runs millions of times in the Monte-Carlo sim.
+            let hasExpired = false;
+            for (const inst of arr) {
+                if (!this._isActive(inst, currentTime)) {
+                    hasExpired = true;
+                    break;
+                }
+            }
+            if (!hasExpired) {
+                continue;
+            }
+            let filtered = arr.filter((inst) => this._isActive(inst, currentTime));
+            this._commitInstances(hrid, filtered);
+        }
 
+        // Unconditional recompute for behavior parity with the old code.
         this.updateCombatDetails();
     }
 
     clearBuffs() {
+        this.buffInstances = {};
         this.combatBuffs = structuredClone(this.permanentBuffs);
         this.updateCombatDetails();
     }

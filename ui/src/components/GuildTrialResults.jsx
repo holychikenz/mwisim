@@ -142,7 +142,8 @@ export function GuildTrialResults({ result }) {
     { label: 'Wipe rate', value: pct(agg.wipeRate) },
     { label: 'Timeout rate', value: pct(agg.timeoutRate) },
     { label: 'Guild points (exp.)', value: Math.round(agg.expectedGuildPoints || 0).toLocaleString() },
-    { label: 'Tokens / participant', value: (agg.expectedTokensPerParticipant || 0).toFixed(1) },
+    { label: 'Tokens / eligible member', value: (agg.expectedTokensPerEligibleMember || 0).toFixed(1) },
+    { label: 'Tokens / participant (signed up)', value: (agg.expectedTokensPerParticipant || 0).toFixed(1) },
     // avgPartyDps is a new aggregate field — only card it when present.
     ...(agg.avgPartyDps != null
       ? [{ label: 'Party DPS', value: fmtDps(agg.avgPartyDps) }]

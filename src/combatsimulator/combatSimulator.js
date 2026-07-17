@@ -1589,15 +1589,18 @@ class CombatSimulator extends EventTarget {
         if (abilityEffect.targetType == "allAllies") {
             let targets = source.isPlayer ? this.players : this.enemies;
             for (const target of targets.filter((unit) => unit && unit.combatDetails.currentHitpoints > 0)) {
+                // MWIX adaptation (7/15/2026 patch parity): buffs/debuffs are
+                // attributed to the caster so multiple sources arbitrate by
+                // strength (strongest active wins) instead of last-writer-wins.
                 for (const buff of abilityEffect.buffs) {
                     if (ability.isSpecialAbility && buff.multiplierForSkillHrid && buff.multiplierPerSkillLevel > 0) {
                         let multiplier = 1.0 + source.combatDetails[buff.multiplierForSkillHrid.split('/')[2] + 'Level'] * buff.multiplierPerSkillLevel;
                         let currentBuff = structuredClone(buff);
                         currentBuff.flatBoost *= multiplier;
                         currentBuff.ratioBoost *= multiplier;
-                        target.addBuff(currentBuff, this.simulationTime);
+                        target.addBuff(currentBuff, this.simulationTime, source);
                     } else {
-                        target.addBuff(buff, this.simulationTime);
+                        target.addBuff(buff, this.simulationTime, source);
                     }
                     let checkBuffExpirationEvent = new CheckBuffExpirationEvent(this.simulationTime + buff.duration, target);
                     this.eventQueue.addEvent(checkBuffExpirationEvent);
@@ -1783,7 +1786,10 @@ class CombatSimulator extends EventTarget {
 
                 if (attackResult.didHit && abilityEffect.buffs) {
                     for (const buff of abilityEffect.buffs) {
-                        target.addBuff(buff, this.simulationTime);
+                        // MWIX adaptation (7/15/2026 patch parity): buffs/debuffs are
+                        // attributed to the caster so multiple sources arbitrate by
+                        // strength (strongest active wins) instead of last-writer-wins.
+                        target.addBuff(buff, this.simulationTime, source);
                         let checkBuffExpirationEvent = new CheckBuffExpirationEvent(
                             this.simulationTime + buff.duration,
                             target

@@ -524,13 +524,28 @@ test('legacy parry (zone/lab): single roll, a success breaks the whole cast', ()
 // Pure: rewards + aggregation
 // --------------------------------------------------------------------------
 test('computeTrialRewards: base ladder + multipliers', () => {
-  assert.deepEqual(computeTrialRewards(0), { points: 0, tokensPerParticipant: 0 });
-  assert.deepEqual(computeTrialRewards(1), { points: 400, tokensPerParticipant: 200 });
-  assert.deepEqual(computeTrialRewards(3), { points: 800, tokensPerParticipant: 400 });
+  // 7/15/2026 payout model: every eligible member gets 50% of the BASE Guild
+  // Points (pre-Builders'-Hall) × Treasury; signed-up members get +50% of that.
+  assert.deepEqual(computeTrialRewards(0), {
+    points: 0,
+    tokensPerEligibleMember: 0,
+    tokensPerParticipant: 0,
+  });
+  assert.deepEqual(computeTrialRewards(1), {
+    points: 400,
+    tokensPerEligibleMember: 200,
+    tokensPerParticipant: 300,
+  });
+  assert.deepEqual(computeTrialRewards(3), {
+    points: 800,
+    tokensPerEligibleMember: 400,
+    tokensPerParticipant: 600,
+  });
 
   const rw = computeTrialRewards(2, { buildersHallBonus: 0.5, treasuryBonus: 1.0 });
-  assert.equal(rw.points, 600 * 1.5);
-  assert.equal(rw.tokensPerParticipant, 300 * 2.0);
+  assert.equal(rw.points, 600 * 1.5); // 900 — Builders' Hall boosts POINTS only
+  assert.equal(rw.tokensPerEligibleMember, 0.5 * 600 * 2.0); // 600 — Treasury boosts tokens
+  assert.equal(rw.tokensPerParticipant, 600 * 1.5); // 900 — +50% participation bonus
 });
 
 test('aggregateTrialResults: per-tier clear probability + distribution', () => {
@@ -553,6 +568,10 @@ test('aggregateTrialResults: per-tier clear probability + distribution', () => {
   assert.equal(agg.deathsByTier[110], 1);
   // rewards: iter1 tiersCleared=1 ⇒ 400pts; iter2 tiersCleared=3 ⇒ 800pts
   assert.equal(agg.expectedGuildPoints, (400 + 800) / 2);
+  // tokens (7/15/2026 model): eligible = 50% of base points; participant ×1.5.
+  // iter1 base 400 ⇒ elig 200 / part 300; iter2 base 800 ⇒ elig 400 / part 600.
+  assert.equal(agg.expectedTokensPerEligibleMember, (200 + 400) / 2);
+  assert.equal(agg.expectedTokensPerParticipant, (300 + 600) / 2);
 });
 
 test('aggregateTrialResults reports completedRate; end-reason rates sum to 1', () => {
@@ -597,6 +616,8 @@ test('aggregateTrialResults handles empty input', () => {
   assert.deepEqual(agg.avgFinalTierHpRemoved, {});
   assert.deepEqual(agg.avgPlayerDps, {});
   assert.equal(agg.avgPartyDps, 0);
+  assert.equal(agg.expectedTokensPerEligibleMember, 0);
+  assert.equal(agg.expectedTokensPerParticipant, 0);
 });
 
 // --------------------------------------------------------------------------

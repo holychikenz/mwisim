@@ -143,6 +143,21 @@ upstream specifically changed the same surface area.
   pre-seeded from disk; \`setOverrides(maps)\` rewrites them in place so
   ES live bindings propagate to every consumer. Only dataProvider.js
   should still hold direct \`./data/*.json\` imports.
+- **Multi-source buff instance tracking (7/15/2026 patch parity)** — in
+  \`combatUnit.js\`, \`buffInstances\` maps each buff's \`uniqueHrid\` to an
+  array of per-source instances; \`combatBuffs\` is the DERIVED "strongest
+  active" view every existing reader keeps consuming unchanged.
+  \`addBuff\`/\`addBuffs\`/\`removeBuff\`/\`removeBuffs\` take an optional
+  \`sourceRef\` param defaulting to the receiving unit (\`this\`). In
+  \`combatSimulator.js\`, the two ability-buff sites pass the caster as
+  \`source\` (the \`processAbilityBuffEffect\` allAllies branch and the
+  damage-rider buff loop) so multiple sources arbitrate by strength instead
+  of last-writer-wins. Each is marked \`// MWIX adaptation (7/15/2026 patch
+  parity)\`. NOTE: the curse/weaken/fury call sites INTENTIONALLY remain
+  default-sourced — they are shared-stack mechanics whose single rescheduled
+  expiration event only covers the latest application, so per-source
+  attribution would create phantom-expiry windows. Do not thread sourceRef
+  through them.
 - Any other local edits beneath \`${SCOPED_PATH}/\` — list them in the
   rebase report so we keep a running ledger.
 
