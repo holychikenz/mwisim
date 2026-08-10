@@ -23,15 +23,41 @@
 #   - Any other local edits to src/combatsimulator/*.js — listed by this
 #     script as "still-not-upstreamed" so the model can flag them.
 #
+# Peer-fork scan
+# --------------
+# Besides upstream, a third-party Chinese fork of the same simulator is served
+# at $PEER_URL. It publishes no source repository and ships no source maps, so
+# there is nothing to `git diff` against. What it DOES ship is the engine
+# itself: the simulation runs entirely client-side inside web workers, and
+# esbuild/terser preserve class-method names even under minification. That is
+# enough to compare API surfaces.
+#
+# Note on "backend": the peer's actual server is thin — Express (helmet
+# headers) exposing only /api/auth/{me,register,login,logout} and
+# /api/v1/anonymous-simulations (telemetry). No combat maths happens there.
+# The interesting "backend" is the worker bundle, which is what this scan
+# pulls. If the peer ever grows a real server-side sim, the route dump in the
+# report is where it will first show up.
+#
+# The scan downloads the peer's entry bundle, follows its lazy chunks and
+# `new Worker(new URL(...))` references, extracts every method definition, and
+# subtracts our own identifier set from src/combatsimulator/. What remains is
+# a candidate list of features they have and we do not. It is heuristic and
+# noisy by nature (embedded game data contributes false positives), so it is
+# reported for human/model judgement, never applied automatically.
+#
 # Usage:
-#   ./upstream-update.sh             # check + interactive claude
-#   ./upstream-update.sh --check     # diff only; no model
+#   ./upstream-update.sh             # peer scan + upstream diff + interactive claude
+#   ./upstream-update.sh --check     # peer scan + diff only; no model
 #   ./upstream-update.sh --apply     # non-interactive claude (uses claude -p)
+#   ./upstream-update.sh --peer      # peer-fork scan only; no upstream, no model
 #
 # Environment overrides:
 #   UPSTREAM_URL     git URL (default: git@github.com:shykai/MWICombatSimulatorTest.git)
 #   UPSTREAM_BRANCH  branch to track (default: Test — shykai's working branch)
 #   CLAUDE_BIN       path to claude CLI (default: claude on PATH)
+#   PEER_URL         peer fork origin (default: the sslip.io deployment)
+#   PEER_SKIP=1      skip the peer scan entirely
 # =============================================================================
 set -euo pipefail
 
@@ -45,6 +71,12 @@ SCOPED_PATH="src/combatsimulator"
 CLAUDE_BIN="${CLAUDE_BIN:-claude}"
 MODE="${1:-interactive}"
 
+# Peer fork (no repo, no source maps — analysed from its served bundles).
+PEER_URL="${PEER_URL:-https://combat.43.167.210.211.sslip.io}"
+PEER_DIR="$ROOT/.upstream/peer"
+PEER_REPORT="$ROOT/.upstream/peer-report.md"
+PEER_SKIP="${PEER_SKIP:-}"
+
 color() { printf '\033[%sm%s\033[0m' "$1" "$2"; }
 hdr()   { printf '\n%s\n' "$(color '1;34' "==> $*")"; }
 warn()  { printf '%s\n' "$(color '33' "warn: $*")"; }
@@ -56,6 +88,156 @@ die()   { printf '%s\n' "$(color '31' "err:  $*")" >&2; exit 1; }
 command -v git >/dev/null   || die "git not on PATH"
 
 mkdir -p "$ROOT/.upstream"
+
+# ---- 0. Peer-fork scan ----------------------------------------------------
+# Downloads the peer's served JS (entry bundle -> lazy chunks -> web workers)
+# and diffs its method surface against ours. Heuristic; report only.
+peer_fetch() {
+    mkdir -p "$PEER_DIR"
+    local index="$PEER_DIR/index.html"
+
+    curl -fsS -k -L --max-time 60 "$PEER_URL/combat/setup" -o "$index" \
+        || { warn "peer unreachable at $PEER_URL — skipping peer scan"; return 1; }
+
+    # Entry bundle from <script type="module" src="/assets/index-XXXX.js">
+    local entry
+    entry="$(grep -oE 'src="/assets/[A-Za-z0-9_.-]+\.js"' "$index" \
+             | head -1 | sed 's/^src="//; s/"$//')"
+    [ -n "$entry" ] || { warn "no entry bundle found in peer index.html"; return 1; }
+    ok "peer entry bundle: $entry"
+
+    # Breadth-first: entry -> chunks it names -> workers those chunks spawn.
+    # Two passes suffice for Vite's layout (workers are named inside chunks).
+    local queue="$entry" seen="" pass
+    for pass in 1 2 3; do
+        local next=""
+        for path in $queue; do
+            case " $seen " in *" $path "*) continue ;; esac
+            seen="$seen $path"
+            local out="$PEER_DIR/$(basename "$path")"
+            curl -fsS -k --max-time 120 "$PEER_URL/${path#/}" -o "$out" || continue
+            # Guard against the SPA fallback serving index.html for a 404.
+            case "$(head -c 15 "$out")" in '<!doctype html'*|'<!DOCTYPE html'*)
+                rm -f "$out"; continue ;;
+            esac
+            next="$next $(grep -ohE '"assets/[A-Za-z0-9_.-]+\.js"' "$out" \
+                          | tr -d '"' | sed 's|^|/|' | sort -u)"
+            next="$next $(grep -ohE 'new Worker\(new URL\("/assets/[A-Za-z0-9_.-]+\.js' "$out" \
+                          | grep -oE '/assets/[A-Za-z0-9_.-]+\.js' | sort -u)"
+        done
+        queue="$next"
+        [ -n "$(echo "$queue" | tr -d ' ')" ] || break
+    done
+
+    ok "peer assets fetched: $(ls -1 "$PEER_DIR"/*.js 2>/dev/null | wc -l | tr -d ' ') files"
+    return 0
+}
+
+peer_analyse() {
+    command -v python3 >/dev/null || { warn "python3 not on PATH — skipping peer analysis"; return 1; }
+    PEER_DIR="$PEER_DIR" ROOT="$ROOT" SCOPED_PATH="$SCOPED_PATH" \
+    PEER_URL="$PEER_URL" python3 - > "$PEER_REPORT" <<'PYEOF'
+import os, re, glob, collections
+
+peer_dir = os.environ["PEER_DIR"]
+root     = os.environ["ROOT"]
+scoped   = os.environ["SCOPED_PATH"]
+peer_url = os.environ["PEER_URL"]
+
+def read(p):
+    with open(p, encoding="utf8", errors="replace") as f:
+        return f.read()
+
+# --- our identifier surface -------------------------------------------------
+ours = set()
+for dirpath, dirnames, filenames in os.walk(os.path.join(root, scoped)):
+    dirnames[:] = [d for d in dirnames if d != "data"]
+    for fn in filenames:
+        if fn.endswith(".js") and not fn.endswith(".test.js"):
+            ours |= set(re.findall(r"\b([A-Za-z_$][A-Za-z0-9_$]{3,})\b",
+                                   read(os.path.join(dirpath, fn))))
+
+# --- peer surface -----------------------------------------------------------
+# Method definitions survive minification (esbuild/terser keep property names).
+DEF = re.compile(r"(?:^|[;{}\s,])((?:async\s+)?[A-Za-z_$][A-Za-z0-9_$]{4,})\s*\([^()]{0,120}\)\s*\{")
+
+# The simulation engine lives in the web workers; everything else is Vue/
+# Element Plus UI whose method names are pure noise against our engine. Split
+# them so the signal is not buried — the UI table is kept, but demoted.
+files = sorted(glob.glob(os.path.join(peer_dir, "*.js")))
+def is_engine(name):
+    return "orker" in name  # worker-*, multiWorker-*, guildTrialWorker-*
+
+engine_defs = collections.defaultdict(set)
+ui_defs     = collections.defaultdict(set)
+routes      = set()
+for p in files:
+    src  = read(p)
+    name = os.path.basename(p)
+    sink = engine_defs if is_engine(name) else ui_defs
+    for m in DEF.findall(src):
+        sink[m.replace("async ", "").strip()].add(name)
+    routes |= set(re.findall(r'"(/api/[A-Za-z0-9_/{}.-]*)"', src))
+
+engine_files = [os.path.basename(p) for p in files if is_engine(os.path.basename(p))]
+engine_cand  = {k: v for k, v in engine_defs.items() if k not in ours}
+ui_cand      = {k: v for k, v in ui_defs.items() if k not in ours and k not in engine_defs}
+
+print("# Peer-fork scan — candidate features\n")
+print(f"Source: `{peer_url}` (no public repo, no source maps — analysed from")
+print("served bundles). Method names survive minification; local variables do")
+print("not, so this lists *what* they have, not *how well* they do it.\n")
+print(f"Assets analysed: {len(files)} "
+      f"({len(engine_files)} engine/worker, {len(files) - len(engine_files)} UI)\n")
+
+print("## Server API routes observed in peer bundles\n")
+print("The peer's simulation runs client-side in workers; its server handles")
+print("accounts and persistence only. Anything here suggesting combat maths")
+print("moved server-side is worth investigating.\n")
+for r in sorted(routes) or ["_(none found)_"]:
+    print(f"- `{r}`")
+
+print("\n## Engine methods present in peer, absent from ours\n")
+print("**This is the signal.** These come from the peer's simulation workers")
+print(f"({', '.join(engine_files) or 'none found'}) and are the real candidates")
+print("for adoption.\n")
+if not engine_cand:
+    print("_(none — peer engine surface is a subset of ours)_")
+else:
+    print("| method | seen in |")
+    print("| --- | --- |")
+    for k in sorted(engine_cand):
+        print(f"| `{k}` | {', '.join(sorted(engine_cand[k]))} |")
+
+print("\n## UI-layer methods absent from ours (low signal)\n")
+print("Vue/Element Plus components and app plumbing. Almost always irrelevant")
+print("to the engine — skim only if the engine table looks thin.\n")
+print(f"<details><summary>{len(ui_cand)} names</summary>\n")
+print(", ".join(f"`{k}`" for k in sorted(ui_cand)) or "_(none)_")
+print("\n</details>")
+PYEOF
+    ok "peer report written to $PEER_REPORT"
+    return 0
+}
+
+PEER_OK=0
+if [ -n "$PEER_SKIP" ]; then
+    warn "PEER_SKIP set — skipping peer-fork scan"
+else
+    hdr "Scanning peer fork ($PEER_URL)"
+    if peer_fetch && peer_analyse; then
+        PEER_OK=1
+        CANDIDATES=$(grep -c '^| `' "$PEER_REPORT" || true)
+        echo "  candidate methods: $CANDIDATES"
+        echo "  peer report:       $PEER_REPORT"
+    fi
+fi
+
+if [ "$MODE" = "--peer" ]; then
+    hdr "Peer-only mode (--peer) — skipping upstream and claude"
+    [ "$PEER_OK" = "1" ] || die "peer scan failed"
+    exit 0
+fi
 
 # ---- 1. Fetch / refresh upstream snapshot ---------------------------------
 hdr "Refreshing upstream snapshot"
@@ -89,6 +271,7 @@ LINES=$(wc -l < "$DIFF_FILE" | tr -d ' ')
 if [ "$LINES" -le 1 ]; then
     ok "no scoped diff — up to date with upstream"
     rm -f "$DIFF_FILE"
+    [ "$PEER_OK" = "1" ] && ok "peer findings still available at $PEER_REPORT"
     exit 0
 fi
 
@@ -186,6 +369,27 @@ upstream specifically changed the same surface area.
 $(cat "$DIFF_FILE")
 \`\`\`
 EOF
+
+# Peer-fork findings are advisory context, appended after the actionable patch
+# so the model treats the rebase as the primary task.
+if [ "$PEER_OK" = "1" ]; then
+    {
+        printf '\n---\n\n# Appendix — peer fork (advisory, do NOT apply)\n\n'
+        printf 'A third-party fork of the same simulator is deployed at %s.\n' "$PEER_URL"
+        printf 'It ships no source, so the below is recovered from its minified\n'
+        printf 'worker bundles. Treat it as a FEATURE-IDEA LIST only.\n\n'
+        printf 'Rules for this appendix:\n'
+        printf '1. Do NOT change any code because of it during this rebase.\n'
+        printf '2. In your report, add a short section "Peer fork worth stealing"\n'
+        printf '   naming at most the 3 most credible candidates and, for each, one\n'
+        printf '   line on what it would take to implement in our tree.\n'
+        printf '3. Ignore entries that are obviously bundled game data, Vue/Element\n'
+        printf '   Plus internals, or names we already implement under a different\n'
+        printf '   spelling.\n\n'
+        cat "$PEER_REPORT"
+    } >> "$PROMPT_FILE"
+    ok "appended peer findings to prompt"
+fi
 
 ok "wrote prompt to $PROMPT_FILE"
 
