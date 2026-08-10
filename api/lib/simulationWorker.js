@@ -25,7 +25,11 @@ for (let i = 0; i < playersData.length; i++) {
 }
 
 // Create simulator
-const combatSimulator = new CombatSimulator(players, zone, { enableHpMpVisualization: false });
+// `labyrinth` is the third positional arg — pass null explicitly so the options
+// object lands in the options slot. Omitting it made `this.labyrinth` truthy, and
+// startNewEncounter() calls this.labyrinth.getMonster() unconditionally, throwing
+// on the first encounter.
+const combatSimulator = new CombatSimulator(players, zone, null, { enableHpMpVisualization: false });
 
 // Set up progress listener
 combatSimulator.addEventListener("progress", (event) => {

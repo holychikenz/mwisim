@@ -13,15 +13,29 @@
 # ignored by this script.
 #
 # Adaptations on top of upstream that the rebase prompt is told to preserve:
-#   - Labyrinth maze bonuses via `options.maze` — Player.applyMazeBonuses()
-#     and CombatSimulator{MAZE_DEFAULTS, resolveMazeBonuses, mazeBonuses,
-#     processCombatStartEvent call}. Landed in csim.
 #   - Headless data-source override — `dataProvider.js` exports mutable
 #     copies of the bundled JSON maps and exposes setOverrides() so
 #     external callers (MWIX) can feed live game clientData. Every
 #     consumer imports from "./dataProvider" instead of "./data/*.json".
+#   - Guild Trial mode — `options.guildTrial` plus guildTrial.js and
+#     guildTrialStats.js; the climbing-tier ladder and its combat-loop
+#     rules (no XP/loot/enrage/consumables, dead-stay-dead, bonus regen).
+#   - OFFICIAL_PARRY_GATE — the official 5-attempt parry model, used in
+#     trials only; the legacy zone/labyrinth checkParry is kept verbatim.
+#   - Multi-source buff instance tracking — combatUnit.js `buffInstances`
+#     with `combatBuffs` as the derived strongest-active view.
+#   - Labyrinth 120 s hard cutoff — labyrinthTimeoutEvent.js plus the
+#     room-outcome log and the Lab Stats snapshot.
 #   - Any other local edits to src/combatsimulator/*.js — listed by this
 #     script as "still-not-upstreamed" so the model can flag them.
+#
+# NOTE: the labyrinth "maze" player-buff mechanism (`options.maze`,
+# MAZE_DEFAULTS, resolveMazeBonuses, mazeBonuses, Player.applyMazeBonuses)
+# was REMOVED in 676a478 — it double-counted the labyrinth crate buffs. The
+# rationale lives at src/combatsimulator/combatSimulator.js:44-51 and
+# player.js is now byte-identical to upstream. Do not re-add it to the
+# ledger. The surviving `mwixMaze` flag (ui/src/App.jsx -> src/worker.js) is
+# an unrelated lab-shop-upgrade gate.
 #
 # Peer-fork scan
 # --------------
@@ -54,7 +68,7 @@
 #
 # Environment overrides:
 #   UPSTREAM_URL     git URL (default: git@github.com:shykai/MWICombatSimulatorTest.git)
-#   UPSTREAM_BRANCH  branch to track (default: Test — shykai's working branch)
+#   UPSTREAM_BRANCH  branch to track (default: testing — shykai's working branch)
 #   CLAUDE_BIN       path to claude CLI (default: claude on PATH)
 #   PEER_URL         peer fork origin (default: the sslip.io deployment)
 #   PEER_SKIP=1      skip the peer scan entirely
@@ -258,12 +272,22 @@ hdr "Computing diff against $SCOPED_PATH/"
 # `diff -r -u -N --exclude='data/*.json' --exclude='*.test.js'`
 # We exclude data JSON deliberately — those are handled separately (see
 # README "Data deduplication" notes).
+#
+# DIRECTION IS LOAD-BEARING: ours FIRST, upstream SECOND, so the patch reads
+# ours -> upstream and therefore
+#   `+` lines = upstream content we do NOT have  -> the changes to pull in
+#   `-` lines = our local adaptations upstream lacks -> to preserve
+# The operands were reversed before (upstream first), which produced an
+# upstream -> ours patch. That is a silent-failure generator: upstream's new
+# code showed up as `-` lines, read as "code we removed", and would be filed
+# under "still-not-upstreamed local edits" and quietly dropped. Do not swap
+# these back — and if you do, fix the polarity note in the prompt heredoc too.
 {
     diff -ruN \
         --exclude='data' \
         --exclude='*.test.js' \
-        "$SNAPSHOT_DIR/$SCOPED_PATH" \
         "$ROOT/$SCOPED_PATH" \
+        "$SNAPSHOT_DIR/$SCOPED_PATH" \
         || true
 } > "$DIFF_FILE"
 
@@ -275,14 +299,16 @@ if [ "$LINES" -le 1 ]; then
     exit 0
 fi
 
-# Quick summary
+# Quick summary. The patch reads ours -> upstream (see the direction note
+# above), so `+` counts INCOMING upstream lines and `-` counts our local-only
+# lines. Labelled accordingly so the summary cannot be read backwards.
 FILES_CHANGED=$(grep -cE '^(---|\+\+\+) ' "$DIFF_FILE" | awk '{print int($1 / 2)}')
-ADDED=$(grep -cE '^\+[^+]' "$DIFF_FILE" || true)
-REMOVED=$(grep -cE '^-[^-]' "$DIFF_FILE" || true)
-echo "  files touched: $FILES_CHANGED"
-echo "  lines added:   $ADDED"
-echo "  lines removed: $REMOVED"
-echo "  full patch:    $DIFF_FILE"
+INCOMING=$(grep -cE '^\+[^+]' "$DIFF_FILE" || true)
+LOCAL_ONLY=$(grep -cE '^-[^-]' "$DIFF_FILE" || true)
+echo "  files differing:        $FILES_CHANGED"
+echo "  incoming upstream (+):  $INCOMING"
+echo "  our local-only (-):     $LOCAL_ONLY"
+echo "  full patch:             $DIFF_FILE"
 
 # ---- 3. Mode handling -----------------------------------------------------
 if [ "$MODE" = "--check" ]; then
@@ -305,19 +331,6 @@ These are MWIX-side adjustments to the simulator that have intentionally
 not been pushed upstream. Treat them as load-bearing; only touch them if
 upstream specifically changed the same surface area.
 
-- **\`options.maze\` and Player.applyMazeBonuses()** — when the caller
-  constructs \`new CombatSimulator(players, zone, labyrinth, { maze: true })\`
-  (or \`{ maze: { …overrides } }\`), the simulator applies the labyrinth
-  player buffs in \`processCombatStartEvent\` after each \`player.reset()\`.
-  Touched files: \`combatSimulator.js\` (constants \`MAZE_DEFAULTS\`, static
-  \`resolveMazeBonuses\`, field \`mazeBonuses\`, call in
-  \`processCombatStartEvent\`) and \`player.js\` (method
-  \`applyMazeBonuses\`). Defaults:
-    - playerLevelBonus       = 15
-    - attackSpeedBonus       = 0.15
-    - regenBonus             = 0.06
-    - critRateBonus          = 0.06
-    - critDamageBonus        = 0.10
 - **\`dataProvider.js\` headless data-source override** — replaces
   \`import X from "./data/*.json"\` with \`import { X } from
   "./dataProvider"\` across every consumer (ability, achievement,
@@ -341,13 +354,94 @@ upstream specifically changed the same surface area.
   expiration event only covers the latest application, so per-source
   attribution would create phantom-expiry windows. Do not thread sourceRef
   through them.
+- **Guild Trial mode** — \`options.guildTrial\` plus the ours-only
+  \`guildTrial.js\` (tier ladder: start 100, +10 per clear, cap 300) and
+  \`guildTrialStats.js\` (per-iteration extraction, reward/token maths,
+  cross-iteration aggregation). In \`combatSimulator.js\` the mode gates a
+  set of combat-loop rules: no XP, no loot/drop-rate bookkeeping, no
+  enrage tick, no consumables (replaced by flat bonus HP/MP regen),
+  dead-players-stay-dead via \`trialDeadPlayers\`, the 1-hour simulated-time
+  cap, \`_trialEncounterHpRemovedFrac()\`, and \`finalizeGuildTrial\`. In
+  \`monster.js\`, \`trialHpScaleFactor\` (+1% max HP per participant) is
+  re-applied after \`super.updateCombatDetails()\` so stat recomputes do not
+  wipe it, and the \`rareDropTable\` loop is null-guarded for loot-free trial
+  monsters. \`simResult.js\` carries the whole \`trial*\` field set and its
+  recorders.
+- **\`OFFICIAL_PARRY_GATE\`** — \`checkParryOfficial\` + \`MAX_PARRY_ATTEMPTS = 5\`
+  implements the official "at most 5 parry attempts per incoming attack"
+  rule, applied in GUILD-TRIAL mode ONLY. The legacy \`checkParry\` model
+  (one roll by a random parry-capable defender, success redirects and breaks
+  the cast) is preserved verbatim for zone/labyrinth parity. Both
+  \`processAutoAttackEvent\` and \`processAbilityDamageEffect\` carry the
+  \`useOfficialParry\` branch; to make the official rule universal later,
+  delete the legacy branches in both.
+- **\`MAX_TICKS\` event-loop guard** — \`simulate()\` throws after 5 000 000
+  event iterations so a future wiring bug surfaces as an error rather than a
+  frozen browser tab.
+- **Labyrinth 120 s hard cutoff** — the ours-only
+  \`events/labyrinthTimeoutEvent.js\`, scheduled in \`startNewEncounter\` at
+  \`start + Labyrinth.ROOM_DURATION_NS\` and handled by
+  \`processLabyrinthTimeoutEvent\`, so a killing blow past the buzzer is
+  never simulated. \`labyrinth.js\` gained \`static ROOM_DURATION_NS\` as the
+  single source of truth for both this and \`checkTimeout()\`.
+- **Labyrinth reporting** — \`simResult.labRoomOutcomes\` /
+  \`addLabRoomOutcome\` log every resolved room (win/death/timeout with the
+  monster's surviving HP%), \`firstEncounterFinishTime\` gives a
+  single-attempt clear time, and \`captureStatSnapshot\` /
+  \`_collectBuffSources\` snapshot the actual player & monster combat stats
+  (grouped by buff source) for the "Lab Stats" UI panel.
+- **Player death recording** — upstream records monster deaths only, so
+  callers reading \`simResult.deaths\` for win/loss had no signal;
+  \`checkEncounterEnd\` now calls \`simResult.addDeath(player)\` on the
+  zone/lab path (and on the trial path, gated by \`trialDeadPlayers\`).
+- **\`combatUnit.js\` misc** — \`/buff_types/max_hitpoints\` and
+  \`/buff_types/max_manapoints\` (Spirit shrine, 7/13/2026) are read as
+  LOCALS and folded into the max HP/MP formulas rather than mutating
+  persistent state, because \`updateCombatDetails\` re-runs on every buff
+  add/remove. \`zoneBuffs\` / \`extraBuffs\` default to \`[]\` instead of
+  upstream's \`{}\` so callers that drive CombatSimulator directly (no
+  worker) do not crash in \`generatePermanentBuffs()\`.
 - Any other local edits beneath \`${SCOPED_PATH}/\` — list them in the
   rebase report so we keep a running ledger.
+
+NOTE: the labyrinth "maze" player-buff mechanism (\`options.maze\`,
+\`MAZE_DEFAULTS\`, \`resolveMazeBonuses\`, \`mazeBonuses\`,
+\`Player.applyMazeBonuses\`) was REMOVED deliberately — it double-counted the
+labyrinth crate buffs, which are now the single source of truth. The
+rationale is preserved at \`combatSimulator.js:44-51\` and \`player.js\` is
+byte-identical to upstream. Do NOT reintroduce it.
+
+## How to read the patch — polarity matters
+
+The patch is \`diff -ruN <ours> <upstream>\`, i.e. it reads **ours → upstream**:
+
+- **\`+\` lines are UPSTREAM content we do not have** — these are the candidate
+  changes to pull in.
+- **\`-\` lines are OUR local adaptations that upstream lacks** — preserve them.
+  They are what populates the "still-not-upstreamed local edits" ledger.
+- Files marked \`Only in <ours>\` are our own additions; files marked
+  \`Only in <upstream>\` are new upstream files to vendor in.
+
+**Never apply this patch wholesale** — doing so would revert every adaptation
+listed above. Reconcile hunk by hunk: adopt the \`+\` side where it is genuinely
+new upstream work, and keep the \`-\` side where it is ours.
+
+Expect many \`+\` lines that are NOT new upstream work: wherever we replaced
+upstream code, the diff necessarily shows upstream's original on the \`+\` side
+and our replacement on the \`-\` side. Cross-check every \`+\` hunk against the
+adaptation ledger above before adopting it — if the \`+\` side is just the
+pre-adaptation version of something we deliberately rewrote, keep ours. Genuine
+upstream work is a \`+\` hunk that matches no adaptation and has no \`-\`
+counterpart implementing the same thing.
+
+If every \`+\` hunk turns out to be a pre-adaptation original, we are already
+current with upstream and there is nothing to apply — say so plainly rather than
+inventing changes.
 
 ## What to do
 
 1. Read \`.upstream/diff.patch\` (also referenced inline below).
-2. Apply the upstream changes to our files under \`${SCOPED_PATH}/\`,
+2. Apply the upstream (\`+\`) changes to our files under \`${SCOPED_PATH}/\`,
    reconciling with our adaptations.
 3. For each non-trivial conflict, explain your choice in the report.
 4. Do NOT touch:
