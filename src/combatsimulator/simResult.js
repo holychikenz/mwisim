@@ -29,7 +29,17 @@ function _collectBuffSources(unit) {
         add("Achievements", unit.achievements.buffs);
     }
     add("Labyrinth crates", unit.zoneBuffs);
-    add("Community / pass / lab-shop", unit.extraBuffs);
+
+    // MWIX adaptation (guild expansion, 7/13/2026): guild shrine buffs now ride
+    // in on extraBuffs for EVERY sim (they are permanent character buffs, not
+    // trial-only), and guild building buffs join them inside trials. Split them
+    // out so the breakdown does not file them under "community".
+    const extra = unit.extraBuffs || [];
+    const isGuildBuff = (b) =>
+        typeof b?.uniqueHrid === "string" &&
+        (b.uniqueHrid.endsWith("_guild_buff") || b.uniqueHrid.includes("guild_building_"));
+    add("Community / pass / lab-shop", extra.filter((b) => !isGuildBuff(b)));
+    add("Guild shrines / buildings", extra.filter(isGuildBuff));
     return sources;
 }
 

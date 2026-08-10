@@ -193,13 +193,27 @@ class CombatUnit {
             });
         });
 
+        // MWIX adaptation (guild expansion, 7/13/2026): the Spirit shrine grants
+        // /buff_types/max_hitpoints and /buff_types/max_manapoints — buff types
+        // introduced by that patch and not read anywhere upstream, which left the
+        // shrine a silent no-op. Read them here as LOCALS and fold them into the
+        // formula rather than mutating combatStats.maxHitpointsRatio: this method
+        // re-runs on every buff add/remove (see addBuffs/removeBuffs), so a
+        // `+=` onto persistent state would compound the bonus on each call.
+        let maxHitpointsBoost = this.getBuffBoost("/buff_types/max_hitpoints");
+        let maxManapointsBoost = this.getBuffBoost("/buff_types/max_manapoints");
+
         this.combatDetails.maxHitpoints = Math.floor(
-            (10 * (10 + this.combatDetails.staminaLevel) + this.combatDetails.combatStats.maxHitpoints)
-            * (1 + this.combatDetails.combatStats.maxHitpointsRatio)
+            (10 * (10 + this.combatDetails.staminaLevel)
+                + this.combatDetails.combatStats.maxHitpoints
+                + maxHitpointsBoost.flatBoost)
+            * (1 + this.combatDetails.combatStats.maxHitpointsRatio + maxHitpointsBoost.ratioBoost)
         );
         this.combatDetails.maxManapoints = Math.floor(
-            (10 * (10 + this.combatDetails.intelligenceLevel) + this.combatDetails.combatStats.maxManapoints)
-            * (1 + this.combatDetails.combatStats.maxManapointsRatio)
+            (10 * (10 + this.combatDetails.intelligenceLevel)
+                + this.combatDetails.combatStats.maxManapoints
+                + maxManapointsBoost.flatBoost)
+            * (1 + this.combatDetails.combatStats.maxManapointsRatio + maxManapointsBoost.ratioBoost)
         );
 
         let accuracyRatioBoostFromFury = this.getBuffBoost("/buff_types/fury_accuracy").ratioBoost;

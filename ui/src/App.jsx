@@ -30,7 +30,7 @@ import { LoadoutManager } from './components/LoadoutManager';
 import { CharacterImport } from './components/CharacterImport';
 import { TextInput } from '@mantine/core';
 import { toPlayerDTO } from './utils/playerDTO';
-import { resolveGuildBuffs } from './utils/guildBuffs';
+import { resolveGuildBuffs, resolveGuildBuildingBuffs } from './utils/guildBuffs';
 import {
   makeId,
   deepClone,
@@ -456,7 +456,13 @@ function App() {
         participantCount: effectiveParticipants,
         trialOptions: { enemyScale }
       },
-      guildBuffs: resolveGuildBuffs(trialConfig.guildBuffLevels),
+      // Trials get shrine buffs AND guild building buffs. Buildings are
+      // trial-only — the zone/labyrinth path above deliberately ships shrines
+      // alone, because building buffs do not apply to ordinary combat.
+      guildBuffs: [
+        ...resolveGuildBuffs(trialConfig.guildBuffLevels),
+        ...resolveGuildBuildingBuffs(trialConfig.guildBuildingLevels)
+      ],
       // Community buffs / seals / MooPass do NOT apply inside guild trials —
       // the game does not grant them, so the UI hides the Buffs control in
       // trial mode and sends a neutral extra here to match.
@@ -524,9 +530,14 @@ function App() {
           }
         : null,
       simulationTimeLimit: duration * ONE_HOUR,
-      extra
+      extra,
+      // Guild shrine buffs are permanent character buffs and apply to every
+      // fight, not just trials (the game exposes them via
+      // guildActionTypeBuffsMap["/action_types/combat"]). Levels are shared
+      // with trial mode, so a shrine set once is reflected in both.
+      guildBuffs: resolveGuildBuffs(trialConfig.guildBuffLevels)
     });
-  }, [players, selectedPlayers, simMode, zone, difficultyTier, labConfig, mazeContext, duration, extraOptions, runSimulation, handleStartTrial]);
+  }, [players, selectedPlayers, simMode, zone, difficultyTier, labConfig, mazeContext, duration, extraOptions, trialConfig, runSimulation, handleStartTrial]);
 
   return (
     <AppShell

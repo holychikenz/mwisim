@@ -68,9 +68,10 @@ function buildExtraBuffs(extra = {}) {
 /**
  * Run a combat simulation using worker thread (supports progress)
  */
-export function runSimulationWithWorker({ players: playersData, zone: zoneConfig, simulationTimeLimit, extra = {} }, onProgress = null) {
+export function runSimulationWithWorker({ players: playersData, zone: zoneConfig, simulationTimeLimit, extra = {}, guildBuffs = [] }, onProgress = null) {
   return new Promise((resolve, reject) => {
-    const extraBuffs = buildExtraBuffs(extra);
+    // Shrine buffs apply to all combat — see runSimulation / src/worker.js.
+    const extraBuffs = buildExtraBuffs(extra).concat(guildBuffs);
     const workerPath = join(__dirname, 'simulationWorker.js');
 
     const worker = new Worker(workerPath, {
@@ -104,14 +105,17 @@ export function runSimulationWithWorker({ players: playersData, zone: zoneConfig
 /**
  * Run a combat simulation (main thread, no progress)
  */
-export async function runSimulation({ players: playersData, zone: zoneConfig, simulationTimeLimit, extra = {} }, onProgress = null) {
+export async function runSimulation({ players: playersData, zone: zoneConfig, simulationTimeLimit, extra = {}, guildBuffs = [] }, onProgress = null) {
   // If progress callback is provided, use worker thread
   if (onProgress) {
-    return runSimulationWithWorker({ players: playersData, zone: zoneConfig, simulationTimeLimit, extra }, onProgress);
+    return runSimulationWithWorker({ players: playersData, zone: zoneConfig, simulationTimeLimit, extra, guildBuffs }, onProgress);
   }
 
   // Otherwise run on main thread (faster for small simulations)
-  const extraBuffs = buildExtraBuffs(extra);
+  // Guild SHRINE buffs are permanent character buffs and apply to every fight,
+  // not just guild trials — mirrors the same concat in src/worker.js. Guild
+  // BUILDING buffs are excluded here: those are trial-only.
+  const extraBuffs = buildExtraBuffs(extra).concat(guildBuffs);
 
   // Create Zone
   const zone = new Zone(zoneConfig.zoneHrid, zoneConfig.difficultyTier);

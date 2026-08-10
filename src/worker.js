@@ -164,8 +164,16 @@ function buildLabUpgradeBuffs(extra = {}) {
 onmessage = async function (event) {
     switch (event.data.type) {
         case "start_simulation": {
+            // MWIX adaptation (guild expansion, 7/13/2026): guild SHRINE buffs are
+            // permanent character buffs — the server exposes them in
+            // `guildActionTypeBuffsMap["/action_types/combat"]`, which applies to
+            // every fight, not just guild trials. They arrive here pre-resolved
+            // (level already folded in) from ui/src/utils/guildBuffs.js.
+            // NOTE: guild BUILDING buffs are deliberately NOT included on this
+            // path — those apply to guild trials only (see "start_guild_trial").
             let extraBuffs = buildCommunityBuffs(event.data.extra || {});
             extraBuffs = extraBuffs.concat(buildLabUpgradeBuffs(event.data.extra || {}));
+            extraBuffs = extraBuffs.concat(event.data.guildBuffs || []);
 
             let playersData = event.data.players;
             let players = [];

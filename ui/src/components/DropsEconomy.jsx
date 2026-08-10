@@ -1,8 +1,9 @@
-import { useMemo } from 'react';
-import { Alert, Badge, Button, Group, Paper, Select, Stack, Table, Text } from '@mantine/core';
+import { useMemo, useState } from 'react';
+import { Alert, Badge, Button, Group, Paper, Select, Stack, Switch, Table, Text } from '@mantine/core';
 import { DropsTable } from './DropsTable';
 import { calculateExpectedDrops, calculateDropsPerHour } from '../utils/drops';
 import { priceOf, formatValue } from '../utils/prices';
+import { convertDropsToCredits } from '../utils/guildCredits';
 
 const ONE_HOUR = 60 * 60 * 1e9;
 
@@ -78,6 +79,16 @@ export function DropsEconomy({ results, monsters, items, pricing }) {
   }, [results, monsters, items, prices, revenueMode]);
 
   const income = drops.reduce((s, d) => s + d.amount * d.sellPrice, 0);
+
+  // Guild credit conversion: re-express the same loot table as the guild
+  // credits it would donate for, taking the highest-tier option wherever an
+  // item offers several. Purely a view over `drops` — it changes nothing about
+  // the simulation or the coin economy below.
+  const [creditMode, setCreditMode] = useState(false);
+  const credits = useMemo(
+    () => (creditMode ? convertDropsToCredits(drops, items) : null),
+    [creditMode, drops, items]
+  );
 
   // Expenses: player1's consumables at the expense-mode price.
   const expenseRows = useMemo(() => {
@@ -157,6 +168,13 @@ export function DropsEconomy({ results, monsters, items, pricing }) {
         {fetchedLabel && (
           <Badge variant="light" color="teal" size="sm">{fetchedLabel}</Badge>
         )}
+        <Switch
+          label="Guild credits"
+          description="Show loot as guild credit conversion"
+          size="xs"
+          checked={creditMode}
+          onChange={(e) => setCreditMode(e.currentTarget.checked)}
+        />
       </Group>
 
       {error && (
@@ -188,7 +206,40 @@ export function DropsEconomy({ results, monsters, items, pricing }) {
         </Group>
       </Paper>
 
-      <DropsTable drops={drops} unit={unit} />
+      {creditMode && (
+        <Paper p="sm" radius="md" withBorder>
+          <Group justify="space-between" align="flex-start" wrap="wrap">
+            <Group gap="xl" wrap="wrap">
+              {credits.totals.length === 0 ? (
+                <Text size="sm" c="dimmed">
+                  None of this loot converts into guild credits.
+                </Text>
+              ) : (
+                credits.totals.map((t) => (
+                  <div key={t.creditItemHrid}>
+                    <Text size="xs" c="dimmed" tt="uppercase">{t.name}/hr</Text>
+                    <Text fw={700}>
+                      {t.perHour >= 1000
+                        ? (t.perHour / 1000).toFixed(2) + 'K'
+                        : t.perHour.toFixed(2)}
+                    </Text>
+                  </div>
+                ))
+              )}
+            </Group>
+            <Text size="xs" c="dimmed" style={{ alignSelf: 'flex-end' }}>
+              {credits.convertedCount} of {credits.convertedCount + credits.unconvertedCount} drops
+              convert · highest tier taken where several are offered
+            </Text>
+          </Group>
+        </Paper>
+      )}
+
+      <DropsTable
+        drops={creditMode ? credits.rows : drops}
+        unit={unit}
+        creditMode={creditMode}
+      />
 
       <div>
         <Text size="sm" fw={600} mb={6}>Consumable expenses (P1)</Text>

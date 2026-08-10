@@ -9,7 +9,9 @@ const router = Router();
  */
 router.post('/simulate', async (req, res) => {
   try {
-    const { players, zone, simulationTimeLimit, extra = {} } = req.body;
+    // guildBuffs: pre-resolved guild SHRINE buff objects. They apply to every
+    // fight, not just guild trials (see lib/simulator.js).
+    const { players, zone, simulationTimeLimit, extra = {}, guildBuffs = [] } = req.body;
 
     if (!players || !Array.isArray(players) || players.length === 0) {
       return res.status(400).json({ success: false, error: 'Players array is required' });
@@ -25,7 +27,8 @@ router.post('/simulate', async (req, res) => {
       players,
       zone,
       simulationTimeLimit: timeLimit,
-      extra
+      extra,
+      guildBuffs
     });
 
     res.json({ success: true, result });
@@ -41,7 +44,7 @@ router.post('/simulate', async (req, res) => {
  */
 router.post('/simulate-stream', async (req, res) => {
   try {
-    const { players, zone, simulationTimeLimit, extra = {} } = req.body;
+    const { players, zone, simulationTimeLimit, extra = {}, guildBuffs = [] } = req.body;
 
     if (!players || !Array.isArray(players) || players.length === 0) {
       return res.status(400).json({ success: false, error: 'Players array is required' });
@@ -69,7 +72,8 @@ router.post('/simulate-stream', async (req, res) => {
       players,
       zone,
       simulationTimeLimit: timeLimit,
-      extra
+      extra,
+      guildBuffs
     }, onProgress);
 
     // Send final result
@@ -88,7 +92,7 @@ router.post('/simulate-stream', async (req, res) => {
  */
 router.post('/simulate-all', async (req, res) => {
   try {
-    const { players, zones, simulationTimeLimit, extra = {} } = req.body;
+    const { players, zones, simulationTimeLimit, extra = {}, guildBuffs = [] } = req.body;
 
     if (!players || !Array.isArray(players) || players.length === 0) {
       return res.status(400).json({ success: false, error: 'Players array is required' });
@@ -108,7 +112,8 @@ router.post('/simulate-all', async (req, res) => {
             players,
             zone,
             simulationTimeLimit: timeLimit,
-            extra
+            extra,
+            guildBuffs
           });
           return { zone: zone.zoneHrid, success: true, result };
         } catch (error) {

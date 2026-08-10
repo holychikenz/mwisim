@@ -14,7 +14,12 @@ import {
   Anchor,
   Divider
 } from '@mantine/core';
-import { GUILD_COMBAT_BUFFS, MAX_GUILD_BUFF_LEVEL } from '../utils/guildBuffs';
+import {
+  GUILD_COMBAT_BUFFS,
+  MAX_GUILD_BUFF_LEVEL,
+  GUILD_COMBAT_BUILDINGS,
+  MAX_GUILD_BUILDING_LEVEL
+} from '../utils/guildBuffs';
 import { levelToTierIndex, tierIndexToLevel, MAX_TIER_INDEX } from '../utils/trialTiers';
 
 // =============================================================================
@@ -134,16 +139,39 @@ export function HeaderControls({
   const effectiveParticipants = cfg.participantCount ?? rosterLength;
   const guildBuffLevels = cfg.guildBuffLevels || {};
   const enemyScalePct = cfg.enemyScale ?? 100;
+  const guildBuildingLevels = cfg.guildBuildingLevels || {};
+  const activeShrineCount =
+    GUILD_COMBAT_BUFFS.filter(b => (guildBuffLevels[b.hrid] || 0) > 0).length;
+  const activeBuildingCount =
+    GUILD_COMBAT_BUILDINGS.filter(b => (guildBuildingLevels[b.hrid] || 0) > 0).length;
   const trialOptionCount =
     (cfg.participantCount != null ? 1 : 0) +
     (cfg.buildersHallBonus > 0 ? 1 : 0) +
     (cfg.treasuryBonus > 0 ? 1 : 0) +
     (enemyScalePct !== 100 ? 1 : 0) +
-    GUILD_COMBAT_BUFFS.filter(b => (guildBuffLevels[b.hrid] || 0) > 0).length;
+    activeShrineCount +
+    activeBuildingCount;
 
   const setCfg = (patch) => onTrialConfigChange?.({ ...cfg, ...patch });
   const setBuffLevel = (hrid, level) =>
     setCfg({ guildBuffLevels: { ...guildBuffLevels, [hrid]: level } });
+  const setBuildingLevel = (hrid, level) =>
+    setCfg({ guildBuildingLevels: { ...guildBuildingLevels, [hrid]: level } });
+
+  // Shrine level knobs. Rendered in BOTH the trial-options popover and the
+  // ordinary Buffs popover: shrine buffs are permanent character buffs that
+  // apply to every fight, so the levels are shared state, not trial-only.
+  const shrineInputs = GUILD_COMBAT_BUFFS.map(b => (
+    <NumberInput
+      key={b.hrid}
+      label={`${b.name} — ${b.effect}`}
+      value={guildBuffLevels[b.hrid] || 0}
+      onChange={(v) => setBuffLevel(b.hrid, Math.max(0, Math.min(MAX_GUILD_BUFF_LEVEL, Number(v) || 0)))}
+      min={0}
+      max={MAX_GUILD_BUFF_LEVEL}
+      size="xs"
+    />
+  ));
 
   return (
     <Group gap="xs" wrap="nowrap">
@@ -258,14 +286,26 @@ export function HeaderControls({
 
                 <Divider my={4} />
                 <Text size="sm" fw={600}>Guild shrine buffs (0 = off)</Text>
-                {GUILD_COMBAT_BUFFS.map(b => (
+                {shrineInputs}
+
+                <Divider my={4} />
+                <Text size="sm" fw={600}>Guild buildings (0 = off)</Text>
+                <Text size="xs" c="dimmed">
+                  Trial only — building buffs do not apply to zone or dungeon combat.
+                </Text>
+                {GUILD_COMBAT_BUILDINGS.map(b => (
                   <NumberInput
                     key={b.hrid}
                     label={`${b.name} — ${b.effect}`}
-                    value={guildBuffLevels[b.hrid] || 0}
-                    onChange={(v) => setBuffLevel(b.hrid, Math.max(0, Math.min(MAX_GUILD_BUFF_LEVEL, Number(v) || 0)))}
+                    value={guildBuildingLevels[b.hrid] || 0}
+                    onChange={(v) =>
+                      setBuildingLevel(
+                        b.hrid,
+                        Math.max(0, Math.min(MAX_GUILD_BUILDING_LEVEL, Number(v) || 0))
+                      )
+                    }
                     min={0}
-                    max={MAX_GUILD_BUFF_LEVEL}
+                    max={MAX_GUILD_BUILDING_LEVEL}
                     size="xs"
                   />
                 ))}
@@ -408,11 +448,18 @@ export function HeaderControls({
 
       {/* Buffs (community buffs / seals / MooPass) do NOT apply inside guild
           trials — the trial worker sends a neutral extra — so the button is
-          hidden in trial mode to avoid implying otherwise. */}
+          hidden in trial mode to avoid implying otherwise. Guild SHRINE buffs
+          are the exception: they are permanent character buffs that apply to
+          every fight, so they appear here for zone/lab runs and again in the
+          trial-options popover, backed by the same shared levels. */}
       {simMode !== 'guildTrial' && (
       <Popover width={280} position="bottom-end" shadow="md">
         <Popover.Target>
-          <Indicator disabled={activeBuffCount === 0} label={activeBuffCount} size={16}>
+          <Indicator
+            disabled={activeBuffCount + activeShrineCount === 0}
+            label={activeBuffCount + activeShrineCount}
+            size={16}
+          >
             <Button variant="default" size="sm">
               Buffs
             </Button>
@@ -474,6 +521,10 @@ export function HeaderControls({
                 ))}
               </Stack>
             </Checkbox.Group>
+            <Text size="sm" fw={600} mt={4}>
+              Guild shrines (0 = off)
+            </Text>
+            {shrineInputs}
           </Stack>
         </Popover.Dropdown>
       </Popover>

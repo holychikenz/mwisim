@@ -37,7 +37,11 @@ export const DEFAULT_TRIAL_CONFIG = {
   participantCount: null, // null ⇒ auto (roster size = sum of row counts)
   buildersHallBonus: 0, // percent
   treasuryBonus: 0, // percent
-  guildBuffLevels: {}, // { [buffHrid]: level }, 0/absent = off
+  guildBuffLevels: {}, // { [buffHrid]: level }, 0/absent = off — shrines, ALL combat
+  // { [buildingHrid]: level }, 0/absent = off. Guild BUILDING buffs apply to
+  // guild trials only, never to zone/dungeon combat, so they are read solely by
+  // the trial path in App.jsx.
+  guildBuildingLevels: {},
   // Debugging / what-if knob (PERCENT): scales the enemies' effective level
   // (tier × enemyScale/100) without changing ladder or reward tiers.
   // 100 = official. Shipped to the engine as trialOptions.enemyScale (ratio).

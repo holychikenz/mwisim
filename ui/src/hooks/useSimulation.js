@@ -8,7 +8,7 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 // identical to the webpack UI's:
 //
 //   →  { type: "start_simulation", players, zone, labyrinth,
-//        simulationTimeLimit, extra }
+//        simulationTimeLimit, extra, guildBuffs }
 //   ←  { type: "simulation_progress", progress /* 0-1 */, ... }
 //   ←  { type: "simulation_result", simResult }
 //   ←  { type: "simulation_error", error }
@@ -147,7 +147,10 @@ export function useSimulation() {
       zone: params.zone ?? null,
       labyrinth: params.labyrinth ?? null,
       simulationTimeLimit: params.simulationTimeLimit,
-      extra: params.extra ?? {}
+      extra: params.extra ?? {},
+      // Guild shrine buffs apply to all combat, not just trials — see the
+      // adaptation note in worker.js. Pre-resolved by resolveGuildBuffs().
+      guildBuffs: params.guildBuffs ?? []
     });
     // Guard the gap between dispatch and the first progress tick, too.
     armWatchdog();
