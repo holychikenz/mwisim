@@ -32,8 +32,12 @@ export const TOKENS_PARTICIPATION_MULTIPLIER = 1.5;
  * the unit reflects onto monsters all land under it. Targets in
  * `playerHridSet` are skipped so only damage to monsters counts (heals and
  * anything aimed at fellow players never do).
+ *
+ * Exported because api/lib/triggerSearch/score.js scores optimiser candidates
+ * on the same walk. Both callers must agree on what "damage dealt" means, so
+ * there is one implementation rather than two that drift.
  */
-function sumDamageToEnemies(attacks, sourceHrid, playerHridSet) {
+export function sumDamageToEnemies(attacks, sourceHrid, playerHridSet) {
     let total = 0;
     const byTarget = attacks?.[sourceHrid];
     if (!byTarget) return 0;

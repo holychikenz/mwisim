@@ -19,8 +19,13 @@ const { extractTrialSummary, aggregateTrialResults } =
 
 /**
  * Build extra buffs based on options
+ *
+ * Exported so the trigger optimiser (api/lib/triggerSearch/) resolves `extra`
+ * to buffs exactly once, up front, and hands the resulting array to every
+ * candidate simulation — rather than re-deriving it per run, or worse, deriving
+ * it differently and scoring candidates against a subtly different build.
  */
-function buildExtraBuffs(extra = {}) {
+export function buildExtraBuffs(extra = {}) {
   const extraBuffs = [];
 
   if (extra.mooPass) {

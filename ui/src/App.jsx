@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import {
   AppShell,
   Group,
@@ -15,6 +15,7 @@ import {
 } from '@mantine/core';
 import { useGameData } from './hooks/useGameData';
 import { useSimulation } from './hooks/useSimulation';
+import { useTriggerOptimizer } from './hooks/useTriggerOptimizer';
 import { usePrices } from './hooks/usePrices';
 import { exportFormatToPlayer } from './utils/importSet';
 import { readMwixBridgePayload, clearMwixBridgeHash } from './utils/mwixBridge';
@@ -23,6 +24,8 @@ import { PlayerConfig } from './components/PlayerConfig';
 import { SimulationResults } from './components/SimulationResults';
 import { GuildTrialResults } from './components/GuildTrialResults';
 import { GuildTrialPanel } from './components/GuildTrialPanel';
+import { TriggerOptimizerPanel } from './components/TriggerOptimizerPanel';
+import { TriggerOptimizerResults } from './components/TriggerOptimizerResults';
 import { TrialMonsterCards } from './components/TrialMonsterCards';
 import { ImportExport } from './components/ImportExport';
 import { ProgressBar } from './components/ProgressBar';
@@ -46,6 +49,15 @@ import {
   rosterSize,
   clampCount
 } from './utils/roster';
+import {
+  buildConsumableCosts,
+  describeConsumableCosts,
+  loadTriggerOptState,
+  saveTriggerOptState,
+  toAddress,
+  toStages,
+  triggerKey
+} from './utils/triggerOptimizer';
 
 const ONE_HOUR = 60 * 60 * 1e9;
 
@@ -112,6 +124,13 @@ function App() {
     runGuildTrial,
     clearResults
   } = useSimulation();
+
+  // The trigger optimiser is the only feature that runs on the csim API rather
+  // than in a browser worker — the search is hundreds of simulations and belongs
+  // on a machine with real threads. See utils/apiBase.js.
+  const triggerOpt = useTriggerOptimizer();
+  const [triggerOptConfig, setTriggerOptConfig] = useState(() => loadTriggerOptState().config);
+  const [triggerOptSelection, setTriggerOptSelection] = useState([]);
 
   const [players, setPlayers] = useState(createInitialPlayers);
   const [navbarWidth, setNavbarWidth] = useState(loadNavbarWidth);
@@ -524,9 +543,136 @@ function App() {
     });
   }, [roster, masterBuilds, trialConfig, gameData, runGuildTrial]);
 
+  // ---------------------------------------------------------------------------
+  // Trigger optimiser
+  // ---------------------------------------------------------------------------
+  // Destructured so the callbacks below have stable identities — the hook returns
+  // a fresh object literal every render, which would otherwise churn every deps
+  // array that mentions it.
+  const {
+    fetchPreview: fetchTriggerPreview,
+    runOptimizer: runTriggerOptimizer,
+    cancel: cancelTriggerOpt,
+    preview: triggerOptPreview
+  } = triggerOpt;
+
+  const triggerOptPayload = useMemo(() => {
+    if (simMode !== 'triggerOpt') return null;
+    const playerDTOs = selectedPlayers.map(playerId =>
+      toPlayerDTO(players[playerId], { hrid: `player${playerId}` })
+    );
+    return {
+      players: playerDTOs,
+      zone: { zoneHrid: zone, difficultyTier },
+      // Consumable production times, in seconds — the ironcow currency. Present
+      // only on the `iron` price source; without them the optimiser cannot see the
+      // food bill and would drive every consumable threshold toward "eat
+      // constantly". See buildConsumableCosts.
+      consumableCosts: buildConsumableCosts(playerDTOs, {
+        prices: pricing.prices,
+        unit: pricing.unit,
+        expenseMode: pricing.expenseMode,
+        // Hand-entered per-item costs win over the fetched ones. A 0 here is a
+        // deliberate "free at the margin", not a missing value.
+        consumableCostOverrides: pricing.consumableCostOverrides
+      }),
+      // NOTE: the API's buildExtraBuffs honours mooPass / comExp / comDrop only.
+      // extra.personalBuffs (seals) and the mwix lab keys are understood by the
+      // BROWSER worker (src/worker.js) and not by the API path, so a build using
+      // seals is optimised without them — the panel warns about it.
+      extra: {
+        comExp: extraOptions.comExp,
+        comDrop: extraOptions.comDrop,
+        mooPass: extraOptions.mooPass
+      },
+      guildBuffs: resolveGuildBuffs(trialConfig.guildBuffLevels),
+      // Objective is left to the server: it picks the time-denominated one when the
+      // consumable costs above are present, and raw throughput when they are not.
+      stages: toStages(triggerOptConfig),
+      workers: triggerOptConfig.workers || undefined
+    };
+  }, [
+    simMode,
+    players,
+    selectedPlayers,
+    zone,
+    difficultyTier,
+    extraOptions,
+    trialConfig,
+    triggerOptConfig,
+    // usePrices returns a fresh object literal each render, so depend on the stable
+    // values inside it rather than the wrapper — otherwise the preview refetches on
+    // every keystroke anywhere in the app.
+    pricing.prices,
+    pricing.unit,
+    pricing.expenseMode,
+    pricing.consumableCostOverrides
+  ]);
+
+  // Rows for the panel's override editor: the party's slotted consumables, each
+  // with its fetched time and whatever the user has said instead. Derived from the
+  // payload so it cannot drift from the cost table actually being sent.
+  const consumableCostRows = useMemo(
+    () =>
+      describeConsumableCosts(triggerOptPayload?.players, {
+        prices: pricing.prices,
+        unit: pricing.unit,
+        expenseMode: pricing.expenseMode,
+        consumableCostOverrides: pricing.consumableCostOverrides
+      }),
+    [
+      triggerOptPayload,
+      pricing.prices,
+      pricing.unit,
+      pricing.expenseMode,
+      pricing.consumableCostOverrides
+    ]
+  );
+
+  // Re-preview on every configuration change, debounced: it is a cheap
+  // server-side call, but editing a threshold fires this on each keystroke.
+  useEffect(() => {
+    if (!triggerOptPayload) return undefined;
+    const timer = setTimeout(() => {
+      fetchTriggerPreview(triggerOptPayload);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [triggerOptPayload, fetchTriggerPreview]);
+
+  // Reconcile the selection against the latest preview. Trigger addresses are
+  // positional, so editing an ability can invalidate a stored selection; drop
+  // anything stale, and fall back to "everything searchable" when nothing is left.
+  useEffect(() => {
+    const rows = triggerOptPreview?.triggers;
+    if (!rows) return;
+    const searchable = rows.filter(row => row.searchable);
+    const valid = new Set(searchable.map(triggerKey));
+    setTriggerOptSelection(previous => {
+      const kept = previous.filter(entry => valid.has(triggerKey(entry)));
+      return kept.length ? kept : searchable;
+    });
+  }, [triggerOptPreview]);
+
+  useEffect(() => {
+    saveTriggerOptState({ config: triggerOptConfig });
+  }, [triggerOptConfig]);
+
+  const handleStartTriggerOpt = useCallback(() => {
+    if (!triggerOptPayload || triggerOptSelection.length === 0) return;
+    runTriggerOptimizer({
+      ...triggerOptPayload,
+      selection: triggerOptSelection.map(toAddress),
+      meta: { zone, difficultyTier }
+    });
+  }, [triggerOptPayload, triggerOptSelection, runTriggerOptimizer, zone, difficultyTier]);
+
   const handleStartSimulation = useCallback(() => {
     if (simMode === 'guildTrial') {
       handleStartTrial();
+      return;
+    }
+    if (simMode === 'triggerOpt') {
+      handleStartTriggerOpt();
       return;
     }
     const isLab = simMode === 'labyrinth';
@@ -569,7 +715,16 @@ function App() {
       // with trial mode, so a shrine set once is reflected in both.
       guildBuffs: resolveGuildBuffs(trialConfig.guildBuffLevels)
     });
-  }, [players, selectedPlayers, simMode, zone, difficultyTier, labConfig, mazeContext, duration, extraOptions, trialConfig, runSimulation, handleStartTrial]);
+  }, [players, selectedPlayers, simMode, zone, difficultyTier, labConfig, mazeContext, duration, extraOptions, trialConfig, runSimulation, handleStartTrial, handleStartTriggerOpt]);
+
+  // The header, progress bar and results pane read from whichever engine the
+  // current mode uses. Only the optimiser goes through the API hook.
+  const isTriggerOpt = simMode === 'triggerOpt';
+  const activeLoading = isTriggerOpt ? triggerOpt.loading : simLoading;
+  const activeProgress = isTriggerOpt ? triggerOpt.progress : simProgress;
+  const activeResults = isTriggerOpt ? triggerOpt.results : results;
+  const activeError = isTriggerOpt ? triggerOpt.error : simError;
+  const handleStop = isTriggerOpt ? cancelTriggerOpt : clearResults;
 
   return (
     <AppShell
@@ -608,8 +763,8 @@ function App() {
             extraOptions={extraOptions}
             onExtraChange={setExtraOptions}
             onStart={handleStartSimulation}
-            onStop={clearResults}
-            loading={simLoading}
+            onStop={handleStop}
+            loading={activeLoading}
             guildTrials={gameData?.guildTrials}
             trialConfig={trialConfig}
             onTrialConfigChange={setTrialConfig}
@@ -686,6 +841,31 @@ function App() {
               </>
             ) : (
               <>
+                {/* Trigger Optimizer sits ABOVE the party editor rather than
+                    replacing it: the whole point is to tune the triggers the user
+                    can see and edit in PlayerConfig below, and the panel's preview
+                    re-reads them on every change. */}
+                {simMode === 'triggerOpt' && (
+                  <>
+                    <TriggerOptimizerPanel
+                      preview={triggerOpt.preview}
+                      previewing={triggerOpt.previewing}
+                      apiReachable={triggerOpt.apiReachable}
+                      selection={triggerOptSelection}
+                      onSelectionChange={setTriggerOptSelection}
+                      config={triggerOptConfig}
+                      onConfigChange={setTriggerOptConfig}
+                      loading={triggerOpt.loading}
+                      onRun={handleStartTriggerOpt}
+                      onCancel={cancelTriggerOpt}
+                      sealCount={extraOptions.personalBuffs?.length || 0}
+                      pricing={pricing}
+                      consumableCostRows={consumableCostRows}
+                    />
+                    <Divider />
+                  </>
+                )}
+
                 <div>
                   <Text size="sm" fw={600} mb={4}>
                     Party
@@ -777,20 +957,25 @@ function App() {
             </Alert>
           )}
 
-          {simLoading && (
+          {activeLoading && (
             <ProgressBar
-              progress={simProgress}
+              progress={activeProgress}
               status={
-                simMode === 'guildTrial'
-                  ? `Running ${trialConfig.iterations} trial iterations… ${simProgress.toFixed(1)}%`
-                  : `Simulating ${duration} hours of combat… ${simProgress.toFixed(1)}%`
+                isTriggerOpt
+                  ? // The stage label carries the real information here — a
+                    // percentage alone tells the user nothing about whether the
+                    // run is screening cheaply or verifying at 72 simulated hours.
+                    `${triggerOpt.stage ? `${triggerOpt.stage}: ` : ''}${triggerOpt.label || 'Optimising…'} · ${activeProgress.toFixed(1)}%`
+                  : simMode === 'guildTrial'
+                    ? `Running ${trialConfig.iterations} trial iterations… ${activeProgress.toFixed(1)}%`
+                    : `Simulating ${duration} hours of combat… ${activeProgress.toFixed(1)}%`
               }
             />
           )}
 
-          {simError && (
-            <Alert color="red" title="Simulation error" variant="light">
-              {simError.message}
+          {activeError && (
+            <Alert color="red" title={isTriggerOpt ? 'Optimiser error' : 'Simulation error'} variant="light">
+              {activeError.message}
             </Alert>
           )}
 
@@ -802,23 +987,27 @@ function App() {
             />
           )}
 
-          {results && results.__kind === 'guildTrial' ? (
-            <GuildTrialResults result={results} />
+          {activeResults && activeResults.__kind === 'triggerOpt' ? (
+            <TriggerOptimizerResults results={activeResults} />
+          ) : activeResults && activeResults.__kind === 'guildTrial' ? (
+            <GuildTrialResults result={activeResults} />
           ) : (
             <SimulationResults
-              results={results}
+              results={activeResults}
               monsters={gameData?.monsters}
               items={gameData?.items}
               pricing={pricing}
             />
           )}
 
-          {!results && !simLoading && (
+          {!activeResults && !activeLoading && (
             <Center mih={300}>
               <Text c="dimmed">
                 {simMode === 'guildTrial'
                   ? 'Build a roster on the left, then press Run.'
-                  : 'Configure your party on the left, then press Run.'}
+                  : isTriggerOpt
+                    ? 'Pick which trigger thresholds to search on the left, then press Run.'
+                    : 'Configure your party on the left, then press Run.'}
               </Text>
             </Center>
           )}

@@ -35,6 +35,8 @@ import _achievementTierDetailMap from "./data/achievementTierDetailMap.json";
 import _actionDetailMap from "./data/actionDetailMap.json";
 import _combatMonsterDetailMap from "./data/combatMonsterDetailMap.json";
 import _combatStyleDetailMap from "./data/combatStyleDetailMap.json";
+import _combatTriggerComparatorDetailMap from "./data/combatTriggerComparatorDetailMap.json";
+import _combatTriggerConditionDetailMap from "./data/combatTriggerConditionDetailMap.json";
 import _combatTriggerDependencyDetailMap from "./data/combatTriggerDependencyDetailMap.json";
 import _enhancementLevelTotalMultiplierTable from "./data/enhancementLevelTotalBonusMultiplierTable.json";
 import _houseRoomDetailMap from "./data/houseRoomDetailMap.json";
@@ -50,6 +52,13 @@ const _bundled = Object.freeze({
     actionDetailMap: _actionDetailMap,
     combatMonsterDetailMap: _combatMonsterDetailMap,
     combatStyleDetailMap: _combatStyleDetailMap,
+    // Conditions and comparators are not read by the engine itself (trigger.js
+    // needs only the dependency map), but the trigger optimiser in
+    // api/lib/triggerSearch/ classifies and validates against them, and the UI
+    // renders them. Routing them through here rather than importing the JSON
+    // directly keeps one data source of record and lets MWIX override them.
+    combatTriggerComparatorDetailMap: _combatTriggerComparatorDetailMap,
+    combatTriggerConditionDetailMap: _combatTriggerConditionDetailMap,
     combatTriggerDependencyDetailMap: _combatTriggerDependencyDetailMap,
     enhancementLevelTotalMultiplierTable: _enhancementLevelTotalMultiplierTable,
     houseRoomDetailMap: _houseRoomDetailMap,
@@ -68,6 +77,8 @@ export const achievementTierDetailMap = { ..._achievementTierDetailMap };
 export const actionDetailMap = { ..._actionDetailMap };
 export const combatMonsterDetailMap = { ..._combatMonsterDetailMap };
 export const combatStyleDetailMap = { ..._combatStyleDetailMap };
+export const combatTriggerComparatorDetailMap = { ..._combatTriggerComparatorDetailMap };
+export const combatTriggerConditionDetailMap = { ..._combatTriggerConditionDetailMap };
 export const combatTriggerDependencyDetailMap = { ..._combatTriggerDependencyDetailMap };
 export const enhancementLevelTotalMultiplierTable = [..._enhancementLevelTotalMultiplierTable];
 export const houseRoomDetailMap = { ..._houseRoomDetailMap };
@@ -83,6 +94,8 @@ const _live = {
     actionDetailMap,
     combatMonsterDetailMap,
     combatStyleDetailMap,
+    combatTriggerComparatorDetailMap,
+    combatTriggerConditionDetailMap,
     combatTriggerDependencyDetailMap,
     enhancementLevelTotalMultiplierTable,
     houseRoomDetailMap,

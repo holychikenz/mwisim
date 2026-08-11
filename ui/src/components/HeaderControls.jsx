@@ -182,7 +182,8 @@ export function HeaderControls({
         data={[
           { value: 'zone', label: 'Zone' },
           { value: 'labyrinth', label: 'Lab' },
-          { value: 'guildTrial', label: 'Trial' }
+          { value: 'guildTrial', label: 'Trial' },
+          { value: 'triggerOpt', label: 'Triggers' }
         ]}
       />
 
@@ -313,7 +314,10 @@ export function HeaderControls({
             </Popover.Dropdown>
           </Popover>
         </>
-      ) : simMode === 'zone' ? (
+      ) : simMode === 'zone' || simMode === 'triggerOpt' ? (
+        // The trigger optimiser searches against a zone and tier just as a normal
+        // zone run does, so it reuses these controls. It does NOT use `duration`:
+        // its fidelity comes from the per-stage hours in its own panel.
         <>
           <Select
             data={zoneOptions}
@@ -433,7 +437,7 @@ export function HeaderControls({
           suffix=" runs"
           aria-label="Trial iterations"
         />
-      ) : (
+      ) : simMode === 'triggerOpt' ? null : (
         <NumberInput
           value={duration}
           onChange={(v) => onDurationChange(Math.max(1, Math.min(1000, Number(v) || 1)))}
