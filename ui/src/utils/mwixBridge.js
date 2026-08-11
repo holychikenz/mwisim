@@ -13,7 +13,10 @@
 //     importSet,            // same schema as ImportExport's solo format
 //     mwixContext?: {
 //       labUpgrades?: { combatDamage, attackSpeed, castSpeed, criticalRate },
-//       maze?: { enabled }
+//       maze?: { enabled },
+//       guildShrines?: { [guildBuffHrid]: level }   // the character's shrine
+//                                                  // levels, e.g.
+//                                                  // "/guild_buffs/force_combat": 4
 //     },
 //     source, version, monsterHrid, loadout?: { name, ... }
 //   }

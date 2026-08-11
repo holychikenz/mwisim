@@ -30,7 +30,12 @@ import { LoadoutManager } from './components/LoadoutManager';
 import { CharacterImport } from './components/CharacterImport';
 import { TextInput } from '@mantine/core';
 import { toPlayerDTO } from './utils/playerDTO';
-import { resolveGuildBuffs, resolveGuildBuildingBuffs } from './utils/guildBuffs';
+import {
+  resolveGuildBuffs,
+  resolveGuildBuildingBuffs,
+  GUILD_COMBAT_BUFFS,
+  MAX_GUILD_BUFF_LEVEL
+} from './utils/guildBuffs';
 import {
   makeId,
   deepClone,
@@ -181,12 +186,39 @@ function App() {
       }
       setMazeContext(!!maze?.enabled);
 
+      // Guild shrines: the character's own purchased shrine levels, keyed by
+      // guild-buff hrid. They are permanent character buffs — every fight gets
+      // them — so they land in the SHARED `trialConfig.guildBuffLevels` knobs
+      // that the zone, labyrinth and trial paths all read.
+      //
+      // The payload REPLACES the stored levels rather than merging into them:
+      // it is the authoritative statement of what this character owns, and a
+      // character with no shrines must not silently inherit whatever the last
+      // session had dialled in. An absent `guildShrines` key (an older MWIX
+      // build) is left alone — only a present object triggers the replacement.
+      // Unknown keys are dropped by iterating our own definition list, so a
+      // future skilling shrine leaking into the payload cannot reach the knobs.
+      const shrineLevels = ctx?.guildShrines;
+      const shrineBits = [];
+      if (shrineLevels && typeof shrineLevels === 'object') {
+        const levels = {};
+        for (const def of GUILD_COMBAT_BUFFS) {
+          const raw = Math.floor(Number(shrineLevels[def.hrid]) || 0);
+          const level = Math.max(0, Math.min(MAX_GUILD_BUFF_LEVEL, raw));
+          if (level <= 0) continue;
+          levels[def.hrid] = level;
+          shrineBits.push(`${def.name} ${level}`);
+        }
+        setTrialConfig(prev => ({ ...prev, guildBuffLevels: levels }));
+      }
+
       const bits = [];
       if (payload.loadout?.name) bits.push(payload.loadout.name);
       if (maze?.enabled) bits.push('maze on');
       if (labUpgrades && (labUpgrades.combatDamage || labUpgrades.attackSpeed || labUpgrades.castSpeed || labUpgrades.criticalRate)) {
         bits.push('lab upgrades applied');
       }
+      if (shrineBits.length) bits.push('shrines: ' + shrineBits.join(', '));
       setBridgeMessage(
         `MWIX loadout imported into P1${bits.length ? ' — ' + bits.join(' · ') : ''}`
       );
