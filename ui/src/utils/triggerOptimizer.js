@@ -7,96 +7,13 @@
 // not also export constants or helpers.
 // =============================================================================
 
-import { priceOf } from './prices';
-
 /** localStorage key, following the UI's `csim_*` convention. */
 export const TRIGGER_OPT_KEY = 'csim_trigger_optimizer';
 
-/**
- * Every consumable the party has slotted, with its fetched cost, its hand-entered
- * override and the one that will actually be used. Deduplicated by item, in slot
- * order, so it doubles as the row list for the override editor.
- *
- * `fetched` is null when the price source cannot answer — either it is not
- * seconds-denominated at all, or the cow webapp has no value for that item (which
- * buildIronPrices stores as -1 and priceOf flattens to 0; the two are
- * indistinguishable by the time we see them, so both read as "unknown").
- *
- * `override` is null only when there is NO override. Zero is a real override and
- * survives here, which is the whole point: an item that arrives free costs nothing
- * at the margin, and that is a fact about the player's situation which no fetched
- * production time can know.
- *
- * @param {object[]} playerDTOs  engine DTOs (consumables keyed `hrid`)
- * @param {object} pricing       { prices, unit, expenseMode, consumableCostOverrides }
- * @returns {Array<{hrid: string, fetched: number|null, override: number|null, effective: number|null}>}
- */
-export function describeConsumableCosts(playerDTOs, pricing) {
-  // expenseMode, because a consumable is a cost, not a receipt.
-  const usable = pricing?.unit === 'seconds' && pricing?.prices ? pricing.prices : null;
-  const overrides = pricing?.consumableCostOverrides || {};
-  const rows = [];
-  const seen = new Set();
-
-  for (const player of playerDTOs || []) {
-    for (const slotKind of ['food', 'drinks']) {
-      for (const slot of player?.[slotKind] || []) {
-        const hrid = slot?.hrid;
-        if (!hrid || seen.has(hrid)) continue;
-        seen.add(hrid);
-
-        const raw = usable ? priceOf(usable, hrid, pricing.expenseMode || 'ask') : null;
-        const fetched = Number.isFinite(raw) && raw > 0 ? raw : null;
-
-        const overrideRaw = Number(overrides[hrid]);
-        const override =
-          overrides[hrid] != null && Number.isFinite(overrideRaw) && overrideRaw >= 0
-            ? overrideRaw
-            : null;
-
-        rows.push({ hrid, fetched, override, effective: override ?? fetched });
-      }
-    }
-  }
-  return rows;
-}
-
-/**
- * Production time, in seconds per unit, for every consumable the party has slotted.
- *
- * This is what makes a consumable threshold optimisable honestly. Under a raw
- * encounters-per-hour objective, eating more often is nearly free — measured, a
- * food threshold driven from 400 to 1 bought +0.37% throughput for 44 donuts an
- * hour from a standing start of zero. Denominating the cost in TIME rather than
- * coins puts both sides of that trade in the same unit, and the recommendation
- * inverts: the search then prefers the setting that eats nothing.
- *
- * Only the `iron` price source yields seconds (usePrices sets unit: 'seconds' from
- * buildIronPrices, sourced from the cow webapp). On `vendor` or `market` the values
- * are coins, which are NOT commensurable with combat time, so we return null and
- * let the optimiser fall back to raw throughput — with the UI warning that the food
- * bill is not being counted. Overrides are an adjustment to a seconds-denominated
- * table, not a substitute for one: a half-priced table would silently treat every
- * un-overridden item as free, which is exactly the bias this function exists to
- * remove.
- *
- * @param {object[]} playerDTOs  engine DTOs (consumables keyed `hrid`)
- * @param {object} pricing       the usePrices() return value
- * @returns {Record<string, number>|null} itemHrid → seconds each
- */
-export function buildConsumableCosts(playerDTOs, pricing) {
-  if (!pricing || pricing.unit !== 'seconds' || !pricing.prices) return null;
-
-  const costs = {};
-  for (const row of describeConsumableCosts(playerDTOs, pricing)) {
-    // An unknown item is omitted, so it contributes nothing rather than a negative
-    // cost. An explicit 0 is KEPT: it contributes nothing either, but it keeps the
-    // table non-empty and so keeps the objective time-denominated, which matters
-    // when every consumable in the build has been declared free.
-    if (row.effective != null) costs[row.hrid] = row.effective;
-  }
-  return Object.keys(costs).length ? costs : null;
-}
+// Consumable pricing lives in ./consumableCosts.js — buildConsumableCosts for the
+// table posted with a run, describeConsumableCosts for the override editor's rows.
+// It moved out when the zone results began restating their own encounter rate the
+// same way: that view has no business importing from the optimiser's own module.
 
 /**
  * "3 min ago" / "2 days ago" for a cached-at timestamp.

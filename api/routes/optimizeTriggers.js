@@ -22,6 +22,7 @@
 // =============================================================================
 
 import { Router } from 'express';
+import { isKnownCost } from '../../shared/consumableCost.js';
 import { buildExtraBuffs } from '../lib/simulator.js';
 import { deriveBounds } from '../lib/triggerSearch/bounds.js';
 import { collectSearchParams, enumerateTriggers } from '../lib/triggerSearch/params.js';
@@ -111,8 +112,10 @@ function sanitiseConsumableCosts(input) {
   if (!input || typeof input !== 'object') return null;
   const costs = {};
   for (const [hrid, value] of Object.entries(input)) {
-    const seconds = Number(value);
-    if (Number.isFinite(seconds) && seconds >= 0) costs[hrid] = seconds;
+    // isKnownCost rather than a local `>= 0`, so this surface and the scoring
+    // agree on the -1-vs-0 rule — and so a posted null is rejected rather than
+    // coerced to a cost of nothing.
+    if (isKnownCost(value)) costs[hrid] = Number(value);
   }
   return Object.keys(costs).length ? costs : null;
 }

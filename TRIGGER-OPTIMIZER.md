@@ -353,7 +353,7 @@ E / ((3600H + T)/3600), which reduces to the divisor above.
 Per-item seconds come from the UI's existing `iron` price source —
 `usePrices` → `buildIronPrices` → the cow webapp `/api/value/market`, which already
 reports values in seconds (`unit: 'seconds'`). `buildConsumableCosts` in
-`ui/src/utils/triggerOptimizer.js` extracts just the items the party has slotted.
+`ui/src/utils/consumableCosts.js` extracts just the items the party has slotted.
 Vendor and market sources report **coins**, which are not commensurable with combat
 time, so those are treated as "no cost data" and the UI says so.
 
@@ -373,25 +373,51 @@ seconds per unit. Blank means "use what was fetched"; a typed value wins.
 
 Overrides live in `usePrices` as `consumableCostOverrides` and are persisted in
 `csim_prices` beside the price cache, so they survive a refetch, a source switch,
-a character switch and a reload. They are read only by the optimiser's cost
+a character switch and a reload. They are read only by the consumable cost
 function; drop valuation is a separate question and untouched.
 
-**Zero is data, not a missing value**, and three layers had to be taught the
-difference. Previously `buildConsumableCosts`, `sanitiseConsumableCosts` and
-`scoreSimResult` all screened out non-positive costs, which was right for the -1
-that `buildIronPrices` stores for "unknown" but would silently discard a
-deliberate 0. All three now admit `>= 0` and reject only negatives. It matters
-because an empty cost table flips the objective back to raw throughput and the UI
-back to warning that the food bill is not counted — so a build whose every
-consumable had been declared free would have been told its costs were unknown, and
-then optimised toward eating constantly. Two tests pin this down: a single free
-item still leaves the rest priced, and an all-free build ranks on undiscounted
-throughput with `consumableCostsKnown` still true.
+**Zero is data, not a missing value**, and every layer had to be taught the
+difference. `buildConsumableCosts`, `sanitiseConsumableCosts` and `scoreSimResult`
+all screened out non-positive costs, which was right for the -1 that
+`buildIronPrices` stores for "unknown" but would silently discard a deliberate 0.
+It matters because an empty cost table flips the objective back to raw throughput
+and the UI back to warning that the food bill is not counted — so a build whose
+every consumable had been declared free would have been told its costs were
+unknown, and then optimised toward eating constantly.
 
-The chain is `describeConsumableCosts` (slotted items → fetched / override /
-effective, and the row list the editor renders) → `buildConsumableCosts` (the
-table posted to the API). Deriving both from one function is what keeps the editor
-from ever showing something other than what was sent.
+The rule now lives in ONE predicate, `isKnownCost` in `shared/consumableCost.js`,
+which every layer calls. Writing it once immediately paid for itself: the obvious
+form, `Number.isFinite(Number(v)) && Number(v) >= 0`, admits `null`, `''`, `[]`
+and `false` as costs of nothing, because `Number()` maps all four to 0. A posted
+`null` therefore read as *free* rather than *unknown* — the one wrong answer that
+understates the bill and so can only flatter a configuration. The predicate now
+checks the type before the number.
+
+The chain is `resolveConsumableCost` (one item → fetched / override / effective) →
+`describeConsumableCosts` (the party's slotted items, and the row list the editor
+renders) → `buildConsumableCosts` (the table posted to the API). Deriving all
+three from one function is what keeps the editor from ever showing something other
+than what was sent.
+
+### The same figure on the zone tab
+
+`Effective Enc/Hour` sits beside `Encounters/Hour` in the normal zone results,
+computed from the same divisor via `summariseConsumableCost`, with the cook-time
+share beneath it and the priced/overridden/unpriced breakdown in its tooltip. It
+prices what was ACTUALLY CONSUMED rather than what was slotted — the engine has
+already tallied every item, so there is no need to reason about which slots were
+reachable — and it is omitted entirely when nothing consumed can be priced, since
+a number equal to the raw rate would read as "your food is free" when it means
+"we have no idea".
+
+The arithmetic and the conventions are shared rather than reimplemented:
+`shared/consumableCost.js` holds `isKnownCost`, `sumConsumablesUsed`,
+`consumableSecondsUsed`, `effectiveRatePerHour` and `consumableTimeShare`, and is
+imported by both `api/lib/triggerSearch/score.js` and
+`ui/src/utils/consumableCosts.js`. It is deliberately NOT in
+`src/combatsimulator/`: that directory is upstream-tracked and vendored wholesale
+into the MWIX Tampermonkey bundle, and what eating is *worth* is a question about
+the player's situation, not one the engine should hold an opinion on.
 
 ### What it found
 

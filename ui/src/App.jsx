@@ -49,9 +49,8 @@ import {
   rosterSize,
   clampCount
 } from './utils/roster';
+import { buildConsumableCosts, describeConsumableCosts } from './utils/consumableCosts';
 import {
-  buildConsumableCosts,
-  describeConsumableCosts,
   loadTriggerOptState,
   saveTriggerOptState,
   toAddress,

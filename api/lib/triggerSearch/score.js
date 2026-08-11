@@ -28,6 +28,15 @@
 // performance, prefer the simpler set-up, then the one you already had.
 // =============================================================================
 
+// Static, unlike the engine import below: shared/ is plain ESM with no
+// extensionless or JSON imports, so it needs nothing from api/loader.js.
+import {
+  consumableSecondsUsed,
+  consumableTimeShare,
+  effectiveRatePerHour,
+  sumConsumablesUsed,
+} from '../../../shared/consumableCost.js';
+
 const { sumDamageToEnemies } = await import('../../../src/combatsimulator/guildTrialStats.js');
 
 /** Nanoseconds in an hour. Same constant as api/cli.js:14 and App.jsx:50. */
@@ -193,29 +202,17 @@ export function scoreSimResult(simResult, { consumableCosts = null } = {}) {
   // toward 1 — "eat at the faintest scratch" — because it is very slightly better
   // on throughput and infinitely worse on the bill. Recording usage lets the
   // ranking hold consumption constant and lets the UI show the trade.
-  const consumablesByItem = {};
-  let consumablesTotal = 0;
-  for (const byItem of Object.values(simResult?.consumablesUsed || {})) {
-    for (const [itemHrid, count] of Object.entries(byItem || {})) {
-      const used = Number(count) || 0;
-      consumablesByItem[itemHrid] = (consumablesByItem[itemHrid] || 0) + used;
-      consumablesTotal += used;
-    }
-  }
+  // The tally, the cost of it and the -1-vs-0 convention all live in
+  // shared/consumableCost.js, because the UI's zone results restate their own
+  // encounter rate the same way and the two must not drift apart.
+  const { byItem: consumablesByItem, total: consumablesTotal } = sumConsumablesUsed(
+    simResult?.consumablesUsed
+  );
   const consumablesByItemPerHour = {};
-  let consumableSeconds = 0;
   for (const [itemHrid, count] of Object.entries(consumablesByItem)) {
     consumablesByItemPerHour[itemHrid] = perHour(count);
-    // A missing or negative cost contributes nothing rather than poisoning the
-    // total: buildIronPrices uses -1 for "no value known", and treating that as a
-    // cost of minus one second would make eating look profitable.
-    //
-    // Zero is admitted rather than screened out. It adds nothing either way, but a
-    // user may deliberately override an item to 0 ("this one reaches me free"), and
-    // reading that as an unknown would be to discard the very thing they said.
-    const secondsEach = Number(consumableCosts?.[itemHrid]);
-    if (Number.isFinite(secondsEach) && secondsEach >= 0) consumableSeconds += secondsEach * count;
   }
+  const { seconds: consumableSeconds } = consumableSecondsUsed(consumablesByItem, consumableCosts);
   const consumableSecondsPerHour = perHour(consumableSeconds);
 
   // Running dry of mana is invisible in encounters/hour until it is severe, but
@@ -233,12 +230,12 @@ export function scoreSimResult(simResult, { consumableCosts = null } = {}) {
   const encountersPerHour = perHour(Number(simResult?.encounters) || 0);
 
   // Encounters per hour of TOTAL time, combat plus the production time owed for
-  // everything consumed. Over H hours with E encounters and T seconds of
-  // production owed:  E / ((3600H + T)/3600), which reduces to the divisor below.
-  //
-  // With no cost table the divisor is 1 and this equals encountersPerHour, so the
+  // everything consumed. With no cost table this equals encountersPerHour, so the
   // metric is always safe to rank on — it simply stops discriminating.
-  const effectiveEncountersPerHour = encountersPerHour / (1 + consumableSecondsPerHour / 3600);
+  const effectiveEncountersPerHour = effectiveRatePerHour(
+    encountersPerHour,
+    consumableSecondsPerHour
+  );
 
   return {
     hoursSimulated: hours,
@@ -254,7 +251,7 @@ export function scoreSimResult(simResult, { consumableCosts = null } = {}) {
     consumableSecondsPerHour,
     // Fraction of a player's real time that goes on producing consumables rather
     // than fighting. The headline number for an ironcow player.
-    consumableTimeShare: consumableSecondsPerHour / (3600 + consumableSecondsPerHour),
+    consumableTimeShare: consumableTimeShare(consumableSecondsPerHour),
     consumableCostsKnown: !!consumableCosts,
     outOfManaSecondsPerHour: perHour(outOfManaSeconds),
     ranOutOfMana: anyOutOfMana,

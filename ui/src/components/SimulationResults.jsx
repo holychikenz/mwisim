@@ -1,6 +1,8 @@
 import { useMemo, useCallback } from 'react';
-import { Accordion, Badge, Button, Group, Paper, ScrollArea, SimpleGrid, Stack, Table, Tabs, Text, Title } from '@mantine/core';
+import { Accordion, Badge, Button, Group, Paper, ScrollArea, SimpleGrid, Stack, Table, Tabs, Text, Title, Tooltip } from '@mantine/core';
 import { DropsEconomy } from './DropsEconomy';
+import { effectiveRatePerHour, summariseConsumableCost } from '../utils/consumableCosts';
+import { formatSeconds } from '../utils/triggerOptimizer';
 
 const ONE_SECOND = 1e9;
 const ONE_HOUR = 60 * 60 * ONE_SECOND;
@@ -21,17 +23,41 @@ function lastSegment(hrid) {
   return String(hrid).split('/').pop();
 }
 
-function KpiCard({ label, value }) {
-  return (
+function KpiCard({ label, value, hint, tip }) {
+  const card = (
     <Paper p="sm" radius="md" withBorder>
       <Text size="xs" c="dimmed" tt="uppercase">{label}</Text>
       <Text size="lg" fw={700}>{value}</Text>
+      {hint && <Text size="xs" c="dimmed">{hint}</Text>}
     </Paper>
+  );
+
+  // A card only gets a tooltip when its number needs a caveat attached — chiefly
+  // the effective rate, which is meaningless without knowing what was priced.
+  if (!tip) return card;
+  return (
+    <Tooltip label={tip} withArrow multiline w={280} position="bottom">
+      {card}
+    </Tooltip>
   );
 }
 
-function SummaryStats({ results, monsters }) {
+function SummaryStats({ results, monsters, pricing }) {
   const hoursSimulated = results.simulatedTime / ONE_HOUR;
+
+  // What the run's eating actually cost, in production time. Only the iron price
+  // source can answer — coins are not commensurable with combat time — so on any
+  // other source this comes back unknown and the effective rate is omitted rather
+  // than printed equal to the raw one, which would read as "your food is free".
+  const consumableCost = useMemo(
+    () =>
+      summariseConsumableCost({
+        consumablesUsed: results.consumablesUsed,
+        hours: hoursSimulated,
+        pricing
+      }),
+    [results.consumablesUsed, hoursSimulated, pricing]
+  );
 
   const kpis = [];
 
@@ -51,13 +77,36 @@ function SummaryStats({ results, monsters }) {
       { label: 'Timeouts/Hour', value: formatNumber(timeouts / hoursSimulated) }
     );
   } else {
+    const encountersPerHour = results.encounters / hoursSimulated;
     kpis.push(
       { label: 'Zone', value: lastSegment(results.zoneName || '') },
       { label: 'Difficulty', value: `T${results.difficultyTier}` },
       { label: 'Time Simulated', value: `${hoursSimulated.toFixed(2)} h` },
       { label: 'Encounters', value: results.encounters },
-      { label: 'Encounters/Hour', value: formatNumber(results.encounters / hoursSimulated) }
+      { label: 'Encounters/Hour', value: formatNumber(encountersPerHour) }
     );
+
+    // Encounters per hour of TOTAL time — combat plus the production owed for
+    // everything eaten. The same objective the trigger optimiser ranks on, and
+    // worth having here for the same reason: raw throughput cannot see the food
+    // bill, so two builds that look a percent apart on it can be twenty percent
+    // apart in practice. Measured on jungle_planet, a build spending 44% of its
+    // time cooking made 229 encounters/hour of combat but 128 of real time.
+    if (consumableCost.known) {
+      const unpriced = consumableCost.unpriced.length;
+      kpis.push({
+        label: 'Effective Enc/Hour',
+        value: formatNumber(effectiveRatePerHour(encountersPerHour, consumableCost.secondsPerHour)),
+        hint: `${(consumableCost.timeShare * 100).toFixed(0)}% of time cooking`,
+        tip:
+          `Encounters per hour of total time — combat plus the ` +
+          `${formatSeconds(consumableCost.secondsPerHour)} per hour of production owed for ` +
+          `everything consumed. ${consumableCost.priced.length} item` +
+          `${consumableCost.priced.length === 1 ? '' : 's'} priced from your iron times` +
+          `${consumableCost.overrides.length ? `, ${consumableCost.overrides.length} overridden by hand` : ''}` +
+          `${unpriced ? `; ${unpriced} unpriced and counted as free` : ''}.`
+      });
+    }
   }
 
   // Player deaths (only players that actually appear in the result)
@@ -84,7 +133,7 @@ function SummaryStats({ results, monsters }) {
   return (
     <SimpleGrid cols={{ base: 2, sm: 3, lg: 5 }} spacing="sm">
       {kpis.map(kpi => (
-        <KpiCard key={kpi.label} label={kpi.label} value={kpi.value} />
+        <KpiCard key={kpi.label} label={kpi.label} value={kpi.value} hint={kpi.hint} tip={kpi.tip} />
       ))}
     </SimpleGrid>
   );
@@ -740,7 +789,7 @@ export function SimulationResults({ results, monsters, items, pricing }) {
           Download JSON
         </Button>
       </Group>
-      <SummaryStats results={results} monsters={monsters} />
+      <SummaryStats results={results} monsters={monsters} pricing={pricing} />
 
       <Tabs defaultValue={results.isLabyrinth ? 'labstats' : 'experience'} keepMounted={false}>
         <Tabs.List>
