@@ -109,6 +109,35 @@ function SummaryStats({ results, monsters, pricing }) {
     }
   }
 
+  // Total experience across every player and skill — the figure a levelling run
+  // is actually chasing, and the one the per-skill table below cannot show at a
+  // glance. Every value is summed rather than the seven known skill keys being
+  // picked out, so a skill added by a future patch counts without an edit here.
+  let experienceTotal = 0;
+  for (const bySkill of Object.values(results.experienceGained || {})) {
+    for (const amount of Object.values(bySkill || {})) experienceTotal += Number(amount) || 0;
+  }
+  const experiencePerHour = experienceTotal / hoursSimulated;
+
+  // Raw, with the effective figure in parentheses when the food can be priced.
+  // Experience is worth restating on the real clock for exactly the reason
+  // encounters are: a build that out-levels another while spending half its day
+  // cooking is not in fact levelling faster.
+  kpis.push({
+    label: 'Experience/Hour',
+    value: consumableCost.known
+      ? `${formatNumber(experiencePerHour)} (${formatNumber(
+          effectiveRatePerHour(experiencePerHour, consumableCost.secondsPerHour)
+        )})`
+      : formatNumber(experiencePerHour),
+    hint: consumableCost.known ? 'raw (effective)' : undefined,
+    tip: consumableCost.known
+      ? `Total experience across every player and skill. The second figure is per hour of ` +
+        `total time, counting the ${formatSeconds(consumableCost.secondsPerHour)} per hour of ` +
+        `production owed for everything consumed.`
+      : undefined
+  });
+
   // Player deaths (only players that actually appear in the result)
   const totalPlayerDeaths = PLAYER_HRIDS
     .map(p => results.deaths?.[p] || 0)
