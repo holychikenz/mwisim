@@ -31,6 +31,21 @@ export const DEFAULT_EQUIPMENT_OPT_CONFIG = {
   step: 6,
   alpha: 0.05,
   workers: null, // null = let the server size the pool from its core count
+
+  /**
+   * Cost every enhancement against a Philosopher's Mirror rather than the item's
+   * own protection.
+   *
+   * ON by default, and the default is a judgement about DATA rather than about
+   * play. An item's own protection is drop-only — a Chaotic Chain, an Acrobat's
+   * Ribbon — so it is absent from the production-time map and unpriceable until
+   * the player types a number for every one of them. A mirror is craftable,
+   * works on any piece, and needs pricing exactly once. Defaulting this off would
+   * mean the return-on-investment column reads zero for most protections until a
+   * dozen drop-only items have been costed by hand, which is a poor first
+   * impression of a number that is supposed to be trustworthy.
+   */
+  alwaysUseMirror: true,
 };
 
 /** Turn the flat UI config into the `scan` object the API takes. */

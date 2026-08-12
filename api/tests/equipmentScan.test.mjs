@@ -47,8 +47,10 @@ import {
 import { DEFAULT_SCAN, estimateWorkload, scanEquipment } from '../lib/equipmentScan/scan.js';
 
 import {
+  MIRROR_OF_PROTECTION,
   amortisedRate,
   breakEvenHours,
+  chooseProtection,
   isUsableEnhancementCost,
   marginalCostFromTargets,
 } from '../../shared/enhancementRoi.js';
@@ -727,4 +729,60 @@ test('amortisedRate guards a zero or absent horizon', () => {
   assert.equal(amortisedRate({ costSeconds: -1, improvedRate: 10, horizonHours: 5 }), null);
   // No cost at all: the rate is simply the improved one.
   assert.equal(amortisedRate({ costSeconds: 0, improvedRate: 10, horizonHours: 5 }), 10);
+});
+
+// ---------------------------------------------------------------------------
+// protection selection
+// ---------------------------------------------------------------------------
+
+const MIRROR = { hrid: MIRROR_OF_PROTECTION, effective: 14000 };
+const CHAIN = { hrid: '/items/chaotic_chain', effective: 25000 };
+const UNPRICED_CHAIN = { hrid: '/items/chaotic_chain', effective: null };
+
+test('chooseProtection takes the cheapest priced candidate by default', () => {
+  assert.equal(chooseProtection([MIRROR, CHAIN]).hrid, MIRROR_OF_PROTECTION);
+  assert.equal(
+    chooseProtection([{ ...MIRROR, effective: 30000 }, CHAIN]).hrid,
+    '/items/chaotic_chain'
+  );
+});
+
+test('chooseProtection never lets an UNPRICED candidate win by default', () => {
+  // This is the server's own bug, restated: `if pc and pc < cheapest` treats a
+  // zero as falsy and skips it, so an unresolvable protection silently becomes
+  // whatever the mirror costs. Here an unpriced candidate simply does not compete.
+  assert.equal(chooseProtection([MIRROR, UNPRICED_CHAIN]).hrid, MIRROR_OF_PROTECTION);
+});
+
+test('chooseProtection returns something when nothing is priced at all', () => {
+  const chosen = chooseProtection([{ hrid: '/items/a', effective: null }, UNPRICED_CHAIN]);
+  assert.equal(chosen.hrid, '/items/a');
+  assert.equal(chosen.effective, null);
+});
+
+test('alwaysUseMirror picks the mirror even when it is dearer', () => {
+  const chosen = chooseProtection([{ ...MIRROR, effective: 99999 }, CHAIN], {
+    alwaysUseMirror: true,
+  });
+  assert.equal(chosen.hrid, MIRROR_OF_PROTECTION);
+  assert.equal(chosen.effective, 99999);
+});
+
+test('alwaysUseMirror is honoured even when the mirror has no price', () => {
+  // A toggle labelled "always" that quietly did something else in the one case a
+  // user is most likely to hit — an unpriced mirror on a fresh install — would be
+  // worse than a cost of zero the caller is told about.
+  const chosen = chooseProtection([{ hrid: MIRROR_OF_PROTECTION, effective: null }, CHAIN], {
+    alwaysUseMirror: true,
+  });
+  assert.equal(chosen.hrid, MIRROR_OF_PROTECTION);
+  assert.equal(chosen.effective, null);
+});
+
+test('chooseProtection tolerates an empty or holey candidate list', () => {
+  assert.equal(chooseProtection([]), null);
+  assert.equal(chooseProtection(null), null);
+  assert.equal(chooseProtection([null, undefined]), null);
+  // alwaysUseMirror with no mirror offered is null, not a silent substitution.
+  assert.equal(chooseProtection([CHAIN], { alwaysUseMirror: true }), null);
 });

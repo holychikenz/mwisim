@@ -157,12 +157,12 @@ function CostTable({ rows, disabled, onChange, empty }) {
   );
 }
 
-export function ItemCostsView({ playerDTOs, gameItems, pricing }) {
+export function ItemCostsView({ playerDTOs, gameItems, pricing, alwaysUseMirror = false }) {
   const [query, setQuery] = useState('');
 
   const buildRows = useMemo(
-    () => describeBuildCosts(playerDTOs, gameItems, pricing),
-    [playerDTOs, gameItems, pricing]
+    () => describeBuildCosts(playerDTOs, gameItems, pricing, { alwaysUseMirror }),
+    [playerDTOs, gameItems, pricing, alwaysUseMirror]
   );
 
   const searchRows = useMemo(
@@ -194,6 +194,13 @@ export function ItemCostsView({ playerDTOs, gameItems, pricing }) {
         What one unit of an item costs you, in seconds of production time. A value set here
         overrides the fetched time <b>everywhere</b> — consumable costs, enhancement costs and
         drop valuation alike. Blank uses the fetched time; <b>0</b> means it reaches you free.
+        {alwaysUseMirror && (
+          <>
+            {' '}
+            <b>Always use mirror</b> is on for the Gear tab, so only the Philosopher&apos;s Mirror
+            is listed as a protection — price that one and every protect is covered.
+          </>
+        )}
       </Text>
 
       {/* The price source lives here as well as on the optimiser panels, because

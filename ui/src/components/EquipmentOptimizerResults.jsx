@@ -7,6 +7,7 @@ import {
   Paper,
   SimpleGrid,
   Stack,
+  Switch,
   Table,
   Text,
   Title,
@@ -107,7 +108,16 @@ function formatHours(hours) {
  * investment, because the items that gain most are the ones already deep enough
  * into the enhancement curve to be ruinous to push further.
  */
-function ReturnOnInvestment({ rows, baselineRate, objective, costed, gameItems, pricing }) {
+function ReturnOnInvestment({
+  rows,
+  baselineRate,
+  objective,
+  costed,
+  gameItems,
+  pricing,
+  alwaysUseMirror,
+  onAlwaysUseMirrorChange,
+}) {
   const { costs, loading, progress, error, fetchCosts } = useEnhancementCosts();
 
   // Every material and protection item the run could not put a time to.
@@ -153,14 +163,31 @@ function ReturnOnInvestment({ rows, baselineRate, objective, costed, gameItems, 
         <Text size="sm" fw={600}>
           Return on investment
         </Text>
-        <Button
-          size="compact-xs"
-          variant="default"
-          loading={loading}
-          onClick={() => fetchCosts(rows, { gameItems, pricing })}
-        >
-          {costs ? 'Refetch costs' : 'Cost these levels'}
-        </Button>
+        <Group gap="sm">
+          <Tooltip
+            label="Cost every protect as a Philosopher's Mirror instead of the item's own protection item. Mirrors are craftable and universal, so one time covers everything; an item's own protection is drop-only and has to be priced piece by piece."
+            withArrow
+            multiline
+            w={300}
+          >
+            <Switch
+              size="xs"
+              labelPosition="left"
+              label="Always use mirror"
+              checked={!!alwaysUseMirror}
+              onChange={(event) => onAlwaysUseMirrorChange?.(event.currentTarget.checked)}
+              disabled={loading}
+            />
+          </Tooltip>
+          <Button
+            size="compact-xs"
+            variant="default"
+            loading={loading}
+            onClick={() => fetchCosts(rows, { gameItems, pricing, alwaysUseMirror })}
+          >
+            {costs ? 'Refetch costs' : 'Cost these levels'}
+          </Button>
+        </Group>
       </Group>
 
       {!costs && !loading && !error && (
@@ -290,7 +317,13 @@ function ReturnOnInvestment({ rows, baselineRate, objective, costed, gameItems, 
   );
 }
 
-export function EquipmentOptimizerResults({ results, gameItems, pricing }) {
+export function EquipmentOptimizerResults({
+  results,
+  gameItems,
+  pricing,
+  alwaysUseMirror,
+  onAlwaysUseMirrorChange,
+}) {
   const rows = Array.isArray(results?.rows) ? results.rows : null;
 
   const columns = useMemo(
@@ -516,6 +549,8 @@ export function EquipmentOptimizerResults({ results, gameItems, pricing }) {
         costed={costed}
         gameItems={gameItems}
         pricing={pricing}
+        alwaysUseMirror={alwaysUseMirror}
+        onAlwaysUseMirrorChange={onAlwaysUseMirrorChange}
       />
 
       {skipped.length > 0 && (

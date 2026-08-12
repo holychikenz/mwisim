@@ -41,6 +41,51 @@
 const SECONDS_PER_HOUR = 3600;
 
 /**
+ * The universal protection item. Works on any piece, and is craftable — 200
+ * shards — which is what makes it the one protection a player can reliably put a
+ * time to.
+ */
+export const MIRROR_OF_PROTECTION = '/items/mirror_of_protection';
+
+/**
+ * Which protection item to cost an enhancement against.
+ *
+ * Two modes, and the toggle between them is a question about data as much as
+ * about play. An item's own protection — a Chaotic Chain, an Acrobat's Ribbon —
+ * is drop-only, absent from the production-time map, and therefore unpriceable
+ * without the player typing a number for every single one. A mirror is craftable,
+ * universal, and needs pricing exactly once. So "always use mirror" collapses a
+ * dozen unanswerable questions into one answerable one.
+ *
+ * `alwaysUseMirror` is honoured even when the mirror itself has no price. The
+ * alternative — silently falling back to the cheapest of the others — would mean
+ * a toggle labelled "always" sometimes did something else, which is worse than a
+ * cost of zero that the caller is told about and can flag.
+ *
+ * Otherwise: the cheapest **priced** candidate. An unpriced one must not win by
+ * default, and that is not hypothetical — the server's own selection reads
+ * `if pc and pc < cheapest`, where a zero is falsy and so silently skipped,
+ * leaving it to fall back to the mirror without saying so.
+ *
+ * @param {Array<{hrid: string, effective: number|null}>} candidates
+ * @param {object} [opts]
+ * @param {boolean} [opts.alwaysUseMirror]
+ * @returns {object|null} the chosen candidate, or null when there are none
+ */
+export function chooseProtection(candidates, { alwaysUseMirror = false } = {}) {
+  const list = (candidates || []).filter(Boolean);
+  if (!list.length) return null;
+
+  if (alwaysUseMirror) {
+    return list.find((row) => row.hrid === MIRROR_OF_PROTECTION) || null;
+  }
+
+  const priced = list.filter((row) => Number.isFinite(row.effective));
+  if (!priced.length) return list[0];
+  return priced.reduce((best, row) => (row.effective < best.effective ? row : best));
+}
+
+/**
  * Is this a usable cost in seconds?
  *
  * Deliberately STRICTER than consumableCost's isKnownCost, which admits 0.

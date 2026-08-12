@@ -14,9 +14,7 @@
 // =============================================================================
 
 import { resolveItemCost } from './consumableCosts';
-
-/** Always a protection option, whatever the piece. Mirrors enhancementCosts.js. */
-const MIRROR_OF_PROTECTION = '/items/mirror_of_protection';
+import { MIRROR_OF_PROTECTION } from '../../../shared/enhancementRoi.js';
 
 /** Where an item enters the calculation. Ordered by how much explaining it needs. */
 export const COST_ROLES = Object.freeze({
@@ -43,7 +41,7 @@ export function lastSegment(hrid) {
  * @param {object} pricing       usePrices' return value
  * @returns {Array<{hrid, name, roles: string[], usedBy: string[], fetched, override, effective}>}
  */
-export function describeBuildCosts(playerDTOs, gameItems, pricing) {
+export function describeBuildCosts(playerDTOs, gameItems, pricing, { alwaysUseMirror = false } = {}) {
   const rows = new Map();
 
   const add = (hrid, role, usedBy) => {
@@ -82,12 +80,18 @@ export function describeBuildCosts(playerDTOs, gameItems, pricing) {
         add(cost.itemHrid, 'material', wornName);
       }
 
-      // The server excludes `_refined` protections from its cheapest-of search,
-      // so listing them here would invite the user to price something that can
-      // never be chosen.
-      for (const hrid of detail.protectionItemHrids || []) {
-        if (String(hrid).includes('_refined')) continue;
-        add(hrid, 'protection', wornName);
+      // Under "always use mirror" the item's own protections are never costed,
+      // so listing them here would be asking the user to price a dozen drop-only
+      // items that nothing will read. That omission IS the simplification.
+      //
+      // Otherwise: everything the chooser might pick. `_refined` variants are
+      // excluded to match the server's own search, so we never invite a price for
+      // something that can never be chosen.
+      if (!alwaysUseMirror) {
+        for (const hrid of detail.protectionItemHrids || []) {
+          if (String(hrid).includes('_refined')) continue;
+          add(hrid, 'protection', wornName);
+        }
       }
       // Only worth surfacing when something is actually enhanceable.
       if ((detail.enhancementCosts || []).length) {

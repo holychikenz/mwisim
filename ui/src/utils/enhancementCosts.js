@@ -23,7 +23,11 @@
 
 import { IRON_API_BASE } from '../hooks/usePrices';
 import { resolveItemCost } from './consumableCosts';
-import { marginalCostFromTargets } from '../../../shared/enhancementRoi.js';
+import {
+  MIRROR_OF_PROTECTION,
+  chooseProtection,
+  marginalCostFromTargets,
+} from '../../../shared/enhancementRoi.js';
 
 /** Same host as the production-time source; its CORS is open. */
 export const ENHANCE_API_BASE = IRON_API_BASE;
@@ -31,14 +35,7 @@ export const ENHANCE_API_BASE = IRON_API_BASE;
 /** The cap, matching the engine's multiplier table. */
 export const MAX_ENHANCEMENT_LEVEL = 20;
 
-/**
- * Always available as a protection item, whatever the piece.
- *
- * The server considers it alongside the item's own `protectionItemHrids` and
- * takes the cheapest; we do the same here so the choice reflects the user's
- * times rather than the walker's.
- */
-export const MIRROR_OF_PROTECTION = '/items/mirror_of_protection';
+export { MIRROR_OF_PROTECTION };
 
 /** Requests are ~80ms each; this is a guard against a wedged server, not a budget. */
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -94,7 +91,7 @@ export async function fetchEnhancementConfig({ signal } = {}) {
  * @param {object} pricing    usePrices' return value
  * @returns {{materials, protection, protectionCandidates, unpriced}}
  */
-export function describeEnhancementInputs(itemHrid, gameItems, pricing) {
+export function describeEnhancementInputs(itemHrid, gameItems, pricing, { alwaysUseMirror = false } = {}) {
   const detail = gameItems?.[itemHrid];
   const costs = detail?.enhancementCosts || [];
 
@@ -108,22 +105,21 @@ export function describeEnhancementInputs(itemHrid, gameItems, pricing) {
 
   // The server excludes `_refined` protections from its own cheapest-of search;
   // match that, or we would post a price for an option it would never pick.
-  const candidateHrids = [
-    MIRROR_OF_PROTECTION,
-    ...(detail?.protectionItemHrids || []).filter((hrid) => !String(hrid).includes('_refined')),
-  ];
+  // Under alwaysUseMirror the item's own protections are not candidates at all —
+  // which is the point of the toggle: one priceable item instead of a dozen
+  // drop-only ones.
+  const candidateHrids = alwaysUseMirror
+    ? [MIRROR_OF_PROTECTION]
+    : [
+        MIRROR_OF_PROTECTION,
+        ...(detail?.protectionItemHrids || []).filter((hrid) => !String(hrid).includes('_refined')),
+      ];
   const protectionCandidates = [...new Set(candidateHrids)].map((hrid) => ({
     ...resolveItemCost(hrid, pricing),
     name: gameItems?.[hrid]?.name || lastSegment(hrid),
   }));
 
-  // Cheapest PRICED candidate. An unpriced one is not "free" and must not win the
-  // comparison by default — which is precisely the bug on the server side, where
-  // `if pc and pc < cheapest` skips a zero and silently falls back to the mirror.
-  const priced = protectionCandidates.filter((row) => row.effective != null);
-  const protection = priced.length
-    ? priced.reduce((best, row) => (row.effective < best.effective ? row : best))
-    : protectionCandidates[0] || null;
+  const protection = chooseProtection(protectionCandidates, { alwaysUseMirror });
 
   const unpriced = [
     ...materials.filter((row) => row.effective == null).map((row) => ({ ...row, role: 'material' })),
@@ -163,8 +159,12 @@ export async function fetchTargetCost({ itemHrid, target, config, inputs, signal
       // material posts 0 — the same value the server would have derived — but the
       // caller is told about it so the UI can say the figure is a floor.
       body.material_unit_costs = inputs.materials.map((row) => row.effective ?? 0);
-      if (inputs.protection?.effective != null) {
-        body.protect_price = inputs.protection.effective;
+      if (inputs.protection) {
+        // Posted even when unpriced, as 0 — the same treatment the materials get,
+        // and the caller is told so it can flag the figure as a floor. Leaving it
+        // out instead would hand the choice back to the server's own cheapest-of
+        // search, which is exactly what "always use mirror" promises not to do.
+        body.protect_price = inputs.protection.effective ?? 0;
         body.protect_hrid = inputs.protection.hrid;
       }
     }
@@ -279,7 +279,11 @@ export async function fetchMarginalCost({ itemHrid, currentLevel, config, inputs
  * @param {(done: number, total: number) => void} [opts.onProgress]
  * @returns {Promise<Record<string, {seconds: number|null, reason?: string}>>} keyed by row id
  */
-export async function costScanRows(rows, config, { gameItems, pricing, signal, onProgress } = {}) {
+export async function costScanRows(
+  rows,
+  config,
+  { gameItems, pricing, alwaysUseMirror = false, signal, onProgress } = {}
+) {
   const out = {};
   const list = Array.isArray(rows) ? rows : [];
   // Two items of the same kind at the same level cost the same, and a party of
@@ -292,7 +296,7 @@ export async function costScanRows(rows, config, { gameItems, pricing, signal, o
     const key = `${row.itemHrid}@${row.currentLevel}`;
     if (!memo.has(key)) {
       const inputs = gameItems
-        ? describeEnhancementInputs(row.itemHrid, gameItems, pricing)
+        ? describeEnhancementInputs(row.itemHrid, gameItems, pricing, { alwaysUseMirror })
         : null;
       memo.set(
         key,

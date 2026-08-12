@@ -1143,6 +1143,7 @@ function App() {
               playerDTOs={selectedPlayerDTOs}
               gameItems={gameData?.items}
               pricing={pricing}
+              alwaysUseMirror={equipOptConfig.alwaysUseMirror}
             />
           ) : activeResults && activeResults.__kind === 'triggerOpt' ? (
             <TriggerOptimizerResults results={activeResults} />
@@ -1151,6 +1152,10 @@ function App() {
               results={activeResults}
               gameItems={gameData?.items}
               pricing={pricing}
+              alwaysUseMirror={equipOptConfig.alwaysUseMirror}
+              onAlwaysUseMirrorChange={(value) =>
+                setEquipOptConfig(prev => ({ ...prev, alwaysUseMirror: value }))
+              }
             />
           ) : activeResults && activeResults.__kind === 'guildTrial' ? (
             <GuildTrialResults result={activeResults} />

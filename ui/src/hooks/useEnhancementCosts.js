@@ -39,7 +39,7 @@ export function useEnhancementCosts() {
    * @param {object[]} rows  scan result rows
    */
   const fetchCosts = useCallback(
-    async (rows, { gameItems, pricing } = {}) => {
+    async (rows, { gameItems, pricing, alwaysUseMirror = false } = {}) => {
       stop();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -58,6 +58,7 @@ export function useEnhancementCosts() {
           // which returns 0 for anything it cannot resolve.
           gameItems,
           pricing,
+          alwaysUseMirror,
           signal: controller.signal,
           onProgress: (done, total) => setProgress({ done, total }),
         });

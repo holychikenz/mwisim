@@ -395,11 +395,9 @@ override-aware path the consumables use, and `fetchTargetCost` posts:
 
 - `material_unit_costs` — **positional**, zipped by the server against the non-coin
   entries of `enhancementCosts`, so the filter here must match its filter exactly
-- `protect_price` / `protect_hrid` — the cheapest **priced** candidate among
-  `mirror_of_protection` and the item's own `protectionItemHrids`, `_refined`
-  excluded to match the server's own search. An *unpriced* candidate must not win
-  by default, which is precisely the server's bug: `if pc and pc < cheapest` skips
-  a zero and silently falls back to the mirror.
+- `protect_price` / `protect_hrid` — see **Always use mirror** below. Posted even
+  when unpriced, as 0, the same treatment the materials get; omitting it would
+  hand the choice back to the server's own search.
 - `base_price: 0`, always — `total_cost` is base + materials + attempts, and the
   acquisition price is sunk for a piece already worn. Zeroing it makes the marginal
   cost of the *first* level simply `cost(1)`, with no subtraction to get wrong, and
@@ -430,3 +428,45 @@ first**, with the gear that needs each one named beneath it — and a search box
 below for anything else. A search box alone would have been useless: the whole
 difficulty is that the items costing nothing are exactly the ones nothing ever
 names.
+
+### Always use mirror
+
+A toggle on the Gear tab, beside **Cost these levels**, **on by default**. It
+decides which protection item an enhancement is costed against, and the default is
+a judgement about *data* rather than about play.
+
+An item's own protection — a Chaotic Chain, an Acrobat's Ribbon — is drop-only.
+It is therefore absent from the production-time map and unpriceable until the
+player types a number for **every one of them**, piece by piece. A Philosopher's
+Mirror is craftable, works on any piece, and needs pricing exactly **once**. So
+the toggle collapses a dozen unanswerable questions into one answerable one, and
+defaulting it off would mean the pay-back column read zero for most protections
+until a dozen drop-only items had been hand-costed — a poor first impression of a
+number that is supposed to be trustworthy.
+
+The choice lives in one place, `chooseProtection` in `shared/enhancementRoi.js`,
+where the api tests can reach it. Two rules, both load-bearing:
+
+1. **`alwaysUseMirror` is honoured even when the mirror itself has no price.** The
+   alternative — quietly falling back to the cheapest of the others — would mean a
+   toggle labelled *always* sometimes did something else, in precisely the case a
+   user is most likely to hit on a fresh install. A cost of zero the caller is
+   told about is better than a silent substitution.
+2. **Otherwise, the cheapest *priced* candidate.** An unpriced one must not win by
+   default, and that is not hypothetical: the server's own selection reads
+   `if pc and pc < cheapest`, where a zero is falsy and so skipped, leaving it to
+   fall back to the mirror without saying so.
+
+The Costs tab honours the same flag: with it on, the per-item protections are not
+listed at all, because nothing will read them. That omission **is** the
+simplification — on a real build it took the tab from 33 items and 30 unpriced to
+**24 and 20**, nine drop-only protections collapsing into one Mirror row that
+names every piece using it.
+
+Measured on the same build, Acrobatic Hood +7 → +8, with the Ribbon hand-priced at
+25,000 s:
+
+| | cost | pay-back |
+|---|---|---|
+| toggle **off** (cheapest priced → the Ribbon) | 331.2 h | 16,394.9 days |
+| toggle **on** (the Mirror, still unpriced here) | 174.4 h | 8,632.2 days |
