@@ -46,6 +46,13 @@ import {
 
 import { DEFAULT_SCAN, estimateWorkload, scanEquipment } from '../lib/equipmentScan/scan.js';
 
+import {
+  amortisedRate,
+  breakEvenHours,
+  isUsableEnhancementCost,
+  marginalCostFromTargets,
+} from '../../shared/enhancementRoi.js';
+
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
@@ -647,4 +654,77 @@ test('scanEquipment carries the per-slot metadata a UI needs to render a row', a
   assert.ok(row.deltas.encountersPerHour);
   assert.equal(result.familySize, 2);
   assert.equal(result.baseline.usableSamples, 3);
+});
+
+// ===========================================================================
+// return on investment (shared/enhancementRoi.js)
+// ===========================================================================
+
+test('isUsableEnhancementCost is stricter than the consumable rule and rejects zero', () => {
+  // consumableCost's isKnownCost admits 0, because a user can truthfully say a
+  // food reaches them free. Here 0 is what the production-time walker returns for
+  // anything it CANNOT resolve, so treating it as free would report an instant,
+  // infinite return on exactly the items we understand least.
+  assert.equal(isUsableEnhancementCost(0), false);
+  assert.equal(isUsableEnhancementCost(204.8), true);
+  assert.equal(isUsableEnhancementCost('204.8'), true);
+  assert.equal(isUsableEnhancementCost(-1), false);
+  for (const value of [null, undefined, '', [], false, {}, NaN, Infinity]) {
+    assert.equal(isUsableEnhancementCost(value), false, `${String(value)} should not be a cost`);
+  }
+});
+
+test('marginalCostFromTargets differences two whole programmes', () => {
+  // Measured on a Gobo Slasher: +5 costs 301.0s, +6 costs 505.8s.
+  assert.ok(Math.abs(marginalCostFromTargets(505.8, 301.0) - 204.8) < 1e-9);
+});
+
+test('marginalCostFromTargets refuses a non-positive or unavailable difference', () => {
+  // Reaching a higher level cannot be cheaper than reaching a lower one under the
+  // same configuration; a negative difference is a broken input, not a bargain.
+  assert.equal(marginalCostFromTargets(300, 400), null);
+  assert.equal(marginalCostFromTargets(300, 300), null);
+  assert.equal(marginalCostFromTargets(null, 300), null);
+  assert.equal(marginalCostFromTargets(300, undefined), null);
+});
+
+test('breakEvenHours solves the amortisation identity', () => {
+  // 3600 seconds of enhancing, a 100/h baseline and a 1/h gain: one hour of
+  // enhancing must be repaid by 100 hours of fighting at 1% better.
+  const hours = breakEvenHours({ costSeconds: 3600, baselineRate: 100, gainPerHour: 1 });
+  assert.ok(Math.abs(hours - 100) < 1e-9);
+
+  // The defining property: at exactly break-even the amortised rate equals the
+  // old one. Below it you are behind, above it ahead.
+  const at = amortisedRate({ costSeconds: 3600, improvedRate: 101, horizonHours: hours });
+  assert.ok(Math.abs(at - 100) < 1e-9);
+  assert.ok(amortisedRate({ costSeconds: 3600, improvedRate: 101, horizonHours: hours / 2 }) < 100);
+  assert.ok(amortisedRate({ costSeconds: 3600, improvedRate: 101, horizonHours: hours * 2 }) > 100);
+});
+
+test('breakEvenHours ranks a cheap small gain above a dear large one', () => {
+  // The whole reason the figure is worth computing: the biggest gain is often the
+  // worst investment, because the items that gain most are already deep enough
+  // into the enhancement curve to be ruinous to push further.
+  const cheapSmall = breakEvenHours({ costSeconds: 240, baselineRate: 610, gainPerHour: 1.1 });
+  const dearLarge = breakEvenHours({ costSeconds: 600_000, baselineRate: 610, gainPerHour: 8 });
+  assert.ok(cheapSmall < dearLarge);
+});
+
+test('breakEvenHours returns null for a level that never repays', () => {
+  // An enhanced Guzzling Pouch measured NEGATIVE on effective encounters per hour:
+  // it drinks more and owes more production time than it returns.
+  assert.equal(breakEvenHours({ costSeconds: 5000, baselineRate: 610, gainPerHour: -0.12 }), null);
+  assert.equal(breakEvenHours({ costSeconds: 5000, baselineRate: 610, gainPerHour: 0 }), null);
+  // null rather than Infinity: the caller must render "never", and Infinity
+  // invites arithmetic that quietly produces NaN downstream.
+  assert.equal(breakEvenHours({ costSeconds: 0, baselineRate: 610, gainPerHour: 1 }), null);
+  assert.equal(breakEvenHours({ costSeconds: 5000, baselineRate: 0, gainPerHour: 1 }), null);
+});
+
+test('amortisedRate guards a zero or absent horizon', () => {
+  assert.equal(amortisedRate({ costSeconds: 100, improvedRate: 10, horizonHours: 0 }), null);
+  assert.equal(amortisedRate({ costSeconds: -1, improvedRate: 10, horizonHours: 5 }), null);
+  // No cost at all: the rate is simply the improved one.
+  assert.equal(amortisedRate({ costSeconds: 0, improvedRate: 10, horizonHours: 5 }), 10);
 });

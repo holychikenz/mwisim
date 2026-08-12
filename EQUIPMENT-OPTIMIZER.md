@@ -257,8 +257,6 @@ observatory — and is answered separately. See §9.
 
 ## 9. Return on investment
 
-*(Second phase. See the section added below once shipped.)*
-
 The cow webapp already carries a complete enhancement simulator with an explicit
 **iron-cow mode**, in which every cost it reports is denominated in **seconds** —
 the same unit as the consumable economics and therefore commensurable with the
@@ -285,10 +283,69 @@ T  =  (C / 3600) · E_old / (E_new − E_old)
 ```
 
 — the number of combat hours before the enhancement has repaid the time it cost.
-Ranking by that ascending puts the best investment first, and it is a far more
-useful ordering than raw gain: a 0.18% gain that costs four minutes beats a 1.3%
-gain that costs a week.
 
-Known edge: `/api/enhance/calculate` loops `for prot in range(2, target + 1)`, so
-`target=1` returns no rows and the marginal cost of the very first level cannot be
-differenced out of the HTTP API as it stands.
+The arithmetic lives in `shared/enhancementRoi.js`, beside `consumableCost.js` and
+for the same two reasons: it is not the engine's business, and `ui/` has no test
+runner, so a figure that tells someone to grind for nine hours should not be the
+one part of the feature nothing covers. The fetching is client-side
+(`ui/src/utils/enhancementCosts.js`), exactly where the consumable production
+times already come from — the cow webapp is a personal local server holding one
+player's character, and the csim API is a stateless simulator that should not
+acquire a dependency on it.
+
+One convention differs deliberately from its neighbour. `isKnownCost` in
+`consumableCost.js` **admits zero**, because a user can truthfully say a food
+reaches them free. `isUsableEnhancementCost` **rejects** it: here the number comes
+from a recursive production-time walker that returns `0.0` for anything it cannot
+resolve, so a zero is nearly always "unknown" wearing the costume of "free", and
+honouring it would report an instant, infinite return on exactly the items we
+understand least.
+
+### Two changes it needed in the cow webapp
+
+Both small, both in `cow/webapp/app.py`, and the UI degrades gracefully without
+either — an uncostable row reports *why* rather than vanishing.
+
+1. **CORS on `/api/enhance/*`.** `_cors` was applied to only the three endpoints
+   csim already used. `/api/enhance/calculate` is a POST carrying
+   `application/json`, which is not a CORS "simple request", so the browser sends
+   a preflight `OPTIONS` that Flask answers automatically *without entering the
+   view* — meaning a per-response wrapper can never run. An `after_request` hook
+   scoped to the path prefix, advertising the method and header the preflight
+   asks about, is the smallest thing that works.
+
+2. **`target=1`.** The protection loop was `for prot in range(2, target + 1)`,
+   empty at `target=1`, so the endpoint returned no rows for precisely the case a
+   marginal cost needs: the first level on an item still at +0. `range(min(2,
+   target), target + 1)` fixes it; the Markov solver already handles
+   `protect_at=1` correctly, since `dest = i - 1 if i >= protect_at else 0`
+   resolves to state 0 from state 0 either way.
+
+### What it found
+
+Same `fly` scan as §7, costed. **The ordering inverts.**
+
+| by pay-back | slot | next | costs | buys | pays back after |
+|---|---|---|---|---|---|
+| 1 | Neck | +4 | 2 min | +0.183% | **17.8 h** |
+| 2 | Feet | +1 | 62 s | +0.043% | **40.2 h** |
+| 3 | Trinket ⚠ | +3 | 50 s | +0.014% | 4.2 days |
+| 7 | Head | +8 | 59 min | +0.084% | 48.8 days |
+| 10 | Main hand | +8 | 2.5 h | +0.014% | 762.9 days |
+| 13 | Charm | +1 | 11 s | 0.000% | never |
+| 14 | Pouch | +6 | 5.7 h | −0.020% | never |
+
+The Acrobatic Hood is **second** by raw gain and **seventh** by pay-back: it buys
+twice what the boots do and costs fifty-seven times as much, because +7→+8 sits far
+enough up the enhancement curve to be ruinous while +0→+1 is nearly free. Ranking
+by gain would have sent the player to the worst available investment. The Sundering
+Crossbow is worse still — a 762-day pay-back — and the two "never" rows are the
+zero-gain charm and the negative-gain pouch from §7.
+
+### Caveat
+
+A material the production-time walker cannot resolve prices at `0.0`, and that
+zero is *inside* the Python sim, below the reach of `isUsableEnhancementCost`. So
+a cost can be understated — never overstated — when an item's materials include
+something with no acquisition route. A pay-back that looks too good is the shape
+that failure takes.

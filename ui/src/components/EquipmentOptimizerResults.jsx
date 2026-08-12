@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import {
   Alert,
   Badge,
+  Button,
   Group,
   Paper,
   SimpleGrid,
@@ -17,6 +18,9 @@ import {
   formatSignedPct,
   verdictOf,
 } from '../utils/equipmentOptimizer';
+import { formatSeconds } from '../utils/triggerOptimizer';
+import { useEnhancementCosts } from '../hooks/useEnhancementCosts';
+import { breakEvenHours } from '../../../shared/enhancementRoi.js';
 
 // =============================================================================
 // EquipmentOptimizerResults — the ranked table of what a level is worth.
@@ -82,6 +86,170 @@ function VerdictBadge({ row }) {
     <Badge size="xs" color={style.color} variant={style.variant}>
       {VERDICT_LABELS[verdict]}
     </Badge>
+  );
+}
+
+/** "9.4 h" / "3.1 days" — a grinding horizon, not a production time. */
+function formatHours(hours) {
+  if (hours == null || !Number.isFinite(hours)) return 'never';
+  if (hours < 1) return `${Math.round(hours * 60)} min`;
+  if (hours < 48) return `${hours.toFixed(1)} h`;
+  return `${(hours / 24).toFixed(1)} days`;
+}
+
+/**
+ * Return on investment: what the level costs against what it buys.
+ *
+ * Both sides are seconds, so the answer is a TIME rather than a ratio — the
+ * number of combat hours before an enhancement has repaid the time spent making
+ * it. That ordering can invert the ranking by gain completely, which is the whole
+ * reason it is worth computing: the biggest gain is frequently the worst
+ * investment, because the items that gain most are the ones already deep enough
+ * into the enhancement curve to be ruinous to push further.
+ */
+function ReturnOnInvestment({ rows, baselineRate, objective, costed }) {
+  const { costs, loading, progress, error, fetchCosts } = useEnhancementCosts();
+
+  const ranked = useMemo(() => {
+    if (!costs) return null;
+    return rows
+      .map((row) => {
+        const cost = costs[row.id];
+        const hours = breakEvenHours({
+          costSeconds: cost?.seconds,
+          baselineRate,
+          gainPerHour: row.perLevel,
+        });
+        return { row, cost, hours };
+      })
+      // Unrepayable and uncostable rows sort last, but are still shown: "this
+      // never pays back" is a result, and hiding it would leave the reader
+      // wondering whether it had simply been forgotten.
+      .sort((a, b) => {
+        if (a.hours == null && b.hours == null) return a.row.rank - b.row.rank;
+        if (a.hours == null) return 1;
+        if (b.hours == null) return -1;
+        return a.hours - b.hours;
+      });
+  }, [costs, rows, baselineRate]);
+
+  return (
+    <Paper p="sm" radius="md" withBorder>
+      <Group justify="space-between" mb={6}>
+        <Text size="sm" fw={600}>
+          Return on investment
+        </Text>
+        <Button
+          size="compact-xs"
+          variant="default"
+          loading={loading}
+          onClick={() => fetchCosts(rows)}
+        >
+          {costs ? 'Refetch costs' : 'Cost these levels'}
+        </Button>
+      </Group>
+
+      {!costs && !loading && !error && (
+        <Text size="xs" c="dimmed">
+          Asks the cow webapp&apos;s enhancement simulator what each next level costs, in
+          production seconds, and works out how long you must fight before it pays for itself.
+          Requires the cow webapp on port 12345.
+        </Text>
+      )}
+
+      {loading && progress && (
+        <Text size="xs" c="dimmed">
+          Costing {progress.done} of {progress.total}…
+        </Text>
+      )}
+
+      {error && (
+        <Alert color="orange" variant="light" p="xs">
+          <Text size="xs">{error.message}</Text>
+        </Alert>
+      )}
+
+      {!costed && costs && (
+        <Alert color="yellow" variant="light" p="xs" mb={6}>
+          <Text size="xs">
+            Gains are raw encounters per hour, but costs are production seconds. Load Iron
+            production times and rerun the scan so both sides are denominated in the same currency.
+          </Text>
+        </Alert>
+      )}
+
+      {ranked && (
+        <>
+          <Table.ScrollContainer minWidth={640}>
+            <Table striped highlightOnHover withTableBorder>
+              <Table.Thead>
+                <Table.Tr>
+                  <Table.Th>Slot</Table.Th>
+                  <Table.Th>Item</Table.Th>
+                  <Table.Th ta="right">Next</Table.Th>
+                  <Table.Th ta="right">Costs</Table.Th>
+                  <Table.Th ta="right">Buys</Table.Th>
+                  <Table.Th ta="right">Pays back after</Table.Th>
+                </Table.Tr>
+              </Table.Thead>
+              <Table.Tbody>
+                {ranked.map(({ row, cost, hours }) => (
+                  <Table.Tr key={row.id}>
+                    <Table.Td>{row.slotName}</Table.Td>
+                    <Table.Td>
+                      <Text size="xs" c="dimmed">
+                        {row.itemName}
+                      </Text>
+                    </Table.Td>
+                    <Table.Td ta="right" ff="monospace">
+                      +{row.currentLevel + 1}
+                    </Table.Td>
+                    <Table.Td ta="right" ff="monospace">
+                      {cost?.seconds != null ? (
+                        formatSeconds(cost.seconds)
+                      ) : (
+                        <Tooltip label={cost?.reason || 'no costing available'} withArrow multiline w={260}>
+                          <Text span size="xs" c="dimmed">
+                            unknown
+                          </Text>
+                        </Tooltip>
+                      )}
+                    </Table.Td>
+                    <Table.Td
+                      ta="right"
+                      ff="monospace"
+                      c={row.perLevel > 0 ? 'teal' : row.perLevel < 0 ? 'red' : undefined}
+                    >
+                      {formatSignedPct(row.perLevelPct)}
+                    </Table.Td>
+                    <Table.Td ta="right" ff="monospace" fw={hours == null ? 400 : 700}>
+                      {hours == null ? (
+                        <Text span size="xs" c="dimmed">
+                          never
+                        </Text>
+                      ) : (
+                        formatHours(hours)
+                      )}
+                    </Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Table.ScrollContainer>
+          <Text size="10px" c="dimmed" mt={8}>
+            Costs are the cheapest expected programme to reach the next level, in production
+            seconds, minimised over where you start protecting — the item&apos;s own acquisition
+            price appears on both sides of the difference and cancels. Pay-back is the combat time
+            at which the enhancement has repaid the time it cost:{' '}
+            <Text span ff="monospace">
+              (cost / 3600) × {objective === 'effectiveEncountersPerHour' ? 'effective rate' : 'rate'}{' '}
+              ÷ gain
+            </Text>
+            . Rows that never repay are those whose measured gain was zero or negative.
+          </Text>
+        </>
+      )}
+    </Paper>
   );
 }
 
@@ -303,6 +471,13 @@ export function EquipmentOptimizerResults({ results }) {
             : 'see each row for its own ratio.'}
         </Text>
       </Paper>
+
+      <ReturnOnInvestment
+        rows={rows}
+        baselineRate={Number(baseline?.metrics?.[objective]) || 0}
+        objective={objective}
+        costed={costed}
+      />
 
       {skipped.length > 0 && (
         <Paper p="sm" radius="md" withBorder>
