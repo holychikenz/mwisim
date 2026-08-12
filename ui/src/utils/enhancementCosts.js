@@ -22,6 +22,7 @@
 // =============================================================================
 
 import { IRON_API_BASE } from '../hooks/usePrices';
+import { resolveItemCost } from './consumableCosts';
 import { marginalCostFromTargets } from '../../../shared/enhancementRoi.js';
 
 /** Same host as the production-time source; its CORS is open. */
@@ -29,6 +30,15 @@ export const ENHANCE_API_BASE = IRON_API_BASE;
 
 /** The cap, matching the engine's multiplier table. */
 export const MAX_ENHANCEMENT_LEVEL = 20;
+
+/**
+ * Always available as a protection item, whatever the piece.
+ *
+ * The server considers it alongside the item's own `protectionItemHrids` and
+ * takes the cheapest; we do the same here so the choice reflects the user's
+ * times rather than the walker's.
+ */
+export const MIRROR_OF_PROTECTION = '/items/mirror_of_protection';
 
 /** Requests are ~80ms each; this is a guard against a wedged server, not a budget. */
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -60,6 +70,77 @@ export async function fetchEnhancementConfig({ signal } = {}) {
 }
 
 /**
+ * The priced inputs to enhancing one item: its materials and its protection.
+ *
+ * WHY THIS EXISTS. Left to itself the server prices everything through the same
+ * recursive production walker that feeds /api/value/market, and that walker
+ * returns 0.0 for anything it cannot resolve — a drop-only material, an item with
+ * no production route. Those zeroes are not free, they are UNKNOWN, and they only
+ * ever understate. Measured on a Chaotic Flail: sinister_essence (18 per attempt)
+ * and chaotic_chain (the protection) are both absent from the value map, and the
+ * marginal cost of +8 -> +9 came out at 16,301 seconds. With realistic times it is
+ * 2,962,252 — a factor of 182.
+ *
+ * So we resolve every input ourselves, through the same override-aware path the
+ * consumables use, and post the numbers explicitly. `material_unit_costs` is
+ * POSITIONAL: the server zips it against the non-coin entries of
+ * `enhancementCosts`, in order, so the filter here must match its filter exactly.
+ *
+ * Coin is excluded because coin costs an ironcow no time — the server's iron
+ * branch prices it at 0 and adds it separately.
+ *
+ * @param {string} itemHrid
+ * @param {object} gameItems  useGameData's `items` (the itemDetailMap)
+ * @param {object} pricing    usePrices' return value
+ * @returns {{materials, protection, protectionCandidates, unpriced}}
+ */
+export function describeEnhancementInputs(itemHrid, gameItems, pricing) {
+  const detail = gameItems?.[itemHrid];
+  const costs = detail?.enhancementCosts || [];
+
+  const materials = costs
+    .filter((entry) => entry?.itemHrid && entry.itemHrid !== '/items/coin')
+    .map((entry) => ({
+      ...resolveItemCost(entry.itemHrid, pricing),
+      count: entry.count || 0,
+      name: gameItems?.[entry.itemHrid]?.name || lastSegment(entry.itemHrid),
+    }));
+
+  // The server excludes `_refined` protections from its own cheapest-of search;
+  // match that, or we would post a price for an option it would never pick.
+  const candidateHrids = [
+    MIRROR_OF_PROTECTION,
+    ...(detail?.protectionItemHrids || []).filter((hrid) => !String(hrid).includes('_refined')),
+  ];
+  const protectionCandidates = [...new Set(candidateHrids)].map((hrid) => ({
+    ...resolveItemCost(hrid, pricing),
+    name: gameItems?.[hrid]?.name || lastSegment(hrid),
+  }));
+
+  // Cheapest PRICED candidate. An unpriced one is not "free" and must not win the
+  // comparison by default — which is precisely the bug on the server side, where
+  // `if pc and pc < cheapest` skips a zero and silently falls back to the mirror.
+  const priced = protectionCandidates.filter((row) => row.effective != null);
+  const protection = priced.length
+    ? priced.reduce((best, row) => (row.effective < best.effective ? row : best))
+    : protectionCandidates[0] || null;
+
+  const unpriced = [
+    ...materials.filter((row) => row.effective == null).map((row) => ({ ...row, role: 'material' })),
+    ...(protection && protection.effective == null
+      ? [{ ...protection, role: 'protection' }]
+      : []),
+  ];
+
+  return { materials, protection, protectionCandidates, unpriced };
+}
+
+/** `/items/chaotic_chain` → `chaotic chain`. */
+function lastSegment(hrid) {
+  return String(hrid || '').split('/').pop().replace(/_/g, ' ');
+}
+
+/**
  * Cheapest expected cost, in seconds, of taking a fresh item from +0 to `target`.
  *
  * The response carries one row per protection level; the cheapest is the relevant
@@ -72,18 +153,38 @@ export async function fetchEnhancementConfig({ signal } = {}) {
  *
  * @returns {Promise<{seconds: number, protectAt: number, basePrice: number}|null>}
  */
-export async function fetchTargetCost({ itemHrid, target, config, signal }) {
+export async function fetchTargetCost({ itemHrid, target, config, inputs, signal }) {
   const guard = withTimeout(signal);
   try {
+    const body = { iron_cow: true, config, item_hrid: itemHrid, target };
+
+    if (inputs) {
+      // Positional, zipped against the non-coin enhancementCosts. An unpriced
+      // material posts 0 — the same value the server would have derived — but the
+      // caller is told about it so the UI can say the figure is a floor.
+      body.material_unit_costs = inputs.materials.map((row) => row.effective ?? 0);
+      if (inputs.protection?.effective != null) {
+        body.protect_price = inputs.protection.effective;
+        body.protect_hrid = inputs.protection.hrid;
+      }
+    }
+
+    // Always zero, deliberately. `total_cost` is base_price + materials +
+    // attempts, and the base price is the seconds to ACQUIRE the item — which is
+    // sunk for a piece already worn. Zeroing it makes the marginal cost of the
+    // first level simply cost(1), with no subtraction to get wrong, and leaves
+    // every other level's difference exactly as it was.
+    body.base_price = 0;
+
     const response = await fetch(`${ENHANCE_API_BASE}/api/enhance/calculate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ iron_cow: true, config, item_hrid: itemHrid, target }),
+      body: JSON.stringify(body),
       signal: guard.signal,
     });
     if (!response.ok) return null;
-    const body = await response.json();
-    const rows = Array.isArray(body?.rows) ? body.rows : [];
+    const payload = await response.json();
+    const rows = Array.isArray(payload?.rows) ? payload.rows : [];
     if (!rows.length) return null;
 
     let best = null;
@@ -93,7 +194,7 @@ export async function fetchTargetCost({ itemHrid, target, config, signal }) {
       if (!best || total < best.seconds) best = { seconds: total, protectAt: row.protect_at };
     }
     if (!best) return null;
-    return { ...best, basePrice: Number(body.base_price) || 0 };
+    return { ...best, basePrice: Number(payload.base_price) || 0 };
   } catch {
     return null;
   } finally {
@@ -119,13 +220,16 @@ export async function fetchTargetCost({ itemHrid, target, config, signal }) {
  *
  * @returns {Promise<{seconds: number|null, reason?: string, protectAt?: number}>}
  */
-export async function fetchMarginalCost({ itemHrid, currentLevel, config, signal }) {
+export async function fetchMarginalCost({ itemHrid, currentLevel, config, inputs, signal }) {
   const level = Math.max(0, Math.floor(Number(currentLevel) || 0));
+  const unpriced = inputs?.unpriced || [];
+  const protection = inputs?.protection || null;
+
   if (level >= MAX_ENHANCEMENT_LEVEL) {
-    return { seconds: null, reason: `already at +${MAX_ENHANCEMENT_LEVEL}` };
+    return { seconds: null, reason: `already at +${MAX_ENHANCEMENT_LEVEL}`, unpriced, protection };
   }
 
-  const target = await fetchTargetCost({ itemHrid, target: level + 1, config, signal });
+  const target = await fetchTargetCost({ itemHrid, target: level + 1, config, inputs, signal });
   if (!target) {
     return {
       seconds: null,
@@ -133,27 +237,32 @@ export async function fetchMarginalCost({ itemHrid, currentLevel, config, signal
         level === 0
           ? 'the enhancement API cannot cost the very first level (its protection loop starts at 2)'
           : 'the enhancement API returned no costing for this item',
+      unpriced,
+      protection,
     };
   }
 
+  // base_price is posted as 0, so cost(1) IS the marginal cost of the first level.
   if (level === 0) {
-    // Nothing is sunk yet only in the sense that the item is already owned: strip
-    // the acquisition price, keep the attempts and materials.
-    const seconds = target.seconds - (target.basePrice || 0);
-    return seconds > 0
-      ? { seconds, protectAt: target.protectAt }
-      : { seconds: null, reason: 'no usable production time for this item' };
+    return target.seconds > 0
+      ? { seconds: target.seconds, protectAt: target.protectAt, unpriced, protection }
+      : { seconds: null, reason: 'no usable production time for this item', unpriced, protection };
   }
 
-  const current = await fetchTargetCost({ itemHrid, target: level, config, signal });
+  const current = await fetchTargetCost({ itemHrid, target: level, config, inputs, signal });
   if (!current) {
-    return { seconds: null, reason: 'the enhancement API returned no costing for this item' };
+    return {
+      seconds: null,
+      reason: 'the enhancement API returned no costing for this item',
+      unpriced,
+      protection,
+    };
   }
 
   const seconds = marginalCostFromTargets(target.seconds, current.seconds);
   return seconds == null
-    ? { seconds: null, reason: 'no usable production time for this item' }
-    : { seconds, protectAt: target.protectAt };
+    ? { seconds: null, reason: 'no usable production time for this item', unpriced, protection }
+    : { seconds, protectAt: target.protectAt, unpriced, protection };
 }
 
 /**
@@ -170,7 +279,7 @@ export async function fetchMarginalCost({ itemHrid, currentLevel, config, signal
  * @param {(done: number, total: number) => void} [opts.onProgress]
  * @returns {Promise<Record<string, {seconds: number|null, reason?: string}>>} keyed by row id
  */
-export async function costScanRows(rows, config, { signal, onProgress } = {}) {
+export async function costScanRows(rows, config, { gameItems, pricing, signal, onProgress } = {}) {
   const out = {};
   const list = Array.isArray(rows) ? rows : [];
   // Two items of the same kind at the same level cost the same, and a party of
@@ -182,12 +291,16 @@ export async function costScanRows(rows, config, { signal, onProgress } = {}) {
     const row = list[i];
     const key = `${row.itemHrid}@${row.currentLevel}`;
     if (!memo.has(key)) {
+      const inputs = gameItems
+        ? describeEnhancementInputs(row.itemHrid, gameItems, pricing)
+        : null;
       memo.set(
         key,
         await fetchMarginalCost({
           itemHrid: row.itemHrid,
           currentLevel: row.currentLevel,
           config,
+          inputs,
           signal,
         })
       );

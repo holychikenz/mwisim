@@ -325,7 +325,7 @@ export function TriggerOptimizerPanel({
                           variant="subtle"
                           size="compact-xs"
                           color="gray"
-                          onClick={pricing.clearConsumableCostOverrides}
+                          onClick={pricing.clearItemCostOverrides}
                           disabled={loading}
                         >
                           Reset {overrideCount}
@@ -342,7 +342,7 @@ export function TriggerOptimizerPanel({
                           key={row.hrid}
                           row={row}
                           disabled={loading}
-                          onChange={pricing.setConsumableCostOverride}
+                          onChange={pricing.setItemCostOverride}
                         />
                       ))}
                     </Stack>

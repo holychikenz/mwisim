@@ -57,8 +57,22 @@ const DEFAULT_STATE = {
   expenseMode: 'ask',
   cache: {},
   // itemHrid → seconds per unit, entered by hand. 0 is a legitimate value.
-  consumableCostOverrides: {}
+  //
+  // Was `consumableCostOverrides` and covered only food and drink. It now covers
+  // ANY item, because the enhancement costing needs times for materials and
+  // protection items that no production walker can resolve — a Chaotic Chain is
+  // absent from the value map entirely, and the Python side prices an absence at
+  // zero, which understated a Chaotic Flail's next level by a factor of 182.
+  itemCostOverrides: {}
 };
+
+/** First of the candidates that is a usable object, else an empty map. */
+function pickOverrides(...candidates) {
+  for (const candidate of candidates) {
+    if (candidate && typeof candidate === 'object' && !Array.isArray(candidate)) return candidate;
+  }
+  return {};
+}
 
 /**
  * Drop price entries that carry no information.
@@ -93,10 +107,11 @@ function loadPersisted() {
       ...DEFAULT_STATE,
       ...raw,
       cache: raw.cache && typeof raw.cache === 'object' ? raw.cache : {},
-      consumableCostOverrides:
-        raw.consumableCostOverrides && typeof raw.consumableCostOverrides === 'object'
-          ? raw.consumableCostOverrides
-          : {}
+      // Migration: `consumableCostOverrides` is the pre-generalisation name for
+      // the same map. Read it when the new key is absent so a user who spent time
+      // hand-costing their food does not silently lose it. The old key is not
+      // written back, so it drains away on the first save.
+      itemCostOverrides: pickOverrides(raw.itemCostOverrides, raw.consumableCostOverrides)
     };
   } catch {
     return { ...DEFAULT_STATE };
@@ -129,15 +144,13 @@ export function usePrices(gameData) {
   const [expenseMode, setExpenseMode] = useState(persisted.expenseMode);
   const [ironCharacter, setIronCharacter] = useState(persisted.ironCharacter);
   const [characters, setCharacters] = useState([]);
-  const [consumableCostOverrides, setConsumableCostOverrides] = useState(
-    persisted.consumableCostOverrides
-  );
+  const [itemCostOverrides, setItemCostOverrides] = useState(persisted.itemCostOverrides);
 
   // Persist the choices, the cache and the overrides. Prices are only written by
   // fetchPrices, so this effect does not itself cause any network activity.
   useEffect(() => {
-    persist({ source, ironCharacter, revenueMode, expenseMode, cache, consumableCostOverrides });
-  }, [source, ironCharacter, revenueMode, expenseMode, cache, consumableCostOverrides]);
+    persist({ source, ironCharacter, revenueMode, expenseMode, cache, itemCostOverrides });
+  }, [source, ironCharacter, revenueMode, expenseMode, cache, itemCostOverrides]);
 
   // Populate the iron character list (best effort — webapp may be down). Note
   // this does NOT fetch prices; a cached set stays in force until asked.
@@ -162,10 +175,39 @@ export function usePrices(gameData) {
 
   // The active entry is derived, so switching source is instant and lossless.
   const active = source === 'vendor' ? null : cache[source] || null;
-  const prices = active?.prices || null;
+  const fetchedPrices = active?.prices || null;
   // 'coins' whenever there is nothing fetched: with no price map DropsTable falls
   // back to itemDetailMap sellPrice, which is coins whatever the source says.
   const unit = active?.unit || 'coins';
+
+  /**
+   * The price map every consumer actually reads: fetched values with the user's
+   * hand-entered times laid over the top.
+   *
+   * Applying the overrides HERE rather than at each call site is what lets one
+   * edited number reach the drops table, the consumable objective and the
+   * enhancement costing at once, without every reader having to remember the
+   * override map exists. `fetchedPrices` stays available, unmodified, for the
+   * editor — which has to show what was fetched AND what you said instead.
+   *
+   * Guarded on the unit, and that guard is load-bearing. An override is a time in
+   * SECONDS; the market source is denominated in coins, and laying seconds over
+   * coins would silently produce a number that is neither.
+   */
+  const prices = useMemo(() => {
+    if (!fetchedPrices || unit !== 'seconds') return fetchedPrices;
+    const entries = Object.entries(itemCostOverrides || {});
+    if (!entries.length) return fetchedPrices;
+    const merged = { ...fetchedPrices };
+    for (const [hrid, seconds] of entries) {
+      const value = Number(seconds);
+      if (!Number.isFinite(value) || value < 0) continue;
+      // vendor 0 because a vendor pays coins, which are worth no time — the same
+      // convention buildIronPrices uses.
+      merged[hrid] = { ask: value, bid: value, vendor: 0 };
+    }
+    return merged;
+  }, [fetchedPrices, unit, itemCostOverrides]);
   const fetchedLabel = active?.label || null;
   const fetchedAt = active?.fetchedAt || null;
 
@@ -246,9 +288,9 @@ export function usePrices(gameData) {
    * Deleting the key rather than storing a sentinel is what keeps "no opinion"
    * distinguishable from "I say this is free": 0 is a stored, honoured cost.
    */
-  const setConsumableCostOverride = useCallback((hrid, seconds) => {
+  const setItemCostOverride = useCallback((hrid, seconds) => {
     if (!hrid) return;
-    setConsumableCostOverrides((prev) => {
+    setItemCostOverrides((prev) => {
       const value = Number(seconds);
       const next = { ...prev };
       if (seconds === null || seconds === '' || !Number.isFinite(value) || value < 0) {
@@ -260,8 +302,24 @@ export function usePrices(gameData) {
     });
   }, []);
 
+  /** Set several at once, for a bulk edit. Same per-item rules as above. */
+  const setItemCostOverrides_ = useCallback((patch) => {
+    setItemCostOverrides((prev) => {
+      const next = { ...prev };
+      for (const [hrid, seconds] of Object.entries(patch || {})) {
+        const value = Number(seconds);
+        if (seconds === null || seconds === '' || !Number.isFinite(value) || value < 0) {
+          delete next[hrid];
+        } else {
+          next[hrid] = value;
+        }
+      }
+      return next;
+    });
+  }, []);
+
   /** Forget every hand-entered cost and go back to the fetched times throughout. */
-  const clearConsumableCostOverrides = useCallback(() => setConsumableCostOverrides({}), []);
+  const clearItemCostOverrides = useCallback(() => setItemCostOverrides({}), []);
 
   /** Discard a cached source (or all of them) and force the next fetch to be fresh. */
   const clearPrices = useCallback((which = source) => {
@@ -275,11 +333,17 @@ export function usePrices(gameData) {
 
   return {
     source, setSource,
-    prices, unit, fetching, error, fetchedLabel, fetchPrices,
+    // `prices` carries the overrides; `fetchedPrices` is what the server said.
+    // Only the cost editor should ever want the latter.
+    prices, fetchedPrices,
+    unit, fetching, error, fetchedLabel, fetchPrices,
     fetchedAt, staleCharacter, clearPrices,
     revenueMode, setRevenueMode,
     expenseMode, setExpenseMode,
     ironCharacter, setIronCharacter, characters,
-    consumableCostOverrides, setConsumableCostOverride, clearConsumableCostOverrides
+    itemCostOverrides,
+    setItemCostOverride,
+    setItemCostOverrides: setItemCostOverrides_,
+    clearItemCostOverrides
   };
 }

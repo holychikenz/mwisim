@@ -29,7 +29,7 @@ import {
 import {
   buildConsumableCosts,
   describeConsumableCosts,
-  resolveConsumableCost,
+  resolveItemCost,
   summariseConsumableCost,
 } from '../../ui/src/utils/consumableCosts.js';
 
@@ -112,7 +112,7 @@ function ironPricing(overrides = {}) {
       '/items/marsberry_donut': { ask: 30, bid: 30, vendor: 0 },
       '/items/mystery_snack': { ask: -1, bid: -1, vendor: 0 },
     },
-    consumableCostOverrides: overrides,
+    itemCostOverrides: overrides,
   };
 }
 
@@ -124,7 +124,7 @@ const PARTY = [
 ];
 
 test('a fetched time is used when there is no override', () => {
-  const row = resolveConsumableCost('/items/peach_gummy', ironPricing());
+  const row = resolveItemCost('/items/peach_gummy', ironPricing());
   assert.deepEqual(row, {
     hrid: '/items/peach_gummy',
     fetched: 240,
@@ -136,21 +136,21 @@ test('a fetched time is used when there is no override', () => {
 test('an override of zero displaces the fetched time', () => {
   // The motivating case: peach gummy arrives free, so its four minutes of
   // production time is not a cost the player actually pays.
-  const row = resolveConsumableCost('/items/peach_gummy', ironPricing({ '/items/peach_gummy': 0 }));
+  const row = resolveItemCost('/items/peach_gummy', ironPricing({ '/items/peach_gummy': 0 }));
   assert.equal(row.fetched, 240, 'the displaced figure is kept for display');
   assert.equal(row.override, 0);
   assert.equal(row.effective, 0, '?? must not treat a zero override as absent');
 });
 
 test('an override prices an item the source knows nothing about', () => {
-  const row = resolveConsumableCost('/items/mystery_snack', ironPricing({ '/items/mystery_snack': 90 }));
+  const row = resolveItemCost('/items/mystery_snack', ironPricing({ '/items/mystery_snack': 90 }));
   assert.equal(row.fetched, null);
   assert.equal(row.effective, 90);
 });
 
 test('a negative or unparseable override is ignored', () => {
   for (const bad of [-1, 'free', null, undefined, NaN]) {
-    const row = resolveConsumableCost('/items/peach_gummy', ironPricing({ '/items/peach_gummy': bad }));
+    const row = resolveItemCost('/items/peach_gummy', ironPricing({ '/items/peach_gummy': bad }));
     assert.equal(row.override, null, `${String(bad)} must not become an override`);
     assert.equal(row.effective, 240, 'and the fetched time must stand');
   }
@@ -158,7 +158,7 @@ test('a negative or unparseable override is ignored', () => {
 
 test('coins are not commensurable with combat time', () => {
   const coins = { unit: 'coins', expenseMode: 'ask', prices: ironPricing().prices };
-  assert.equal(resolveConsumableCost('/items/peach_gummy', coins).fetched, null);
+  assert.equal(resolveItemCost('/items/peach_gummy', coins).fetched, null);
   assert.equal(buildConsumableCosts(PARTY, coins), null, 'and no table is built at all');
 });
 

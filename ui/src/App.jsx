@@ -29,6 +29,7 @@ import { TriggerOptimizerPanel } from './components/TriggerOptimizerPanel';
 import { TriggerOptimizerResults } from './components/TriggerOptimizerResults';
 import { EquipmentOptimizerPanel } from './components/EquipmentOptimizerPanel';
 import { EquipmentOptimizerResults } from './components/EquipmentOptimizerResults';
+import { ItemCostsView } from './components/ItemCostsView';
 import { TrialMonsterCards } from './components/TrialMonsterCards';
 import { ImportExport } from './components/ImportExport';
 import { ProgressBar } from './components/ProgressBar';
@@ -588,7 +589,7 @@ function App() {
         expenseMode: pricing.expenseMode,
         // Hand-entered per-item costs win over the fetched ones. A 0 here is a
         // deliberate "free at the margin", not a missing value.
-        consumableCostOverrides: pricing.consumableCostOverrides
+        itemCostOverrides: pricing.itemCostOverrides
       }),
       // NOTE: the API's buildExtraBuffs honours mooPass / comExp / comDrop only.
       // extra.personalBuffs (seals) and the mwix lab keys are understood by the
@@ -620,7 +621,7 @@ function App() {
     pricing.prices,
     pricing.unit,
     pricing.expenseMode,
-    pricing.consumableCostOverrides
+    pricing.itemCostOverrides
   ]);
 
   // Re-preview on every configuration change, debounced: it is a cheap
@@ -687,7 +688,7 @@ function App() {
         prices: pricing.prices,
         unit: pricing.unit,
         expenseMode: pricing.expenseMode,
-        consumableCostOverrides: pricing.consumableCostOverrides
+        itemCostOverrides: pricing.itemCostOverrides
       }),
       // As with the trigger optimiser: the API's buildExtraBuffs honours
       // mooPass / comExp / comDrop only, so seals are not applied and the panel
@@ -713,7 +714,7 @@ function App() {
     pricing.prices,
     pricing.unit,
     pricing.expenseMode,
-    pricing.consumableCostOverrides
+    pricing.itemCostOverrides
   ]);
 
   useEffect(() => {
@@ -762,7 +763,7 @@ function App() {
         prices: pricing.prices,
         unit: pricing.unit,
         expenseMode: pricing.expenseMode,
-        consumableCostOverrides: pricing.consumableCostOverrides
+        itemCostOverrides: pricing.itemCostOverrides
       }),
     [
       triggerOptPayload,
@@ -770,8 +771,18 @@ function App() {
       pricing.prices,
       pricing.unit,
       pricing.expenseMode,
-      pricing.consumableCostOverrides
+      pricing.itemCostOverrides
     ]
+  );
+
+  // The selected party as engine DTOs, independent of mode. The optimiser payload
+  // memos each return null outside their own mode, so the Costs tab — which is not
+  // a simulation mode at all — needs its own view of the party.
+  const selectedPlayerDTOs = useMemo(
+    () => selectedPlayers.map(playerId =>
+      toPlayerDTO(players[playerId], { hrid: `player${playerId}` })
+    ),
+    [players, selectedPlayers]
   );
 
   const handleStartSimulation = useCallback(() => {
@@ -1127,10 +1138,20 @@ function App() {
             />
           )}
 
-          {activeResults && activeResults.__kind === 'triggerOpt' ? (
+          {simMode === 'itemCosts' ? (
+            <ItemCostsView
+              playerDTOs={selectedPlayerDTOs}
+              gameItems={gameData?.items}
+              pricing={pricing}
+            />
+          ) : activeResults && activeResults.__kind === 'triggerOpt' ? (
             <TriggerOptimizerResults results={activeResults} />
           ) : activeResults && activeResults.__kind === 'equipOpt' ? (
-            <EquipmentOptimizerResults results={activeResults} />
+            <EquipmentOptimizerResults
+              results={activeResults}
+              gameItems={gameData?.items}
+              pricing={pricing}
+            />
           ) : activeResults && activeResults.__kind === 'guildTrial' ? (
             <GuildTrialResults result={activeResults} />
           ) : (
@@ -1142,7 +1163,7 @@ function App() {
             />
           )}
 
-          {!activeResults && !activeLoading && (
+          {!activeResults && !activeLoading && simMode !== 'itemCosts' && (
             <Center mih={300}>
               <Text c="dimmed">
                 {simMode === 'guildTrial'

@@ -371,10 +371,17 @@ production time overstates the trade. So the panel's iron-source block lists eve
 slotted consumable with its fetched time and a box to type a different one, in
 seconds per unit. Blank means "use what was fetched"; a typed value wins.
 
-Overrides live in `usePrices` as `consumableCostOverrides` and are persisted in
-`csim_prices` beside the price cache, so they survive a refetch, a source switch,
-a character switch and a reload. They are read only by the consumable cost
-function; drop valuation is a separate question and untouched.
+Overrides live in `usePrices` and are persisted in `csim_prices` beside the price
+cache, so they survive a refetch, a source switch, a character switch and a reload.
+
+> **Superseded.** This began as `consumableCostOverrides`, editable only from this
+> panel and read only by the consumable cost function — drop valuation was
+> deliberately left alone. It is now `itemCostOverrides`, covers **any** item, has
+> its own **Costs** tab, and is applied inside `usePrices` so that one edited number
+> reaches consumable costs, enhancement costs and drop valuation alike. The
+> generalisation was forced by the enhancement costing, which needs times for
+> drop-only materials no production walker can resolve; see
+> EQUIPMENT-OPTIMIZER.md §10. The old key is migrated on load.
 
 **Zero is data, not a missing value**, and every layer had to be taught the
 difference. `buildConsumableCosts`, `sanitiseConsumableCosts` and `scoreSimResult`

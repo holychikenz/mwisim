@@ -349,3 +349,84 @@ zero is *inside* the Python sim, below the reach of `isUsableEnhancementCost`. S
 a cost can be understated — never overstated — when an item's materials include
 something with no acquisition route. A pay-back that looks too good is the shape
 that failure takes.
+
+---
+
+## 10. The Costs tab, and why the pay-backs were fiction without it
+
+§9 shipped a return-on-investment column built on the enhancement simulator's own
+prices. Those prices have a hole in them, and the hole is invisible.
+
+`/api/value/market` **omits** any item whose production time the walker cannot
+resolve — a drop-only material, an item with no recipe. `full_item_price` then
+returns `0.0` for it. Nothing anywhere says so. On a real build, thirty of the
+thirty-three items the costs depend on came back with no time at all:
+
+| material | needed by | iron value |
+|---|---|---|
+| `sinister_essence` (10 per attempt) | Acrobatic Hood | absent |
+| `star_fragment` (500 per attempt) | Philosopher's Necklace | absent |
+| `chaotic_chain` | Chaotic Flail (protection) | absent |
+| `acrobats_ribbon` | Acrobatic Hood (protection) | absent |
+
+The 17.8-hour necklace pay-back in §9 was five hundred star fragments priced at
+nothing. **The figure was not approximate; it was arbitrary.**
+
+### The fix: one override map, applied at the source
+
+`consumableCostOverrides` becomes `itemCostOverrides` — same shape, same rules,
+any item — and is applied **inside `usePrices`**, laying the user's times over the
+fetched map before anyone reads it. That is what makes one edited number reach
+consumable costs, enhancement costs and drop valuation at once, without every
+reader having to know the override map exists. `fetchedPrices` stays beside it,
+untouched, because the editor has to show what was fetched *and* what you said
+instead; resolving `fetched` from the merged map would report your own number back
+as though the server had said it. The old key is migrated on load.
+
+The guard on the merge is load-bearing: overrides are **seconds**, and the market
+source is **coins**. Laying one over the other would produce a number that is
+neither, so the merge is skipped unless `unit === 'seconds'`.
+
+### Posting them to the enhancement API
+
+The endpoint already accepted everything needed; nothing on the Python side had to
+change. `describeEnhancementInputs` resolves each input through the same
+override-aware path the consumables use, and `fetchTargetCost` posts:
+
+- `material_unit_costs` — **positional**, zipped by the server against the non-coin
+  entries of `enhancementCosts`, so the filter here must match its filter exactly
+- `protect_price` / `protect_hrid` — the cheapest **priced** candidate among
+  `mirror_of_protection` and the item's own `protectionItemHrids`, `_refined`
+  excluded to match the server's own search. An *unpriced* candidate must not win
+  by default, which is precisely the server's bug: `if pc and pc < cheapest` skips
+  a zero and silently falls back to the mirror.
+- `base_price: 0`, always — `total_cost` is base + materials + attempts, and the
+  acquisition price is sunk for a piece already worn. Zeroing it makes the marginal
+  cost of the *first* level simply `cost(1)`, with no subtraction to get wrong, and
+  leaves every other level's difference exactly as it was.
+
+### Flagging what is still missing
+
+An unpriced material contributes zero, so every pay-back is a **floor, never a
+ceiling**. Each costed row carries the list of inputs it could not price; the panel
+deduplicates them across rows and names them in an orange banner, because one
+absent essence typically poisons half the table.
+
+### What it found
+
+Same `fly` scan as §7 and §9. Setting **one** value — Sinister Essence to 900s —
+
+| | Acrobatic Hood, +7 → +8 |
+|---|---|
+| before | **59 min** → 48.8 days to pay back |
+| after | **331.2 h** → 16,394.9 days to pay back |
+
+A factor of **337**, from a single number. The ordering changed too: the Pathfinder
+Boots' first level (13 s, 8.4 h) overtook the necklace, because +0 → +1 is nearly
+free and the necklace's five hundred star fragments are *still* priced at nothing.
+
+The Costs tab therefore opens on the items this build depends on, **unpriced
+first**, with the gear that needs each one named beneath it — and a search box
+below for anything else. A search box alone would have been useless: the whole
+difficulty is that the items costing nothing are exactly the ones nothing ever
+names.

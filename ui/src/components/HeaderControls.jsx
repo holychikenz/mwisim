@@ -184,11 +184,14 @@ export function HeaderControls({
           { value: 'labyrinth', label: 'Lab' },
           { value: 'guildTrial', label: 'Trial' },
           { value: 'triggerOpt', label: 'Triggers' },
-          { value: 'equipOpt', label: 'Gear' }
+          { value: 'equipOpt', label: 'Gear' },
+          { value: 'itemCosts', label: 'Costs' }
         ]}
       />
 
-      {simMode === 'guildTrial' ? (
+      {/* Costs edits per-item times; it has no target to pick. Without this it
+          would fall through to the labyrinth controls, which are meaningless here. */}
+      {simMode === 'itemCosts' ? null : simMode === 'guildTrial' ? (
         <>
           <Select
             data={trialOptions}
@@ -438,7 +441,7 @@ export function HeaderControls({
           suffix=" runs"
           aria-label="Trial iterations"
         />
-      ) : simMode === 'triggerOpt' || simMode === 'equipOpt' ? null : (
+      ) : simMode === 'triggerOpt' || simMode === 'equipOpt' || simMode === 'itemCosts' ? null : (
         <NumberInput
           value={duration}
           onChange={(v) => onDurationChange(Math.max(1, Math.min(1000, Number(v) || 1)))}
@@ -535,13 +538,19 @@ export function HeaderControls({
       </Popover>
       )}
 
-      <Button onClick={onStart} loading={loading} size="sm">
-        Run
-      </Button>
-      {loading && (
-        <Button onClick={onStop} variant="default" size="sm">
-          Stop
-        </Button>
+      {/* Costs is a settings view, not a simulation mode — there is nothing to
+          run, and a Run button that did nothing would be worse than none. */}
+      {simMode !== 'itemCosts' && (
+        <>
+          <Button onClick={onStart} loading={loading} size="sm">
+            Run
+          </Button>
+          {loading && (
+            <Button onClick={onStop} variant="default" size="sm">
+              Stop
+            </Button>
+          )}
+        </>
       )}
     </Group>
   );

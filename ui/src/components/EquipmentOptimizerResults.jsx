@@ -107,8 +107,22 @@ function formatHours(hours) {
  * investment, because the items that gain most are the ones already deep enough
  * into the enhancement curve to be ruinous to push further.
  */
-function ReturnOnInvestment({ rows, baselineRate, objective, costed }) {
+function ReturnOnInvestment({ rows, baselineRate, objective, costed, gameItems, pricing }) {
   const { costs, loading, progress, error, fetchCosts } = useEnhancementCosts();
+
+  // Every material and protection item the run could not put a time to.
+  // Deduplicated across rows, because one absent essence typically poisons half
+  // the table and listing it fourteen times helps nobody.
+  const unpricedInputs = useMemo(() => {
+    if (!costs) return [];
+    const seen = new Map();
+    for (const entry of Object.values(costs)) {
+      for (const row of entry?.unpriced || []) {
+        if (!seen.has(row.hrid)) seen.set(row.hrid, row);
+      }
+    }
+    return [...seen.values()];
+  }, [costs]);
 
   const ranked = useMemo(() => {
     if (!costs) return null;
@@ -143,7 +157,7 @@ function ReturnOnInvestment({ rows, baselineRate, objective, costed }) {
           size="compact-xs"
           variant="default"
           loading={loading}
-          onClick={() => fetchCosts(rows)}
+          onClick={() => fetchCosts(rows, { gameItems, pricing })}
         >
           {costs ? 'Refetch costs' : 'Cost these levels'}
         </Button>
@@ -175,6 +189,29 @@ function ReturnOnInvestment({ rows, baselineRate, objective, costed }) {
             Gains are raw encounters per hour, but costs are production seconds. Load Iron
             production times and rerun the scan so both sides are denominated in the same currency.
           </Text>
+        </Alert>
+      )}
+
+      {/* The failure this warning exists for is silent and one-directional. An
+          unpriced material contributes ZERO to the cost, so every pay-back below
+          is a floor, never a ceiling — and it can be a floor by two orders of
+          magnitude: a Chaotic Flail's next level was 16,301s with the walker's
+          zeroes and 2,962,252s with real times. */}
+      {unpricedInputs.length > 0 && (
+        <Alert color="orange" variant="light" p="xs" mb={6} title="Some materials have no time">
+          <Text size="xs">
+            These count as <b>zero</b> in the costs below, so every pay-back shown is a{' '}
+            <b>lower bound</b> — possibly far below the truth. Set a time for each on the{' '}
+            <b>Costs</b> tab and refetch.
+          </Text>
+          <Group gap={4} mt={6}>
+            {unpricedInputs.map((row) => (
+              <Badge key={row.hrid} size="xs" variant="outline" color="orange">
+                {row.name}
+                {row.role === 'protection' ? ' (protection)' : ''}
+              </Badge>
+            ))}
+          </Group>
         </Alert>
       )}
 
@@ -253,7 +290,7 @@ function ReturnOnInvestment({ rows, baselineRate, objective, costed }) {
   );
 }
 
-export function EquipmentOptimizerResults({ results }) {
+export function EquipmentOptimizerResults({ results, gameItems, pricing }) {
   const rows = Array.isArray(results?.rows) ? results.rows : null;
 
   const columns = useMemo(
@@ -477,6 +514,8 @@ export function EquipmentOptimizerResults({ results }) {
         baselineRate={Number(baseline?.metrics?.[objective]) || 0}
         objective={objective}
         costed={costed}
+        gameItems={gameItems}
+        pricing={pricing}
       />
 
       {skipped.length > 0 && (

@@ -26,9 +26,19 @@ import {
 } from '../../../shared/consumableCost.js';
 import { priceOf } from './prices';
 
-/** The price map, but only when it is denominated in something we can use. */
+/**
+ * The price map, but only when it is denominated in something we can use.
+ *
+ * Reads `fetchedPrices` in preference to `prices`. Since the overrides are now
+ * laid over the price map inside usePrices, `prices` already reflects them — so
+ * resolving `fetched` from it would report the user's own number back as though
+ * the server had said it, and the editor would show "fetched 25000, overridden to
+ * 25000" with nothing struck through. `fetchedPrices` is the untouched original.
+ * The fallback keeps this working for any caller still passing only `prices`.
+ */
 function secondsPrices(pricing) {
-  return pricing?.unit === 'seconds' && pricing?.prices ? pricing.prices : null;
+  if (pricing?.unit !== 'seconds') return null;
+  return pricing.fetchedPrices || pricing.prices || null;
 }
 
 /**
@@ -45,17 +55,21 @@ function secondsPrices(pricing) {
  * the margin, and that is a fact about the player's circumstances which no
  * production time can know.
  *
+ * Named for items generally rather than consumables specifically because it was
+ * never consumable-specific — only its CALLERS were. The enhancement costing now
+ * uses it for materials and protection items too.
+ *
  * @param {string} hrid
- * @param {object} pricing  { prices, unit, expenseMode, consumableCostOverrides }
+ * @param {object} pricing  { fetchedPrices, prices, unit, expenseMode, itemCostOverrides }
  * @returns {{hrid: string, fetched: number|null, override: number|null, effective: number|null}}
  */
-export function resolveConsumableCost(hrid, pricing) {
+export function resolveItemCost(hrid, pricing) {
   const prices = secondsPrices(pricing);
   // expenseMode, because a consumable is a cost, not a receipt.
   const raw = prices ? priceOf(prices, hrid, pricing.expenseMode || 'ask') : null;
   const fetched = Number.isFinite(raw) && raw > 0 ? raw : null;
 
-  const stored = pricing?.consumableCostOverrides?.[hrid];
+  const stored = pricing?.itemCostOverrides?.[hrid];
   const overrideValue = Number(stored);
   const override =
     stored != null && Number.isFinite(overrideValue) && overrideValue >= 0 ? overrideValue : null;
@@ -82,7 +96,7 @@ export function describeConsumableCosts(playerDTOs, pricing) {
         const hrid = slot?.hrid;
         if (!hrid || seen.has(hrid)) continue;
         seen.add(hrid);
-        rows.push(resolveConsumableCost(hrid, pricing));
+        rows.push(resolveItemCost(hrid, pricing));
       }
     }
   }
@@ -150,7 +164,7 @@ export function summariseConsumableCost({ consumablesUsed, hours, pricing }) {
   const costs = {};
   const overrides = [];
   for (const hrid of Object.keys(byItem)) {
-    const { effective, override } = resolveConsumableCost(hrid, pricing);
+    const { effective, override } = resolveItemCost(hrid, pricing);
     if (effective != null) costs[hrid] = effective;
     if (override != null) overrides.push(hrid);
   }

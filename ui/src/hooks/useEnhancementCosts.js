@@ -39,7 +39,7 @@ export function useEnhancementCosts() {
    * @param {object[]} rows  scan result rows
    */
   const fetchCosts = useCallback(
-    async (rows) => {
+    async (rows, { gameItems, pricing } = {}) => {
       stop();
       const controller = new AbortController();
       abortRef.current = controller;
@@ -53,6 +53,11 @@ export function useEnhancementCosts() {
         setConfig(resolved);
 
         const table = await costScanRows(rows, resolved, {
+          // Passed through so every material and protection item is priced
+          // through the user's own overrides rather than the server's walker,
+          // which returns 0 for anything it cannot resolve.
+          gameItems,
+          pricing,
           signal: controller.signal,
           onProgress: (done, total) => setProgress({ done, total }),
         });
