@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import simulateRoutes from './routes/simulate.js';
 import optimizeTriggerRoutes from './routes/optimizeTriggers.js';
+import optimizeEquipmentRoutes from './routes/optimizeEquipment.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -17,6 +18,7 @@ app.use(express.json({ limit: '10mb' }));
 // API routes
 app.use('/api', simulateRoutes);
 app.use('/api', optimizeTriggerRoutes);
+app.use('/api', optimizeEquipmentRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

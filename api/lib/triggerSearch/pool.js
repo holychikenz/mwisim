@@ -196,6 +196,7 @@ export async function createSimulationPool({ size = defaultPoolSize() } = {}) {
  * @param {object[]} [args.extraBuffs]
  * @param {(info: object) => void} [args.onJobDone]
  * @param {AbortSignal} [args.signal]
+ * @param {string} [args.cancelMessage]  surfaced to the user on cancellation
  * @returns {(jobs: object[], meta: object) => Promise<object[]>}
  */
 export function makePoolEvaluator({
@@ -205,10 +206,11 @@ export function makePoolEvaluator({
   consumableCosts = null,
   onJobDone = null,
   signal = null,
+  cancelMessage = 'Trigger optimisation cancelled',
 }) {
   return async function evaluate(jobs, meta) {
     if (signal?.aborted) {
-      const error = new Error('Trigger optimisation cancelled');
+      const error = new Error(cancelMessage);
       error.name = 'AbortError';
       throw error;
     }

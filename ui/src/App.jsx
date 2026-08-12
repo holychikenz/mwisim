@@ -16,6 +16,7 @@ import {
 import { useGameData } from './hooks/useGameData';
 import { useSimulation } from './hooks/useSimulation';
 import { useTriggerOptimizer } from './hooks/useTriggerOptimizer';
+import { useEquipmentOptimizer } from './hooks/useEquipmentOptimizer';
 import { usePrices } from './hooks/usePrices';
 import { exportFormatToPlayer } from './utils/importSet';
 import { readMwixBridgePayload, clearMwixBridgeHash } from './utils/mwixBridge';
@@ -26,6 +27,8 @@ import { GuildTrialResults } from './components/GuildTrialResults';
 import { GuildTrialPanel } from './components/GuildTrialPanel';
 import { TriggerOptimizerPanel } from './components/TriggerOptimizerPanel';
 import { TriggerOptimizerResults } from './components/TriggerOptimizerResults';
+import { EquipmentOptimizerPanel } from './components/EquipmentOptimizerPanel';
+import { EquipmentOptimizerResults } from './components/EquipmentOptimizerResults';
 import { TrialMonsterCards } from './components/TrialMonsterCards';
 import { ImportExport } from './components/ImportExport';
 import { ProgressBar } from './components/ProgressBar';
@@ -57,6 +60,11 @@ import {
   toStages,
   triggerKey
 } from './utils/triggerOptimizer';
+import {
+  loadEquipmentOptState,
+  saveEquipmentOptState,
+  toScan
+} from './utils/equipmentOptimizer';
 
 const ONE_HOUR = 60 * 60 * 1e9;
 
@@ -130,6 +138,13 @@ function App() {
   const triggerOpt = useTriggerOptimizer();
   const [triggerOptConfig, setTriggerOptConfig] = useState(() => loadTriggerOptState().config);
   const [triggerOptSelection, setTriggerOptSelection] = useState([]);
+
+  const equipOpt = useEquipmentOptimizer();
+  const [equipOptConfig, setEquipOptConfig] = useState(() => loadEquipmentOptState().config);
+  // Row ids ("0:/equipment_types/head"), not objects: an equipment address is a
+  // stable (player, slot) pair rather than a positional index, so a plain string
+  // survives edits that would invalidate a trigger address.
+  const [equipOptSelection, setEquipOptSelection] = useState([]);
 
   const [players, setPlayers] = useState(createInitialPlayers);
   const [navbarWidth, setNavbarWidth] = useState(loadNavbarWidth);
@@ -608,26 +623,6 @@ function App() {
     pricing.consumableCostOverrides
   ]);
 
-  // Rows for the panel's override editor: the party's slotted consumables, each
-  // with its fetched time and whatever the user has said instead. Derived from the
-  // payload so it cannot drift from the cost table actually being sent.
-  const consumableCostRows = useMemo(
-    () =>
-      describeConsumableCosts(triggerOptPayload?.players, {
-        prices: pricing.prices,
-        unit: pricing.unit,
-        expenseMode: pricing.expenseMode,
-        consumableCostOverrides: pricing.consumableCostOverrides
-      }),
-    [
-      triggerOptPayload,
-      pricing.prices,
-      pricing.unit,
-      pricing.expenseMode,
-      pricing.consumableCostOverrides
-    ]
-  );
-
   // Re-preview on every configuration change, debounced: it is a cheap
   // server-side call, but editing a threshold fires this on each keystroke.
   useEffect(() => {
@@ -665,6 +660,120 @@ function App() {
     });
   }, [triggerOptPayload, triggerOptSelection, runTriggerOptimizer, zone, difficultyTier]);
 
+  // -- Equipment optimizer ---------------------------------------------------
+  // Same API transport and the same consumable-cost currency as the trigger
+  // optimiser, so most of this mirrors the block above. The two differences worth
+  // noticing: `scan` replaces `stages` (one stage, not four), and the selection is
+  // a list of stable row ids rather than positional addresses.
+  const {
+    fetchPreview: fetchEquipPreview,
+    runOptimizer: runEquipOptimizer,
+    cancel: cancelEquipOpt,
+    preview: equipOptPreview
+  } = equipOpt;
+
+  const equipOptPayload = useMemo(() => {
+    if (simMode !== 'equipOpt') return null;
+    const playerDTOs = selectedPlayers.map(playerId =>
+      toPlayerDTO(players[playerId], { hrid: `player${playerId}` })
+    );
+    return {
+      players: playerDTOs,
+      zone: { zoneHrid: zone, difficultyTier },
+      // Without these the scan ranks on raw encounters per hour, which cannot see
+      // the food bill — so an enhancement that lets the build eat less goes
+      // unrewarded. Same table, same seconds, as the trigger optimiser.
+      consumableCosts: buildConsumableCosts(playerDTOs, {
+        prices: pricing.prices,
+        unit: pricing.unit,
+        expenseMode: pricing.expenseMode,
+        consumableCostOverrides: pricing.consumableCostOverrides
+      }),
+      // As with the trigger optimiser: the API's buildExtraBuffs honours
+      // mooPass / comExp / comDrop only, so seals are not applied and the panel
+      // says so.
+      extra: {
+        comExp: extraOptions.comExp,
+        comDrop: extraOptions.comDrop,
+        mooPass: extraOptions.mooPass
+      },
+      guildBuffs: resolveGuildBuffs(trialConfig.guildBuffLevels),
+      scan: toScan(equipOptConfig),
+      workers: equipOptConfig.workers || undefined
+    };
+  }, [
+    simMode,
+    players,
+    selectedPlayers,
+    zone,
+    difficultyTier,
+    extraOptions,
+    trialConfig,
+    equipOptConfig,
+    pricing.prices,
+    pricing.unit,
+    pricing.expenseMode,
+    pricing.consumableCostOverrides
+  ]);
+
+  useEffect(() => {
+    if (!equipOptPayload) return undefined;
+    const timer = setTimeout(() => {
+      fetchEquipPreview(equipOptPayload);
+    }, 350);
+    return () => clearTimeout(timer);
+  }, [equipOptPayload, fetchEquipPreview]);
+
+  // Reconcile the selection against the latest preview: swapping an item can make
+  // a previously scannable slot unscannable (a charm with no combat stats, an item
+  // already at +20). Falls back to "everything scannable" when nothing is left,
+  // which is also the first-run default.
+  useEffect(() => {
+    const rows = equipOptPreview?.equipment;
+    if (!rows) return;
+    const scannable = rows.filter(row => row.scannable).map(row => row.id);
+    const valid = new Set(scannable);
+    setEquipOptSelection(previous => {
+      const kept = previous.filter(id => valid.has(id));
+      return kept.length ? kept : scannable;
+    });
+  }, [equipOptPreview]);
+
+  useEffect(() => {
+    saveEquipmentOptState({ config: equipOptConfig });
+  }, [equipOptConfig]);
+
+  const handleStartEquipOpt = useCallback(() => {
+    if (!equipOptPayload || equipOptSelection.length === 0) return;
+    runEquipOptimizer({
+      ...equipOptPayload,
+      selection: equipOptSelection,
+      meta: { zone, difficultyTier }
+    });
+  }, [equipOptPayload, equipOptSelection, runEquipOptimizer, zone, difficultyTier]);
+
+  // Rows for the panels' override editor: the party's slotted consumables, each
+  // with its fetched time and whatever the user has said instead. Derived from the
+  // payload so it cannot drift from the cost table actually being sent — and
+  // declared after BOTH payloads, since it reads whichever one is live.
+  const consumableCostRows = useMemo(
+    () =>
+      describeConsumableCosts(triggerOptPayload?.players ?? equipOptPayload?.players, {
+        prices: pricing.prices,
+        unit: pricing.unit,
+        expenseMode: pricing.expenseMode,
+        consumableCostOverrides: pricing.consumableCostOverrides
+      }),
+    [
+      triggerOptPayload,
+      equipOptPayload,
+      pricing.prices,
+      pricing.unit,
+      pricing.expenseMode,
+      pricing.consumableCostOverrides
+    ]
+  );
+
   const handleStartSimulation = useCallback(() => {
     if (simMode === 'guildTrial') {
       handleStartTrial();
@@ -672,6 +781,10 @@ function App() {
     }
     if (simMode === 'triggerOpt') {
       handleStartTriggerOpt();
+      return;
+    }
+    if (simMode === 'equipOpt') {
+      handleStartEquipOpt();
       return;
     }
     const isLab = simMode === 'labyrinth';
@@ -714,16 +827,20 @@ function App() {
       // with trial mode, so a shrine set once is reflected in both.
       guildBuffs: resolveGuildBuffs(trialConfig.guildBuffLevels)
     });
-  }, [players, selectedPlayers, simMode, zone, difficultyTier, labConfig, mazeContext, duration, extraOptions, trialConfig, runSimulation, handleStartTrial, handleStartTriggerOpt]);
+  }, [players, selectedPlayers, simMode, zone, difficultyTier, labConfig, mazeContext, duration, extraOptions, trialConfig, runSimulation, handleStartTrial, handleStartTriggerOpt, handleStartEquipOpt]);
 
   // The header, progress bar and results pane read from whichever engine the
-  // current mode uses. Only the optimiser goes through the API hook.
+  // current mode uses. Both optimisers go through an API hook; every other mode
+  // uses the browser worker.
   const isTriggerOpt = simMode === 'triggerOpt';
-  const activeLoading = isTriggerOpt ? triggerOpt.loading : simLoading;
-  const activeProgress = isTriggerOpt ? triggerOpt.progress : simProgress;
-  const activeResults = isTriggerOpt ? triggerOpt.results : results;
-  const activeError = isTriggerOpt ? triggerOpt.error : simError;
-  const handleStop = isTriggerOpt ? cancelTriggerOpt : clearResults;
+  const isEquipOpt = simMode === 'equipOpt';
+  const isApiOpt = isTriggerOpt || isEquipOpt;
+  const apiEngine = isEquipOpt ? equipOpt : triggerOpt;
+  const activeLoading = isApiOpt ? apiEngine.loading : simLoading;
+  const activeProgress = isApiOpt ? apiEngine.progress : simProgress;
+  const activeResults = isApiOpt ? apiEngine.results : results;
+  const activeError = isApiOpt ? apiEngine.error : simError;
+  const handleStop = isEquipOpt ? cancelEquipOpt : isTriggerOpt ? cancelTriggerOpt : clearResults;
 
   return (
     <AppShell
@@ -865,6 +982,30 @@ function App() {
                   </>
                 )}
 
+                {/* Same placement and the same reason as the trigger panel: the
+                    scan reads the very equipment the user edits in PlayerConfig
+                    below, and re-previews on every change. */}
+                {simMode === 'equipOpt' && (
+                  <>
+                    <EquipmentOptimizerPanel
+                      preview={equipOpt.preview}
+                      previewing={equipOpt.previewing}
+                      apiReachable={equipOpt.apiReachable}
+                      selection={equipOptSelection}
+                      onSelectionChange={setEquipOptSelection}
+                      config={equipOptConfig}
+                      onConfigChange={setEquipOptConfig}
+                      loading={equipOpt.loading}
+                      onRun={handleStartEquipOpt}
+                      onCancel={cancelEquipOpt}
+                      sealCount={extraOptions.personalBuffs?.length || 0}
+                      pricing={pricing}
+                      consumableCostRows={consumableCostRows}
+                    />
+                    <Divider />
+                  </>
+                )}
+
                 <div>
                   <Text size="sm" fw={600} mb={4}>
                     Party
@@ -960,11 +1101,11 @@ function App() {
             <ProgressBar
               progress={activeProgress}
               status={
-                isTriggerOpt
+                isApiOpt
                   ? // The stage label carries the real information here — a
                     // percentage alone tells the user nothing about whether the
                     // run is screening cheaply or verifying at 72 simulated hours.
-                    `${triggerOpt.stage ? `${triggerOpt.stage}: ` : ''}${triggerOpt.label || 'Optimising…'} · ${activeProgress.toFixed(1)}%`
+                    `${apiEngine.stage ? `${apiEngine.stage}: ` : ''}${apiEngine.label || 'Optimising…'} · ${activeProgress.toFixed(1)}%`
                   : simMode === 'guildTrial'
                     ? `Running ${trialConfig.iterations} trial iterations… ${activeProgress.toFixed(1)}%`
                     : `Simulating ${duration} hours of combat… ${activeProgress.toFixed(1)}%`
@@ -973,7 +1114,7 @@ function App() {
           )}
 
           {activeError && (
-            <Alert color="red" title={isTriggerOpt ? 'Optimiser error' : 'Simulation error'} variant="light">
+            <Alert color="red" title={isApiOpt ? 'Optimiser error' : 'Simulation error'} variant="light">
               {activeError.message}
             </Alert>
           )}
@@ -988,6 +1129,8 @@ function App() {
 
           {activeResults && activeResults.__kind === 'triggerOpt' ? (
             <TriggerOptimizerResults results={activeResults} />
+          ) : activeResults && activeResults.__kind === 'equipOpt' ? (
+            <EquipmentOptimizerResults results={activeResults} />
           ) : activeResults && activeResults.__kind === 'guildTrial' ? (
             <GuildTrialResults result={activeResults} />
           ) : (
@@ -1006,7 +1149,9 @@ function App() {
                   ? 'Build a roster on the left, then press Run.'
                   : isTriggerOpt
                     ? 'Pick which trigger thresholds to search on the left, then press Run.'
-                    : 'Configure your party on the left, then press Run.'}
+                    : isEquipOpt
+                      ? 'Pick which equipment slots to probe on the left, then press Run.'
+                      : 'Configure your party on the left, then press Run.'}
               </Text>
             </Center>
           )}
