@@ -146,20 +146,32 @@ export function buildConsumableCosts(playerDTOs, pricing) {
  * honest and simpler: the engine has already told us every item and count, so
  * there is no need to reason about which slots were reachable.
  *
- * `known` is false when nothing consumed could be priced. The caller should then
- * omit the effective rate rather than print a number equal to the raw one, which
- * would read as "your food is free" when it means "we have no idea".
+ * `known` is false when things WERE consumed and none of them could be priced.
+ * The caller should then omit the effective rate rather than print a number equal
+ * to the raw one, which would read as "your food is free" when it means "we have
+ * no idea".
+ *
+ * ATE NOTHING IS NOT THE SAME AS CANNOT PRICE IT. A run that consumed nothing at
+ * all owes no production time — its effective rate IS its raw rate, and that is a
+ * fact, not a guess. Reporting it as unknown was actively misleading in a
+ * comparison: in the zone sweep it sank every zone the build never had to eat on
+ * to the bottom of the "effective" sort, below zones that eat constantly, and
+ * handed the best-value highlight to a costlier zone. `nothingConsumed` is
+ * exposed alongside so a caller can phrase the difference rather than print
+ * "0 items priced" at someone who ate nothing.
  *
  * @param {object} args
  * @param {Record<string, Record<string, number>>} args.consumablesUsed  simResult tally
  * @param {number} args.hours    simulated hours (of combat time)
  * @param {object} args.pricing
- * @returns {{known: boolean, secondsPerHour: number, timeShare: number, unitsPerHour: number,
- *           priced: string[], unpriced: string[], overrides: string[]}}
+ * @returns {{known: boolean, nothingConsumed: boolean, secondsPerHour: number,
+ *           timeShare: number, unitsPerHour: number, priced: string[],
+ *           unpriced: string[], overrides: string[]}}
  */
 export function summariseConsumableCost({ consumablesUsed, hours, pricing }) {
   const { byItem, total } = sumConsumablesUsed(consumablesUsed);
   const perHour = (value) => (hours > 0 ? value / hours : 0);
+  const nothingConsumed = Object.keys(byItem).length === 0;
 
   const costs = {};
   const overrides = [];
@@ -173,7 +185,8 @@ export function summariseConsumableCost({ consumablesUsed, hours, pricing }) {
   const secondsPerHour = perHour(seconds);
 
   return {
-    known: priced.length > 0,
+    known: nothingConsumed || priced.length > 0,
+    nothingConsumed,
     secondsPerHour,
     timeShare: consumableTimeShare(secondsPerHour),
     unitsPerHour: perHour(total),

@@ -97,14 +97,21 @@ function SummaryStats({ results, monsters, pricing }) {
       kpis.push({
         label: 'Effective Enc/Hour',
         value: formatNumber(effectiveRatePerHour(encountersPerHour, consumableCost.secondsPerHour)),
-        hint: `${(consumableCost.timeShare * 100).toFixed(0)}% of time cooking`,
-        tip:
-          `Encounters per hour of total time — combat plus the ` +
-          `${formatSeconds(consumableCost.secondsPerHour)} per hour of production owed for ` +
-          `everything consumed. ${consumableCost.priced.length} item` +
-          `${consumableCost.priced.length === 1 ? '' : 's'} priced from your iron times` +
-          `${consumableCost.overrides.length ? `, ${consumableCost.overrides.length} overridden by hand` : ''}` +
-          `${unpriced ? `; ${unpriced} unpriced and counted as free` : ''}.`
+        // A run that ate nothing owes no production time, so its effective rate
+        // IS its raw rate — said plainly, rather than as "0 items priced", which
+        // reads like a failure to price something.
+        hint: consumableCost.nothingConsumed
+          ? 'nothing consumed'
+          : `${(consumableCost.timeShare * 100).toFixed(0)}% of time cooking`,
+        tip: consumableCost.nothingConsumed
+          ? `Nothing was eaten or drunk during this run, so no production time is owed — ` +
+            `the effective rate is the raw rate.`
+          : `Encounters per hour of total time — combat plus the ` +
+            `${formatSeconds(consumableCost.secondsPerHour)} per hour of production owed for ` +
+            `everything consumed. ${consumableCost.priced.length} item` +
+            `${consumableCost.priced.length === 1 ? '' : 's'} priced from your iron times` +
+            `${consumableCost.overrides.length ? `, ${consumableCost.overrides.length} overridden by hand` : ''}` +
+            `${unpriced ? `; ${unpriced} unpriced and counted as free` : ''}.`
       });
     }
   }
@@ -131,11 +138,14 @@ function SummaryStats({ results, monsters, pricing }) {
         )})`
       : formatNumber(experiencePerHour),
     hint: consumableCost.known ? 'raw (effective)' : undefined,
-    tip: consumableCost.known
-      ? `Total experience across every player and skill. The second figure is per hour of ` +
-        `total time, counting the ${formatSeconds(consumableCost.secondsPerHour)} per hour of ` +
-        `production owed for everything consumed.`
-      : undefined
+    tip: !consumableCost.known
+      ? undefined
+      : consumableCost.nothingConsumed
+        ? `Total experience across every player and skill. Nothing was consumed, so no ` +
+          `production time is owed and the two figures agree.`
+        : `Total experience across every player and skill. The second figure is per hour of ` +
+          `total time, counting the ${formatSeconds(consumableCost.secondsPerHour)} per hour of ` +
+          `production owed for everything consumed.`
   });
 
   // Player deaths (only players that actually appear in the result)
