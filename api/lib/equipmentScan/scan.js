@@ -36,7 +36,12 @@
 // enhancement simulator, exactly as consumable production times already are.
 // =============================================================================
 
-import { REPORTED_METRICS, coefficientOfVariation, computeDeltas } from '../triggerSearch/score.js';
+import {
+  ALL_REPORTED_METRICS,
+  coefficientOfVariation,
+  computeDeltas,
+  objectiveSaturation,
+} from '../triggerSearch/score.js';
 import { pairedComparison } from './stats.js';
 
 /** One simulated hour, in the nanoseconds the engine counts in. */
@@ -88,14 +93,22 @@ export function estimateWorkload(candidateCount, { hours, replicates } = DEFAULT
   };
 }
 
-/** Mean of each reported metric across replicates, so a row can show a table. */
+/**
+ * Mean of each reported metric across replicates, so a row can show a table.
+ *
+ * Walks every metric either kind of target can produce and skips the ones this
+ * run did not carry — a zone run has no clear rate and a labyrinth run has no
+ * consumable bill, and averaging an absent key to zero would print both as
+ * measurements.
+ */
 function averageMetrics(metricsList) {
   const list = (metricsList || []).filter(Boolean);
   if (!list.length) return {};
   const out = {};
-  for (const key of REPORTED_METRICS) {
+  for (const key of ALL_REPORTED_METRICS) {
     const values = list.map((m) => Number(m?.[key])).filter(Number.isFinite);
-    out[key] = values.length ? values.reduce((a, b) => a + b, 0) / values.length : 0;
+    if (!values.length) continue;
+    out[key] = values.reduce((a, b) => a + b, 0) / values.length;
   }
   // Carried through unaveraged: these are run properties, not rates.
   out.consumableCostsKnown = !!list[0]?.consumableCostsKnown;
@@ -310,5 +323,10 @@ export async function scanEquipment({
     // "Nothing here is distinguishable from noise" is a real and useful answer,
     // and far better than ranking a table of accidents with a straight face.
     inconclusive: !rows.some((row) => row.significant),
+    // Distinct from inconclusive, and the distinction matters. A saturated run
+    // measured perfectly and found that every attempt already clears ('ceiling')
+    // or that none of them ever will ('floor') — not "we could not tell".
+    // Reported separately, and named, because the two ends want opposite advice.
+    saturated: objectiveSaturation(objective, noise.mean),
   };
 }

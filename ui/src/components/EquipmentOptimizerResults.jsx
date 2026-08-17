@@ -21,7 +21,7 @@ import {
 } from '../utils/equipmentOptimizer';
 import { formatSeconds } from '../utils/triggerOptimizer';
 import { useEnhancementCosts } from '../hooks/useEnhancementCosts';
-import { breakEvenHours } from '../../../shared/enhancementRoi.js';
+import { breakEvenHours, enhancingHoursPerUnit } from '../../../shared/enhancementRoi.js';
 
 // =============================================================================
 // EquipmentOptimizerResults — the ranked table of what a level is worth.
@@ -40,6 +40,20 @@ const METRIC_COLUMNS = [
   { key: 'effectiveEncountersPerHour', label: 'Effective enc/h', decimals: 2, costed: true },
   { key: 'encountersPerHour', label: 'Enc/h', decimals: 2 },
   { key: 'deathsPerHour', label: 'Deaths/h', decimals: 2 },
+  { key: 'experiencePerHour', label: 'XP/h', decimals: 0 },
+];
+
+/**
+ * A labyrinth run gets its own columns rather than a superset. Encounters and
+ * the consumable bill mean nothing in there — the first is a word for clears and
+ * the second is always zero — and printing them beside a clear rate would invite
+ * a comparison with zone figures they have no relation to.
+ */
+const LABYRINTH_METRIC_COLUMNS = [
+  { key: 'clearRatePercent', label: 'Clear rate %', decimals: 2 },
+  { key: 'clearsPerHour', label: 'Clears/h', decimals: 1 },
+  { key: 'timeoutsPerHour', label: 'Timeouts/h', decimals: 1 },
+  { key: 'roomDeathsPerHour', label: 'Deaths/h', decimals: 1 },
   { key: 'experiencePerHour', label: 'XP/h', decimals: 0 },
 ];
 
@@ -113,6 +127,7 @@ function ReturnOnInvestment({
   baselineRate,
   objective,
   costed,
+  labyrinth = false,
   gameItems,
   pricing,
   alwaysUseMirror,
@@ -139,11 +154,22 @@ function ReturnOnInvestment({
     return rows
       .map((row) => {
         const cost = costs[row.id];
-        const hours = breakEvenHours({
-          costSeconds: cost?.seconds,
-          baselineRate,
-          gainPerHour: row.perLevel,
-        });
+        // Two questions, one shape. Against a zone the objective is a rate, so
+        // the honest figure is a PAY-BACK: the combat hours after which the
+        // level has repaid the production time it cost. Against a labyrinth the
+        // objective is a proportion and has no repayment horizon — but "what
+        // does a percentage point of clear rate cost me in enhancing" is exactly
+        // the question a fixed enhancing budget poses, and the clear rate is the
+        // objective, so it is the quantity the scan measured a confidence
+        // interval FOR. Both helpers return hours, smaller-is-better, null for
+        // "never", so everything below this line is common.
+        const hours = labyrinth
+          ? enhancingHoursPerUnit({ costSeconds: cost?.seconds, gainPerLevel: row.perLevel })
+          : breakEvenHours({
+              costSeconds: cost?.seconds,
+              baselineRate,
+              gainPerHour: row.perLevel,
+            });
         return { row, cost, hours };
       })
       // Unrepayable and uncostable rows sort last, but are still shown: "this
@@ -155,7 +181,7 @@ function ReturnOnInvestment({
         if (b.hours == null) return -1;
         return a.hours - b.hours;
       });
-  }, [costs, rows, baselineRate]);
+  }, [costs, rows, baselineRate, labyrinth]);
 
   return (
     <Paper p="sm" radius="md" withBorder>
@@ -193,8 +219,11 @@ function ReturnOnInvestment({
       {!costs && !loading && !error && (
         <Text size="xs" c="dimmed">
           Asks the cow webapp&apos;s enhancement simulator what each next level costs, in
-          production seconds, and works out how long you must fight before it pays for itself.
-          Requires the cow webapp on port 12345.
+          production seconds, and works out{' '}
+          {labyrinth
+            ? 'how much enhancing buys one percentage point of clear rate'
+            : 'how long you must fight before it pays for itself'}
+          . Requires the cow webapp on port 12345.
         </Text>
       )}
 
@@ -210,7 +239,7 @@ function ReturnOnInvestment({
         </Alert>
       )}
 
-      {!costed && costs && (
+      {!costed && !labyrinth && costs && (
         <Alert color="yellow" variant="light" p="xs" mb={6}>
           <Text size="xs">
             Gains are raw encounters per hour, but costs are production seconds. Load Iron
@@ -227,7 +256,7 @@ function ReturnOnInvestment({
       {unpricedInputs.length > 0 && (
         <Alert color="orange" variant="light" p="xs" mb={6} title="Some materials have no time">
           <Text size="xs">
-            These count as <b>zero</b> in the costs below, so every pay-back shown is a{' '}
+            These count as <b>zero</b> in the costs below, so every figure shown is a{' '}
             <b>lower bound</b> — possibly far below the truth. Set a time for each on the{' '}
             <b>Costs</b> tab and refetch.
           </Text>
@@ -253,7 +282,7 @@ function ReturnOnInvestment({
                   <Table.Th ta="right">Next</Table.Th>
                   <Table.Th ta="right">Costs</Table.Th>
                   <Table.Th ta="right">Buys</Table.Th>
-                  <Table.Th ta="right">Pays back after</Table.Th>
+                  <Table.Th ta="right">{labyrinth ? 'Per +1 point' : 'Pays back after'}</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -279,12 +308,20 @@ function ReturnOnInvestment({
                         </Tooltip>
                       )}
                     </Table.Td>
+                    {/* Deliberately different denominators. A zone's pay-back is
+                        enhancing hours divided by the RELATIVE gain (that is what
+                        base/gain reduces to), so the relative figure is what the
+                        column is per. A labyrinth's is per percentage POINT, so
+                        showing the relative gain beside it would invite the reader
+                        to divide two numbers that do not correspond. */}
                     <Table.Td
                       ta="right"
                       ff="monospace"
                       c={row.perLevel > 0 ? 'teal' : row.perLevel < 0 ? 'red' : undefined}
                     >
-                      {formatSignedPct(row.perLevelPct)}
+                      {labyrinth
+                        ? `${row.perLevel > 0 ? '+' : ''}${formatNumber(row.perLevel, 3)} pp`
+                        : formatSignedPct(row.perLevelPct)}
                     </Table.Td>
                     <Table.Td ta="right" ff="monospace" fw={hours == null ? 400 : 700}>
                       {hours == null ? (
@@ -303,13 +340,28 @@ function ReturnOnInvestment({
           <Text size="10px" c="dimmed" mt={8}>
             Costs are the cheapest expected programme to reach the next level, in production
             seconds, minimised over where you start protecting — the item&apos;s own acquisition
-            price appears on both sides of the difference and cancels. Pay-back is the combat time
-            at which the enhancement has repaid the time it cost:{' '}
-            <Text span ff="monospace">
-              (cost / 3600) × {objective === 'effectiveEncountersPerHour' ? 'effective rate' : 'rate'}{' '}
-              ÷ gain
-            </Text>
-            . Rows that never repay are those whose measured gain was zero or negative.
+            price appears on both sides of the difference and cancels.{' '}
+            {labyrinth ? (
+              <>
+                The last column is the enhancing time that buys one percentage point of clear rate:{' '}
+                <Text span ff="monospace">
+                  (cost / 3600) ÷ gain per level
+                </Text>
+                . It is not a pay-back — a completion chance is a proportion and has no horizon to
+                repay itself over — but it ranks the slots by what a fixed enhancing budget buys,
+                which is the same decision. Rows marked <i>never</i> are those whose measured gain
+                was zero or negative.
+              </>
+            ) : (
+              <>
+                Pay-back is the combat time at which the enhancement has repaid the time it cost:{' '}
+                <Text span ff="monospace">
+                  (cost / 3600) × {objective === 'effectiveEncountersPerHour' ? 'effective rate' : 'rate'}{' '}
+                  ÷ gain
+                </Text>
+                . Rows that never repay are those whose measured gain was zero or negative.
+              </>
+            )}
           </Text>
         </>
       )}
@@ -326,9 +378,14 @@ export function EquipmentOptimizerResults({
 }) {
   const rows = Array.isArray(results?.rows) ? results.rows : null;
 
+  const labyrinth = results?.target?.kind === 'labyrinth';
+
   const columns = useMemo(
-    () => METRIC_COLUMNS.filter((column) => !column.costed || results?.consumableCostsKnown),
-    [results?.consumableCostsKnown]
+    () =>
+      labyrinth
+        ? LABYRINTH_METRIC_COLUMNS
+        : METRIC_COLUMNS.filter((column) => !column.costed || results?.consumableCostsKnown),
+    [labyrinth, results?.consumableCostsKnown]
   );
 
   // What this run could actually resolve. The median margin rather than the best
@@ -356,6 +413,7 @@ export function EquipmentOptimizerResults({
     step,
     simulationsRun,
     inconclusive,
+    saturated,
     pairingEfficiency,
     skipped = [],
   } = results;
@@ -377,12 +435,32 @@ export function EquipmentOptimizerResults({
         </Group>
       </Group>
 
-      {inconclusive ? (
+      {saturated ? (
+        // Checked BEFORE inconclusive, and phrased as a finding rather than a
+        // failure: the measurement worked perfectly. Clear rate is bounded at
+        // both ends, and a run pinned against either can only report ties.
+        <Alert
+          color="grape"
+          variant="light"
+          title={
+            saturated === 'ceiling'
+              ? 'Every attempt already clears'
+              : 'No attempt ever clears'
+          }
+        >
+          <Text size="sm">
+            {saturated === 'ceiling'
+              ? 'The clear rate is 100% on every replicate, so no enhancement can improve it and every row below is necessarily a tie. Clearing this room is not what limits you — raise the room level until you start failing, and scan there.'
+              : 'The clear rate is 0% on every replicate, so no single enhancement level moves it and every row below is necessarily a tie. Lower the room level to one you sometimes clear, and scan there.'}
+          </Text>
+        </Alert>
+      ) : inconclusive ? (
         <Alert color="gray" variant="light" title="Nothing clears the measurement noise">
           <Text size="sm">
             At {replicates} replicates of {hours} simulated hours, no slot&apos;s gain could be
             distinguished from run-to-run variance. Raise the replicates or the hours — or accept
-            that on this zone, at this build, an enhancement level is worth less than the noise.
+            that on this {labyrinth ? 'room' : 'zone'}, at this build, an enhancement level is worth
+            less than the noise.
           </Text>
         </Alert>
       ) : (
@@ -390,13 +468,17 @@ export function EquipmentOptimizerResults({
           <Text size="sm">
             One more level on <b>{leader.itemName}</b> (currently +{leader.currentLevel}) is worth{' '}
             <b>{formatSignedPct(leader.perLevelPct)}</b> of{' '}
-            {costed ? 'effective encounters per hour' : 'encounters per hour'}, ±
-            {formatPct(leader.perLevelMarginPct, 3)} at 95% confidence.
+            {labyrinth
+              ? 'the current clear rate'
+              : costed
+                ? 'effective encounters per hour'
+                : 'encounters per hour'}
+            , ±{formatPct(leader.perLevelMarginPct, 3)} at 95% confidence.
           </Text>
         </Alert>
       )}
 
-      {!costed && (
+      {!costed && !labyrinth && (
         <Alert color="yellow" variant="light" title="The food bill is not counted">
           <Text size="xs">
             Ranking is on raw encounters per hour. Load Iron production times to rank on effective
@@ -421,7 +503,13 @@ export function EquipmentOptimizerResults({
 
       <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
         <KpiCard
-          label={costed ? 'Baseline effective enc/h' : 'Baseline enc/h'}
+          label={
+            labyrinth
+              ? 'Baseline clear rate %'
+              : costed
+                ? 'Baseline effective enc/h'
+                : 'Baseline enc/h'
+          }
           value={formatNumber(baseline?.metrics?.[objective], 2)}
           hint={`The unmodified build, averaged over ${replicates} runs of ${hours} simulated hours.`}
         />
@@ -542,11 +630,26 @@ export function EquipmentOptimizerResults({
         </Text>
       </Paper>
 
+      {/* THE COLUMN IS NOT A PAY-BACK IN A LABYRINTH, and the distinction is
+          kept rather than papered over. Break-even is
+          T = (C/3600) x E_old / (E_new - E_old), derived from E being a rate PER
+          HOUR: spend C seconds, grind T hours, and E_new x T / (T + C/3600)
+          overtakes E_old. A clear rate is a proportion, so that arithmetic would
+          produce a number meaning nothing.
+
+          What IS well-formed is the cost of a unit of the objective: enhancing
+          hours per percentage point of clear rate. It answers the question a
+          fixed enhancing budget actually poses — which slot buys the most per
+          hour spent — and it divides by `perLevel`, the quantity the scan
+          measured a confidence interval FOR, so it rests on a tested difference
+          rather than an incidental one. Everything else here, the cost fetching
+          and the mirror choice included, is common to both. */}
       <ReturnOnInvestment
         rows={rows}
         baselineRate={Number(baseline?.metrics?.[objective]) || 0}
         objective={objective}
         costed={costed}
+        labyrinth={labyrinth}
         gameItems={gameItems}
         pricing={pricing}
         alwaysUseMirror={alwaysUseMirror}

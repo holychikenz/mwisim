@@ -24,29 +24,42 @@ import { parentPort } from 'worker_threads';
 const CombatSimulator = (await import('../../../src/combatsimulator/combatSimulator.js')).default;
 const Player = (await import('../../../src/combatsimulator/player.js')).default;
 const Zone = (await import('../../../src/combatsimulator/zone.js')).default;
+const Labyrinth = (await import('../../../src/combatsimulator/labyrinth.js')).default;
 const { installSeededRandom } = await import('./rng.js');
 const { scoreSimResult } = await import('./score.js');
 
 /**
- * Zone construction is pure in (hrid, tier) but Zone carries mutable per-run
- * state (encountersKilled, dungeonsCompleted), so each simulation needs its own.
- * Nothing to cache here — noted so nobody "optimises" it into a shared instance.
+ * Zone and Labyrinth construction are both pure in their arguments, but each
+ * carries mutable per-run state — encountersKilled / dungeonsCompleted on one,
+ * attemptCount and the room's start time on the other — so every simulation
+ * needs its own. Nothing to cache here; noted so nobody "optimises" it into a
+ * shared instance.
+ *
+ * Exactly one of `zoneConfig` / `labyrinthConfig` is set; the route guarantees
+ * it (api/lib/target.js normaliseTarget). Whichever is absent must be passed as
+ * an explicit null: omitting the labyrinth argument puts the options object in
+ * its slot, and startNewEncounter() then calls this.labyrinth.getMonster() and
+ * throws on the first encounter. Same trap documented in
+ * api/lib/simulationWorker.js.
  */
-function buildRun({ playersData, zoneConfig, extraBuffs }) {
-  const zone = new Zone(zoneConfig.zoneHrid, zoneConfig.difficultyTier);
+function buildRun({ playersData, zoneConfig, labyrinthConfig, extraBuffs }) {
+  const zone = zoneConfig ? new Zone(zoneConfig.zoneHrid, zoneConfig.difficultyTier) : null;
+  // Supply crates become the labyrinth's buffs, exactly as src/worker.js does.
+  // The lab-shop upgrades are NOT here: they are character upgrades and arrive
+  // folded into extraBuffs by the route (target.js targetExtraBuffs).
+  const labyrinth = labyrinthConfig
+    ? new Labyrinth(labyrinthConfig.labyrinthHrid, labyrinthConfig.roomLevel, labyrinthConfig.crates || [])
+    : null;
 
   const players = [];
   for (let i = 0; i < playersData.length; i += 1) {
     const player = Player.createFromDTO(structuredClone(playersData[i]));
-    player.zoneBuffs = zone.buffs;
+    player.zoneBuffs = zone?.buffs || labyrinth?.buffs || [];
     player.extraBuffs = extraBuffs;
     players.push(player);
   }
 
-  // `labyrinth` must be passed as null explicitly — omitting it puts the options
-  // object in the labyrinth slot and startNewEncounter() throws on the first
-  // encounter. Same trap documented in api/lib/simulationWorker.js.
-  return new CombatSimulator(players, zone, null, { enableHpMpVisualization: false });
+  return new CombatSimulator(players, zone, labyrinth, { enableHpMpVisualization: false });
 }
 
 async function runOne(job) {

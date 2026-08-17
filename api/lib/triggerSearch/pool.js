@@ -124,7 +124,7 @@ class SimulationPool {
   /**
    * Run a batch of jobs, resolving when every one has finished.
    *
-   * @param {object[]} jobs  `{ id, playersData, zoneConfig, extraBuffs, simulationTimeLimit, seed }`
+   * @param {object[]} jobs  `{ id, playersData, zoneConfig, labyrinthConfig, extraBuffs, simulationTimeLimit, seed }`
    * @param {object} [opts]
    * @param {(done: number, total: number) => void} [opts.onJobDone]
    * @returns {Promise<object[]>} `{ id, metrics }` or `{ id, error }` per job
@@ -186,13 +186,21 @@ export async function createSimulationPool({ size = defaultPoolSize() } = {}) {
  * Build the `evaluate` function search.js expects, backed by a pool.
  *
  * search.js hands us `{ id, playerDTOs, simulationTimeLimit, seed }`; the worker
- * wants `playersData` plus the run-wide zone and buffs. Bridging here keeps
+ * wants `playersData` plus the run-wide target and buffs. Bridging here keeps
  * search.js free of any worker vocabulary, so it can be unit-tested against a
  * synthetic evaluator.
  *
+ * `zoneConfig` and `labyrinthConfig` are mutually exclusive and one is always
+ * present — the routes resolve that through target.js before reaching here. Both
+ * are passed on every job rather than being resolved into some union type,
+ * because the worker builds the engine's own two objects from them and the
+ * asymmetry is real: a Zone has a difficulty tier, a Labyrinth has a room level
+ * and crates.
+ *
  * @param {object} args
  * @param {SimulationPool} args.pool
- * @param {{zoneHrid: string, difficultyTier?: number}} args.zoneConfig
+ * @param {{zoneHrid: string, difficultyTier?: number}} [args.zoneConfig]
+ * @param {{labyrinthHrid: string, roomLevel: number, crates?: string[]}} [args.labyrinthConfig]
  * @param {object[]} [args.extraBuffs]
  * @param {(info: object) => void} [args.onJobDone]
  * @param {AbortSignal} [args.signal]
@@ -201,7 +209,8 @@ export async function createSimulationPool({ size = defaultPoolSize() } = {}) {
  */
 export function makePoolEvaluator({
   pool,
-  zoneConfig,
+  zoneConfig = null,
+  labyrinthConfig = null,
   extraBuffs = [],
   consumableCosts = null,
   onJobDone = null,
@@ -219,6 +228,7 @@ export function makePoolEvaluator({
       id: job.id,
       playersData: job.playerDTOs,
       zoneConfig,
+      labyrinthConfig,
       extraBuffs,
       consumableCosts,
       simulationTimeLimit: job.simulationTimeLimit,

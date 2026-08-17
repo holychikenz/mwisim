@@ -128,6 +128,45 @@ export function breakEvenHours({ costSeconds, baselineRate, gainPerHour }) {
 }
 
 /**
+ * Enhancing time that buys ONE UNIT of whatever the scan ranked on.
+ *
+ * The companion to `breakEvenHours`, for objectives that are not rates. A
+ * labyrinth scan ranks on completion chance, a proportion, so there is no hour
+ * count for it to "repay itself" in — but "how much enhancing buys a percentage
+ * point of clear rate" is a perfectly well-formed question, and it is the one a
+ * player allocating a fixed enhancing budget across slots actually asks.
+ *
+ * The two are closer than they look. Substituting `gain/base` into break-even
+ * gives `(cost/3600) / relativeGain` — so a pay-back time IS this function with
+ * the RELATIVE gain as its denominator. That is why break-even reads as hours of
+ * combat: dividing enhancing hours by a fractional improvement in a rate happens
+ * to yield the horizon at which the improvement has repaid the outlay.
+ *
+ * For a bounded objective, pass the ABSOLUTE gain instead. The result is then
+ * hours of enhancing per unit of it — per percentage point of clear rate — which
+ * is legible on its own terms and makes no claim about repayment.
+ *
+ * Same conventions as `breakEvenHours`, deliberately, so a caller can swap one
+ * for the other and change nothing else: null for "no answer", smaller is
+ * better, and a non-positive gain never qualifies.
+ *
+ * @param {object} args
+ * @param {number} args.costSeconds    seconds to buy the level
+ * @param {number} args.gainPerLevel   ABSOLUTE gain in the objective, per level
+ * @returns {number|null} hours of enhancing per unit, or null
+ */
+export function enhancingHoursPerUnit({ costSeconds, gainPerLevel }) {
+  if (!isUsableEnhancementCost(costSeconds)) return null;
+  const gain = Number(gainPerLevel);
+  // A level that buys nothing — or costs clear rate, as an enhanced pouch might
+  // by pushing the build past a breakpoint — buys no units at any price. null
+  // rather than Infinity, so the caller renders "never" instead of propagating
+  // an infinity into arithmetic that quietly becomes NaN.
+  if (!Number.isFinite(gain) || !(gain > 0)) return null;
+  return Number(costSeconds) / SECONDS_PER_HOUR / gain;
+}
+
+/**
  * Effective rate actually achieved over a finite grinding horizon, counting the
  * enhancing time as part of it.
  *

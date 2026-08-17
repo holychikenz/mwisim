@@ -386,12 +386,20 @@ test('deriveBounds produces every field resolveMaxValue reads', () => {
   const dto = JSON.parse(readFileSync(fixturePath, 'utf8')).player.dto;
   dto.hrid = 'player1';
 
-  const bounds = deriveBounds({ playerDTOs: [dto], zone: { zoneHrid: '/actions/combat/fly', difficultyTier: 0 } });
+  // deriveBounds takes a TARGET (zone or labyrinth), not a bare zone — see
+  // api/lib/target.js. Passing the old shape would silently fall through to the
+  // unresolved-zone fallback and this test would still pass, so assert
+  // `resolved` explicitly rather than trusting a positive hitpoint count.
+  const bounds = deriveBounds({
+    playerDTOs: [dto],
+    target: { kind: 'zone', zone: { zoneHrid: '/actions/combat/fly', difficultyTier: 0 }, labyrinth: null },
+  });
   assert.ok(bounds.players[0].maxHitpoints > 1, 'a real build has real hitpoints');
   assert.ok(bounds.players[0].maxManapoints > 1);
   assert.equal(bounds.party.size, 1);
   assert.equal(bounds.party.maxHitpoints, bounds.players[0].maxHitpoints);
   assert.ok(bounds.enemies.totalHitpoints > 0);
+  assert.equal(bounds.enemies.resolved, true, 'the zone was actually read, not defaulted');
 });
 
 // -----------------------------------------------------------------------------

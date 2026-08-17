@@ -1,5 +1,5 @@
 // =============================================================================
-// bounds — derive real ceilings for absolute thresholds from the zone and party
+// bounds — derive real ceilings for absolute thresholds from the target and party
 //
 // An absolute threshold like `current_hp >= N` needs a sensible upper bound for
 // N, and guessing wastes the search: too low and the optimum lies outside the
@@ -18,11 +18,15 @@
 // maxHitpoints / maxManapoints. This is the same path api/lib/labStats.js
 // takes, and it matters: a `self` + `current_hp` ceiling is the *player's*
 // maximum, not the enemy's. The peer fork gets this wrong.
+//
+// Labyrinth side — none of the enemy machinery applies. One monster, scaled by
+// room level, every attempt; see deriveLabyrinthEnemyBounds.
 // =============================================================================
 
 const Monster = (await import('../../../src/combatsimulator/monster.js')).default;
 const Player = (await import('../../../src/combatsimulator/player.js')).default;
 const { actionDetailMap } = await import('../../../src/combatsimulator/dataProvider.js');
+const { buildCrateBuffs } = await import('../target.js');
 
 /** Fallback when a zone cannot be resolved. Matches the peer's 10000. */
 const FALLBACK_HP = 10000;
@@ -42,14 +46,17 @@ const MAX_ENUMERATION_NODES = 500_000;
  */
 const monsterCache = new Map();
 
-function monsterVitals(monsterHrid, difficultyTier) {
-  const key = `${monsterHrid}|${difficultyTier}`;
+function monsterVitals(monsterHrid, difficultyTier, roomLevel = 0) {
+  // roomLevel is in the key, not merely the constructor: a labyrinth monster's
+  // every stat scales by roomLevel / 100, so the same hrid at two room levels is
+  // two different creatures and must not share a cache entry.
+  const key = `${monsterHrid}|${difficultyTier}|${roomLevel}`;
   const cached = monsterCache.get(key);
   if (cached) return cached;
 
   let vitals = { maxHitpoints: 1, maxManapoints: 1 };
   try {
-    const monster = new Monster(String(monsterHrid), Number(difficultyTier) || 0);
+    const monster = new Monster(String(monsterHrid), Number(difficultyTier) || 0, Number(roomLevel) || 0);
     monster.updateCombatDetails();
     vitals = {
       maxHitpoints: Math.max(1, Number(monster.combatDetails?.maxHitpoints) || 1),
@@ -201,6 +208,43 @@ export function deriveEnemyBounds(zoneHrid, difficultyTier = 0) {
 }
 
 /**
+ * Enemy-side ceilings for a LABYRINTH room.
+ *
+ * There is no enumeration to do. `Labyrinth.getMonster()` returns exactly one
+ * monster of one hrid, scaled by `roomLevel / 100`, every time — so the total
+ * and the single-target ceilings are the same number, and the spawn count is one.
+ *
+ * That last point has a consequence the UI should surface rather than bury: a
+ * multi-target threshold such as "when 2+ enemies are active" can never fire in
+ * a labyrinth, and collectSearchParams' `unreachable` flag will duly say so.
+ *
+ * @param {string} monsterHrid
+ * @param {number} roomLevel
+ */
+export function deriveLabyrinthEnemyBounds(monsterHrid, roomLevel) {
+  if (!monsterHrid) {
+    return {
+      totalHitpoints: FALLBACK_HP,
+      totalManapoints: FALLBACK_HP,
+      targetHitpoints: FALLBACK_HP,
+      targetManapoints: FALLBACK_HP,
+      maxSpawnCount: 1,
+      resolved: false,
+    };
+  }
+
+  const vitals = monsterVitals(monsterHrid, 0, Number(roomLevel) || 0);
+  return {
+    totalHitpoints: vitals.maxHitpoints,
+    totalManapoints: vitals.maxManapoints,
+    targetHitpoints: vitals.maxHitpoints,
+    targetManapoints: vitals.maxManapoints,
+    maxSpawnCount: 1,
+    resolved: true,
+  };
+}
+
+/**
  * Party-side ceilings. Mirrors api/lib/labStats.js computeLabPlayerStats: build
  * the Player, hand it the same buffs the simulator will, generate permanent
  * buffs, reset to combat-start state, then read the derived maxima.
@@ -252,21 +296,37 @@ export function derivePlayerBounds(playerDTOs, { zoneBuffs = [], extraBuffs = []
 /**
  * Everything resolveMaxValue needs, in one object.
  *
+ * The `zoneBuffs` name is the engine's, not a description: in a labyrinth the
+ * slot holds the SUPPLY CRATE buffs (Player.zoneBuffs is simply "the buffs this
+ * location grants"). They lift max HP and MP, so a `self` + `current_hp`
+ * ceiling derived without them would be too low — which is the same reason the
+ * zone path applies zone buffs here.
+ *
  * @param {object} args
  * @param {object[]} args.playerDTOs
- * @param {{zoneHrid: string, difficultyTier?: number}} args.zone
- * @param {object[]} [args.extraBuffs]
+ * @param {{kind: string, zone: object|null, labyrinth: object|null}} args.target
+ * @param {object[]} [args.extraBuffs]  community / seal / guild, plus the
+ *   lab-shop upgrades when the target is a labyrinth (see target.js)
  * @returns {{players: object[], party: object, enemies: object}}
  */
-export function deriveBounds({ playerDTOs, zone, extraBuffs = [] }) {
-  const zoneData = actionDetailMap[zone?.zoneHrid];
+export function deriveBounds({ playerDTOs, target, extraBuffs = [] }) {
+  if (target?.kind === 'labyrinth') {
+    const { labyrinthHrid, roomLevel, crates } = target.labyrinth || {};
+    return {
+      ...derivePlayerBounds(playerDTOs, { zoneBuffs: buildCrateBuffs(crates), extraBuffs }),
+      enemies: deriveLabyrinthEnemyBounds(labyrinthHrid, roomLevel),
+    };
+  }
+
+  const zone = target?.zone || {};
+  const zoneData = actionDetailMap[zone.zoneHrid];
   // Zone buffs affect max HP/MP, so they must be applied before reading maxima
   // — exactly as runSimulation does at api/lib/simulator.js:123.
   const zoneBuffs = zoneData?.buffs || [];
 
   return {
     ...derivePlayerBounds(playerDTOs, { zoneBuffs, extraBuffs }),
-    enemies: deriveEnemyBounds(zone?.zoneHrid, Number(zone?.difficultyTier) || 0),
+    enemies: deriveEnemyBounds(zone.zoneHrid, Number(zone.difficultyTier) || 0),
   };
 }
 

@@ -10,10 +10,11 @@
 //     drives, so the result matches SimResult.playerStats.
 // =============================================================================
 
+import { buildCrateBuffs, buildLabUpgradeBuffs } from './target.js';
+
 const Player = (await import('../../src/combatsimulator/player.js')).default;
 const Monster = (await import('../../src/combatsimulator/monster.js')).default;
-const { abilityDetailMap, labyrinthCrateDetailMap } =
-  await import('../../src/combatsimulator/dataProvider.js');
+const { abilityDetailMap } = await import('../../src/combatsimulator/dataProvider.js');
 
 function round(v) {
   return typeof v === 'number' && !Number.isInteger(v) ? Number(v.toFixed(4)) : v;
@@ -51,46 +52,14 @@ export function computeLabMonsterStats(monsterHrid, roomLevel) {
   };
 }
 
-// Mirror of src/worker.js's labyrinth lab-shop upgrade block: each purchased
-// upgrade level is +1% (ratio) or a flat boost. Keep in sync with worker.js.
-const LAB_UPGRADE_RATIO_STEP = 0.01;
-const LAB_UPGRADE_DEFS = [
-  ['combatDamage', 'combat_damage', '/buff_types/damage', 'ratioBoost'],
-  ['attackSpeed', 'attack_speed', '/buff_types/attack_speed', 'ratioBoost'],
-  ['castSpeed', 'cast_speed', '/buff_types/cast_speed', 'flatBoost'],
-  ['criticalRate', 'critical_rate', '/buff_types/critical_rate', 'flatBoost'],
-];
-
-function buildLabUpgradeBuffs(labUpgrades = {}) {
-  const buffs = [];
-  for (const [field, key, typeHrid, valueKey] of LAB_UPGRADE_DEFS) {
-    const lv = Math.max(0, Math.floor(Number(labUpgrades[field]) || 0));
-    if (lv <= 0) continue;
-    buffs.push({
-      uniqueHrid: `/buff_uniques/labyrinth_upgrade_${key}`,
-      typeHrid,
-      ratioBoost: 0,
-      ratioBoostLevelBonus: 0,
-      flatBoost: 0,
-      flatBoostLevelBonus: 0,
-      [valueKey]: lv * LAB_UPGRADE_RATIO_STEP,
-      startTime: '0001-01-01T00:00:00Z',
-      duration: 0,
-    });
-  }
-  return buffs;
-}
-
 export function computeLabPlayerStats(dto, { crates = [], labUpgrades = {} } = {}) {
   const player = Player.createFromDTO(structuredClone(dto));
 
-  // Crate buffs → zoneBuffs (mirror Labyrinth's blind concat, but drop
-  // unknown crate hrids so an undefined doesn't poison the list).
-  let crateBuffs = [];
-  for (const c of crates) {
-    crateBuffs = crateBuffs.concat(labyrinthCrateDetailMap[c] || []);
-  }
-  player.zoneBuffs = crateBuffs;
+  // Crate buffs → zoneBuffs, and the lab-shop upgrades → extraBuffs. Both now
+  // come from api/lib/target.js, which the optimisers' worker also uses: this
+  // file used to carry its own copy of the upgrade table, and two copies of a
+  // mirror of src/worker.js is one too many to keep honest.
+  player.zoneBuffs = buildCrateBuffs(crates);
   player.extraBuffs = buildLabUpgradeBuffs(labUpgrades);
 
   player.generatePermanentBuffs();

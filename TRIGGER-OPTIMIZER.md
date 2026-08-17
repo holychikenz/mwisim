@@ -459,3 +459,154 @@ net for the within-noise case, not the fix. Counting the cooking time is the fix
 declared before its load effect, so on mount it writes the default state to
 `csim_player_data` before the load reads it. Seeded builds did not survive a reload
 during testing. Out of scope here, but worth a look.
+
+---
+
+## 11. The labyrinth as a second target
+
+Both optimisers now take **either** a zone or a labyrinth room. The search itself did
+not change — the funnel, the beam, the seeded RNG, the paired ranking and the noise
+calibration never knew what they were simulating — but four things around it did, and
+one of them changes what the answer *means*.
+
+### The objective is a proportion, not a rate
+
+A labyrinth room is one monster, scaled by `roomLevel / 100`, with a hard **120-second
+timer**. An attempt ends in a clear, a death or a timeout, and each one costs a torch
+whether or not it succeeds. Torches, not hours, are the scarce resource — so the
+objective is **completion chance**, reported as `clearRatePercent`.
+
+The denominator is **resolved rooms** (`labRoomOutcomes`), not `labyAttemptCount`. The
+latter counts the room still in progress when the simulation window closed, which is
+unfinished rather than failed; including it would bias the clear rate downward by
+roughly one room in several hundred. Small, and it would largely cancel under the
+paired design — but the figure is meant to be readable as the game's own completion
+chance, and a number that is quietly 0.3% pessimistic is not.
+
+Expressed as a **percentage, 0–100, deliberately not a fraction**. Everything
+downstream works in relative terms: `rankResults` clusters within a relative epsilon
+whose scale is floored at 1, and the scan divides by the baseline mean. A fraction in
+[0,1] would silently convert that relative epsilon into an absolute one.
+
+### It saturates at both ends, and the band between is narrow
+
+This is the finding that matters most in practice. Measured on a real level-146 magic
+build against the cyclops, three replicates of three simulated hours apiece, with
+expert crates:
+
+| room level | 60 | 100 | 140 | 200 | 260 | 300 |
+|---|---|---|---|---|---|---|
+| clear rate | 100% | 100% | 100% | 97.3% | 4.5% | 0.0% |
+| clears/hour | 420.8 | 187.2 | 104.8 | 47.3 | 2.0 | 0.0 |
+
+Below ~140 every attempt clears and **every row in the table is a tie by
+construction**; at 300 nothing clears and the table ties again. Only the band between
+measures anything, and on this build it is roughly 180 to 280.
+
+Those figures assume the three **expert supply crates**, which is now the UI default.
+It was not originally — the crate selectors defaulted to empty — and the difference is
+not marginal. Same build, same room level 200:
+
+| | clear rate | clears/hour | deaths/hour |
+|---|---|---|---|
+| no crates | 32.2% | 14.3 | 30.2 |
+| expert crates | **97.3%** | 47.3 | 1.3 |
+
+One crate of each type is consumed on entry whatever its tier, so a basic crate is
+simply a worse run at the same price and nobody carries one. Defaulting them to empty
+modelled a player who had brought no supplies at all — a situation no one is in — and
+moved the measurable band by sixty points of clear rate, which is more than the entire
+range any enhancement scan is trying to resolve within it.
+
+A pinned run is **not inconclusive**. The measurement worked perfectly; the answer is
+"clearing this room is not what limits you". Conflating the two would report a
+successful measurement as a failed one, and the advice differs — raise the room level
+at the ceiling, lower it at the floor. So `objectiveSaturation` returns
+`'ceiling' | 'floor' | null` rather than a boolean, and both results views lead with it
+ahead of `inconclusive`.
+
+At room level 200 the same build's table reads:
+
+| # | slot | item | at | per +1 | ±95% | |
+|---|---|---|---|---|---|---|
+| 1 | Feet | Pathseeker Boots ★ | +8 | +0.402 pp | 0.457 | within noise |
+| 2 | Ring | Philosopher's Ring | +3 | +0.398 pp | 0.221 | **likely gain** |
+| 4 | Trinket ⚠ | Expert Task Badge | +2 | +0.353 pp | 0.020 | **clear gain** |
+
+— and at 260, where the build is failing, the weapon dominates everything else at
++1.93 pp per level. Which is the sensible reading: near the cliff, damage is the
+constraint.
+
+### Nothing is eaten in there
+
+The game confiscates food, drinks and teas at the door; supply crates are the only
+nutrition inside. The **server** strips them (`api/lib/target.js`), not the caller —
+an unstripped API run would let the build eat its way through rooms the game would
+not, and every row would be measured against a baseline the player cannot field. This
+is the same correction the UI already applies to ordinary lab sims, and which the old
+webpack UI does not, which is why its predicted clear rates are too high.
+
+Consequently:
+
+- Food and drink thresholds are **listed but not searchable**, with the reason beside
+  them. Hiding them would invite the reader to assume they had been searched and found
+  wanting; a user who set those values is owed the explanation.
+- The whole consumable-cost apparatus is inert — `consumableCosts` is discarded for a
+  labyrinth target, and the panel's price-source control hides itself, because
+  `consumableParamCount` is necessarily zero.
+- A **Guzzling Pouch will measure exactly zero**, since its enhancement raises drink
+  concentration and there are no drinks. That is the right answer, arrived at by
+  measurement rather than by a special case.
+
+### Costing a level: not a pay-back, but a price per point
+
+Break-even is `T = (C/3600) · E_old / (E_new − E_old)`, derived from `E` being a rate
+**per hour**: spend `C` seconds, grind `T` hours, and `E_new·T / (T + C/3600)` overtakes
+`E_old`. A clear rate is a proportion, so that arithmetic would produce a number
+meaning nothing, and the Gear tab does **not** report a pay-back for a labyrinth run.
+
+What it reports instead is the **enhancing time that buys one percentage point of clear
+rate** — `(cost / 3600) ÷ gain per level`. That is the question a fixed enhancing budget
+actually poses: not "when does this repay itself", but "which slot buys the most per
+hour spent". Same decision, no false claim of repayment.
+
+The two turn out to be the same function. Substituting `gain/base` into break-even
+gives `(cost/3600) / relativeGain`, so a pay-back time *is* enhancing-hours-per-unit
+with the **relative** gain as its denominator — which is why it comes out in hours of
+combat. A bounded objective passes the **absolute** gain instead and gets hours per
+percentage point. `shared/enhancementRoi.js` carries both, with the identity pinned in
+a test so the two cannot drift into different conventions, since a caller swaps one for
+the other on nothing but the target kind.
+
+One earlier objection dissolved on inspection and is worth recording, because it nearly
+cost the feature its cost column. The worry was that a labyrinth costing would rest on
+an untested difference: the scan computes a confidence interval for the **objective
+only**, so anything built on the `clearsPerHour` delta would be a precise-looking figure
+resting on a quantity nobody tested. True — but the price per point divides by
+`perLevel` on the clear rate, which *is* the objective and *is* the measured quantity.
+The objection applies to the rate, not to the proportion.
+
+Everything else in that panel is common to both targets: the cow webapp's Markov cost
+solve, the marginal-cost subtraction, the mirror-versus-own-protection choice, and the
+orange banner naming materials the production-time walker could not price — which
+matters as much here as anywhere, since an unpriced material contributes zero and makes
+every figure a lower bound.
+
+### Smaller consequences
+
+- **Enemy bounds** come from one room-scaled monster, not a spawn enumeration. The
+  monster cache is keyed on `(hrid, tier, roomLevel)` — the same hrid at two room levels
+  is two different creatures, and a cache that ignored the level would silently hand
+  every room the level-100 ceilings.
+- **`maxSpawnCount` is 1**, so every "2+ units active" threshold is unreachable in a
+  labyrinth and is flagged as such by the existing `unreachable` machinery.
+- **Noise is higher.** A clear rate is a proportion over a few dozen attempts per hour,
+  not a count over hundreds of encounters. Measured CV was 13.5% at the 2-hour
+  verification fidelity near the cliff, against 0.08–2.9% for zone encounters/hour at
+  comparable durations. Budget more simulated hours here than a zone needs, and read the
+  reported noise floor before believing a margin.
+- **Lab-shop upgrades** ride inside the `labyrinth` object rather than on
+  `extra.mwixLabUpgrades` + `extra.mwixMaze`, because on this path there is no maze
+  toggle to gate them: asking for a labyrinth *is* the gate. The buff table itself moved
+  to `api/lib/target.js`, and `labStats.js` now imports it — two copies of a mirror of
+  `src/worker.js` was one too many to keep honest.

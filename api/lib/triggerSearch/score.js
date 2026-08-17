@@ -147,6 +147,65 @@ export function noiseAwareEpsilons({
 }
 
 /**
+ * Labyrinth-only metrics. Empty for a zone run, so a zone payload never carries
+ * four zeroes that look like measurements of something.
+ *
+ * WHAT COUNTS AS AN ATTEMPT. `simResult.labyAttemptCount` counts every room the
+ * engine spawned, including the one still in progress when the simulation window
+ * closed — which is not a failure, merely unfinished. The per-room outcome log
+ * records only RESOLVED rooms, so the denominator here is `wins + deaths +
+ * timeouts`. On a 24-hour run the difference is one room in several hundred, and
+ * under the paired design it would largely cancel; but it would still bias the
+ * clear rate DOWNWARD, and the whole point of the number is that a player can
+ * read it as the game's own completion chance. Note this differs from the
+ * SimulationResults panel, which uses `labyAttemptCount` and labels the shortfall
+ * "Timeouts" — here the two failure modes are separated, since a build that dies
+ * wants different advice from one that runs out of clock.
+ *
+ * @param {object} simResult
+ * @param {(value: number) => number} perHour
+ * @returns {object}
+ */
+function labyrinthMetrics(simResult, perHour) {
+  if (!simResult?.isLabyrinth) return {};
+
+  let clears = 0;
+  let roomDeaths = 0;
+  let timeouts = 0;
+  for (const outcome of simResult?.labRoomOutcomes || []) {
+    if (outcome?.outcome === 'win') clears += 1;
+    else if (outcome?.outcome === 'death') roomDeaths += 1;
+    else if (outcome?.outcome === 'timeout') timeouts += 1;
+  }
+
+  let attempts = clears + roomDeaths + timeouts;
+  if (attempts === 0) {
+    // No resolved rooms at all: either the window was shorter than one attempt,
+    // or an engine build without the outcome log. Fall back to the coarse pair
+    // rather than reporting a clear rate of zero, which would read as a total
+    // failure instead of an absence of measurement.
+    clears = Number(simResult?.encounters) || 0;
+    attempts = Number(simResult?.labyAttemptCount) || 0;
+    timeouts = Math.max(0, attempts - clears);
+  }
+
+  return {
+    labyrinthAttempts: attempts,
+    // Percent, 0-100, and deliberately not a fraction. Everything downstream
+    // works in RELATIVE terms — rankResults clusters within a relative epsilon
+    // whose scale is floored at 1, and the scan divides by the baseline mean to
+    // get a per-level percentage. A fraction in [0,1] would silently turn that
+    // relative epsilon into an absolute one; a percentage keeps it relative and
+    // keeps a difference readable as percentage points.
+    clearRatePercent: attempts > 0 ? (clears / attempts) * 100 : 0,
+    clearsPerHour: perHour(clears),
+    attemptsPerHour: perHour(attempts),
+    roomDeathsPerHour: perHour(roomDeaths),
+    timeoutsPerHour: perHour(timeouts),
+  };
+}
+
+/**
  * Reduce a SimResult to the scalars we rank and report on.
  *
  * CONSUMABLE COST. `consumableCosts` maps an item hrid to its cost per unit, in
@@ -238,6 +297,7 @@ export function scoreSimResult(simResult, { consumableCosts = null } = {}) {
   );
 
   return {
+    ...labyrinthMetrics(simResult, perHour),
     hoursSimulated: hours,
     encounters: Number(simResult?.encounters) || 0,
     encountersPerHour,
@@ -258,7 +318,7 @@ export function scoreSimResult(simResult, { consumableCosts = null } = {}) {
   };
 }
 
-/** Metric names carried through to the UI, in display order. */
+/** Metric names carried through to the UI for a ZONE run, in display order. */
 export const REPORTED_METRICS = [
   'effectiveEncountersPerHour',
   'encountersPerHour',
@@ -272,11 +332,85 @@ export const REPORTED_METRICS = [
 ];
 
 /**
- * The objective to rank on. When consumable production times are known, the
- * time-denominated one; otherwise raw throughput, which cannot see the food bill.
+ * …and for a LABYRINTH run. A different list rather than a superset, because
+ * most of the zone list is meaningless inside a labyrinth: there are no
+ * consumables to count or cost, and "encounters" is a word for clears that
+ * would invite the reader to compare it with a zone figure it has nothing to do
+ * with.
  */
-export function defaultObjective({ consumableCostsKnown = false } = {}) {
+export const LABYRINTH_REPORTED_METRICS = [
+  'clearRatePercent',
+  'clearsPerHour',
+  'timeoutsPerHour',
+  'roomDeathsPerHour',
+  'attemptsPerHour',
+  'experiencePerHour',
+  'damagePerSecond',
+  'outOfManaSecondsPerHour',
+];
+
+/** Every metric either kind of run can produce. Used where the kind is unknown. */
+export const ALL_REPORTED_METRICS = [
+  ...new Set([...LABYRINTH_REPORTED_METRICS, ...REPORTED_METRICS]),
+];
+
+/** Which display list a target calls for. */
+export function reportedMetricsFor(target) {
+  return target?.kind === 'labyrinth' ? LABYRINTH_REPORTED_METRICS : REPORTED_METRICS;
+}
+
+/**
+ * The objective to rank on.
+ *
+ * ZONE. When consumable production times are known, the time-denominated one;
+ * otherwise raw throughput, which cannot see the food bill.
+ *
+ * LABYRINTH. Completion chance, which is the number the game itself puts in
+ * front of the player and the one the scarce resource — torches, one per room
+ * entered, win or lose — is actually spent against. It has a failure mode worth
+ * naming: on a room level the build always clears, every candidate scores 100
+ * and the table is a wall of ties. That is a true and useful answer ("this room
+ * level is not the constraint"), but only if it is *said*, which is what
+ * `isSaturatedObjective` below is for.
+ */
+export function defaultObjective({ consumableCostsKnown = false, labyrinth = false } = {}) {
+  if (labyrinth) return 'clearRatePercent';
   return consumableCostsKnown ? 'effectiveEncountersPerHour' : 'encountersPerHour';
+}
+
+/**
+ * Has the objective pinned against one of its limits, so that no candidate can
+ * differ from any other on it?
+ *
+ * Only clear rate is bounded, and it is bounded at BOTH ends — which is not a
+ * hypothetical. Measured on a real level-146 magic build against the cyclops,
+ * three hours and three replicates apiece:
+ *
+ *   room level    60    100    140    200      260     300
+ *   clear rate   100%   100%   100%   97.3%    4.5%    0.0%
+ *
+ * Below about 140 every attempt clears and the whole table ties at the ceiling;
+ * at 300 nothing clears and it ties at the floor. Only the band between them
+ * measures anything, and it is narrow — the interesting region on that build is
+ * roughly 180 to 280.
+ *
+ * A pinned run is NOT inconclusive in the ordinary sense: the measurement worked
+ * perfectly, and the answer is "clearing this room is not what limits you" (or
+ * "no enhancement is going to rescue this"). Conflating the two would report a
+ * successful measurement as a failed one. The two ends want opposite advice, so
+ * they are named rather than merged into a boolean.
+ *
+ * @param {string} objective
+ * @param {number} baselineValue
+ * @returns {'ceiling'|'floor'|null}
+ */
+export function objectiveSaturation(objective, baselineValue) {
+  if (objective !== 'clearRatePercent') return null;
+  const value = Number(baselineValue);
+  if (!Number.isFinite(value)) return null;
+  if (value >= 100 - 1e-9) return 'ceiling';
+  if (value <= 1e-9) return 'floor';
+  return null;
 }
 
 /**
@@ -440,13 +574,21 @@ export function insensitiveValues(
 /**
  * Absolute and relative change of every reported metric against a baseline.
  *
+ * Walks the union of both targets' lists but SKIPS any key neither side carries,
+ * so a zone run does not acquire four zero-valued labyrinth deltas — and, more
+ * importantly, so a labyrinth run's objective is always present in the map
+ * regardless of which list the caller had in mind. search.js reads
+ * `deltas[objective]` directly.
+ *
  * @param {object} metrics
  * @param {object} baseline
+ * @param {string[]} [keys]
  * @returns {Record<string, {value: number, pct: number|null}>}
  */
-export function computeDeltas(metrics, baseline) {
+export function computeDeltas(metrics, baseline, keys = ALL_REPORTED_METRICS) {
   const deltas = {};
-  for (const key of REPORTED_METRICS) {
+  for (const key of keys) {
+    if (metrics?.[key] === undefined && baseline?.[key] === undefined) continue;
     const candidate = Number(metrics?.[key]) || 0;
     const base = Number(baseline?.[key]) || 0;
     const value = candidate - base;

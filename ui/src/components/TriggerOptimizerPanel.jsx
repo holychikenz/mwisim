@@ -203,6 +203,10 @@ export function TriggerOptimizerPanel({
 
   const setCfg = (patch) => onConfigChange?.({ ...config, ...patch });
 
+  // From the preview, not a prop: the server echoes the target back clamped and
+  // validated, so this describes the run that will actually happen.
+  const labyrinth = preview?.target?.kind === 'labyrinth';
+
   const toggle = (row) => {
     const key = triggerKey(row);
     const next = selectedKeys.has(key)
@@ -234,6 +238,27 @@ export function TriggerOptimizerPanel({
             You have {sealCount} personal seal{sealCount === 1 ? '' : 's'} enabled. Those are honoured by the
             browser worker but not by the API path this optimiser uses, so thresholds will be tuned against a
             build without them. Values that depend on your real damage or attack speed may be a little off.
+          </Text>
+        </Alert>
+      )}
+
+      {/* A labyrinth run needs saying out loud, because two of this panel's
+          usual assumptions stop holding at once: the objective is no longer a
+          throughput, and every food and drink threshold below is inert. The
+          consumable-cost apparatus needs no gate of its own — consumableParamCount
+          is necessarily zero in there, so it hides itself. */}
+      {labyrinth && (
+        <Alert color="grape" variant="light" title="Tuning for the labyrinth">
+          <Text size="xs">
+            Thresholds are ranked on <b>completion chance</b> — the share of room attempts that end in
+            a kill inside the 120-second timer — rather than on encounters per hour. Margins below are
+            therefore in percentage points of clear rate.
+          </Text>
+          <Text size="xs" mt={6}>
+            Food and drink triggers are listed but not searchable: the game strips every consumable on
+            entry, so their values are never read. The supply crates and lab-shop upgrades set under
+            Supplies <i>are</i> applied. A room spawns exactly one monster, so any &ldquo;2+ units&rdquo;
+            threshold is dead in there and is flagged as such.
           </Text>
         </Alert>
       )}

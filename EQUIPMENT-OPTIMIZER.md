@@ -470,3 +470,79 @@ Measured on the same build, Acrobatic Hood +7 → +8, with the Ribbon hand-price
 |---|---|---|
 | toggle **off** (cheapest priced → the Ribbon) | 331.2 h | 16,394.9 days |
 | toggle **on** (the Mirror, still unpriced here) | 174.4 h | 8,632.2 days |
+
+---
+
+## 11. Scanning a labyrinth room
+
+The scan now takes **either** a zone or a labyrinth room. The machinery is unchanged —
+the +6 probe, the paired design, the Student-t interval, the Šidák family-wise
+correction and the detection floor are all indifferent to what is being fought — but
+the objective is not a rate, and that changes two things in this document.
+
+The full account of the target abstraction, the saturation behaviour, the stripped
+consumables and the measured clear-rate curve lives in **TRIGGER-OPTIMIZER.md §11**,
+since both features share it. What follows is what a *gear* scan in particular needs to
+know.
+
+### The verdict columns now read in percentage points
+
+A labyrinth scan ranks on **completion chance** (`clearRatePercent`), so `perLevel` is
+in percentage points of clear rate rather than in encounters per hour. `perLevelPct`
+remains the relative figure — the gain as a fraction of the baseline clear rate — and
+is still what the table sorts on, so a slot worth +0.4 pp on a 97% baseline and one
+worth +0.4 pp on a 20% baseline are correctly not treated as equals.
+
+### §9 changes its unit, and §8 stands unchanged
+
+§8's division of labour survives intact: this feature says what a level is *worth*, and
+what it *costs* is a separate question answered against the cow webapp. §9's machinery
+survives too — the Markov solve, the marginal-cost subtraction, the mirror choice, the
+unpriced-materials banner. What changes is the final division.
+
+A pay-back time needs a rate per hour on both sides, and a completion chance is a
+proportion. So the last column becomes the **enhancing time that buys one percentage
+point of clear rate**:
+
+```
+hours per point  =  (cost / 3600)  ÷  gain per level
+```
+
+Not a repayment horizon, and not presented as one — but the same decision, since what a
+player allocating enhancing hours wants to know is which slot returns the most per hour
+spent. §9's central finding transfers verbatim: the Acrobatic Hood was second by raw
+gain and seventh by pay-back, because +7 → +8 sits far enough up the enhancement curve
+to be ruinous while +0 → +1 is nearly free. Ranking by gain alone still sends the player
+to the worst available purchase, whichever fight they are in.
+
+Two presentational details follow from the arithmetic. The **Buys** column shows
+percentage points for a labyrinth run and a relative percentage for a zone, because
+those are the respective denominators — showing the relative gain beside a per-point
+cost would invite the reader to divide two numbers that do not correspond. And the
+warning about gains being raw encounters while costs are seconds is suppressed: in a
+labyrinth the two sides are *meant* to be different units, and their ratio is the point.
+
+### What §7's caveats become
+
+- **The pouch trap inverts into a triviality.** §7's headline oddity was a Guzzling
+  Pouch measuring as a *clear loss* because enhancing it made the build drink more and
+  owe more production time. In a labyrinth there are no drinks at all, so the same row
+  measures exactly zero. The mechanism that produced the interesting answer is simply
+  absent — which is worth knowing before reading a zero as a surprise.
+- **The `taskDamage` caveat is unchanged and, if anything, louder.** `combatUtilities`
+  applies it to every damage roll regardless of task, and on a real room-level-200 scan
+  the Expert Task Badge came out **fourth by gain with the tightest interval in the
+  table** (+0.353 pp per level, ±0.020). Same engine behaviour, same caveat, same
+  reading: exactly right for a player who is always on task.
+- **Skip reasons are unchanged.** The three classes in §3 — at the cap, no enhancement
+  bonuses, bonuses on stats the item does not carry — are properties of the item, not of
+  the fight.
+
+### Fidelity
+
+Budget more than the zone defaults. A clear rate is a proportion over a few dozen room
+attempts per hour, where a zone's encounter count is in the hundreds; measured
+run-to-run CV near the failure cliff was an order of magnitude worse than a hard zone's.
+The scan reports its own noise floor and detection floor as it always has — read them
+before believing a margin, and if the verdict column is a wall of *within noise*, check
+first whether the run saturated rather than reaching for more replicates.

@@ -45,6 +45,7 @@ import {
   coefficientOfVariation,
   computeDeltas,
   insensitiveValues,
+  objectiveSaturation,
   noiseAwareEpsilons,
   rankResults,
 } from './score.js';
@@ -637,6 +638,12 @@ export async function optimizeTriggers({
     // correct advice then is "change nothing" — and saying so plainly is more
     // useful than presenting a ranked table that implies otherwise.
     inconclusive: !rows.some((row) => row.significant && (row.deltas[objective]?.value || 0) > 0),
+    // Different claim from `inconclusive`, and only a labyrinth run can make it:
+    // the objective is pinned at one of its limits, so every candidate ties by
+    // construction. 'ceiling' means the room is already cleared every time and
+    // no threshold will improve on that; 'floor' means nothing ever clears, and
+    // no threshold will rescue it. The measurement succeeded in both cases.
+    saturated: objectiveSaturation(objective, Number(baseline?.[objective])),
     simulationsRun: completed,
     estimatedSimulations: estimate.total,
   };

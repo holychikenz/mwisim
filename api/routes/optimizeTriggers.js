@@ -24,11 +24,12 @@
 import { Router } from 'express';
 import { isKnownCost } from '../../shared/consumableCost.js';
 import { buildExtraBuffs } from '../lib/simulator.js';
+import { normaliseTarget, targetExtraBuffs, targetPlayerDTOs } from '../lib/target.js';
 import { deriveBounds } from '../lib/triggerSearch/bounds.js';
 import { collectSearchParams, enumerateTriggers } from '../lib/triggerSearch/params.js';
 import { createSimulationPool, defaultPoolSize, MAX_WORKERS } from '../lib/triggerSearch/pool.js';
 import { makePoolEvaluator } from '../lib/triggerSearch/pool.js';
-import { REPORTED_METRICS, defaultObjective } from '../lib/triggerSearch/score.js';
+import { defaultObjective, reportedMetricsFor } from '../lib/triggerSearch/score.js';
 import { DEFAULT_STAGES, STABLE_VERIFY_HOURS, estimateWorkload, optimizeTriggers } from '../lib/triggerSearch/search.js';
 
 const router = Router();
@@ -41,14 +42,14 @@ const MAX_STAGE_HOURS = 1000;
 const MAX_SELECTION = 24;
 
 function validateBody(body) {
-  const { players, zone } = body || {};
+  const { players } = body || {};
   if (!players || !Array.isArray(players) || players.length === 0) {
     return 'Players array is required';
   }
-  if (!zone || !zone.zoneHrid) {
-    return 'Zone configuration is required';
-  }
-  return null;
+  // `zone` XOR `labyrinth`, resolved and validated in one place so this route,
+  // the equipment route and the bounds derivation cannot disagree about what
+  // was asked for. See api/lib/target.js.
+  return normaliseTarget(body).error;
 }
 
 /**
@@ -122,13 +123,23 @@ function sanitiseConsumableCosts(input) {
 
 /** Shared setup for both routes: bounds, enumerated triggers, resolved params. */
 function prepare(body) {
-  const { players, zone, extra = {}, guildBuffs = [] } = body;
-  // Same composition runSimulation uses (api/lib/simulator.js:123), so a candidate
-  // is scored against exactly the build a normal simulation would produce.
-  const extraBuffs = buildExtraBuffs(extra).concat(guildBuffs);
+  const { players, extra = {}, guildBuffs = [] } = body;
+  const target = normaliseTarget(body);
+  const labyrinth = target.kind === 'labyrinth';
 
-  const bounds = deriveBounds({ playerDTOs: players, zone, extraBuffs });
-  const triggers = enumerateTriggers(players);
+  // Same composition runSimulation uses (api/lib/simulator.js:123), so a candidate
+  // is scored against exactly the build a normal simulation would produce — plus,
+  // in a labyrinth, the lab-shop combat upgrades, which are character upgrades
+  // and apply only in there.
+  const extraBuffs = buildExtraBuffs(extra).concat(guildBuffs).concat(targetExtraBuffs(target));
+
+  // The DTOs actually simulated: in a labyrinth, food and drinks are blanked,
+  // because the game confiscates them at the door. Note the enumeration below
+  // reads the ORIGINAL players — a stripped set would have nothing to explain.
+  const simPlayers = targetPlayerDTOs(players, target);
+
+  const bounds = deriveBounds({ playerDTOs: simPlayers, target, extraBuffs });
+  const triggers = enumerateTriggers(players, { labyrinth });
 
   // No explicit selection means "sweep everything that can be swept" — the
   // sensible default, and what the preview shows before the user narrows it.
@@ -144,16 +155,32 @@ function prepare(body) {
           triggerIndex,
         }));
 
-  const { params, rejected } = collectSearchParams(players, selection, bounds);
-  const consumableCosts = sanitiseConsumableCosts(body.consumableCosts);
+  // Resolved against the SIMULATED DTOs, so a stale selection naming a food slot
+  // is rejected by address rather than silently sweeping a value the engine will
+  // never read.
+  const { params, rejected } = collectSearchParams(simPlayers, selection, bounds, { labyrinth });
+  const consumableCosts = labyrinth ? null : sanitiseConsumableCosts(body.consumableCosts);
 
   // Default to the time-denominated objective whenever we can actually price the
   // food, because raw throughput cannot see the bill and will happily recommend
-  // eating constantly for a fraction of a percent.
+  // eating constantly for a fraction of a percent. In a labyrinth there is
+  // nothing to eat and nothing to price, so the objective is the completion
+  // chance instead — see score.js defaultObjective.
   const objective =
-    body.objective || defaultObjective({ consumableCostsKnown: !!consumableCosts });
+    body.objective || defaultObjective({ consumableCostsKnown: !!consumableCosts, labyrinth });
 
-  return { bounds, triggers, selection, params, rejected, extraBuffs, consumableCosts, objective };
+  return {
+    target,
+    simPlayers,
+    bounds,
+    triggers,
+    selection,
+    params,
+    rejected,
+    extraBuffs,
+    consumableCosts,
+    objective,
+  };
 }
 
 /**
@@ -166,17 +193,21 @@ router.post('/optimize-triggers/preview', (req, res) => {
     if (invalid) return res.status(400).json({ success: false, error: invalid });
 
     const stages = sanitiseStages(req.body.stages, { stableMode: !!req.body.stableMode });
-    const { bounds, triggers, selection, params, rejected, consumableCosts, objective } = prepare(req.body);
+    const { target, bounds, triggers, selection, params, rejected, consumableCosts, objective } =
+      prepare(req.body);
 
     return res.json({
       success: true,
       objective,
+      // Echoed back clamped and validated, so the panel can show the room level
+      // and crates actually in force rather than the ones it hoped it sent.
+      target,
+      reportedMetrics: reportedMetricsFor(target),
       // Lets the UI say plainly whether the food bill is being counted, and warn
       // when it is not — that is the difference between a trustworthy consumable
       // recommendation and one biased toward eating constantly.
       consumableCostsKnown: !!consumableCosts,
       pricedConsumables: consumableCosts ? Object.keys(consumableCosts) : [],
-      reportedMetrics: REPORTED_METRICS,
       bounds,
       triggers,
       selection,
@@ -262,6 +293,8 @@ router.post('/optimize-triggers', async (req, res) => {
       poolSize,
       stages,
       objective: prepared.objective,
+      target: prepared.target,
+      reportedMetrics: reportedMetricsFor(prepared.target),
       consumableCostsKnown: !!prepared.consumableCosts,
       params: prepared.params,
       rejected: prepared.rejected,
@@ -270,14 +303,17 @@ router.post('/optimize-triggers', async (req, res) => {
 
     const evaluate = makePoolEvaluator({
       pool,
-      zoneConfig: req.body.zone,
+      zoneConfig: prepared.target.zone,
+      labyrinthConfig: prepared.target.labyrinth,
       extraBuffs: prepared.extraBuffs,
       consumableCosts: prepared.consumableCosts,
       signal: controller.signal,
     });
 
     const result = await optimizeTriggers({
-      playerDTOs: req.body.players,
+      // The stripped set when the target is a labyrinth: the search must sweep
+      // the build the game would actually let the player field.
+      playerDTOs: prepared.simPlayers,
       params: prepared.params,
       evaluate,
       objective: prepared.objective,
@@ -298,6 +334,8 @@ router.post('/optimize-triggers', async (req, res) => {
       type: 'result',
       result: {
         ...result,
+        target: prepared.target,
+        reportedMetrics: reportedMetricsFor(prepared.target),
         consumableCostsKnown: !!prepared.consumableCosts,
         pricedConsumables: prepared.consumableCosts ? Object.keys(prepared.consumableCosts) : [],
       },

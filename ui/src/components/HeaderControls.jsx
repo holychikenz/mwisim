@@ -76,6 +76,11 @@ function crateLabel(hrid) {
 export function HeaderControls({
   simMode,
   onSimModeChange,
+  // Which target the two optimisers fight. The Zone and Lab simulation modes
+  // pick their own; only Triggers and Gear need to be told, because they are
+  // modes rather than targets and can be pointed at either.
+  optTarget = 'zone',
+  onOptTargetChange,
   zones,
   zone,
   onZoneChange,
@@ -151,6 +156,12 @@ export function HeaderControls({
     (enemyScalePct !== 100 ? 1 : 0) +
     activeShrineCount +
     activeBuildingCount;
+
+  // Modes vs targets. Zone and Lab are both; Triggers and Gear are modes that
+  // must be pointed at a target, and Trial and Costs have none at all.
+  const isOptimiser = simMode === 'triggerOpt' || simMode === 'equipOpt';
+  const targetKind =
+    simMode === 'labyrinth' ? 'labyrinth' : isOptimiser ? optTarget : 'zone';
 
   const setCfg = (patch) => onTrialConfigChange?.({ ...cfg, ...patch });
   const setBuffLevel = (hrid, level) =>
@@ -318,114 +329,134 @@ export function HeaderControls({
             </Popover.Dropdown>
           </Popover>
         </>
-      ) : simMode === 'zone' || simMode === 'triggerOpt' || simMode === 'equipOpt' ? (
-        // Both optimisers work against a zone and tier just as a normal zone run
-        // does, so they reuse these controls. Neither uses `duration`: their
-        // fidelity comes from the hours configured in their own panels.
-        <>
-          <Select
-            data={zoneOptions}
-            value={zone}
-            onChange={(v) => v && onZoneChange(v)}
-            searchable
-            allowDeselect={false}
-            w={220}
-            size="sm"
-            aria-label="Combat zone"
-          />
-          <Select
-            data={TIER_OPTIONS}
-            value={String(difficultyTier)}
-            onChange={(v) => v != null && onDifficultyChange(Number(v))}
-            allowDeselect={false}
-            w={80}
-            size="sm"
-            aria-label="Difficulty tier"
-          />
-        </>
       ) : (
         <>
-          <Select
-            data={labMonsterOptions}
-            value={labConfig.monsterHrid}
-            onChange={(v) => v && onLabConfigChange({ ...labConfig, monsterHrid: v })}
-            searchable
-            allowDeselect={false}
-            w={180}
-            size="sm"
-            aria-label="Labyrinth monster"
-          />
-          <NumberInput
-            value={labConfig.roomLevel}
-            onChange={(v) => onLabConfigChange({
-              ...labConfig,
-              roomLevel: Math.max(1, Math.min(500, Number(v) || 100))
-            })}
-            min={1}
-            max={500}
-            step={20}
-            w={90}
-            size="sm"
-            prefix="Lv "
-            aria-label="Room level"
-          />
-          <Popover width={280} position="bottom-end" shadow="md">
-            <Popover.Target>
-              <Indicator
-                disabled={crateCount + upgradeCount === 0}
-                label={crateCount + upgradeCount}
-                size={16}
-              >
-                <Button variant="default" size="sm">
-                  Supplies
-                </Button>
-              </Indicator>
-            </Popover.Target>
-            <Popover.Dropdown>
-              <Stack gap="xs">
-                <Text size="sm" fw={600}>Supply crates</Text>
-                <Text size="xs" c="dimmed">
-                  The game strips all food &amp; drinks on labyrinth entry —
-                  crates are the only consumables inside, so the player
-                  panel&apos;s food/drink slots are ignored for lab runs.
-                </Text>
-                {CRATE_CATEGORIES.map(cat => (
-                  <Select
-                    key={cat.key}
-                    label={cat.label}
-                    data={cat.items.map(h => ({ value: h, label: crateLabel(h) }))}
-                    value={labConfig.crates[cat.key]}
-                    onChange={(v) => onLabConfigChange({
-                      ...labConfig,
-                      crates: { ...labConfig.crates, [cat.key]: v || null }
-                    })}
-                    clearable
-                    placeholder="None"
-                    size="xs"
-                    comboboxProps={{ withinPortal: false }}
-                  />
-                ))}
-                <Text size="sm" fw={600} mt={4}>Lab-shop upgrades (+1%/level)</Text>
-                {LAB_UPGRADE_FIELDS.map(f => (
-                  <NumberInput
-                    key={f.key}
-                    label={f.label}
-                    value={labConfig.upgrades[f.key]}
-                    onChange={(v) => onLabConfigChange({
-                      ...labConfig,
-                      upgrades: {
-                        ...labConfig.upgrades,
-                        [f.key]: Math.max(0, Math.min(40, Number(v) || 0))
-                      }
-                    })}
-                    min={0}
-                    max={40}
-                    size="xs"
-                  />
-                ))}
-              </Stack>
-            </Popover.Dropdown>
-          </Popover>
+          {/* Zone or labyrinth. Only the optimisers get a choice — the Zone and
+              Lab simulation modes ARE the choice. Placed before the target
+              controls so the pair reads left to right as "what, then which". */}
+          {isOptimiser && (
+            <SegmentedControl
+              size="xs"
+              value={optTarget}
+              onChange={onOptTargetChange}
+              data={[
+                { value: 'zone', label: 'Zone' },
+                { value: 'labyrinth', label: 'Lab' }
+              ]}
+              aria-label="Optimisation target"
+            />
+          )}
+
+          {targetKind === 'zone' ? (
+            // Both optimisers work against a zone and tier just as a normal zone
+            // run does, so they reuse these controls. Neither uses `duration`:
+            // their fidelity comes from the hours configured in their own panels.
+            <>
+              <Select
+                data={zoneOptions}
+                value={zone}
+                onChange={(v) => v && onZoneChange(v)}
+                searchable
+                allowDeselect={false}
+                w={220}
+                size="sm"
+                aria-label="Combat zone"
+              />
+              <Select
+                data={TIER_OPTIONS}
+                value={String(difficultyTier)}
+                onChange={(v) => v != null && onDifficultyChange(Number(v))}
+                allowDeselect={false}
+                w={80}
+                size="sm"
+                aria-label="Difficulty tier"
+              />
+            </>
+          ) : (
+            <>
+              <Select
+                data={labMonsterOptions}
+                value={labConfig.monsterHrid}
+                onChange={(v) => v && onLabConfigChange({ ...labConfig, monsterHrid: v })}
+                searchable
+                allowDeselect={false}
+                w={180}
+                size="sm"
+                aria-label="Labyrinth monster"
+              />
+              <NumberInput
+                value={labConfig.roomLevel}
+                onChange={(v) => onLabConfigChange({
+                  ...labConfig,
+                  roomLevel: Math.max(1, Math.min(500, Number(v) || 100))
+                })}
+                min={1}
+                max={500}
+                step={20}
+                w={90}
+                size="sm"
+                prefix="Lv "
+                aria-label="Room level"
+              />
+              <Popover width={280} position="bottom-end" shadow="md">
+                <Popover.Target>
+                  <Indicator
+                    disabled={crateCount + upgradeCount === 0}
+                    label={crateCount + upgradeCount}
+                    size={16}
+                  >
+                    <Button variant="default" size="sm">
+                      Supplies
+                    </Button>
+                  </Indicator>
+                </Popover.Target>
+                <Popover.Dropdown>
+                  <Stack gap="xs">
+                    <Text size="sm" fw={600}>Supply crates</Text>
+                    <Text size="xs" c="dimmed">
+                      The game strips all food &amp; drinks on labyrinth entry —
+                      crates are the only consumables inside, so the player
+                      panel&apos;s food/drink slots are ignored for lab runs.
+                    </Text>
+                    {CRATE_CATEGORIES.map(cat => (
+                      <Select
+                        key={cat.key}
+                        label={cat.label}
+                        data={cat.items.map(h => ({ value: h, label: crateLabel(h) }))}
+                        value={labConfig.crates[cat.key]}
+                        onChange={(v) => onLabConfigChange({
+                          ...labConfig,
+                          crates: { ...labConfig.crates, [cat.key]: v || null }
+                        })}
+                        clearable
+                        placeholder="None"
+                        size="xs"
+                        comboboxProps={{ withinPortal: false }}
+                      />
+                    ))}
+                    <Text size="sm" fw={600} mt={4}>Lab-shop upgrades (+1%/level)</Text>
+                    {LAB_UPGRADE_FIELDS.map(f => (
+                      <NumberInput
+                        key={f.key}
+                        label={f.label}
+                        value={labConfig.upgrades[f.key]}
+                        onChange={(v) => onLabConfigChange({
+                          ...labConfig,
+                          upgrades: {
+                            ...labConfig.upgrades,
+                            [f.key]: Math.max(0, Math.min(40, Number(v) || 0))
+                          }
+                        })}
+                        min={0}
+                        max={40}
+                        size="xs"
+                      />
+                    ))}
+                  </Stack>
+                </Popover.Dropdown>
+              </Popover>
+            </>
+          )}
         </>
       )}
 

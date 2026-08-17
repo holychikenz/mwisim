@@ -143,6 +143,10 @@ export function EquipmentOptimizerPanel({
 
   const costed = !!preview?.consumableCostsKnown;
   const overrideCount = consumableCostRows.filter((row) => row.override != null).length;
+  // Read from the preview rather than from a prop: the server echoes the target
+  // back clamped and validated, so the panel describes the run that will
+  // actually happen rather than the one the header hoped to ask for.
+  const labyrinth = preview?.target?.kind === 'labyrinth';
 
   if (apiReachable === false) {
     return (
@@ -173,9 +177,9 @@ export function EquipmentOptimizerPanel({
       </Group>
 
       <Text size="xs" c="dimmed">
-        Measures what one enhancement level on each piece is worth. Each slot is probed at
-        +{config.step} — a single level is beneath the simulation noise — and the result divided back
-        down.
+        Measures what one enhancement level on each piece is worth{labyrinth ? ' in the labyrinth' : ''}.
+        Each slot is probed at +{config.step} — a single level is beneath the simulation noise — and
+        the result divided back down.
       </Text>
 
       {sealCount > 0 && (
@@ -188,87 +192,108 @@ export function EquipmentOptimizerPanel({
         </Alert>
       )}
 
-      {/* Price source. Only the Iron source yields production time in seconds, and
-          only seconds are commensurable with combat time — so without it the scan
-          ranks on raw throughput and cannot see the food bill at all. */}
-      {pricing && (
-        <Paper p="xs" radius="sm" withBorder>
-          <Stack gap={6}>
-            <Text size="xs" fw={600}>
-              Consumable cost
-            </Text>
-            <SegmentedControl
-              size="xs"
-              fullWidth
-              value={pricing.source}
-              onChange={pricing.setSource}
-              disabled={loading}
-              data={[
-                { value: 'vendor', label: 'None' },
-                { value: 'market', label: 'Coins' },
-                { value: 'iron', label: 'Iron time' },
-              ]}
-            />
-            {pricing.source === 'iron' && (
-              <>
-                <Select
-                  size="xs"
-                  placeholder="Character"
-                  data={[
-                    ...new Set(
-                      [...(pricing.characters || []), pricing.ironCharacter].filter(Boolean)
-                    ),
-                  ].map((name) => ({ value: name, label: name }))}
-                  value={pricing.ironCharacter}
-                  onChange={pricing.setIronCharacter}
-                  disabled={loading}
-                  searchable
-                />
-                <Button
-                  variant="default"
-                  size="compact-xs"
-                  loading={pricing.fetching}
-                  onClick={pricing.fetchPrices}
-                  disabled={loading}
-                >
-                  {pricing.fetchedLabel ? 'Refetch production times' : 'Fetch production times'}
-                </Button>
-                {pricing.fetchedLabel && (
-                  <Text size="xs" c="dimmed">
-                    {pricing.fetchedLabel}
-                    {formatAge(pricing.fetchedAt) ? ` · cached ${formatAge(pricing.fetchedAt)}` : ''}
-                  </Text>
-                )}
-                {overrideCount > 0 && (
-                  <Text size="10px" c="dimmed">
-                    {overrideCount} per-item override{overrideCount === 1 ? '' : 's'} in effect
-                    {consumableCostRows.length
-                      ? ` (${consumableCostRows
-                          .filter((row) => row.override != null)
-                          .map((row) => formatSeconds(row.effective))
-                          .join(', ')})`
-                      : ''}
-                    . Edit them on the Triggers tab.
-                  </Text>
-                )}
-              </>
-            )}
-          </Stack>
-        </Paper>
-      )}
+      {/* A labyrinth has no food bill to count — the game confiscates every
+          consumable at the door — so the whole pricing apparatus is inert there
+          and showing it would imply otherwise. See api/lib/target.js. */}
+      {labyrinth ? (
+        <Alert color="grape" variant="light" p="xs" title="Ranking on completion chance">
+          <Text size="xs">
+            Gains are in PERCENTAGE POINTS of clear rate — the share of room attempts that end in a
+            kill inside the 120-second timer. Food, drinks and teas are stripped on entry exactly as
+            the game strips them; the supply crates and lab-shop upgrades set under Supplies are
+            applied instead.
+          </Text>
+          <Text size="xs" mt={4}>
+            Pick a room level you do <b>not</b> already clear every time. Clear rate is pinned at 100%
+            below that and at 0% above it, and a pinned run can only report ties.
+          </Text>
+        </Alert>
+      ) : (
+        <>
+        {/* Price source. Only the Iron source yields production time in seconds, and
+            only seconds are commensurable with combat time — so without it the scan
+            ranks on raw throughput and cannot see the food bill at all. */}
+        {pricing && (
+          <Paper p="xs" radius="sm" withBorder>
+            <Stack gap={6}>
+              <Text size="xs" fw={600}>
+                Consumable cost
+              </Text>
+              <SegmentedControl
+                size="xs"
+                fullWidth
+                value={pricing.source}
+                onChange={pricing.setSource}
+                disabled={loading}
+                data={[
+                  { value: 'vendor', label: 'None' },
+                  { value: 'market', label: 'Coins' },
+                  { value: 'iron', label: 'Iron time' },
+                ]}
+              />
+              {pricing.source === 'iron' && (
+                <>
+                  <Select
+                    size="xs"
+                    placeholder="Character"
+                    data={[
+                      ...new Set(
+                        [...(pricing.characters || []), pricing.ironCharacter].filter(Boolean)
+                      ),
+                    ].map((name) => ({ value: name, label: name }))}
+                    value={pricing.ironCharacter}
+                    onChange={pricing.setIronCharacter}
+                    disabled={loading}
+                    searchable
+                  />
+                  <Button
+                    variant="default"
+                    size="compact-xs"
+                    loading={pricing.fetching}
+                    onClick={pricing.fetchPrices}
+                    disabled={loading}
+                  >
+                    {pricing.fetchedLabel ? 'Refetch production times' : 'Fetch production times'}
+                  </Button>
+                  {pricing.fetchedLabel && (
+                    <Text size="xs" c="dimmed">
+                      {pricing.fetchedLabel}
+                      {formatAge(pricing.fetchedAt) ? ` · cached ${formatAge(pricing.fetchedAt)}` : ''}
+                    </Text>
+                  )}
+                  {overrideCount > 0 && (
+                    <Text size="10px" c="dimmed">
+                      {overrideCount} per-item override{overrideCount === 1 ? '' : 's'} in effect
+                      {consumableCostRows.length
+                        ? ` (${consumableCostRows
+                            .filter((row) => row.override != null)
+                            .map((row) => formatSeconds(row.effective))
+                            .join(', ')})`
+                        : ''}
+                      . Edit them on the Triggers tab.
+                    </Text>
+                  )}
+                </>
+              )}
+            </Stack>
+          </Paper>
+        )}
 
-      <Alert
-        color={costed ? 'teal' : 'yellow'}
-        variant="light"
-        p="xs"
-        title={costed ? 'Ranking on effective enc/hour' : 'Ranking on raw enc/hour'}
-      >
-        <Text size="xs">
-          {costed
-            ? 'Gains are measured in encounters per hour of TOTAL time — combat plus the production owed for every consumable burned.'
-            : 'No production times are loaded, so the food bill is not counted. An enhancement that lets the build eat less will not be rewarded.'}
-        </Text>
-      </Alert>
+        <Alert
+          color={costed ? 'teal' : 'yellow'}
+          variant="light"
+          p="xs"
+          title={costed ? 'Ranking on effective enc/hour' : 'Ranking on raw enc/hour'}
+        >
+          <Text size="xs">
+            {costed
+              ? 'Gains are measured in encounters per hour of TOTAL time — combat plus the production owed for every consumable burned.'
+              : 'No production times are loaded, so the food bill is not counted. An enhancement that lets the build eat less will not be rewarded.'}
+          </Text>
+        </Alert>
+
+        </>
+      )}
 
       <Divider label="Slots to probe" labelPosition="center" />
 

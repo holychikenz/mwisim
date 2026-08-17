@@ -93,12 +93,36 @@ export function validateTriggerShape(dependencyHrid, conditionHrid, comparatorHr
   return { valid: true };
 }
 
+/** Slot kinds the game confiscates at the labyrinth door. */
+const CONSUMABLE_SLOT_KINDS = new Set(['food', 'drinks']);
+
+/**
+ * Consumables are stripped on labyrinth entry — the player walks in with gear
+ * and abilities only, and the supply crates are the sole nutrition inside. So a
+ * food or drink threshold is not a bad tuning choice in there; it is a value the
+ * engine will never read.
+ *
+ * Reported rather than silently dropped, on the principle the equipment scan
+ * already follows for unenhanceable slots: hiding a row invites the reader to
+ * assume it was searched and found wanting.
+ */
+export const LABYRINTH_CONSUMABLE_REASON =
+  'food and drinks are stripped on labyrinth entry';
+
 /**
  * Can the value on this trigger be swept?
  *
+ * @param {object} trigger
+ * @param {object} [context]
+ * @param {string} [context.slotKind]   'abilities' | 'food' | 'drinks'
+ * @param {boolean} [context.labyrinth] the run is against a labyrinth room
  * @returns {{searchable: boolean, kind?: string, boundKey?: string, reason?: string}}
  */
-export function describeSearchability(trigger) {
+export function describeSearchability(trigger, { slotKind = null, labyrinth = false } = {}) {
+  if (labyrinth && CONSUMABLE_SLOT_KINDS.has(slotKind)) {
+    return { searchable: false, reason: LABYRINTH_CONSUMABLE_REASON };
+  }
+
   const shape = validateTriggerShape(trigger.dependencyHrid, trigger.conditionHrid, trigger.comparatorHrid);
   if (!shape.valid) return { searchable: false, reason: shape.reason };
 
@@ -179,9 +203,11 @@ function resolveAddress(playerDTOs, { playerIndex, slotKind, slotIndex, triggerI
  * @param {object[]} playerDTOs
  * @param {Array<{playerIndex: number, slotKind: string, slotIndex: number, triggerIndex: number}>} selection
  * @param {object} bounds
+ * @param {object} [opts]
+ * @param {boolean} [opts.labyrinth]
  * @returns {{params: object[], rejected: object[]}}
  */
-export function collectSearchParams(playerDTOs, selection, bounds) {
+export function collectSearchParams(playerDTOs, selection, bounds, { labyrinth = false } = {}) {
   const params = [];
   const rejected = [];
 
@@ -195,7 +221,7 @@ export function collectSearchParams(playerDTOs, selection, bounds) {
       continue;
     }
 
-    const searchability = describeSearchability(trigger);
+    const searchability = describeSearchability(trigger, { slotKind, labyrinth });
     if (!searchability.searchable) {
       rejected.push({ ...address, reason: searchability.reason });
       continue;
@@ -230,11 +256,13 @@ export function collectSearchParams(playerDTOs, selection, bounds) {
       boundKey: searchability.boundKey,
       maxValue,
       initialValue: Number(trigger.value) || 0,
-      // A `>=` threshold set above the largest value the zone can ever produce
+      // A `>=` threshold set above the largest value the target can ever produce
       // never fires — e.g. "when 2+ enemies are active" in a single-spawn zone,
       // or "when missing HP >= 5000" on a build with 2000 maximum. Worth telling
       // the user plainly: it is a dead trigger, not a tuning problem, and no
-      // amount of searching will make it useful here.
+      // amount of searching will make it useful here. A labyrinth room spawns
+      // exactly one monster, so EVERY multi-target count threshold above 1 is
+      // dead in there, and this is what says so.
       unreachable:
         trigger.comparatorHrid === '/combat_trigger_comparators/greater_than_equal' &&
         (Number(trigger.value) || 0) > maxValue,
@@ -250,16 +278,20 @@ export function collectSearchParams(playerDTOs, selection, bounds) {
  * shown *why* a given threshold is not offered rather than simply not seeing it.
  *
  * @param {object[]} playerDTOs
+ * @param {object} [opts]
+ * @param {boolean} [opts.labyrinth]  mark food/drink rows unsearchable, with a
+ *   reason, rather than omitting them: the user set those thresholds and is owed
+ *   an explanation of why the optimiser will not touch them here.
  * @returns {object[]}
  */
-export function enumerateTriggers(playerDTOs) {
+export function enumerateTriggers(playerDTOs, { labyrinth = false } = {}) {
   const rows = [];
   (playerDTOs || []).forEach((player, playerIndex) => {
     for (const slotKind of SLOT_KINDS) {
       (player?.[slotKind] || []).forEach((slot, slotIndex) => {
         if (!slot?.hrid) return; // empty consumable / ability slot
         (slot.triggers || []).forEach((trigger, triggerIndex) => {
-          const searchability = describeSearchability(trigger);
+          const searchability = describeSearchability(trigger, { slotKind, labyrinth });
           rows.push({
             playerIndex,
             slotKind,

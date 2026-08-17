@@ -16,8 +16,9 @@
 import { Router } from 'express';
 import { isKnownCost } from '../../shared/consumableCost.js';
 import { buildExtraBuffs } from '../lib/simulator.js';
+import { normaliseTarget, targetExtraBuffs, targetPlayerDTOs } from '../lib/target.js';
 import { createSimulationPool, defaultPoolSize, makePoolEvaluator, MAX_WORKERS } from '../lib/triggerSearch/pool.js';
-import { REPORTED_METRICS, defaultObjective } from '../lib/triggerSearch/score.js';
+import { defaultObjective, reportedMetricsFor } from '../lib/triggerSearch/score.js';
 import {
   DEFAULT_STEP,
   MAX_ENHANCEMENT_LEVEL,
@@ -37,14 +38,13 @@ const MAX_REPLICATES = 40;
 const MAX_CANDIDATES = 40;
 
 function validateBody(body) {
-  const { players, zone } = body || {};
+  const { players } = body || {};
   if (!players || !Array.isArray(players) || players.length === 0) {
     return 'Players array is required';
   }
-  if (!zone || !zone.zoneHrid) {
-    return 'Zone configuration is required';
-  }
-  return null;
+  // `zone` XOR `labyrinth` — same resolver the trigger route uses, so the two
+  // cannot drift apart on what a valid target is. See api/lib/target.js.
+  return normaliseTarget(body).error;
 }
 
 /**
@@ -94,14 +94,29 @@ function sanitiseConsumableCosts(input) {
 
 /** Shared setup for both routes. */
 function prepare(body) {
-  const { players, zone, extra = {}, guildBuffs = [] } = body;
+  const { players, extra = {}, guildBuffs = [] } = body;
   const scan = sanitiseScan(body.scan);
+  const target = normaliseTarget(body);
+  const labyrinth = target.kind === 'labyrinth';
 
   // Same composition runSimulation uses, so a candidate is scored against exactly
-  // the build a normal simulation would produce.
-  const extraBuffs = buildExtraBuffs(extra).concat(guildBuffs);
+  // the build a normal simulation would produce — plus the lab-shop combat
+  // upgrades when the target is a labyrinth.
+  const extraBuffs = buildExtraBuffs(extra).concat(guildBuffs).concat(targetExtraBuffs(target));
 
-  const equipment = enumerateEquipment(players, { step: scan.step });
+  // Food and drinks are blanked for a labyrinth target. This is not cosmetic
+  // here: an unstripped run would let the build eat its way through rooms the
+  // game would not, and every row in the table would be measured against a
+  // baseline the player cannot field.
+  const simPlayers = targetPlayerDTOs(players, target);
+
+  // Enumerated from the simulated set. Equipment is untouched by the stripping —
+  // a pouch is still worn — so the two sets agree here; it is the SAME set that
+  // is passed, deliberately, so no future divergence can arise. A Guzzling Pouch
+  // in a labyrinth will duly measure zero, since its enhancement raises drink
+  // concentration and there are no drinks. That is the right answer, arrived at
+  // by measurement rather than by a special case.
+  const equipment = enumerateEquipment(simPlayers, { step: scan.step });
 
   // An explicit selection is a list of row ids ("0:/equipment_types/head").
   // Absent, everything scannable is scanned, which is the sensible default and
@@ -112,15 +127,28 @@ function prepare(body) {
     .slice(0, MAX_CANDIDATES);
 
   const skipped = equipment.filter((row) => !row.scannable);
-  const consumableCosts = sanitiseConsumableCosts(body.consumableCosts);
+  // Nothing is eaten in a labyrinth, so there is no bill to count and the
+  // time-denominated objective would only pretend to discriminate.
+  const consumableCosts = labyrinth ? null : sanitiseConsumableCosts(body.consumableCosts);
 
   // Default to the time-denominated objective whenever the food can be priced.
   // Raw throughput cannot see the consumable bill, and an enhancement that lets
-  // the build eat less would go unrewarded by it.
+  // the build eat less would go unrewarded by it. A labyrinth ranks on the
+  // completion chance instead — see score.js defaultObjective.
   const objective =
-    body.objective || defaultObjective({ consumableCostsKnown: !!consumableCosts });
+    body.objective || defaultObjective({ consumableCostsKnown: !!consumableCosts, labyrinth });
 
-  return { scan, equipment, candidates, skipped, extraBuffs, consumableCosts, objective, zone };
+  return {
+    scan,
+    target,
+    simPlayers,
+    equipment,
+    candidates,
+    skipped,
+    extraBuffs,
+    consumableCosts,
+    objective,
+  };
 }
 
 /**
@@ -132,14 +160,18 @@ router.post('/optimize-equipment/preview', (req, res) => {
     const invalid = validateBody(req.body);
     if (invalid) return res.status(400).json({ success: false, error: invalid });
 
-    const { scan, equipment, candidates, skipped, consumableCosts, objective } = prepare(req.body);
+    const { scan, target, equipment, candidates, skipped, consumableCosts, objective } =
+      prepare(req.body);
 
     return res.json({
       success: true,
       objective,
+      // Echoed back clamped and validated: the panel shows the room level and
+      // crates actually in force, not the ones it hoped it sent.
+      target,
+      reportedMetrics: reportedMetricsFor(target),
       consumableCostsKnown: !!consumableCosts,
       pricedConsumables: consumableCosts ? Object.keys(consumableCosts) : [],
-      reportedMetrics: REPORTED_METRICS,
       maxEnhancementLevel: MAX_ENHANCEMENT_LEVEL,
       equipment,
       candidates,
@@ -213,6 +245,8 @@ router.post('/optimize-equipment', async (req, res) => {
       poolSize,
       scan: prepared.scan,
       objective: prepared.objective,
+      target: prepared.target,
+      reportedMetrics: reportedMetricsFor(prepared.target),
       consumableCostsKnown: !!prepared.consumableCosts,
       candidates: prepared.candidates,
       skipped: prepared.skipped,
@@ -221,7 +255,8 @@ router.post('/optimize-equipment', async (req, res) => {
 
     const evaluate = makePoolEvaluator({
       pool,
-      zoneConfig: prepared.zone,
+      zoneConfig: prepared.target.zone,
+      labyrinthConfig: prepared.target.labyrinth,
       extraBuffs: prepared.extraBuffs,
       consumableCosts: prepared.consumableCosts,
       signal: controller.signal,
@@ -229,7 +264,9 @@ router.post('/optimize-equipment', async (req, res) => {
     });
 
     const result = await scanEquipment({
-      playerDTOs: req.body.players,
+      // Stripped for a labyrinth target, so the baseline is the build the game
+      // would actually let the player walk in with.
+      playerDTOs: prepared.simPlayers,
       candidates: prepared.candidates,
       evaluate,
       applyCandidate: applyEnhancement,
@@ -247,6 +284,8 @@ router.post('/optimize-equipment', async (req, res) => {
       result: {
         ...result,
         skipped: prepared.skipped,
+        target: prepared.target,
+        reportedMetrics: reportedMetricsFor(prepared.target),
         consumableCostsKnown: !!prepared.consumableCosts,
         pricedConsumables: prepared.consumableCosts ? Object.keys(prepared.consumableCosts) : [],
       },

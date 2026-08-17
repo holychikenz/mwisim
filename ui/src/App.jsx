@@ -66,6 +66,7 @@ import {
   saveEquipmentOptState,
   toScan
 } from './utils/equipmentOptimizer';
+import { loadOptTarget, saveOptTarget, toTargetPayload } from './utils/optimizerTarget';
 
 const ONE_HOUR = 60 * 60 * 1e9;
 
@@ -147,6 +148,10 @@ function App() {
   // survives edits that would invalidate a trigger address.
   const [equipOptSelection, setEquipOptSelection] = useState([]);
 
+  // Zone or labyrinth for BOTH optimisers — see utils/optimizerTarget.js for why
+  // the choice is shared rather than held per-optimiser.
+  const [optTarget, setOptTarget] = useState(loadOptTarget);
+
   const [players, setPlayers] = useState(createInitialPlayers);
   const [navbarWidth, setNavbarWidth] = useState(loadNavbarWidth);
   const [activeTab, setActiveTab] = useState(1);
@@ -165,7 +170,17 @@ function App() {
   const [labConfig, setLabConfig] = useState({
     monsterHrid: '/monsters/cyclops',
     roomLevel: 100,
-    crates: { tea: null, coffee: null, food: null },
+    // Expert on all three, because nobody carries anything else — one crate of
+    // each type is consumed on entry regardless of tier, so bringing a basic
+    // crate is simply a worse run for the same cost. Defaulting them to empty
+    // modelled a player who had brought no supplies at all, which is not a
+    // situation anyone is in, and it understated the clear rate accordingly.
+    // Still clearable in the Supplies popover for the rare run without them.
+    crates: {
+      tea: '/items/expert_tea_crate',
+      coffee: '/items/expert_coffee_crate',
+      food: '/items/expert_food_crate'
+    },
     upgrades: { combatDamage: 0, attackSpeed: 0, castSpeed: 0, criticalRate: 0 }
   });
   const [duration, setDuration] = useState(100);
@@ -573,16 +588,21 @@ function App() {
 
   const triggerOptPayload = useMemo(() => {
     if (simMode !== 'triggerOpt') return null;
+    // NOT stripped for a labyrinth target, deliberately. The server does the
+    // stripping (api/lib/target.js), and it needs to SEE the food and drink
+    // triggers in order to list them back with "stripped on labyrinth entry"
+    // beside them — a user who set those thresholds is owed the explanation.
     const playerDTOs = selectedPlayers.map(playerId =>
       toPlayerDTO(players[playerId], { hrid: `player${playerId}` })
     );
     return {
       players: playerDTOs,
-      zone: { zoneHrid: zone, difficultyTier },
+      ...toTargetPayload(optTarget, { zone, difficultyTier, labConfig }),
       // Consumable production times, in seconds — the ironcow currency. Present
       // only on the `iron` price source; without them the optimiser cannot see the
       // food bill and would drive every consumable threshold toward "eat
-      // constantly". See buildConsumableCosts.
+      // constantly". See buildConsumableCosts. Sent regardless of target: the
+      // server ignores them for a labyrinth, where nothing is eaten.
       consumableCosts: buildConsumableCosts(playerDTOs, {
         prices: pricing.prices,
         unit: pricing.unit,
@@ -608,6 +628,8 @@ function App() {
     };
   }, [
     simMode,
+    optTarget,
+    labConfig,
     players,
     selectedPlayers,
     zone,
@@ -657,9 +679,9 @@ function App() {
     runTriggerOptimizer({
       ...triggerOptPayload,
       selection: triggerOptSelection.map(toAddress),
-      meta: { zone, difficultyTier }
+      meta: { optTarget, zone, difficultyTier, labConfig }
     });
-  }, [triggerOptPayload, triggerOptSelection, runTriggerOptimizer, zone, difficultyTier]);
+  }, [triggerOptPayload, triggerOptSelection, runTriggerOptimizer, optTarget, zone, difficultyTier, labConfig]);
 
   // -- Equipment optimizer ---------------------------------------------------
   // Same API transport and the same consumable-cost currency as the trigger
@@ -680,10 +702,11 @@ function App() {
     );
     return {
       players: playerDTOs,
-      zone: { zoneHrid: zone, difficultyTier },
+      ...toTargetPayload(optTarget, { zone, difficultyTier, labConfig }),
       // Without these the scan ranks on raw encounters per hour, which cannot see
       // the food bill — so an enhancement that lets the build eat less goes
-      // unrewarded. Same table, same seconds, as the trigger optimiser.
+      // unrewarded. Same table, same seconds, as the trigger optimiser. Ignored
+      // by the server for a labyrinth target, where nothing is eaten at all.
       consumableCosts: buildConsumableCosts(playerDTOs, {
         prices: pricing.prices,
         unit: pricing.unit,
@@ -704,6 +727,8 @@ function App() {
     };
   }, [
     simMode,
+    optTarget,
+    labConfig,
     players,
     selectedPlayers,
     zone,
@@ -744,14 +769,18 @@ function App() {
     saveEquipmentOptState({ config: equipOptConfig });
   }, [equipOptConfig]);
 
+  useEffect(() => {
+    saveOptTarget(optTarget);
+  }, [optTarget]);
+
   const handleStartEquipOpt = useCallback(() => {
     if (!equipOptPayload || equipOptSelection.length === 0) return;
     runEquipOptimizer({
       ...equipOptPayload,
       selection: equipOptSelection,
-      meta: { zone, difficultyTier }
+      meta: { optTarget, zone, difficultyTier, labConfig }
     });
-  }, [equipOptPayload, equipOptSelection, runEquipOptimizer, zone, difficultyTier]);
+  }, [equipOptPayload, equipOptSelection, runEquipOptimizer, optTarget, zone, difficultyTier, labConfig]);
 
   // Rows for the panels' override editor: the party's slotted consumables, each
   // with its fetched time and whatever the user has said instead. Derived from the
@@ -868,7 +897,7 @@ function App() {
             <Badge variant="light" color="teal" size="sm">
               in-browser
             </Badge>
-            {(mazeContext || simMode === 'labyrinth') && (
+            {(mazeContext || simMode === 'labyrinth' || (isApiOpt && optTarget === 'labyrinth')) && (
               <Badge variant="light" color="grape" size="sm" title="Labyrinth context active">
                 maze
               </Badge>
@@ -877,6 +906,8 @@ function App() {
           <HeaderControls
             simMode={simMode}
             onSimModeChange={setSimMode}
+            optTarget={optTarget}
+            onOptTargetChange={setOptTarget}
             zones={gameData?.zones}
             zone={zone}
             onZoneChange={setZone}

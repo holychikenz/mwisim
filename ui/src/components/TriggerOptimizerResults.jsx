@@ -28,6 +28,19 @@ const METRIC_COLUMNS = [
   { key: 'damagePerSecond', label: 'DPS', decimals: 1 },
 ];
 
+/**
+ * A labyrinth run's columns. Not a superset: there is nothing to eat in there,
+ * and "encounters" is a word for clears that would invite comparison with a zone
+ * figure it has no relation to.
+ */
+const LABYRINTH_METRIC_COLUMNS = [
+  { key: 'clearRatePercent', label: 'Clear rate %', decimals: 2 },
+  { key: 'clearsPerHour', label: 'Clears/h', decimals: 1 },
+  { key: 'timeoutsPerHour', label: 'Timeouts/h', decimals: 1 },
+  { key: 'roomDeathsPerHour', label: 'Deaths/h', decimals: 1 },
+  { key: 'damagePerSecond', label: 'DPS', decimals: 1 },
+];
+
 function formatNumber(value, decimals = 2) {
   const number = Number(value);
   if (!Number.isFinite(number)) return '—';
@@ -94,7 +107,7 @@ function RowBadge({ row }) {
 }
 
 /** The recommended thresholds, laid out for typing back into the game. */
-function Recommendation({ row }) {
+function Recommendation({ row, labyrinth = false }) {
   if (!row) return null;
   const changed = row.triggers.filter((trigger) => trigger.changed);
 
@@ -139,10 +152,13 @@ function Recommendation({ row }) {
                       {trigger.dependencyName} {trigger.conditionName} {trigger.comparatorName}
                     </Text>
                     {/* A dead trigger is a finding in its own right, and no amount
-                        of threshold searching will rescue it in this zone. */}
+                        of threshold searching will rescue it against this target.
+                        Worth watching in a labyrinth, where a room spawns exactly
+                        one monster and every "2+ units" threshold lands here. */}
                     {trigger.unreachable && (
                       <Text size="xs" c="orange">
-                        Never fires here — this zone never reaches {trigger.initialValue}
+                        Never fires here — this {labyrinth ? 'room' : 'zone'} never reaches{' '}
+                        {trigger.initialValue}
                         {trigger.kind === 'percentage' ? '%' : ''} (max {trigger.maxValue})
                       </Text>
                     )}
@@ -183,11 +199,15 @@ function Recommendation({ row }) {
 export function TriggerOptimizerResults({ results }) {
   if (!results || !Array.isArray(results.rows)) return null;
 
-  const { rows, noise, epsilons, screening, verifyHours, simulationsRun, inconclusive, objective } = results;
+  const { rows, noise, epsilons, screening, verifyHours, simulationsRun, inconclusive, saturated, objective } =
+    results;
   const leader = rows[0];
   const cvPct = noise?.calibrated ? noise.coefficientOfVariation * 100 : null;
   const costed = !!results.consumableCostsKnown;
-  const columns = METRIC_COLUMNS.filter((column) => !column.costed || costed);
+  const labyrinth = results?.target?.kind === 'labyrinth';
+  const columns = labyrinth
+    ? LABYRINTH_METRIC_COLUMNS
+    : METRIC_COLUMNS.filter((column) => !column.costed || costed);
   const consumableSeconds = leader?.metrics?.consumableSecondsPerHour || 0;
   const timeShare = leader?.metrics?.consumableTimeShare || 0;
 
@@ -201,8 +221,23 @@ export function TriggerOptimizerResults({ results }) {
         </Group>
       </Group>
 
-      {/* The headline judgement, before any numbers that might be over-read. */}
-      {inconclusive ? (
+      {/* The headline judgement, before any numbers that might be over-read.
+          Saturation is tested first: it is a finding rather than a failure, and
+          "no change worth making" would misdescribe a run in which no change
+          COULD have been worth making. */}
+      {saturated ? (
+        <Alert
+          color="grape"
+          variant="light"
+          title={saturated === 'ceiling' ? 'Every attempt already clears' : 'No attempt ever clears'}
+        >
+          <Text size="sm">
+            {saturated === 'ceiling'
+              ? 'The clear rate is 100% at these thresholds, so no threshold change can improve on it and every row below ties by construction. Raise the room level until you start failing, then tune there.'
+              : 'The clear rate is 0% at these thresholds, and no threshold change moved it. Lower the room level to one you sometimes clear, then tune there.'}
+          </Text>
+        </Alert>
+      ) : inconclusive ? (
         <Alert color="gray" variant="light" title="No change worth making">
           <Text size="sm">
             Nothing beat your current thresholds by more than the measurement noise. That is a real answer, not
@@ -210,7 +245,8 @@ export function TriggerOptimizerResults({ results }) {
           </Text>
           {cvPct != null && (
             <Text size="xs" c="dimmed" mt={6}>
-              Run-to-run spread for this build and zone was {cvPct.toFixed(2)}% at {noise.measuredAtHours}h over{' '}
+              Run-to-run spread for this build and {labyrinth ? 'room' : 'zone'} was {cvPct.toFixed(2)}% at{' '}
+              {noise.measuredAtHours}h over{' '}
               {noise.samples} runs. A candidate had to beat the baseline by more than{' '}
               {(epsilons.significanceBar * 100).toFixed(2)}% at {verifyHours}h to count.
             </Text>
@@ -221,7 +257,11 @@ export function TriggerOptimizerResults({ results }) {
           <Text size="sm">
             {leader?.changedCount} of {leader?.triggers.length} threshold
             {leader?.triggers.length === 1 ? '' : 's'} changed, worth {formatPct(leader?.marginPct)} on{' '}
-            {objective === 'encountersPerHour' ? 'encounters per hour' : objective}.
+            {objective === 'encountersPerHour'
+              ? 'encounters per hour'
+              : objective === 'clearRatePercent'
+                ? 'the room completion chance'
+                : objective}.
           </Text>
         </Alert>
       )}
@@ -236,7 +276,7 @@ export function TriggerOptimizerResults({ results }) {
         </Alert>
       )}
 
-      {!costed && rows.some((row) => (row.metrics?.consumablesPerHour || 0) > 0) && (
+      {!costed && !labyrinth && rows.some((row) => (row.metrics?.consumablesPerHour || 0) > 0) && (
         <Alert color="yellow" variant="light" title="Food and drink cost is not counted">
           <Text size="xs">
             No production times were supplied, so the ranking is on raw throughput and cannot see what eating
@@ -249,14 +289,20 @@ export function TriggerOptimizerResults({ results }) {
 
       <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
         <KpiCard
-          label={costed ? 'Effective enc/h' : 'Best enc/h'}
+          label={labyrinth ? 'Clear rate %' : costed ? 'Effective enc/h' : 'Best enc/h'}
           value={formatNumber(
-            costed ? leader?.metrics?.effectiveEncountersPerHour : leader?.metrics?.encountersPerHour
+            labyrinth
+              ? leader?.metrics?.clearRatePercent
+              : costed
+                ? leader?.metrics?.effectiveEncountersPerHour
+                : leader?.metrics?.encountersPerHour
           )}
           hint={
-            costed
-              ? 'Encounters per hour of TOTAL time — combat plus the production time owed for everything consumed. The real ironcow rate.'
-              : 'Encounters per hour of combat time, measured at the verification fidelity. Does not account for consumable production.'
+            labyrinth
+              ? 'Share of room attempts ending in a kill inside the 120-second timer, at the verification fidelity. Unresolved rooms are not counted either way.'
+              : costed
+                ? 'Encounters per hour of TOTAL time — combat plus the production time owed for everything consumed. The real ironcow rate.'
+                : 'Encounters per hour of combat time, measured at the verification fidelity. Does not account for consumable production.'
           }
         />
         <KpiCard
@@ -284,7 +330,7 @@ export function TriggerOptimizerResults({ results }) {
         )}
       </SimpleGrid>
 
-      <Recommendation row={leader} />
+      <Recommendation labyrinth={labyrinth} row={leader} />
 
       <Paper p="sm" radius="md" withBorder>
         <Stack gap={6}>
