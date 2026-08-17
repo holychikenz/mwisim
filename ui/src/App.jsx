@@ -1399,7 +1399,7 @@ function App() {
               playerDTOs={selectedPlayerDTOs}
               gameItems={gameData?.items}
               pricing={pricing}
-              alwaysUseMirror={equipOptConfig.alwaysUseMirror}
+              protectionPricing={equipOptConfig.protectionPricing}
             />
           ) : showAllZones ? (
             <AllZonesResults
@@ -1417,9 +1417,13 @@ function App() {
               results={activeResults}
               gameItems={gameData?.items}
               pricing={pricing}
-              alwaysUseMirror={equipOptConfig.alwaysUseMirror}
-              onAlwaysUseMirrorChange={(value) =>
-                setEquipOptConfig(prev => ({ ...prev, alwaysUseMirror: value }))
+              protectionPricing={equipOptConfig.protectionPricing}
+              protectAt={equipOptConfig.protectAt}
+              onProtectionPricingChange={(value) =>
+                setEquipOptConfig(prev => ({ ...prev, protectionPricing: value }))
+              }
+              onProtectAtChange={(value) =>
+                setEquipOptConfig(prev => ({ ...prev, protectAt: value }))
               }
             />
           ) : activeResults && activeResults.__kind === 'guildTrial' ? (

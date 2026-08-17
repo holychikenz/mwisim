@@ -14,7 +14,7 @@
 // =============================================================================
 
 import { resolveItemCost } from './consumableCosts';
-import { MIRROR_OF_PROTECTION } from '../../../shared/enhancementRoi.js';
+import { MIRROR_OF_PROTECTION, PROTECTION_PRICING } from '../../../shared/enhancementRoi.js';
 
 /** Where an item enters the calculation. Ordered by how much explaining it needs. */
 export const COST_ROLES = Object.freeze({
@@ -41,7 +41,12 @@ export function lastSegment(hrid) {
  * @param {object} pricing       usePrices' return value
  * @returns {Array<{hrid, name, roles: string[], usedBy: string[], fetched, override, effective}>}
  */
-export function describeBuildCosts(playerDTOs, gameItems, pricing, { alwaysUseMirror = false } = {}) {
+export function describeBuildCosts(
+  playerDTOs,
+  gameItems,
+  pricing,
+  { protectionPricing = PROTECTION_PRICING.CHEAPEST } = {}
+) {
   const rows = new Map();
 
   const add = (hrid, role, usedBy) => {
@@ -80,21 +85,23 @@ export function describeBuildCosts(playerDTOs, gameItems, pricing, { alwaysUseMi
         add(cost.itemHrid, 'material', wornName);
       }
 
-      // Under "always use mirror" the item's own protections are never costed,
-      // so listing them here would be asking the user to price a dozen drop-only
-      // items that nothing will read. That omission IS the simplification.
+      // The tab lists exactly what the Gear tab will READ, and no more. Asking a
+      // user to price something nothing consults is worse than asking nothing:
+      // it buries the two boxes that would actually change a number.
       //
-      // Otherwise: everything the chooser might pick. `_refined` variants are
-      // excluded to match the server's own search, so we never invite a price for
-      // something that can never be chosen.
-      if (!alwaysUseMirror) {
+      // `free` reads no protection price at all, so none is listed. `mirror`
+      // reads one. `cheapest` reads everything the chooser might pick, minus the
+      // `_refined` variants, which are excluded to match the server's own search
+      // so we never invite a price for something that can never be chosen.
+      const protectionsMatter = protectionPricing !== PROTECTION_PRICING.FREE;
+      if (protectionsMatter && protectionPricing === PROTECTION_PRICING.CHEAPEST) {
         for (const hrid of detail.protectionItemHrids || []) {
           if (String(hrid).includes('_refined')) continue;
           add(hrid, 'protection', wornName);
         }
       }
       // Only worth surfacing when something is actually enhanceable.
-      if ((detail.enhancementCosts || []).length) {
+      if (protectionsMatter && (detail.enhancementCosts || []).length) {
         add(MIRROR_OF_PROTECTION, 'protection', wornName);
       }
     }

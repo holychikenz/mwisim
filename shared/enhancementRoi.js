@@ -48,41 +48,167 @@ const SECONDS_PER_HOUR = 3600;
 export const MIRROR_OF_PROTECTION = '/items/mirror_of_protection';
 
 /**
- * Which protection item to cost an enhancement against.
+ * How a protect is priced. Three modes, mutually exclusive.
  *
- * Two modes, and the toggle between them is a question about data as much as
+ * `cheapest` — the cheapest priced candidate the item admits.
+ * `mirror`   — always a Philosopher's Mirror, at whatever it costs.
+ * `free`     — a mirror at zero, because the player already holds a stack.
+ *
+ * The third is not the same as an unpriced mirror, though the arithmetic is
+ * identical. An unpriced input is a hole in the data and makes every figure a
+ * lower bound; a free one is a CLAIM the player has made about their own
+ * situation, and is as trustworthy as anything else they typed. Hence
+ * `assumedFree` on the chosen row: the caller must not flag it as missing.
+ */
+export const PROTECTION_PRICING = Object.freeze({
+  CHEAPEST: 'cheapest',
+  MIRROR: 'mirror',
+  FREE: 'free',
+});
+
+/**
+ * Which protection item to cost an enhancement against, and at what price.
+ *
+ * The choice between the first two modes is a question about DATA as much as
  * about play. An item's own protection — a Chaotic Chain, an Acrobat's Ribbon —
  * is drop-only, absent from the production-time map, and therefore unpriceable
  * without the player typing a number for every single one. A mirror is craftable,
- * universal, and needs pricing exactly once. So "always use mirror" collapses a
- * dozen unanswerable questions into one answerable one.
+ * universal, and needs pricing exactly once. So `mirror` collapses a dozen
+ * unanswerable questions into one answerable one.
  *
- * `alwaysUseMirror` is honoured even when the mirror itself has no price. The
- * alternative — silently falling back to the cheapest of the others — would mean
- * a toggle labelled "always" sometimes did something else, which is worse than a
+ * `mirror` is honoured even when the mirror itself has no price. The alternative
+ * — silently falling back to the cheapest of the others — would mean a mode
+ * labelled *always a mirror* sometimes did something else, which is worse than a
  * cost of zero that the caller is told about and can flag.
  *
- * Otherwise: the cheapest **priced** candidate. An unpriced one must not win by
- * default, and that is not hypothetical — the server's own selection reads
- * `if pc and pc < cheapest`, where a zero is falsy and so silently skipped,
- * leaving it to fall back to the mirror without saying so.
+ * `free` returns the mirror at **zero, deliberately**, marked `assumedFree` so
+ * the caller can tell an asserted zero from an absent one. It is the honest
+ * version of the state a fresh install already lands in — an unpriced mirror
+ * costs nothing either — with two differences: the panel stops calling the
+ * figure a lower bound, and the player is expected to pin down where protecting
+ * starts, because a solver handed free protects will protect from +2 and spend
+ * fifty-nine of them on a single hood. See `forcedProtectLevel`.
+ *
+ * `cheapest` takes the cheapest **priced** candidate. An unpriced one must not
+ * win by default, and that is not hypothetical — the server's own selection
+ * reads `if pc and pc < cheapest`, where a zero is falsy and so silently
+ * skipped, leaving it to fall back to the mirror without saying so.
  *
  * @param {Array<{hrid: string, effective: number|null}>} candidates
  * @param {object} [opts]
- * @param {boolean} [opts.alwaysUseMirror]
+ * @param {string} [opts.protectionPricing] one of PROTECTION_PRICING
  * @returns {object|null} the chosen candidate, or null when there are none
  */
-export function chooseProtection(candidates, { alwaysUseMirror = false } = {}) {
+export function chooseProtection(
+  candidates,
+  { protectionPricing = PROTECTION_PRICING.CHEAPEST } = {}
+) {
   const list = (candidates || []).filter(Boolean);
   if (!list.length) return null;
 
-  if (alwaysUseMirror) {
+  if (protectionPricing === PROTECTION_PRICING.FREE) {
+    const mirror = list.find((row) => row.hrid === MIRROR_OF_PROTECTION);
+    // No mirror offered is null rather than a substitution, exactly as in
+    // `mirror` mode: a caller that meant "free mirrors" should not be handed a
+    // free Chaotic Chain without being told.
+    return mirror ? { ...mirror, effective: 0, assumedFree: true } : null;
+  }
+
+  if (protectionPricing === PROTECTION_PRICING.MIRROR) {
     return list.find((row) => row.hrid === MIRROR_OF_PROTECTION) || null;
   }
 
   const priced = list.filter((row) => Number.isFinite(row.effective));
   if (!priced.length) return list[0];
   return priced.reduce((best, row) => (row.effective < best.effective ? row : best));
+}
+
+/**
+ * The protect level to force, or null to let the solver minimise.
+ *
+ * The coupling rule lives here, in one function, because it is a judgement and
+ * not a detail: **only free protections force a level.** When a protect has a
+ * price, minimising over where protecting starts answers a real question — the
+ * cost and the count trade off against each other and the solver balances them.
+ * When a protect is free that trade vanishes, the minimum is always "protect
+ * from the earliest level the chain allows", and the answer it gives is a
+ * fantasy: 59.3 mirrors for an Acrobatic Hood's +8, 1,472 for its +13. Free but
+ * FINITE is the real situation, and a forced level is how a finite stack is
+ * expressed.
+ *
+ * @param {object} [args]
+ * @param {string} [args.protectionPricing]
+ * @param {number} [args.protectAt]
+ * @returns {number|null}
+ */
+export function forcedProtectLevel({ protectionPricing, protectAt } = {}) {
+  if (protectionPricing !== PROTECTION_PRICING.FREE) return null;
+  const level = Math.round(Number(protectAt));
+  if (!Number.isFinite(level) || level < 1) return null;
+  return level;
+}
+
+/**
+ * Which row of an `/api/enhance/calculate` response to believe.
+ *
+ * The endpoint returns one row per protection level — `protect_at` running from
+ * 2 to the target — and the default is to take the cheapest, since a player free
+ * to choose where to start protecting will choose well.
+ *
+ * With `protectAt` set the cheapest is the wrong row: the player is telling us
+ * their policy, and a policy costs what it costs. The level is CLAMPED into the
+ * range the response offers, which is not a fudge but an identity. Attempts are
+ * made from states 0 … target−1, and the Markov step is
+ * `dest = i - 1 if i >= protect_at else 0`, so the top row — `protect_at`
+ * equal to the target — has no state that protects and therefore IS "never
+ * protect". Forcing +7 on a programme that stops at +5 means exactly that: no
+ * attempt in it ever reaches the level where you would spend a mirror. Clamping
+ * to the top row expresses the policy faithfully rather than approximating it,
+ * which is also what keeps a marginal cost positive — both sides of the
+ * difference are then the same policy, and reaching a higher level under one
+ * policy cannot be cheaper than reaching a lower one.
+ *
+ * @param {Array<object>} rows  the response's `rows`, server-shaped (snake_case)
+ * @param {object} [opts]
+ * @param {number|null} [opts.protectAt] forced level, or null to minimise
+ * @returns {{protectAt: number, totalCost: number, protects: number|null,
+ *           requestedProtectAt: number|null, clamped: boolean}|null}
+ */
+export function pickProtectionRow(rows, { protectAt = null } = {}) {
+  const usable = (Array.isArray(rows) ? rows : [])
+    .filter(Boolean)
+    .map((row) => ({
+      protectAt: Number(row.protect_at),
+      totalCost: Number(row.total_cost),
+      protects: Number.isFinite(Number(row.protects)) ? Number(row.protects) : null,
+    }))
+    .filter((row) => Number.isFinite(row.protectAt) && Number.isFinite(row.totalCost));
+  if (!usable.length) return null;
+
+  // `protectAt == null` before `Number()`, because `Number(null)` is 0 and
+  // `Number('')` is 0 — either would arrive here as a perfectly finite request to
+  // protect from level zero, and quietly clamp "let the solver choose" into "start
+  // protecting as early as the chain allows", which is the single most expensive
+  // wrong answer this function can give.
+  const requested = protectAt == null || protectAt === '' ? NaN : Math.round(Number(protectAt));
+  if (!Number.isFinite(requested)) {
+    // Minimising here rather than trusting the response's own `optimal_prot`
+    // keeps this honest if the server's tie-breaking ever changes.
+    const best = usable.reduce((b, row) => (row.totalCost < b.totalCost ? row : b));
+    return { ...best, requestedProtectAt: null, clamped: false };
+  }
+
+  const levels = usable.map((row) => row.protectAt);
+  const wanted = Math.min(Math.max(requested, Math.min(...levels)), Math.max(...levels));
+  // Rows are contiguous in every response the endpoint produces, so the exact
+  // match is the normal path; nearest-level is a guard against a future gap
+  // rather than a case anyone has seen.
+  const chosen =
+    usable.find((row) => row.protectAt === wanted) ||
+    usable.reduce((b, row) =>
+      Math.abs(row.protectAt - wanted) < Math.abs(b.protectAt - wanted) ? row : b
+    );
+  return { ...chosen, requestedProtectAt: requested, clamped: chosen.protectAt !== requested };
 }
 
 /**
@@ -192,9 +318,10 @@ export function amortisedRate({ costSeconds, improvedRate, horizonHours }) {
  * Marginal cost of one level, from two whole-programme costs.
  *
  * The cow webapp's Markov solver always starts a fresh item at +0 and reports the
- * expected cost of reaching a target, minimised over where you start protecting.
- * The cost of the NEXT level is therefore the difference between the cheapest
- * programme that reaches N+1 and the cheapest that reaches N.
+ * expected cost of reaching a target, one row per level at which protecting
+ * begins; `pickProtectionRow` decides which row to believe. The cost of the NEXT
+ * level is therefore the difference between the chosen programme that reaches N+1
+ * and the chosen programme that reaches N.
  *
  * Two things make this cleaner than it looks. The item's own acquisition cost
  * appears once on each side and cancels, so a sunk base price does not pollute a
@@ -202,6 +329,11 @@ export function amortisedRate({ costSeconds, improvedRate, horizonHours }) {
  * question — "what does an extra level cost me if I play optimally at each
  * target" — rather than holding the protection point fixed at a level that was
  * only optimal for the shorter programme.
+ *
+ * A FORCED protect level (see `pickProtectionRow`) holds it fixed on purpose,
+ * which is not the same mistake: the level is the player's stated policy rather
+ * than an artefact of the shorter programme, both sides are held at the same one,
+ * and the difference is then the marginal cost of a level under that policy.
  *
  * @param {number|null} costToTarget      cheapest total to reach N+1, in seconds
  * @param {number|null} costToCurrent     cheapest total to reach N, in seconds

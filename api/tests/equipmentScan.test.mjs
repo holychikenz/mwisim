@@ -48,11 +48,14 @@ import { DEFAULT_SCAN, estimateWorkload, scanEquipment } from '../lib/equipmentS
 
 import {
   MIRROR_OF_PROTECTION,
+  PROTECTION_PRICING,
   amortisedRate,
   breakEvenHours,
   chooseProtection,
+  forcedProtectLevel,
   isUsableEnhancementCost,
   marginalCostFromTargets,
+  pickProtectionRow,
 } from '../../shared/enhancementRoi.js';
 
 // ---------------------------------------------------------------------------
@@ -760,29 +763,207 @@ test('chooseProtection returns something when nothing is priced at all', () => {
   assert.equal(chosen.effective, null);
 });
 
-test('alwaysUseMirror picks the mirror even when it is dearer', () => {
+test('mirror pricing picks the mirror even when it is dearer', () => {
   const chosen = chooseProtection([{ ...MIRROR, effective: 99999 }, CHAIN], {
-    alwaysUseMirror: true,
+    protectionPricing: PROTECTION_PRICING.MIRROR,
   });
   assert.equal(chosen.hrid, MIRROR_OF_PROTECTION);
   assert.equal(chosen.effective, 99999);
 });
 
-test('alwaysUseMirror is honoured even when the mirror has no price', () => {
-  // A toggle labelled "always" that quietly did something else in the one case a
-  // user is most likely to hit — an unpriced mirror on a fresh install — would be
-  // worse than a cost of zero the caller is told about.
+test('mirror pricing is honoured even when the mirror has no price', () => {
+  // A mode labelled "always a mirror" that quietly did something else in the one
+  // case a user is most likely to hit — an unpriced mirror on a fresh install —
+  // would be worse than a cost of zero the caller is told about.
   const chosen = chooseProtection([{ hrid: MIRROR_OF_PROTECTION, effective: null }, CHAIN], {
-    alwaysUseMirror: true,
+    protectionPricing: PROTECTION_PRICING.MIRROR,
   });
   assert.equal(chosen.hrid, MIRROR_OF_PROTECTION);
   assert.equal(chosen.effective, null);
+});
+
+test('free pricing zeroes the mirror and says that it did so', () => {
+  // The arithmetic is identical to an unpriced mirror; the DIFFERENCE is
+  // `assumedFree`, which is what stops the caller from filing this under
+  // "materials we could not price" and calling every figure a lower bound. A
+  // claim the player made about their own stash is not a hole in the data.
+  const chosen = chooseProtection([{ ...MIRROR, effective: 14000 }, CHAIN], {
+    protectionPricing: PROTECTION_PRICING.FREE,
+  });
+  assert.equal(chosen.hrid, MIRROR_OF_PROTECTION);
+  assert.equal(chosen.effective, 0);
+  assert.equal(chosen.assumedFree, true);
 });
 
 test('chooseProtection tolerates an empty or holey candidate list', () => {
   assert.equal(chooseProtection([]), null);
   assert.equal(chooseProtection(null), null);
   assert.equal(chooseProtection([null, undefined]), null);
-  // alwaysUseMirror with no mirror offered is null, not a silent substitution.
-  assert.equal(chooseProtection([CHAIN], { alwaysUseMirror: true }), null);
+  // Either mirror mode with no mirror offered is null, not a silent substitution:
+  // a caller that asked for free MIRRORS should not be handed a free Chaotic
+  // Chain without being told.
+  assert.equal(chooseProtection([CHAIN], { protectionPricing: PROTECTION_PRICING.MIRROR }), null);
+  assert.equal(chooseProtection([CHAIN], { protectionPricing: PROTECTION_PRICING.FREE }), null);
+});
+
+// ---------------------------------------------------------------------------
+// where protecting starts
+// ---------------------------------------------------------------------------
+
+test('only free protections force a protect level', () => {
+  // The coupling rule. While a protect has a price the solver's minimum answers a
+  // real question — cost and count trade off and it balances them. Once it is
+  // free the minimum is always "protect from the earliest level allowed", which
+  // spends 59 mirrors on one hood, so the player's own policy has to stand in.
+  assert.equal(forcedProtectLevel({ protectionPricing: PROTECTION_PRICING.FREE, protectAt: 7 }), 7);
+  assert.equal(
+    forcedProtectLevel({ protectionPricing: PROTECTION_PRICING.MIRROR, protectAt: 7 }),
+    null
+  );
+  assert.equal(
+    forcedProtectLevel({ protectionPricing: PROTECTION_PRICING.CHEAPEST, protectAt: 7 }),
+    null
+  );
+  assert.equal(forcedProtectLevel({}), null);
+});
+
+test('a forced protect level must be a usable integer', () => {
+  const free = PROTECTION_PRICING.FREE;
+  assert.equal(forcedProtectLevel({ protectionPricing: free, protectAt: 7.4 }), 7);
+  assert.equal(forcedProtectLevel({ protectionPricing: free, protectAt: '9' }), 9);
+  assert.equal(forcedProtectLevel({ protectionPricing: free, protectAt: 0 }), null);
+  assert.equal(forcedProtectLevel({ protectionPricing: free, protectAt: -3 }), null);
+  assert.equal(forcedProtectLevel({ protectionPricing: free, protectAt: null }), null);
+  assert.equal(forcedProtectLevel({ protectionPricing: free, protectAt: 'soon' }), null);
+});
+
+// `/api/enhance/calculate` responses, server-shaped, MEASURED rather than
+// invented: an Acrobatic Hood in iron-cow mode with protections free, at each
+// target the marginal-cost machinery asks about. Slicing one target's rows to
+// stand in for a shorter programme would have been wrong in the direction that
+// matters — a whole-programme cost to +8 is not a cost to +7 — and inventing them
+// would have let the monotonicity test below pass on numbers no server produces.
+const HOOD_TO_3 = [
+  { protect_at: 2, total_cost: 636.93, protects: 1.08 },
+  { protect_at: 3, total_cost: 738.33, protects: 0.0 },
+];
+const HOOD_TO_4 = [
+  { protect_at: 2, total_cost: 1200.2, protects: 3.85 },
+  { protect_at: 3, total_cost: 1437.81, protects: 1.33 },
+  { protect_at: 4, total_cost: 1837.14, protects: 0.0 },
+];
+const HOOD_TO_7 = [
+  { protect_at: 2, total_cost: 5657.94, protects: 32.23 },
+  { protect_at: 3, total_cost: 6734.69, protects: 20.81 },
+  { protect_at: 4, total_cost: 9594.31, protects: 11.29 },
+  { protect_at: 5, total_cost: 14022.58, protects: 5.2 },
+  { protect_at: 6, total_cost: 20443.68, protects: 1.65 },
+  { protect_at: 7, total_cost: 27601.84, protects: 0.0 },
+];
+const HOOD_TO_8 = [
+  { protect_at: 2, total_cost: 9618.75, protects: 59.29 },
+  { protect_at: 3, total_cost: 11380.92, protects: 40.59 },
+  { protect_at: 4, total_cost: 16250.08, protects: 24.39 },
+  { protect_at: 5, total_cost: 24295.35, protects: 13.32 },
+  { protect_at: 6, total_cost: 37423.55, protects: 6.06 },
+  { protect_at: 7, total_cost: 56536.14, protects: 1.65 },
+  { protect_at: 8, total_cost: 73344.02, protects: 0.0 },
+];
+
+test('pickProtectionRow minimises when no level is forced', () => {
+  for (const nothing of [undefined, null, '', 'later']) {
+    // `Number(null)` and `Number('')` are both 0, so an absent policy that was
+    // not screened before the conversion would arrive as "protect from +0" and
+    // clamp to the earliest level the chain allows — the same row minimising
+    // happens to pick here, and therefore a bug that would hide until the day a
+    // dearer row won. Every falsy spelling is asserted for that reason.
+    const chosen = pickProtectionRow(HOOD_TO_8, { protectAt: nothing });
+    assert.equal(chosen.protectAt, 2);
+    assert.equal(chosen.totalCost, 9618.75);
+    assert.equal(chosen.clamped, false);
+    assert.equal(chosen.requestedProtectAt, null);
+  }
+});
+
+test('an absent policy minimises even when the cheapest is not the first row', () => {
+  // The case that makes the guard above visible. With protects PRICED the cheapest
+  // row is somewhere in the middle, so "no policy" and "clamped to the lowest
+  // level" are different rows and only one of them is right.
+  const priced = [
+    { protect_at: 2, total_cost: 1_491_753, protects: 59.29 },
+    { protect_at: 6, total_cost: 188_989, protects: 6.06 },
+    { protect_at: 8, total_cost: 73_344, protects: 0 },
+  ];
+  assert.equal(pickProtectionRow(priced, { protectAt: null }).protectAt, 8);
+  assert.equal(pickProtectionRow(priced, { protectAt: 2 }).protectAt, 2);
+});
+
+test('pickProtectionRow takes the forced level, dear though it is', () => {
+  // Six times the cost of the minimum — and one and a half mirrors instead of
+  // fifty-nine. That trade IS the feature: the cheap figure was never available
+  // to anybody whose stack of mirrors is finite.
+  const chosen = pickProtectionRow(HOOD_TO_8, { protectAt: 7 });
+  assert.equal(chosen.protectAt, 7);
+  assert.equal(chosen.totalCost, 56536.14);
+  assert.equal(chosen.protects, 1.65);
+  assert.equal(chosen.clamped, false);
+  assert.ok(chosen.totalCost > pickProtectionRow(HOOD_TO_8).totalCost * 5);
+});
+
+test('a forced level above the target clamps to "never protect"', () => {
+  // Not an approximation but an identity. Attempts run from states 0 … target-1
+  // and the Markov step is `dest = i - 1 if i >= protect_at else 0`, so the top
+  // row — protect_at equal to the target — has no state that protects. Forcing +7
+  // on a programme that stops at +5 means precisely that: nothing in it ever
+  // reaches the level where a mirror would be spent.
+  const chosen = pickProtectionRow(HOOD_TO_4, { protectAt: 7 });
+  assert.equal(chosen.protectAt, 4);
+  assert.equal(chosen.requestedProtectAt, 7);
+  assert.equal(chosen.clamped, true);
+  // And the identity is visible in the data: the top row spends nothing.
+  assert.equal(chosen.protects, 0);
+});
+
+test('a forced level below the first row clamps up to it', () => {
+  const chosen = pickProtectionRow(HOOD_TO_8, { protectAt: 1 });
+  assert.equal(chosen.protectAt, 2);
+  assert.equal(chosen.clamped, true);
+});
+
+test('a forced level keeps the marginal cost of a level positive', () => {
+  // The invariant the clamping buys. Both sides of the difference are held at the
+  // same policy, so reaching +8 cannot be cheaper than reaching +7 — and where the
+  // clamp bites, both sides are "never protect", which is still one policy.
+  const hi = pickProtectionRow(HOOD_TO_8, { protectAt: 7 });
+  const lo = pickProtectionRow(HOOD_TO_7, { protectAt: 7 });
+  const marginal = marginalCostFromTargets(hi.totalCost, lo.totalCost);
+  assert.ok(marginal > 0);
+  // 8.04 hours for the eighth level, against 1.10 with the solver left to
+  // minimise. Pinned, because the whole point of the mode is that this figure is
+  // seven times the one it replaces.
+  assert.ok(Math.abs(marginal / 3600 - 8.04) < 0.01);
+  // Protects are a difference of the same two programmes: 1.65 - 0.
+  assert.ok(Math.abs(hi.protects - lo.protects - 1.65) < 0.01);
+
+  // Below the protect point neither side protects, and the level still costs
+  // something — the clamp must not collapse the difference to nothing.
+  assert.ok(
+    marginalCostFromTargets(
+      pickProtectionRow(HOOD_TO_4, { protectAt: 7 }).totalCost,
+      pickProtectionRow(HOOD_TO_3, { protectAt: 7 }).totalCost
+    ) > 0
+  );
+});
+
+test('pickProtectionRow refuses rows it cannot read', () => {
+  assert.equal(pickProtectionRow([]), null);
+  assert.equal(pickProtectionRow(null), null);
+  // The case that actually occurs: `target = 1`, where the server's protection
+  // loop is empty and no rows come back at all.
+  assert.equal(pickProtectionRow([{ protect_at: 2 }]), null);
+  assert.equal(pickProtectionRow([{ protect_at: 'x', total_cost: 5 }]), null);
+  // A row with no `protects` field is still a usable cost; the count is unknown.
+  const chosen = pickProtectionRow([{ protect_at: 2, total_cost: 100 }]);
+  assert.equal(chosen.totalCost, 100);
+  assert.equal(chosen.protects, null);
 });

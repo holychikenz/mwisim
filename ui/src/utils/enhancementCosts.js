@@ -25,8 +25,11 @@ import { IRON_API_BASE } from '../hooks/usePrices';
 import { resolveItemCost } from './consumableCosts';
 import {
   MIRROR_OF_PROTECTION,
+  PROTECTION_PRICING,
   chooseProtection,
+  forcedProtectLevel,
   marginalCostFromTargets,
+  pickProtectionRow,
 } from '../../../shared/enhancementRoi.js';
 
 /** Same host as the production-time source; its CORS is open. */
@@ -35,7 +38,7 @@ export const ENHANCE_API_BASE = IRON_API_BASE;
 /** The cap, matching the engine's multiplier table. */
 export const MAX_ENHANCEMENT_LEVEL = 20;
 
-export { MIRROR_OF_PROTECTION };
+export { MIRROR_OF_PROTECTION, PROTECTION_PRICING };
 
 /** Requests are ~80ms each; this is a guard against a wedged server, not a budget. */
 const REQUEST_TIMEOUT_MS = 20_000;
@@ -89,11 +92,21 @@ export async function fetchEnhancementConfig({ signal } = {}) {
  * @param {string} itemHrid
  * @param {object} gameItems  useGameData's `items` (the itemDetailMap)
  * @param {object} pricing    usePrices' return value
+ * @param {object} [opts]
+ * @param {string} [opts.protectionPricing]  one of PROTECTION_PRICING
  * @returns {{materials, protection, protectionCandidates, unpriced}}
  */
-export function describeEnhancementInputs(itemHrid, gameItems, pricing, { alwaysUseMirror = false } = {}) {
+export function describeEnhancementInputs(
+  itemHrid,
+  gameItems,
+  pricing,
+  { protectionPricing = PROTECTION_PRICING.CHEAPEST } = {}
+) {
   const detail = gameItems?.[itemHrid];
   const costs = detail?.enhancementCosts || [];
+  const mirrorOnly =
+    protectionPricing === PROTECTION_PRICING.MIRROR ||
+    protectionPricing === PROTECTION_PRICING.FREE;
 
   const materials = costs
     .filter((entry) => entry?.itemHrid && entry.itemHrid !== '/items/coin')
@@ -105,10 +118,10 @@ export function describeEnhancementInputs(itemHrid, gameItems, pricing, { always
 
   // The server excludes `_refined` protections from its own cheapest-of search;
   // match that, or we would post a price for an option it would never pick.
-  // Under alwaysUseMirror the item's own protections are not candidates at all —
-  // which is the point of the toggle: one priceable item instead of a dozen
-  // drop-only ones.
-  const candidateHrids = alwaysUseMirror
+  // In the two mirror modes the item's own protections are not candidates at all —
+  // which is the point of them: one priceable item instead of a dozen drop-only
+  // ones.
+  const candidateHrids = mirrorOnly
     ? [MIRROR_OF_PROTECTION]
     : [
         MIRROR_OF_PROTECTION,
@@ -119,11 +132,16 @@ export function describeEnhancementInputs(itemHrid, gameItems, pricing, { always
     name: gameItems?.[hrid]?.name || lastSegment(hrid),
   }));
 
-  const protection = chooseProtection(protectionCandidates, { alwaysUseMirror });
+  const protection = chooseProtection(protectionCandidates, { protectionPricing });
 
+  // `assumedFree` is why this is not simply `effective == null`. A zero the user
+  // asserted is a fact about their stash, not a hole in the data, so it must not
+  // land in the banner that tells them every figure below is a lower bound —
+  // which is the only thing separating "protections are free" from the identical
+  // arithmetic an unpriced mirror already produces.
   const unpriced = [
     ...materials.filter((row) => row.effective == null).map((row) => ({ ...row, role: 'material' })),
-    ...(protection && protection.effective == null
+    ...(protection && protection.effective == null && !protection.assumedFree
       ? [{ ...protection, role: 'protection' }]
       : []),
   ];
@@ -137,19 +155,20 @@ function lastSegment(hrid) {
 }
 
 /**
- * Cheapest expected cost, in seconds, of taking a fresh item from +0 to `target`.
+ * Expected cost, in seconds, of taking a fresh item from +0 to `target`.
  *
- * The response carries one row per protection level; the cheapest is the relevant
- * one, since a player free to choose where to start protecting will choose well.
- * `optimal_prot` says the same thing, but minimising here keeps this honest if
- * the server's tie-breaking ever changes.
+ * The response carries one row per protection level. Which one to believe is
+ * `pickProtectionRow`'s decision: the cheapest by default, since a player free to
+ * choose where to start protecting will choose well, or the row matching a forced
+ * `protectAt` when the player has told us their policy instead.
  *
  * Returns null when the API cannot answer — notably at `target = 1`, where its
  * protection loop (`range(2, target + 1)`) is empty and no rows come back.
  *
- * @returns {Promise<{seconds: number, protectAt: number, basePrice: number}|null>}
+ * @returns {Promise<{seconds: number, protectAt: number, protects: number|null,
+ *                   basePrice: number}|null>}
  */
-export async function fetchTargetCost({ itemHrid, target, config, inputs, signal }) {
+export async function fetchTargetCost({ itemHrid, target, config, inputs, protectAt, signal }) {
   const guard = withTimeout(signal);
   try {
     const body = { iron_cow: true, config, item_hrid: itemHrid, target };
@@ -163,7 +182,9 @@ export async function fetchTargetCost({ itemHrid, target, config, inputs, signal
         // Posted even when unpriced, as 0 — the same treatment the materials get,
         // and the caller is told so it can flag the figure as a floor. Leaving it
         // out instead would hand the choice back to the server's own cheapest-of
-        // search, which is exactly what "always use mirror" promises not to do.
+        // search, which is exactly what the mirror modes promise not to do. In
+        // `free` mode the zero is the point rather than a fallback, and
+        // `assumedFree` is how the caller tells the two apart.
         body.protect_price = inputs.protection.effective ?? 0;
         body.protect_hrid = inputs.protection.hrid;
       }
@@ -184,17 +205,14 @@ export async function fetchTargetCost({ itemHrid, target, config, inputs, signal
     });
     if (!response.ok) return null;
     const payload = await response.json();
-    const rows = Array.isArray(payload?.rows) ? payload.rows : [];
-    if (!rows.length) return null;
-
-    let best = null;
-    for (const row of rows) {
-      const total = Number(row?.total_cost);
-      if (!Number.isFinite(total)) continue;
-      if (!best || total < best.seconds) best = { seconds: total, protectAt: row.protect_at };
-    }
-    if (!best) return null;
-    return { ...best, basePrice: Number(payload.base_price) || 0 };
+    const chosen = pickProtectionRow(payload?.rows, { protectAt });
+    if (!chosen) return null;
+    return {
+      seconds: chosen.totalCost,
+      protectAt: chosen.protectAt,
+      protects: chosen.protects,
+      basePrice: Number(payload.base_price) || 0,
+    };
   } catch {
     return null;
   } finally {
@@ -218,9 +236,23 @@ export async function fetchTargetCost({ itemHrid, target, config, inputs, signal
  * (`range(min(2, target), target + 1)`) fixes it, and this function picks that up
  * automatically the moment it lands.
  *
- * @returns {Promise<{seconds: number|null, reason?: string, protectAt?: number}>}
+ * Each result also carries `protects`: the expected number of protection items
+ * the level consumes, by the same difference-of-programmes argument as the cost.
+ * It is the number that says whether "protections are free" is a fair assumption
+ * or a comfortable fiction — 1.7 mirrors for a hood's +8 is nothing, 182 for its
+ * +13 is not free by any reading.
+ *
+ * @returns {Promise<{seconds: number|null, reason?: string, protectAt?: number,
+ *                   protects?: number|null}>}
  */
-export async function fetchMarginalCost({ itemHrid, currentLevel, config, inputs, signal }) {
+export async function fetchMarginalCost({
+  itemHrid,
+  currentLevel,
+  config,
+  inputs,
+  protectAt,
+  signal,
+}) {
   const level = Math.max(0, Math.floor(Number(currentLevel) || 0));
   const unpriced = inputs?.unpriced || [];
   const protection = inputs?.protection || null;
@@ -229,7 +261,14 @@ export async function fetchMarginalCost({ itemHrid, currentLevel, config, inputs
     return { seconds: null, reason: `already at +${MAX_ENHANCEMENT_LEVEL}`, unpriced, protection };
   }
 
-  const target = await fetchTargetCost({ itemHrid, target: level + 1, config, inputs, signal });
+  const target = await fetchTargetCost({
+    itemHrid,
+    target: level + 1,
+    config,
+    inputs,
+    protectAt,
+    signal,
+  });
   if (!target) {
     return {
       seconds: null,
@@ -245,11 +284,24 @@ export async function fetchMarginalCost({ itemHrid, currentLevel, config, inputs
   // base_price is posted as 0, so cost(1) IS the marginal cost of the first level.
   if (level === 0) {
     return target.seconds > 0
-      ? { seconds: target.seconds, protectAt: target.protectAt, unpriced, protection }
+      ? {
+          seconds: target.seconds,
+          protectAt: target.protectAt,
+          protects: target.protects,
+          unpriced,
+          protection,
+        }
       : { seconds: null, reason: 'no usable production time for this item', unpriced, protection };
   }
 
-  const current = await fetchTargetCost({ itemHrid, target: level, config, inputs, signal });
+  const current = await fetchTargetCost({
+    itemHrid,
+    target: level,
+    config,
+    inputs,
+    protectAt,
+    signal,
+  });
   if (!current) {
     return {
       seconds: null,
@@ -262,7 +314,30 @@ export async function fetchMarginalCost({ itemHrid, currentLevel, config, inputs
   const seconds = marginalCostFromTargets(target.seconds, current.seconds);
   return seconds == null
     ? { seconds: null, reason: 'no usable production time for this item', unpriced, protection }
-    : { seconds, protectAt: target.protectAt, unpriced, protection };
+    : {
+        seconds,
+        protectAt: target.protectAt,
+        protects: marginalProtects(target.protects, current.protects),
+        unpriced,
+        protection,
+      };
+}
+
+/**
+ * Protects consumed by one level: the difference of two whole programmes.
+ *
+ * Same argument as the cost, and the same guard. A negative difference is a
+ * broken input rather than a bargain — reaching a higher level under one policy
+ * cannot spend fewer protects than reaching a lower one — so it is refused
+ * instead of reported. A tiny negative from float noise is clamped to zero, which
+ * is the honest answer for the levels below the protect point where neither
+ * programme spends anything at all.
+ */
+function marginalProtects(atTarget, atCurrent) {
+  if (!Number.isFinite(atTarget) || !Number.isFinite(atCurrent)) return null;
+  const marginal = atTarget - atCurrent;
+  if (marginal < -1e-6) return null;
+  return Math.max(0, marginal);
 }
 
 /**
@@ -276,16 +351,29 @@ export async function fetchMarginalCost({ itemHrid, currentLevel, config, inputs
  * @param {object[]} rows       scan result rows
  * @param {object} config       EnhancementConfig
  * @param {object} [opts]
+ * @param {string} [opts.protectionPricing]  one of PROTECTION_PRICING
+ * @param {number} [opts.protectAt]          forced protect level; free mode only
  * @param {(done: number, total: number) => void} [opts.onProgress]
  * @returns {Promise<Record<string, {seconds: number|null, reason?: string}>>} keyed by row id
  */
 export async function costScanRows(
   rows,
   config,
-  { gameItems, pricing, alwaysUseMirror = false, signal, onProgress } = {}
+  {
+    gameItems,
+    pricing,
+    protectionPricing = PROTECTION_PRICING.CHEAPEST,
+    protectAt,
+    signal,
+    onProgress,
+  } = {}
 ) {
   const out = {};
   const list = Array.isArray(rows) ? rows : [];
+  // Resolved once for the whole run, so every row is costed under one policy and
+  // the coupling rule — only free protections force a level — is applied in a
+  // single place rather than re-decided per request.
+  const forced = forcedProtectLevel({ protectionPricing, protectAt });
   // Two items of the same kind at the same level cost the same, and a party of
   // five can easily wear duplicates.
   const memo = new Map();
@@ -296,7 +384,7 @@ export async function costScanRows(
     const key = `${row.itemHrid}@${row.currentLevel}`;
     if (!memo.has(key)) {
       const inputs = gameItems
-        ? describeEnhancementInputs(row.itemHrid, gameItems, pricing, { alwaysUseMirror })
+        ? describeEnhancementInputs(row.itemHrid, gameItems, pricing, { protectionPricing })
         : null;
       memo.set(
         key,
@@ -305,6 +393,7 @@ export async function costScanRows(
           currentLevel: row.currentLevel,
           config,
           inputs,
+          protectAt: forced,
           signal,
         })
       );

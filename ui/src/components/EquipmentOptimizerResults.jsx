@@ -1,19 +1,22 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Alert,
   Badge,
   Button,
   Group,
+  NumberInput,
   Paper,
+  SegmentedControl,
   SimpleGrid,
   Stack,
-  Switch,
   Table,
   Text,
   Title,
   Tooltip,
 } from '@mantine/core';
 import {
+  MAX_PROTECT_AT,
+  MIN_PROTECT_AT,
   VERDICT_LABELS,
   formatPct,
   formatSignedPct,
@@ -21,7 +24,12 @@ import {
 } from '../utils/equipmentOptimizer';
 import { formatSeconds } from '../utils/triggerOptimizer';
 import { useEnhancementCosts } from '../hooks/useEnhancementCosts';
-import { breakEvenHours, enhancingHoursPerUnit } from '../../../shared/enhancementRoi.js';
+import {
+  PROTECTION_PRICING,
+  breakEvenHours,
+  enhancingHoursPerUnit,
+  forcedProtectLevel,
+} from '../../../shared/enhancementRoi.js';
 
 // =============================================================================
 // EquipmentOptimizerResults — the ranked table of what a level is worth.
@@ -113,6 +121,37 @@ function formatHours(hours) {
 }
 
 /**
+ * An expected count of protection items, always approximate.
+ *
+ * The tilde is not decoration. This is the difference of two expectations over a
+ * Markov chain, so 1.7 mirrors is a perfectly meaningful figure for a thing that
+ * only ever arrives in whole numbers, and rounding it to 2 would suggest a
+ * precision the chain does not have.
+ */
+function formatProtects(protects) {
+  if (protects == null || !Number.isFinite(protects)) return null;
+  if (protects <= 0) return 'none';
+  if (protects < 10) return `~${protects.toFixed(1)}`;
+  return `~${Math.round(protects).toLocaleString()}`;
+}
+
+/** The three ways a protect can be priced, as the segmented control reads them. */
+const PRICING_OPTIONS = [
+  { value: PROTECTION_PRICING.CHEAPEST, label: 'Cheapest' },
+  { value: PROTECTION_PRICING.MIRROR, label: 'Mirror' },
+  { value: PROTECTION_PRICING.FREE, label: 'Free' },
+];
+
+const PRICING_HELP = {
+  [PROTECTION_PRICING.CHEAPEST]:
+    "The cheapest protection the item admits that you have actually priced. Honest, but an item's own protection is drop-only and has to be priced piece by piece before it can win.",
+  [PROTECTION_PRICING.MIRROR]:
+    "Cost every protect as a Philosopher's Mirror. Mirrors are craftable and universal, so pricing one covers every piece you own.",
+  [PROTECTION_PRICING.FREE]:
+    'Protects cost nothing, because you already hold a stack — but you say where protecting starts, so the solver cannot spend fifty-nine of them protecting from +2.',
+};
+
+/**
  * Return on investment: what the level costs against what it buys.
  *
  * Both sides are seconds, so the answer is a TIME rather than a ratio — the
@@ -130,10 +169,28 @@ function ReturnOnInvestment({
   labyrinth = false,
   gameItems,
   pricing,
-  alwaysUseMirror,
-  onAlwaysUseMirrorChange,
+  protectionPricing,
+  protectAt,
+  onProtectionPricingChange,
+  onProtectAtChange,
 }) {
   const { costs, loading, progress, error, fetchCosts } = useEnhancementCosts();
+
+  // Which policy the table on screen was actually costed under. Changing the
+  // controls does not refetch — thirty requests to a personal Flask server should
+  // be asked for, not triggered by a click on a switch — so without this the
+  // panel would show yesterday's numbers under today's settings and say nothing.
+  const [fetchedUnder, setFetchedUnder] = useState(null);
+  const forced = forcedProtectLevel({ protectionPricing, protectAt });
+  const stale =
+    !!costs &&
+    !!fetchedUnder &&
+    (fetchedUnder.protectionPricing !== protectionPricing || fetchedUnder.forced !== forced);
+
+  const run = () => {
+    setFetchedUnder({ protectionPricing, forced });
+    fetchCosts(rows, { gameItems, pricing, protectionPricing, protectAt });
+  };
 
   // Every material and protection item the run could not put a time to.
   // Deduplicated across rows, because one absent essence typically poisons half
@@ -190,30 +247,76 @@ function ReturnOnInvestment({
           Return on investment
         </Text>
         <Group gap="sm">
-          <Tooltip
-            label="Cost every protect as a Philosopher's Mirror instead of the item's own protection item. Mirrors are craftable and universal, so one time covers everything; an item's own protection is drop-only and has to be priced piece by piece."
-            withArrow
-            multiline
-            w={300}
-          >
-            <Switch
-              size="xs"
-              labelPosition="left"
-              label="Always use mirror"
-              checked={!!alwaysUseMirror}
-              onChange={(event) => onAlwaysUseMirrorChange?.(event.currentTarget.checked)}
-              disabled={loading}
-            />
-          </Tooltip>
-          <Button
-            size="compact-xs"
-            variant="default"
-            loading={loading}
-            onClick={() => fetchCosts(rows, { gameItems, pricing, alwaysUseMirror })}
-          >
+          {stale && (
+            <Badge size="xs" color="yellow" variant="light">
+              settings changed — refetch
+            </Badge>
+          )}
+          <Button size="compact-xs" variant="default" loading={loading} onClick={run}>
             {costs ? 'Refetch costs' : 'Cost these levels'}
           </Button>
         </Group>
+      </Group>
+
+      {/* The two questions a protect poses, and they are not the same question.
+          What it COSTS decides how much of the bill is protection; WHERE IT
+          STARTS decides how many are spent. The second only becomes the player's
+          business once the first is zero: while a protect has a price the solver
+          balances the two and its minimum is a real answer, but a free protect
+          makes protecting from +2 unbeatable, and that is a fantasy for anybody
+          whose stack is finite. Hence the level input belongs to Free alone. */}
+      <Group gap="xs" mb={8} wrap="wrap">
+        <Text size="xs" fw={600} c="dimmed">
+          Protects
+        </Text>
+        <Tooltip
+          label={PRICING_HELP[protectionPricing] || PRICING_HELP[PROTECTION_PRICING.CHEAPEST]}
+          withArrow
+          multiline
+          w={320}
+        >
+          <SegmentedControl
+            size="xs"
+            value={protectionPricing || PROTECTION_PRICING.CHEAPEST}
+            onChange={(value) => onProtectionPricingChange?.(value)}
+            data={PRICING_OPTIONS}
+            disabled={loading}
+          />
+        </Tooltip>
+        {protectionPricing === PROTECTION_PRICING.FREE && (
+          <Tooltip
+            label="Where you begin spending protects. Costs are then the expected programme under that policy rather than the cheapest one — on a level below it, nothing is protected at all."
+            withArrow
+            multiline
+            w={320}
+          >
+            <Group gap={6} wrap="nowrap">
+              <Text size="xs" c="dimmed">
+                protect from
+              </Text>
+              <NumberInput
+                size="xs"
+                w={78}
+                prefix="+"
+                min={MIN_PROTECT_AT}
+                max={MAX_PROTECT_AT}
+                step={1}
+                allowDecimal={false}
+                allowNegative={false}
+                clampBehavior="strict"
+                value={protectAt ?? MIN_PROTECT_AT}
+                onChange={(value) => {
+                  const level = Math.round(Number(value));
+                  if (!Number.isFinite(level)) return;
+                  onProtectAtChange?.(
+                    Math.min(MAX_PROTECT_AT, Math.max(MIN_PROTECT_AT, level))
+                  );
+                }}
+                disabled={loading}
+              />
+            </Group>
+          </Tooltip>
+        )}
       </Group>
 
       {!costs && !loading && !error && (
@@ -273,7 +376,7 @@ function ReturnOnInvestment({
 
       {ranked && (
         <>
-          <Table.ScrollContainer minWidth={640}>
+          <Table.ScrollContainer minWidth={720}>
             <Table striped highlightOnHover withTableBorder>
               <Table.Thead>
                 <Table.Tr>
@@ -281,6 +384,21 @@ function ReturnOnInvestment({
                   <Table.Th>Item</Table.Th>
                   <Table.Th ta="right">Next</Table.Th>
                   <Table.Th ta="right">Costs</Table.Th>
+                  {/* The column that keeps "protects are free" honest. Free is a
+                      fair assumption at 1.7 mirrors and a comfortable fiction at
+                      182, and nothing else on the panel would ever say so. */}
+                  <Table.Th ta="right">
+                    <Tooltip
+                      label="Expected protection items this level consumes, by the same difference-of-programmes argument as the cost."
+                      withArrow
+                      multiline
+                      w={280}
+                    >
+                      <Text span size="xs" fw={700} style={{ cursor: 'help' }}>
+                        Protects
+                      </Text>
+                    </Tooltip>
+                  </Table.Th>
                   <Table.Th ta="right">Buys</Table.Th>
                   <Table.Th ta="right">{labyrinth ? 'Per +1 point' : 'Pays back after'}</Table.Th>
                 </Table.Tr>
@@ -306,6 +424,13 @@ function ReturnOnInvestment({
                             unknown
                           </Text>
                         </Tooltip>
+                      )}
+                    </Table.Td>
+                    <Table.Td ta="right" ff="monospace">
+                      {formatProtects(cost?.protects) ?? (
+                        <Text span size="xs" c="dimmed">
+                          —
+                        </Text>
                       )}
                     </Table.Td>
                     {/* Deliberately different denominators. A zone's pay-back is
@@ -338,9 +463,17 @@ function ReturnOnInvestment({
             </Table>
           </Table.ScrollContainer>
           <Text size="10px" c="dimmed" mt={8}>
-            Costs are the cheapest expected programme to reach the next level, in production
-            seconds, minimised over where you start protecting — the item&apos;s own acquisition
-            price appears on both sides of the difference and cancels.{' '}
+            Costs are the expected programme to reach the next level, in production seconds
+            {forced != null ? (
+              <>
+                , with protecting forced from <b>+{forced}</b> on both sides of the difference — a
+                level below that is costed unprotected, because no attempt in it ever reaches the
+                point where you would spend one
+              </>
+            ) : (
+              <>, minimised over where you start protecting</>
+            )}
+            . The item&apos;s own acquisition price appears on both sides and cancels.{' '}
             {labyrinth ? (
               <>
                 The last column is the enhancing time that buys one percentage point of clear rate:{' '}
@@ -373,8 +506,10 @@ export function EquipmentOptimizerResults({
   results,
   gameItems,
   pricing,
-  alwaysUseMirror,
-  onAlwaysUseMirrorChange,
+  protectionPricing,
+  protectAt,
+  onProtectionPricingChange,
+  onProtectAtChange,
 }) {
   const rows = Array.isArray(results?.rows) ? results.rows : null;
 
@@ -652,8 +787,10 @@ export function EquipmentOptimizerResults({
         labyrinth={labyrinth}
         gameItems={gameItems}
         pricing={pricing}
-        alwaysUseMirror={alwaysUseMirror}
-        onAlwaysUseMirrorChange={onAlwaysUseMirrorChange}
+        protectionPricing={protectionPricing}
+        protectAt={protectAt}
+        onProtectionPricingChange={onProtectionPricingChange}
+        onProtectAtChange={onProtectAtChange}
       />
 
       {skipped.length > 0 && (

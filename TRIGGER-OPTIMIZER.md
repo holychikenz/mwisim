@@ -587,7 +587,7 @@ resting on a quantity nobody tested. True — but the price per point divides by
 The objection applies to the rate, not to the proportion.
 
 Everything else in that panel is common to both targets: the cow webapp's Markov cost
-solve, the marginal-cost subtraction, the mirror-versus-own-protection choice, and the
+solve, the marginal-cost subtraction, how protects are priced and where they start, and the
 orange banner naming materials the production-time walker could not price — which
 matters as much here as anywhere, since an unpriced material contributes zero and makes
 every figure a lower bound.

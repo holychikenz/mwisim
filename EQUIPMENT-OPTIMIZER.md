@@ -269,10 +269,10 @@ gains measured above.
   is already picked
 
 The Markov chain always starts at state 0, so the marginal cost of level *N→N+1*
-is the difference `cost(N+1) − cost(N)`, each minimised over `protect_at`. The
-item's base price appears once on each side and cancels cleanly. Measured on a
-Gobo Slasher: +5 costs 301.0s, +6 costs 505.8s, so that sixth level costs
-**204.8 seconds**.
+is the difference `cost(N+1) − cost(N)`, each minimised over `protect_at` — or each
+held at a **forced** `protect_at`, which is §10's *protect from +N*. The item's base
+price appears once on each side and cancels cleanly. Measured on a Gobo Slasher: +5
+costs 301.0s, +6 costs 505.8s, so that sixth level costs **204.8 seconds**.
 
 With both sides in seconds the honest return is a **break-even time**. Spending
 *C* seconds enhancing and then grinding *T* hours gives an overall rate of
@@ -395,9 +395,9 @@ override-aware path the consumables use, and `fetchTargetCost` posts:
 
 - `material_unit_costs` — **positional**, zipped by the server against the non-coin
   entries of `enhancementCosts`, so the filter here must match its filter exactly
-- `protect_price` / `protect_hrid` — see **Always use mirror** below. Posted even
-  when unpriced, as 0, the same treatment the materials get; omitting it would
-  hand the choice back to the server's own search.
+- `protect_price` / `protect_hrid` — see **Protects: how they are priced** below.
+  Posted even when unpriced, as 0, the same treatment the materials get; omitting
+  it would hand the choice back to the server's own search.
 - `base_price: 0`, always — `total_cost` is base + materials + attempts, and the
   acquisition price is sunk for a piece already worn. Zeroing it makes the marginal
   cost of the *first* level simply `cost(1)`, with no subtraction to get wrong, and
@@ -429,47 +429,107 @@ below for anything else. A search box alone would have been useless: the whole
 difficulty is that the items costing nothing are exactly the ones nothing ever
 names.
 
-### Always use mirror
+### Protects: how they are priced
 
-A toggle on the Gear tab, beside **Cost these levels**, **on by default**. It
-decides which protection item an enhancement is costed against, and the default is
-a judgement about *data* rather than about play.
+A three-way control on the Gear tab, beside **Cost these levels**, defaulting to
+**Mirror**. It decides which protection item an enhancement is costed against,
+and the default is a judgement about *data* rather than about play.
 
 An item's own protection — a Chaotic Chain, an Acrobat's Ribbon — is drop-only.
 It is therefore absent from the production-time map and unpriceable until the
 player types a number for **every one of them**, piece by piece. A Philosopher's
 Mirror is craftable, works on any piece, and needs pricing exactly **once**. So
-the toggle collapses a dozen unanswerable questions into one answerable one, and
-defaulting it off would mean the pay-back column read zero for most protections
-until a dozen drop-only items had been hand-costed — a poor first impression of a
-number that is supposed to be trustworthy.
+**Mirror** collapses a dozen unanswerable questions into one answerable one, and
+defaulting to **Cheapest** would mean the pay-back column read zero for most
+protections until a dozen drop-only items had been hand-costed — a poor first
+impression of a number that is supposed to be trustworthy.
 
 The choice lives in one place, `chooseProtection` in `shared/enhancementRoi.js`,
-where the api tests can reach it. Two rules, both load-bearing:
+where the api tests can reach it. Three rules, all load-bearing:
 
-1. **`alwaysUseMirror` is honoured even when the mirror itself has no price.** The
+1. **`mirror` is honoured even when the mirror itself has no price.** The
    alternative — quietly falling back to the cheapest of the others — would mean a
-   toggle labelled *always* sometimes did something else, in precisely the case a
-   user is most likely to hit on a fresh install. A cost of zero the caller is
-   told about is better than a silent substitution.
-2. **Otherwise, the cheapest *priced* candidate.** An unpriced one must not win by
-   default, and that is not hypothetical: the server's own selection reads
+   mode labelled *always a mirror* sometimes did something else, in precisely the
+   case a user is most likely to hit on a fresh install. A cost of zero the caller
+   is told about is better than a silent substitution.
+2. **`cheapest` takes the cheapest *priced* candidate.** An unpriced one must not
+   win by default, and that is not hypothetical: the server's own selection reads
    `if pc and pc < cheapest`, where a zero is falsy and so skipped, leaving it to
    fall back to the mirror without saying so.
+3. **`free` returns the mirror at zero, marked `assumedFree`.** The arithmetic is
+   identical to an unpriced mirror; the marker is the whole difference. An unpriced
+   input is a hole in the data and makes every figure a lower bound, so it belongs
+   in the orange banner; a free one is a *claim the player made about their own
+   stash*, as trustworthy as anything else they typed, and putting it in that
+   banner would be calling them unreliable about their own inventory.
 
-The Costs tab honours the same flag: with it on, the per-item protections are not
-listed at all, because nothing will read them. That omission **is** the
-simplification — on a real build it took the tab from 33 items and 30 unpriced to
-**24 and 20**, nine drop-only protections collapsing into one Mirror row that
-names every piece using it.
+The Costs tab lists exactly what the Gear tab will **read**, and no more. Under
+`cheapest` that is everything the chooser might pick; under `mirror`, one item;
+under `free`, no protection at all. The omission **is** the simplification — on a
+real build, moving from `cheapest` to `mirror` took the tab from 33 items and 30
+unpriced to **24 and 20**, nine drop-only protections collapsing into one Mirror
+row that names every piece using it. Asking for a price nothing consults is worse
+than asking for nothing: it buries the two boxes that would change a number.
 
 Measured on the same build, Acrobatic Hood +7 → +8, with the Ribbon hand-priced at
 25,000 s:
 
 | | cost | pay-back |
 |---|---|---|
-| toggle **off** (cheapest priced → the Ribbon) | 331.2 h | 16,394.9 days |
-| toggle **on** (the Mirror, still unpriced here) | 174.4 h | 8,632.2 days |
+| **Cheapest** (priced → the Ribbon) | 331.2 h | 16,394.9 days |
+| **Mirror** (still unpriced here) | 174.4 h | 8,632.2 days |
+
+### Protects: where they start, and how many
+
+Pricing a protect is only half of the question. The other half is **where
+protecting begins**, and until now the answer was always "wherever the Markov
+solver liked best" — `fetchTargetCost` took the cheapest of the response's rows.
+
+While a protect has a *price*, that minimum answers a real question: cost and
+count trade against each other and the solver balances them. Once a protect is
+**free** the trade collapses. Protecting from the earliest level the chain allows
+is then unbeatable, and the answer it gives is a fantasy — measured on the
+Acrobatic Hood, free protects and a free hand put the solver at `protect_at = 2`,
+where taking one hood from +0 to +8 spends **59.3 mirrors**, and to +13, **1,472**.
+Nobody has 1,472 mirrors. *Free but finite* is the real situation, and a forced level is
+how a finite stack is expressed. Hence the **protect from +N** input, offered by
+the `free` mode alone; `forcedProtectLevel` owns that coupling and explains it.
+
+`pickProtectionRow` then takes the row matching the policy instead of the cheapest,
+and **clamps** the level into the range the response offers. The clamp is not a
+fudge but an identity. Attempts run from states 0 … *target*−1 and the Markov step
+is `dest = i - 1 if i >= protect_at else 0`, so the top row — `protect_at` equal to
+the target — has no state that protects and therefore **is** "never protect".
+Forcing +7 on a programme that stops at +5 means exactly that: no attempt in it
+ever reaches the level where a mirror would be spent. Which is also what keeps the
+marginal cost positive: both sides of `cost(N+1) − cost(N)` are held at one policy,
+and reaching a higher level under a policy cannot be cheaper than reaching a lower.
+
+Alongside it, a **Protects** column: the expected number of protection items the
+level consumes, by the same difference-of-programmes argument as the cost. It is
+the number that says whether *free* is a fair assumption or a comfortable fiction,
+and nothing else on the panel would ever say so.
+
+Measured on the Acrobatic Hood, protects free throughout:
+
+| next level | solver's choice | protects | forced from +7 | protects |
+|---|---|---|---|---|
+| +4 | 0.16 h (`prot@2`) | 2.8 | 0.31 h (`prot@4`, clamped) | **0** |
+| +7 | 0.64 h (`prot@2`) | 15.2 | 4.79 h (`prot@7`) | **0** |
+| +8 | 1.10 h (`prot@2`) | 27.1 | 8.04 h (`prot@7`) | **1.65** |
+| +13 | 29.75 h (`prot@2`) | 757.4 | 209.45 h (`prot@7`) | **99.4** |
+
+Seven times the cost for the eighth level, and the reason is legible in the last
+column: the cheap figure was never available to anyone whose mirrors are counted.
+Note also that a forced level *below* the next one costs **nothing in protects**
+and more in time — which is correct, and is the clamp doing its work.
+
+One consequence worth knowing: changing either control does **not** refetch. Thirty
+requests to a personal Flask server should be asked for rather than triggered by a
+click, so the panel instead marks the table *settings changed — refetch* when the
+policy on screen no longer matches the one the figures were costed under. Showing
+yesterday's numbers under today's settings and saying nothing was the alternative,
+and it is the sort of quiet wrongness this document exists to prevent.
 
 ---
 

@@ -18,6 +18,7 @@ import {
 } from '@mantine/core';
 import { COST_ROLES, describeBuildCosts, searchItemCosts } from '../utils/itemCosts';
 import { formatAge, formatSeconds } from '../utils/triggerOptimizer';
+import { PROTECTION_PRICING } from '../../../shared/enhancementRoi.js';
 
 // =============================================================================
 // ItemCostsView — hand-set production times, in seconds, for any item.
@@ -157,12 +158,12 @@ function CostTable({ rows, disabled, onChange, empty }) {
   );
 }
 
-export function ItemCostsView({ playerDTOs, gameItems, pricing, alwaysUseMirror = false }) {
+export function ItemCostsView({ playerDTOs, gameItems, pricing, protectionPricing }) {
   const [query, setQuery] = useState('');
 
   const buildRows = useMemo(
-    () => describeBuildCosts(playerDTOs, gameItems, pricing, { alwaysUseMirror }),
-    [playerDTOs, gameItems, pricing, alwaysUseMirror]
+    () => describeBuildCosts(playerDTOs, gameItems, pricing, { protectionPricing }),
+    [playerDTOs, gameItems, pricing, protectionPricing]
   );
 
   const searchRows = useMemo(
@@ -194,11 +195,18 @@ export function ItemCostsView({ playerDTOs, gameItems, pricing, alwaysUseMirror 
         What one unit of an item costs you, in seconds of production time. A value set here
         overrides the fetched time <b>everywhere</b> — consumable costs, enhancement costs and
         drop valuation alike. Blank uses the fetched time; <b>0</b> means it reaches you free.
-        {alwaysUseMirror && (
+        {protectionPricing === PROTECTION_PRICING.MIRROR && (
           <>
             {' '}
-            <b>Always use mirror</b> is on for the Gear tab, so only the Philosopher&apos;s Mirror
-            is listed as a protection — price that one and every protect is covered.
+            The Gear tab is costing every protect as a <b>Philosopher&apos;s Mirror</b>, so only
+            that one is listed as a protection — price it and every protect is covered.
+          </>
+        )}
+        {protectionPricing === PROTECTION_PRICING.FREE && (
+          <>
+            {' '}
+            The Gear tab is treating protections as <b>free</b>, so none is listed here — nothing
+            would read the price.
           </>
         )}
       </Text>

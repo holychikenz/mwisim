@@ -7,6 +7,8 @@
 // not also export constants or helpers.
 // =============================================================================
 
+import { PROTECTION_PRICING } from '../../../shared/enhancementRoi.js';
+
 /** localStorage key, following the UI's `csim_*` convention. */
 export const EQUIPMENT_OPT_KEY = 'csim_equipment_optimizer';
 
@@ -33,20 +35,34 @@ export const DEFAULT_EQUIPMENT_OPT_CONFIG = {
   workers: null, // null = let the server size the pool from its core count
 
   /**
-   * Cost every enhancement against a Philosopher's Mirror rather than the item's
-   * own protection.
+   * How a protect is priced when costing an enhancement: `cheapest`, `mirror` or
+   * `free` (see PROTECTION_PRICING in shared/enhancementRoi.js).
    *
-   * ON by default, and the default is a judgement about DATA rather than about
-   * play. An item's own protection is drop-only — a Chaotic Chain, an Acrobat's
-   * Ribbon — so it is absent from the production-time map and unpriceable until
-   * the player types a number for every one of them. A mirror is craftable,
-   * works on any piece, and needs pricing exactly once. Defaulting this off would
-   * mean the return-on-investment column reads zero for most protections until a
-   * dozen drop-only items have been costed by hand, which is a poor first
-   * impression of a number that is supposed to be trustworthy.
+   * `mirror` by default, and the default is a judgement about DATA rather than
+   * about play. An item's own protection is drop-only — a Chaotic Chain, an
+   * Acrobat's Ribbon — so it is absent from the production-time map and
+   * unpriceable until the player types a number for every one of them. A mirror
+   * is craftable, works on any piece, and needs pricing exactly once. Defaulting
+   * to `cheapest` would mean the return-on-investment column reads zero for most
+   * protections until a dozen drop-only items have been costed by hand, which is
+   * a poor first impression of a number that is supposed to be trustworthy.
    */
-  alwaysUseMirror: true,
+  protectionPricing: PROTECTION_PRICING.MIRROR,
+
+  /**
+   * Where protecting starts, when protections are free.
+   *
+   * Read only in `free` mode — `forcedProtectLevel` owns that rule and explains
+   * it. +7 because that is where a protect stops being a luxury: the failure
+   * chance is high enough by then that an unprotected attempt can cost several
+   * levels, and it is the answer most players give when asked where they begin.
+   */
+  protectAt: 7,
 };
+
+/** The bounds the "protect from" control offers. Below +2 nothing can protect. */
+export const MIN_PROTECT_AT = 2;
+export const MAX_PROTECT_AT = 20;
 
 /** Turn the flat UI config into the `scan` object the API takes. */
 export function toScan(config) {
@@ -132,6 +148,27 @@ export const VERDICT_LABELS = {
   unknown: '—',
 };
 
+/**
+ * The old boolean, carried forward.
+ *
+ * `alwaysUseMirror` became one value of a three-way mode. Merging over defaults
+ * is not enough on its own: a user who deliberately turned the switch OFF has
+ * `alwaysUseMirror: false` saved, and would silently get the mirror back. The old
+ * key is read once, translated, and dropped.
+ */
+export function migrateEquipmentOptConfig(stored) {
+  const config = { ...DEFAULT_EQUIPMENT_OPT_CONFIG, ...(stored || {}) };
+  if (!stored || 'protectionPricing' in stored || !('alwaysUseMirror' in stored)) {
+    delete config.alwaysUseMirror;
+    return config;
+  }
+  config.protectionPricing = stored.alwaysUseMirror
+    ? PROTECTION_PRICING.MIRROR
+    : PROTECTION_PRICING.CHEAPEST;
+  delete config.alwaysUseMirror;
+  return config;
+}
+
 export function loadEquipmentOptState() {
   try {
     const raw = JSON.parse(localStorage.getItem(EQUIPMENT_OPT_KEY) || 'null');
@@ -141,7 +178,7 @@ export function loadEquipmentOptState() {
     return {
       // Merge over defaults so a config saved by an older build gains new keys
       // rather than arriving with them undefined.
-      config: { ...DEFAULT_EQUIPMENT_OPT_CONFIG, ...(raw.config || {}) },
+      config: migrateEquipmentOptConfig(raw.config),
       selection: Array.isArray(raw.selection) ? raw.selection : null,
     };
   } catch {
