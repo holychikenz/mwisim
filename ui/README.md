@@ -20,8 +20,12 @@ ui/src/utils/characterToPlayer.js ──▶ port of tampermonkey/src/kernel/csim
   The Express API (`csim/api/`) still exists for headless/automation use,
   but the UI does not depend on it.
 - **Layout**: AppShell workbench — sticky header (zone, tier, duration,
-  buffs, Run), left rail (party + per-player config), main area (results
-  dashboard with tabs).
+  buffs, All Zones, Run), left rail (party + per-player config), main area
+  (results dashboard with tabs).
+- **All Zones** sweeps every zone/tier combination in a pool of workers
+  (`src/workers/allZonesWorker.js`, one `src/worker.js` shard per
+  combination) and ranks them by XP/h and effective encounters/hour. See
+  [../ALL-ZONES.md](../ALL-ZONES.md).
 - **"Load my character"** talks to cow/webapp (port 12345) through the Vite
   proxy (`/cow` → `http://localhost:12345`): `GET /api/characters` and
   `GET /api/character/raw?character=<name>`.
@@ -45,5 +49,5 @@ npm run lint
 ## Feature parity
 
 See [PARITY.md](./PARITY.md) for the audit against the webpack UI and the
-ordered list of gaps (simulate-all-zones, market prices, labyrinth controls,
-HP/MP charts, …).
+ordered list of remaining gaps (simulate-all-labyrinths, HP/MP charts,
+wipe-events log, i18n, …).

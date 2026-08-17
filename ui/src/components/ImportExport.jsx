@@ -1,14 +1,14 @@
 import { useState, useCallback, useEffect } from 'react';
 import { Button, Group, Modal, Stack, Text, Textarea } from '@mantine/core';
 import { playerToExportFormat, exportFormatToPlayer } from '../utils/importSet';
+import { saveSession, SESSION_KEY } from '../utils/session';
 
-const STORAGE_KEY = 'csim_player_data';
-
+// `setSelectedPlayers` is gone from the props: its only reader was the restore
+// effect, and the party selection is now restored in App's own initialiser.
 export function ImportExport({
   players,
   setPlayers,
   selectedPlayers,
-  setSelectedPlayers,
   activeTab,
   zone,
   setZone,
@@ -21,45 +21,21 @@ export function ImportExport({
   const [showImportModal, setShowImportModal] = useState(false);
   const [message, setMessage] = useState(null);
 
-  // Auto-save to localStorage when players or zone config changes
+  // Auto-save the working session. The matching RESTORE deliberately does not
+  // live here any more: it ran in an effect below this one, so on every mount
+  // this save wrote the app's blank defaults over the stored session and the
+  // restore read back the emptiness it had just been handed — the session never
+  // once survived a reload. It is now read in App.jsx's state initialisers, the
+  // same way every other persisted slice in this UI is read. See utils/session.js.
   useEffect(() => {
-    const saveData = {
+    saveSession({
       players,
       selectedPlayers,
       zone,
       difficultyTier,
       duration
-    };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(saveData));
+    });
   }, [players, selectedPlayers, zone, difficultyTier, duration]);
-
-  // Load from localStorage on mount
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const data = JSON.parse(saved);
-        if (data.players) {
-          setPlayers(data.players);
-        }
-        if (data.selectedPlayers && Array.isArray(data.selectedPlayers)) {
-          setSelectedPlayers(data.selectedPlayers);
-        }
-        if (data.zone) {
-          setZone(data.zone);
-        }
-        if (typeof data.difficultyTier === 'number') {
-          setDifficultyTier(data.difficultyTier);
-        }
-        if (typeof data.duration === 'number') {
-          setDuration(data.duration);
-        }
-      }
-    } catch (e) {
-      console.error('Failed to load saved data:', e);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
 
   const showMessage = useCallback((text, isError = false) => {
     setMessage({ text, isError });
@@ -175,7 +151,7 @@ export function ImportExport({
   // Clear localStorage
   const handleClearSaved = useCallback(() => {
     if (confirm('Clear all saved data from local storage?')) {
-      localStorage.removeItem(STORAGE_KEY);
+      localStorage.removeItem(SESSION_KEY);
       showMessage('Saved data cleared');
     }
   }, [showMessage]);

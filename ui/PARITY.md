@@ -7,13 +7,14 @@ modified locally beyond those; every change there becomes a conflict in the
 LLM-assisted `upstream-update.sh` rebase. The React UI is ours and is the
 canonical frontend.
 
-Last audited: 2026-06-02 (post feature-parity pass).
+Last audited: 2026-08-17 (all-zones sweep).
 
 ## At parity
 
 | Feature | Notes |
 |---|---|
-| Zone + difficulty tier selection | Searchable select, grouped regular/dungeon |
+| Zone + difficulty tier selection | Searchable select, grouped planets/dungeons. **Better than the old UI**: the 44 solo-monster actions are not offered as destinations (they are spawns inside a planet, and a stored one is promoted to its planet), and the tier list comes from `action.maxDifficulty` — T0–T5 on a planet, T0–T2 on a dungeon — instead of a fixed T0–T8 list offering tiers no zone has |
+| **Simulate all zones** | "All Zones" button → zone × tier grid → a pool of web workers runs every ticked combination and reports total XP/h and effective enc/h in one sortable table (CSV export). See [ALL-ZONES.md](../ALL-ZONES.md). **Better than the old UI**: dungeons included, rows stream in as they finish, a failed combination does not abort the sweep, and guild shrine buffs are actually applied |
 | **Labyrinth simulation** | Zone/Lab mode switch: lab monster (isLabyrinthMonster), room level, supply crates (tea/coffee/food × basic/advanced/expert), lab-shop upgrades (+1%/lvl). Results: attempts, completion chance, clears/hr, timeouts/hr. **Better than the old UI**: food/drinks are stripped on lab entry (matching the game and MWIX labyrinth-sim) — the webpack UI keeps them and over-predicts clear rates |
 | Simulation duration | Header NumberInput |
 | 5-player party (group combat) | Checkboxes select who simulates; tabs select who you edit |
@@ -31,7 +32,7 @@ Last audited: 2026-06-02 (post feature-parity pass).
 | **Download results JSON** | Button on the Results header |
 | Import / export | Same JSON format as the webpack UI (solo + group auto-detect) |
 | Loadout save/load | localStorage (`csim_loadouts`) |
-| Auto-save of session state | localStorage (`csim_player_data`) |
+| Auto-save of session state | localStorage (`csim_player_data`). **Fixed 2026-08-17**: the save effect was declared above the restore effect, so every mount wrote blank defaults over the stored session and the restore read back the emptiness it had just written — the session had never once survived a reload. Now read in App's state initialisers (`utils/session.js`), the pattern every other persisted slice already used |
 | Results: encounters, exp/hr, drops, consumables, damage breakdown | Tabbed dashboard |
 | In-browser simulation | **Better than parity** — engine runs in a worker, zero server |
 | Character import | **Not in webpack UI** — one-click load from cow/webapp |
@@ -39,9 +40,10 @@ Last audited: 2026-06-02 (post feature-parity pass).
 
 ## Remaining gaps
 
-1. **Simulate-all-zones / all-labyrinths** (`src/multiWorker.js`) — fan out
-   one worker per zone and compare profit/exp in a table. The worker
-   protocol supports it; needs a React orchestration + comparison view.
+1. **Simulate-all-labyrinths** (`src/multiWorker.js`) — the labyrinth half of
+   the sweep: every lab monster × room level 40…220. The zone half shipped
+   (see ALL-ZONES.md); the pool in `ui/src/workers/allZonesWorker.js` is the
+   shape to copy, with `labyrinth` replacing `zone` in the shard payload.
 2. **HP/MP visualization** (`hpChart`) — worker supports
    `extra.enableHpMpVisualization` + `timeSeriesData` progress events;
    needs a chart component.

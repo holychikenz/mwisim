@@ -21,6 +21,7 @@ import {
   MAX_GUILD_BUILDING_LEVEL
 } from '../utils/guildBuffs';
 import { levelToTierIndex, tierIndexToLevel, MAX_TIER_INDEX } from '../utils/trialTiers';
+import { simulableZones, zoneTiers, findZone } from '../utils/zones';
 
 // =============================================================================
 // HeaderControls — the sticky simulation bar: mode (zone / labyrinth), the
@@ -28,11 +29,6 @@ import { levelToTierIndex, tierIndexToLevel, MAX_TIER_INDEX } from '../utils/tri
 // Lives in the AppShell header so re-running after a tweak never requires
 // scrolling.
 // =============================================================================
-
-const TIER_OPTIONS = [0, 1, 2, 3, 4, 5, 6, 7, 8].map(t => ({
-  value: String(t),
-  label: `T${t}`
-}));
 
 const BUFF_LEVEL_OPTIONS = [
   { value: '0', label: 'None' },
@@ -95,29 +91,38 @@ export function HeaderControls({
   onExtraChange,
   onStart,
   onStop,
+  onOpenAllZones,
   loading,
   guildTrials,
   trialConfig,
   onTrialConfigChange,
   rosterLength = 0
 }) {
+  // Planets and dungeons only. The 44 solo-monster combat actions ("Fly",
+  // "Granite Golem") are spawns inside a planet rather than places to send a
+  // character, and burying fifteen destinations among them made the select
+  // unusable — see utils/zones.js.
   const zoneOptions = useMemo(() => {
-    if (!zones) return [];
+    const list = simulableZones(zones);
     return [
       {
-        group: 'Regular Zones',
-        items: zones
-          .filter(z => !z.isDungeon)
-          .map(z => ({ value: z.hrid, label: z.name }))
+        group: 'Planets',
+        items: list.filter(z => !z.isDungeon).map(z => ({ value: z.hrid, label: z.name }))
       },
       {
         group: 'Dungeons',
-        items: zones
-          .filter(z => z.isDungeon)
-          .map(z => ({ value: z.hrid, label: z.name }))
+        items: list.filter(z => z.isDungeon).map(z => ({ value: z.hrid, label: z.name }))
       }
-    ];
+    ].filter(group => group.items.length > 0);
   }, [zones]);
+
+  // Tiers the SELECTED zone actually offers: T0–T5 on a planet, T0–T2 on a
+  // dungeon (action.maxDifficulty). The old fixed T0–T8 list offered four tiers
+  // that do not exist on any zone and three more that exist on no dungeon.
+  const tierOptions = useMemo(
+    () => zoneTiers(findZone(zones, zone)).map(t => ({ value: String(t), label: `T${t}` })),
+    [zones, zone]
+  );
 
   const labMonsterOptions = useMemo(() => {
     if (!monsters) return [];
@@ -363,7 +368,7 @@ export function HeaderControls({
                 aria-label="Combat zone"
               />
               <Select
-                data={TIER_OPTIONS}
+                data={tierOptions}
                 value={String(difficultyTier)}
                 onChange={(v) => v != null && onDifficultyChange(Number(v))}
                 allowDeselect={false}
@@ -567,6 +572,15 @@ export function HeaderControls({
           </Stack>
         </Popover.Dropdown>
       </Popover>
+      )}
+
+      {/* One run answers "how good is this zone"; the sweep answers "which
+          zone". Offered in zone mode only — the labyrinth, trials and both
+          optimisers have their own targets and their own panels. */}
+      {simMode === 'zone' && (
+        <Button variant="default" size="sm" onClick={onOpenAllZones}>
+          All Zones
+        </Button>
       )}
 
       {/* Costs is a settings view, not a simulation mode — there is nothing to

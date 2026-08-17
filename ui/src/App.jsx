@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import {
   AppShell,
   Group,
@@ -15,6 +15,7 @@ import {
 } from '@mantine/core';
 import { useGameData } from './hooks/useGameData';
 import { useSimulation } from './hooks/useSimulation';
+import { useAllZones } from './hooks/useAllZones';
 import { useTriggerOptimizer } from './hooks/useTriggerOptimizer';
 import { useEquipmentOptimizer } from './hooks/useEquipmentOptimizer';
 import { usePrices } from './hooks/usePrices';
@@ -23,6 +24,8 @@ import { readMwixBridgePayload, clearMwixBridgeHash } from './utils/mwixBridge';
 import { HeaderControls } from './components/HeaderControls';
 import { PlayerConfig } from './components/PlayerConfig';
 import { SimulationResults } from './components/SimulationResults';
+import { AllZonesModal } from './components/AllZonesModal';
+import { AllZonesResults } from './components/AllZonesResults';
 import { GuildTrialResults } from './components/GuildTrialResults';
 import { GuildTrialPanel } from './components/GuildTrialPanel';
 import { TriggerOptimizerPanel } from './components/TriggerOptimizerPanel';
@@ -67,6 +70,23 @@ import {
   toScan
 } from './utils/equipmentOptimizer';
 import { loadOptTarget, saveOptTarget, toTargetPayload } from './utils/optimizerTarget';
+import { loadSession } from './utils/session';
+import {
+  DEFAULT_ZONE_HRID,
+  simulableZones,
+  zoneTiers,
+  maxTierFor,
+  resolveZoneHrid,
+  clampTier
+} from './utils/zones';
+import {
+  comboKey,
+  parseComboKey,
+  loadAllZonesState,
+  saveAllZonesState,
+  defaultWorkerCount,
+  DEFAULT_SWEEP_HOURS
+} from './utils/allZones';
 
 const ONE_HOUR = 60 * 60 * 1e9;
 
@@ -152,10 +172,21 @@ function App() {
   // the choice is shared rather than held per-optimiser.
   const [optTarget, setOptTarget] = useState(loadOptTarget);
 
-  const [players, setPlayers] = useState(createInitialPlayers);
+  // The auto-saved session, read ONCE at initialisation — see utils/session.js
+  // for why this is not an effect (it was, and the save above it erased the
+  // session on every mount before the restore could read it).
+  const savedSession = useMemo(() => loadSession(), []);
+
+  const [players, setPlayers] = useState(
+    () => savedSession?.players || createInitialPlayers()
+  );
   const [navbarWidth, setNavbarWidth] = useState(loadNavbarWidth);
   const [activeTab, setActiveTab] = useState(1);
-  const [selectedPlayers, setSelectedPlayers] = useState([1]);
+  const [selectedPlayers, setSelectedPlayers] = useState(
+    () => (Array.isArray(savedSession?.selectedPlayers) && savedSession.selectedPlayers.length
+      ? savedSession.selectedPlayers
+      : [1])
+  );
   const [simMode, setSimMode] = useState('zone');
 
   // Guild-trial state (separate from the fixed 5-slot zone/lab `players`).
@@ -165,8 +196,14 @@ function App() {
   const [roster, setRoster] = useState(() => loadGuildTrialState().roster);
   const [selectedEntryId, setSelectedEntryId] = useState(() => loadGuildTrialState().selectedEntryId);
   const [trialConfig, setTrialConfig] = useState(() => loadGuildTrialState().trialConfig);
-  const [zone, setZone] = useState('/actions/combat/fly');
-  const [difficultyTier, setDifficultyTier] = useState(0);
+  // A planet, not a solo monster: '/actions/combat/fly' is a spawn inside Smelly
+  // Planet rather than a destination, and solo actions are no longer selectable
+  // (utils/zones.js). A restored or imported solo hrid — and any tier past the
+  // zone's ceiling — is repaired by the effect below.
+  const [zone, setZone] = useState(() => savedSession?.zone || DEFAULT_ZONE_HRID);
+  const [difficultyTier, setDifficultyTier] = useState(
+    () => (typeof savedSession?.difficultyTier === 'number' ? savedSession.difficultyTier : 0)
+  );
   const [labConfig, setLabConfig] = useState({
     monsterHrid: '/monsters/cyclops',
     roomLevel: 100,
@@ -183,7 +220,9 @@ function App() {
     },
     upgrades: { combatDamage: 0, attackSpeed: 0, castSpeed: 0, criticalRate: 0 }
   });
-  const [duration, setDuration] = useState(100);
+  const [duration, setDuration] = useState(
+    () => (typeof savedSession?.duration === 'number' ? savedSession.duration : 100)
+  );
   const [extraOptions, setExtraOptions] = useState({
     comExp: 0,
     comDrop: 0,
@@ -194,6 +233,28 @@ function App() {
   // zone sims then still apply the lab-shop upgrades, like the old UI.
   const [mazeContext, setMazeContext] = useState(false);
   const [bridgeMessage, setBridgeMessage] = useState(null);
+
+  // -- All Zones sweep -------------------------------------------------------
+  // Its own engine (a worker pool, hooks/useAllZones.js) rather than a sim mode:
+  // the sweep answers "which zone", using exactly the party, buffs and shrines
+  // the single-zone Run would use. Only the hours are its own — see
+  // DEFAULT_SWEEP_HOURS for why they are not the header's.
+  const allZones = useAllZones();
+  const [allZonesOpen, setAllZonesOpen] = useState(false);
+  const [allZonesView, setAllZonesView] = useState(false);
+  const storedSweep = useMemo(() => loadAllZonesState(), []);
+  const [allZonesSelection, setAllZonesSelection] = useState(
+    () => new Set(storedSweep?.selection || [])
+  );
+  const [allZonesHours, setAllZonesHours] = useState(
+    () => storedSweep?.hours || DEFAULT_SWEEP_HOURS
+  );
+  const [allZonesWorkers, setAllZonesWorkers] = useState(
+    () => storedSweep?.workers || defaultWorkerCount()
+  );
+  // First visit (or a session saved before the sweep existed): select the lot.
+  // A button called "All Zones" that opens an empty grid is a riddle.
+  const sweepInitialised = useRef(storedSweep?.selection != null);
 
   const pricing = usePrices(gameData);
 
@@ -279,6 +340,53 @@ function App() {
       clearMwixBridgeHash();
     }
   }, []);
+
+  // Every route into `zone` — the header select, an import, the MWIX bridge,
+  // the localStorage restore — goes through here, so a solo-monster hrid from an
+  // older session becomes the planet it belongs to instead of leaving the select
+  // blank. The tier is clamped in the same breath: T5 is meaningless on a
+  // dungeon, which stops at T2.
+  const handleZoneChange = useCallback((hrid) => {
+    const list = gameData?.zones;
+    const next = resolveZoneHrid(list, hrid);
+    setZone(next);
+    setDifficultyTier(tier => clampTier(list, next, tier));
+  }, [gameData]);
+
+  // The same repair, applied to whatever else writes zone OR tier: the
+  // localStorage restore, the MWIX bridge and ImportExport all set them from
+  // their own effects, which run before this one. Both are watched, because a
+  // set exported before the tier list became data-driven can name T7 on a zone
+  // the user is ALREADY standing on — the zone never changes, so watching the
+  // zone alone would never re-run, and Mantine renders an unmatched Select value
+  // as an empty box while Run happily simulates a tier the game does not have.
+  // Setting an already-valid value is a no-op (React bails out on an identical
+  // value), so this converges rather than loops.
+  useEffect(() => {
+    if (!gameData?.zones) return;
+    const repaired = resolveZoneHrid(gameData.zones, zone);
+    setZone(repaired);
+    setDifficultyTier(tier => clampTier(gameData.zones, repaired, tier));
+  }, [gameData, zone, difficultyTier]);
+
+  // Default sweep selection: every zone at every tier it offers.
+  useEffect(() => {
+    if (sweepInitialised.current || !gameData?.zones) return;
+    sweepInitialised.current = true;
+    const keys = [];
+    for (const z of simulableZones(gameData.zones)) {
+      for (const tier of zoneTiers(z)) keys.push(comboKey(z.hrid, tier));
+    }
+    setAllZonesSelection(new Set(keys));
+  }, [gameData]);
+
+  useEffect(() => {
+    saveAllZonesState({
+      selection: [...allZonesSelection],
+      hours: allZonesHours,
+      workers: allZonesWorkers
+    });
+  }, [allZonesSelection, allZonesHours, allZonesWorkers]);
 
   const handlePlayerChange = useCallback((playerId, updatedPlayer) => {
     setPlayers(prev => ({
@@ -814,7 +922,83 @@ function App() {
     [players, selectedPlayers]
   );
 
+  // -- All Zones sweep -------------------------------------------------------
+  // Destructured for stable identities: the hook returns a fresh object literal
+  // every render, which would otherwise churn every deps array mentioning it.
+  const { run: runAllZones, cancel: cancelAllZones } = allZones;
+
+  const handleRunAllZones = useCallback(() => {
+    // Game order (sortIndex), then tier — the pool consumes the list in order,
+    // so the table fills roughly easiest-first rather than in Set insertion
+    // order.
+    //
+    // The selection is persisted and is the sole input to the run, so it is
+    // validated rather than trusted: an unknown hrid or an out-of-range tier (a
+    // hand-edited store, or a data drop that lowers a ceiling) would otherwise
+    // reach the engine, which scales monsters by formula rather than by table and
+    // would return a plausible-looking row for a tier the game does not offer.
+    const order = new Map();
+    const tierCeiling = new Map();
+    simulableZones(gameData?.zones).forEach((z, index) => {
+      order.set(z.hrid, index);
+      tierCeiling.set(z.hrid, maxTierFor(z));
+    });
+    const combos = [...allZonesSelection]
+      .map(parseComboKey)
+      .filter(
+        combo =>
+          order.has(combo.zoneHrid) &&
+          combo.difficultyTier >= 0 &&
+          combo.difficultyTier <= tierCeiling.get(combo.zoneHrid)
+      )
+      .sort(
+        (a, b) =>
+          order.get(a.zoneHrid) - order.get(b.zoneHrid) || a.difficultyTier - b.difficultyTier
+      );
+    if (combos.length === 0) return;
+
+    // Exactly the party, buffs and shrines a single Run would send — the sweep
+    // is the same simulation done many times, not a different one.
+    const playerDTOs = selectedPlayers.map(playerId =>
+      toPlayerDTO(players[playerId], {
+        hrid: `player${playerId}`,
+        stripConsumables: mazeContext
+      })
+    );
+
+    runAllZones({
+      players: playerDTOs,
+      combos,
+      simulationTimeLimit: allZonesHours * ONE_HOUR,
+      hours: allZonesHours,
+      workers: allZonesWorkers,
+      extra: {
+        ...extraOptions,
+        mwixLabUpgrades: labConfig.upgrades,
+        mwixMaze: { enabled: mazeContext }
+      },
+      guildBuffs: resolveGuildBuffs(trialConfig.guildBuffLevels)
+    });
+    setAllZonesOpen(false);
+    setAllZonesView(true);
+  }, [
+    gameData,
+    allZonesSelection,
+    allZonesHours,
+    allZonesWorkers,
+    players,
+    selectedPlayers,
+    mazeContext,
+    extraOptions,
+    labConfig,
+    trialConfig,
+    runAllZones
+  ]);
+
   const handleStartSimulation = useCallback(() => {
+    // A single run replaces the sweep table with its own results — two answers
+    // in one pane, one of them stale, helps nobody.
+    setAllZonesView(false);
     if (simMode === 'guildTrial') {
       handleStartTrial();
       return;
@@ -876,11 +1060,34 @@ function App() {
   const isEquipOpt = simMode === 'equipOpt';
   const isApiOpt = isTriggerOpt || isEquipOpt;
   const apiEngine = isEquipOpt ? equipOpt : triggerOpt;
-  const activeLoading = isApiOpt ? apiEngine.loading : simLoading;
-  const activeProgress = isApiOpt ? apiEngine.progress : simProgress;
+  // The sweep shows its table in zone mode only; switching to Lab or Trials
+  // hides it without discarding it, so coming back finds it where you left it.
+  const showAllZones = simMode === 'zone' && allZonesView;
+  // A running sweep counts as loading in EVERY mode, including the optimisers:
+  // it owns the machine's cores until it finishes, so a Run button that invited a
+  // second engine to start beside it would be lying — and with Stop hidden, the
+  // sweep could not be called off from the mode the user happened to be in.
+  const sweeping = allZones.running;
+  const activeLoading = (isApiOpt ? apiEngine.loading : simLoading) || sweeping;
+  // The label and the number must describe the SAME engine. Gating the label on
+  // `sweeping` while the number fell through to whichever engine ran last printed
+  // "Sweeping zones — 12/78 done · 100.0%" from a single run finished minutes ago.
+  const activeProgress = sweeping
+    ? allZones.progress
+    : isApiOpt
+      ? apiEngine.progress
+      : simProgress;
   const activeResults = isApiOpt ? apiEngine.results : results;
   const activeError = isApiOpt ? apiEngine.error : simError;
-  const handleStop = isEquipOpt ? cancelEquipOpt : isTriggerOpt ? cancelTriggerOpt : clearResults;
+  // The sweep wins: it is the only engine that can be running while the user is
+  // looking at a different mode, so Stop must reach it from anywhere.
+  const handleStop = sweeping
+    ? cancelAllZones
+    : isEquipOpt
+      ? cancelEquipOpt
+      : isTriggerOpt
+        ? cancelTriggerOpt
+        : clearResults;
 
   return (
     <AppShell
@@ -910,7 +1117,7 @@ function App() {
             onOptTargetChange={setOptTarget}
             zones={gameData?.zones}
             zone={zone}
-            onZoneChange={setZone}
+            onZoneChange={handleZoneChange}
             difficultyTier={difficultyTier}
             onDifficultyChange={setDifficultyTier}
             monsters={gameData?.monsters}
@@ -922,6 +1129,7 @@ function App() {
             onExtraChange={setExtraOptions}
             onStart={handleStartSimulation}
             onStop={handleStop}
+            onOpenAllZones={() => setAllZonesOpen(true)}
             loading={activeLoading}
             guildTrials={gameData?.guildTrials}
             trialConfig={trialConfig}
@@ -1096,10 +1304,11 @@ function App() {
                   players={players}
                   setPlayers={setPlayers}
                   selectedPlayers={selectedPlayers}
-                  setSelectedPlayers={setSelectedPlayers}
                   activeTab={activeTab}
                   zone={zone}
-                  setZone={setZone}
+                  // Coercing setter: an exported set may name a solo monster
+                  // ("/actions/combat/fly"), which is no longer selectable.
+                  setZone={handleZoneChange}
                   difficultyTier={difficultyTier}
                   setDifficultyTier={setDifficultyTier}
                   duration={duration}
@@ -1148,9 +1357,16 @@ function App() {
                     // percentage alone tells the user nothing about whether the
                     // run is screening cheaply or verifying at 72 simulated hours.
                     `${apiEngine.stage ? `${apiEngine.stage}: ` : ''}${apiEngine.label || 'Optimising…'} · ${activeProgress.toFixed(1)}%`
-                  : simMode === 'guildTrial'
-                    ? `Running ${trialConfig.iterations} trial iterations… ${activeProgress.toFixed(1)}%`
-                    : `Simulating ${duration} hours of combat… ${activeProgress.toFixed(1)}%`
+                  : sweeping
+                    ? // Combinations finished, not percent alone: a sweep's bar
+                      // moves slowly and the count is what tells you where it is.
+                      // Reports the hours the RUN was started with, not the knob's
+                      // current value, which the user may have edited since.
+                      `Sweeping zones — ${allZones.meta?.completed ?? 0}/${allZones.meta?.total ?? 0} done ` +
+                      `(${allZones.meta?.hours ?? allZonesHours} h each) · ${activeProgress.toFixed(1)}%`
+                    : simMode === 'guildTrial'
+                      ? `Running ${trialConfig.iterations} trial iterations… ${activeProgress.toFixed(1)}%`
+                      : `Simulating ${duration} hours of combat… ${activeProgress.toFixed(1)}%`
               }
             />
           )}
@@ -1158,6 +1374,15 @@ function App() {
           {activeError && (
             <Alert color="red" title={isApiOpt ? 'Optimiser error' : 'Simulation error'} variant="light">
               {activeError.message}
+            </Alert>
+          )}
+
+          {/* Not gated on the sweep being the visible pane: a sweep that stalls
+              while the user is reading the Lab tab would otherwise just stop,
+              silently, with nothing anywhere to say why. */}
+          {allZones.error && (
+            <Alert color="red" title="Zone sweep error" variant="light">
+              {allZones.error.message}
             </Alert>
           )}
 
@@ -1175,6 +1400,15 @@ function App() {
               gameItems={gameData?.items}
               pricing={pricing}
               alwaysUseMirror={equipOptConfig.alwaysUseMirror}
+            />
+          ) : showAllZones ? (
+            <AllZonesResults
+              rows={allZones.rows}
+              zones={gameData?.zones}
+              pricing={pricing}
+              meta={allZones.meta}
+              running={allZones.running}
+              onOpenPicker={() => setAllZonesOpen(true)}
             />
           ) : activeResults && activeResults.__kind === 'triggerOpt' ? (
             <TriggerOptimizerResults results={activeResults} />
@@ -1199,7 +1433,7 @@ function App() {
             />
           )}
 
-          {!activeResults && !activeLoading && simMode !== 'itemCosts' && (
+          {!activeResults && !activeLoading && !showAllZones && simMode !== 'itemCosts' && (
             <Center mih={300}>
               <Text c="dimmed">
                 {simMode === 'guildTrial'
@@ -1208,12 +1442,26 @@ function App() {
                     ? 'Pick which trigger thresholds to search on the left, then press Run.'
                     : isEquipOpt
                       ? 'Pick which equipment slots to probe on the left, then press Run.'
-                      : 'Configure your party on the left, then press Run.'}
+                      : 'Configure your party on the left, then press Run — or press All Zones to sweep every zone and tier at once.'}
               </Text>
             </Center>
           )}
         </Stack>
       </AppShell.Main>
+
+      <AllZonesModal
+        opened={allZonesOpen}
+        onClose={() => setAllZonesOpen(false)}
+        zones={gameData?.zones}
+        selection={allZonesSelection}
+        onSelectionChange={setAllZonesSelection}
+        hours={allZonesHours}
+        onHoursChange={setAllZonesHours}
+        workers={allZonesWorkers}
+        onWorkersChange={setAllZonesWorkers}
+        onRun={handleRunAllZones}
+        running={allZones.running}
+      />
     </AppShell>
   );
 }

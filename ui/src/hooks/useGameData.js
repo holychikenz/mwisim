@@ -19,19 +19,42 @@ import guildTrialDetailMap from '../../../src/combatsimulator/data/guildTrialDet
 
 // Derive the combat-zone list from actionDetailMap (mirrors the Express
 // API's former GET /api/zones logic in api/lib/simulator.js).
+//
+// Every combat action is listed, solo monsters included — the drops and kills
+// views name them, and the taxonomy in utils/zones.js needs to SEE a solo entry
+// in order to promote a stored one to its planet. What is selectable is decided
+// there (isSimulableZone), not here.
+//
+// Three fields beyond the old hrid/name/isDungeon, each load-bearing:
+//   category      groups a planet with its own solo monsters, so "Fly" can be
+//                 resolved to "Smelly Planet".
+//   maxSpawnCount 1 marks a solo action; >1 marks a planet. Dungeons carry 0
+//                 (their spawns live in dungeonInfo) and are identified by
+//                 isDungeon instead.
+//   maxDifficulty the game's tier ceiling — 5 for planets, 2 for dungeons.
+//
+// Sorted by the map's own sortIndex rather than by combatLevel: every combat
+// action carries levelRequirement.level 0, so the old sort compared 1 with 1 and
+// left the list in object-key order. sortIndex is the game's own progression
+// order, which is what a zone dropdown wants.
 function buildZones() {
   const zones = [];
   for (const [hrid, action] of Object.entries(actionDetailMap)) {
     if (action.type === '/action_types/combat' && action.combatZoneInfo) {
+      const info = action.combatZoneInfo;
       zones.push({
         hrid,
         name: action.name,
-        isDungeon: action.combatZoneInfo.isDungeon || false,
+        category: action.category || '',
+        isDungeon: info.isDungeon || false,
+        maxSpawnCount: info.fightInfo?.randomSpawnInfo?.maxSpawnCount ?? 0,
+        maxDifficulty: Number.isFinite(action.maxDifficulty) ? action.maxDifficulty : 5,
+        sortIndex: action.sortIndex ?? 0,
         combatLevel: action.levelRequirement?.level || 1
       });
     }
   }
-  return zones.sort((a, b) => a.combatLevel - b.combatLevel);
+  return zones.sort((a, b) => a.sortIndex - b.sortIndex);
 }
 
 // The 5 COMBAT guild trials (skip the skilling entries — they have no monsters
