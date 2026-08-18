@@ -16,14 +16,26 @@ import { effectiveRatePerHour, summariseConsumableCost } from '../utils/consumab
 import { formatSeconds } from '../utils/triggerOptimizer';
 
 // =============================================================================
-// AllZonesResults — one row per (zone, tier), ranked
+// AllZonesResults — one row per (zone, tier), ranked, for ONE player
+//
+// ONE PLAYER, NEVER THE PARTY SUMMED. `focusHrid` is whichever member the left
+// panel's P-tab has selected, and every per-character column answers for that
+// member alone. A party is five separate characters with five levelling curves,
+// five food bills and five ways to die; adding their experience together ranks
+// zones for a composite nobody plays, and the sum is dominated by whoever
+// happens to be strongest. Switching the P-tab re-derives the table from rows
+// already measured — the sweep does not have to run again.
+//
+// Enc/h and Clears/h stay as they are: the party fights an encounter together,
+// so the count is the same number for every member rather than a shared total
+// being divided up.
 //
 // The two columns the sweep exists for:
 //
-//   XP/hour       total experience across every player and skill, per hour of
-//                 COMBAT — the figure a levelling run is chasing.
+//   XP/hour       the selected player's experience across all their skills, per
+//                 hour of COMBAT — the figure a levelling run is chasing.
 //   Effective     the same rates per hour of TOTAL time: combat plus the
-//   enc/h & XP/h  production owed for everything the party ate. Raw throughput
+//   enc/h & XP/h  production owed for what THAT player ate. Raw throughput
 //                 cannot see the food bill, and a zone that out-earns another by
 //                 a few percent while eating twice as much is not, in fact,
 //                 ahead. Only the iron (time-value) price source can answer
@@ -34,6 +46,12 @@ import { formatSeconds } from '../utils/triggerOptimizer';
 // Rows arrive one at a time from the pool, so this renders whatever has landed —
 // a sweep in progress is a table that grows, not a spinner.
 // =============================================================================
+
+/** 'player3' → 'P3'. Anything unrecognised is shown as it came. */
+function playerLabel(hrid) {
+  const match = /^player(\d+)$/.exec(String(hrid || ''));
+  return match ? `P${match[1]}` : String(hrid || '');
+}
 
 function formatNumber(num, decimals = 2) {
   if (!Number.isFinite(num)) return '—';
@@ -54,8 +72,20 @@ const COLUMNS = [
 
 const DUNGEON_COLUMN = { key: 'clearsPerHour', label: 'Clears/h', numeric: true };
 
-export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPicker }) {
+export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPicker, focusHrid }) {
   const [sort, setSort] = useState({ key: 'experiencePerHour', dir: 'desc' });
+
+  // The party as SWEPT (meta), not as currently ticked — a sweep answers for the
+  // characters it simulated, whatever the checkboxes say now.
+  const partyHrids = useMemo(() => meta?.playerHrids || [], [meta]);
+
+  // The left panel's P-tab moves independently of the party: a user may be
+  // editing P4 while the swept party was [P1, P2]. Rather than empty every
+  // per-character column — which reads as a broken table — fall back to the
+  // first member actually swept and say so beneath the title.
+  const focusMissing =
+    !!focusHrid && partyHrids.length > 0 && !partyHrids.includes(focusHrid);
+  const activeHrid = focusMissing ? partyHrids[0] : focusHrid || partyHrids[0] || null;
 
   const zoneNames = useMemo(() => {
     const map = {};
@@ -89,13 +119,30 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
         return { ...row, zoneName: name, failed: true };
       }
       const hours = row.hours || 0;
+
+      // Missing is zero, not unknown: the shard records a player only once they
+      // gain experience or die, so an absent key means that member earned or
+      // died nothing — which is a measurement, and a damning one.
+      const experience = activeHrid ? Number(row.experienceByPlayer?.[activeHrid]) || 0 : 0;
+      const deaths = activeHrid ? Number(row.deathsByPlayer?.[activeHrid]) || 0 : 0;
+
+      // Encounters and dungeon clears are fought by the party as a unit — every
+      // member lives through all of them — so they are already this player's
+      // figures and are not divided.
       const encountersPerHour = hours > 0 ? row.encounters / hours : 0;
-      const experiencePerHour = hours > 0 ? row.experience / hours : 0;
-      const deathsPerHour = hours > 0 ? row.deaths / hours : 0;
+      const experiencePerHour = hours > 0 ? experience / hours : 0;
+      const deathsPerHour = hours > 0 ? deaths / hours : 0;
       const clearsPerHour = hours > 0 ? (row.dungeonsCompleted || 0) / hours : 0;
 
+      // This player's own plate. `consumablesUsed` is keyed by player, and each
+      // character cooks their own supper — charging one member's production time
+      // against another's throughput would be the party sum by another name.
+      const eaten = activeHrid
+        ? { [activeHrid]: row.consumablesUsed?.[activeHrid] || {} }
+        : row.consumablesUsed;
+
       const cost = summariseConsumableCost({
-        consumablesUsed: row.consumablesUsed,
+        consumablesUsed: eaten,
         hours,
         pricing: costBasis,
       });
@@ -119,7 +166,7 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
           : null,
       };
     });
-  }, [rows, zoneNames, costBasis]);
+  }, [rows, zoneNames, costBasis, activeHrid]);
 
   // A sort can outlive its column: sort by Clears/h on a sweep that included
   // dungeons, re-run with planets only, and the column is gone while `sort` (component
@@ -191,7 +238,11 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'csim-all-zones.csv';
+    // The player is part of what the file MEANS: two exports of the same sweep
+    // for two party members are different tables with identical columns.
+    link.download = activeHrid
+      ? `csim-all-zones-${playerLabel(activeHrid)}.csv`
+      : 'csim-all-zones.csv';
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -204,7 +255,21 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
     <Stack gap="sm">
       <Group justify="space-between" align="flex-end">
         <div>
-          <Title order={4}>All Zones</Title>
+          <Group gap={8} align="center">
+            <Title order={4}>All Zones</Title>
+            {activeHrid && (
+              <Tooltip
+                label={`XP/h and Deaths/h are ${playerLabel(activeHrid)} alone — party figures are never added together. Enc/h and Clears/h are fought by the whole party, so they are this player's too. Switch the P-tab on the left to read another member.`}
+                withArrow
+                multiline
+                w={280}
+              >
+                <Badge size="sm" variant="light" color="blue" style={{ cursor: 'help' }}>
+                  {playerLabel(activeHrid)}
+                </Badge>
+              </Tooltip>
+            )}
+          </Group>
           <Text size="xs" c="dimmed">
             {meta ? `${metrics.length}/${meta.total} combinations · ${meta.hours} h each` : ''}
             {meta?.workers ? ` · ${meta.workers} workers` : ''}
@@ -224,6 +289,17 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
           </Button>
         </Group>
       </Group>
+
+      {focusMissing && (
+        <Alert color="yellow" variant="light" p="xs">
+          <Text size="xs">
+            {playerLabel(focusHrid)} was not in the swept party (
+            {partyHrids.map(playerLabel).join(', ')}), so this table reads{' '}
+            {playerLabel(activeHrid)}. Tick {playerLabel(focusHrid)} into the party
+            and run the sweep again to rank zones for that build.
+          </Text>
+        </Alert>
+      )}
 
       {!anyCosted && metrics.length > 0 && (
         <Alert color="gray" variant="light" p="xs">

@@ -57,7 +57,8 @@ App.handleRunAllZones ──▶ useAllZones ──▶ workers/allZonesWorker.js 
 
 - **The party is the party.** The sweep sends exactly the DTOs, community buffs,
   seals and guild shrine levels a single Run would send. It is the same
-  simulation done many times, not a different one.
+  simulation done many times, not a different one. The party *fights* together;
+  the table *reports* one member at a time — see below.
 - **Hours are its own.** 24 by default rather than the header's 100: a sweep
   multiplies its duration by 78. A day of simulated combat is already thousands
   of encounters on any zone a build can clear.
@@ -94,25 +95,62 @@ Upstream's file is left untouched, per the engine-boundary rule in
 `summariseZoneRun` (in [`ui/src/utils/allZones.js`](./ui/src/utils/allZones.js))
 runs **inside the shard**. A full `simResult` carries per-ability attack tallies,
 drop tables and optional HP/MP time series — tens of kilobytes each, 78 of them,
-structured-cloned to render six numbers. Only the six numbers make the crossing,
-plus `consumablesUsed`, which is small and needed for the effective rates.
+structured-cloned to render a handful of numbers. Only that handful makes the
+crossing: the encounter and dungeon counts, `experienceByPlayer`,
+`deathsByPlayer`, and `consumablesUsed`, which is small, already per-player, and
+needed for the effective rates.
+
+Experience and deaths cross as **maps keyed by player hrid**, not as party
+totals — five small numbers where there was one. That is a rounding error next
+to a `simResult`, and it is what lets the P-tab change whose figures the table
+shows without re-running anything.
 
 That module imports nothing, deliberately: pulling in `utils/prices.js` would
 drag `openableLootDropMap.json` into the worker bundle.
 
 ## The table
 
-| Column | Meaning |
-|---|---|
-| Enc/h | Encounters per hour of combat |
-| Effective enc/h | …per hour of **total** time: combat plus the production owed for everything eaten |
-| XP/h | Total experience across every player and every skill, per combat hour |
-| Effective XP/h | The same, on the real clock |
-| Deaths/h | Party deaths only (monster deaths are excluded) |
-| Clears/h | Dungeon completions — column appears only when a dungeon is in the results |
+### One player, never the party summed
+
+The table answers for **the player selected in the left panel** — the P-tab
+whose configuration is open — and the badge beside the title says which. Every
+per-character column is that member alone.
+
+Party figures are not added together, because a party is five separate
+characters and the sum belongs to none of them: they train different skills at
+different rates, eat different food, and die at different rates. A combined XP/h
+is dominated by whoever is strongest, so it would rank zones for a composite
+nobody plays — and worse, it moves when a party member is added who is not the
+character being kitted out. The sweep still simulates the whole party, because
+who else is in the fight changes what every member achieves; only the *reporting*
+narrows to one.
+
+Switching the P-tab re-derives the table from rows already measured. The sweep
+does not run again, exactly as changing the price source does not.
+
+If the selected tab is a character who was **not in the swept party**, the table
+falls back to the first member who was, and says so in a notice — a blank table
+reads as a broken one. Ticking that character into the party and re-running is
+the fix, and the notice says that too.
+
+| Column | Meaning | Whose |
+|---|---|---|
+| Enc/h | Encounters per hour of combat | Party — every member fights all of them, so it is this player's figure too |
+| Effective enc/h | …per hour of **total** time: combat plus the production owed for what **this player** ate | Selected player |
+| XP/h | Experience across all of **this player's** skills, per combat hour | Selected player |
+| Effective XP/h | The same, on the real clock | Selected player |
+| Deaths/h | **This player's** deaths (monster deaths are excluded) | Selected player |
+| Clears/h | Dungeon completions — column appears only when a dungeon is in the results | Party |
+
+Each character cooks their own supper, so the effective columns charge a member
+only what **they** consumed. Charging one member's production time against
+another's throughput is the party sum wearing a different hat.
 
 Sort by any column; the best value in each rate column stays highlighted whatever
-the sort. "Export CSV" writes the table as sorted.
+the sort. "Export CSV" writes the table as sorted, to
+`csim-all-zones-P<n>.csv` — the player is part of what the file means, since two
+exports of one sweep for two members are different tables with identical
+columns.
 
 **Effective rates need time-denominated prices.** Only the iron (cow webapp)
 price source yields seconds, and seconds are the only unit commensurable with
@@ -142,9 +180,9 @@ in without re-running anything.
 | `ui/src/utils/zones.js` | Zone taxonomy: what is simulable, tier ceilings, hrid coercion |
 | `ui/src/utils/allZones.js` | Combination keys, run summarisation, estimate, persistence (worker-safe) |
 | `ui/src/workers/allZonesWorker.js` | The pool: one `src/worker.js` shard per combination |
-| `ui/src/hooks/useAllZones.js` | Worker lifecycle, progress, buffered row streaming, watchdog, cancel |
+| `ui/src/hooks/useAllZones.js` | Worker lifecycle, progress, buffered row streaming, watchdog, cancel, the swept party (`meta.playerHrids`) |
 | `ui/src/components/AllZonesModal.jsx` | The zone × tier grid, hours, pool size, estimate |
-| `ui/src/components/AllZonesResults.jsx` | Sortable table, effective-rate derivation, CSV export |
+| `ui/src/components/AllZonesResults.jsx` | Sortable table, per-player figures, effective-rate derivation, CSV export |
 | `ui/src/hooks/useGameData.js` | Zone list enriched with category / maxSpawnCount / maxDifficulty |
 | `ui/src/components/HeaderControls.jsx` | Filtered zone select, data-driven tiers, the button |
 

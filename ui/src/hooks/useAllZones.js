@@ -32,7 +32,8 @@ export function useAllZones() {
   const [progress, setProgress] = useState(0);
   const [rows, setRows] = useState([]);
   const [error, setError] = useState(null);
-  // { hours, workers, total, completed, startedAt, finishedAt, cancelled }
+  // { hours, workers, total, completed, playerHrids, startedAt, finishedAt,
+  //   cancelled }
   const [meta, setMeta] = useState(null);
 
   const workerRef = useRef(null);
@@ -109,6 +110,11 @@ export function useAllZones() {
       workers: params.workers || null,
       total: combos.length,
       completed: 0,
+      // The party AS SWEPT, not as currently ticked. The rows report one player
+      // at a time and the view chooses which; changing the party checkboxes
+      // after a sweep must not make the table claim to answer for a build that
+      // was never simulated.
+      playerHrids: (params.players || []).map(p => p?.hrid).filter(Boolean),
       startedAt: Date.now(),
       finishedAt: null,
       cancelled: false,

@@ -48,31 +48,43 @@ export function parseComboKey(key) {
  *
  * A full simResult carries per-ability attack tallies, drop tables and (when
  * enabled) HP/MP time series — tens of kilobytes each, seventy-eight of them,
- * all structured-cloned across a worker boundary to render six numbers. This
- * runs INSIDE the shard, so only the six numbers make the crossing.
+ * all structured-cloned across a worker boundary to render a handful of
+ * numbers. This runs INSIDE the shard, so only that handful makes the crossing.
  *
- * consumablesUsed survives whole because it is small and because the effective
- * rates are computed later, in the view, from whatever pricing is loaded then —
- * a sweep run before the iron prices arrive should gain its effective column
- * when they do, not stay blank because the shard could not price it.
+ * PER PLAYER, NOT SUMMED. Experience and deaths cross as maps keyed by player
+ * hrid rather than as party totals: a party does not share a levelling curve,
+ * and adding one member's experience to another's ranks zones for a composite
+ * character nobody plays. Five small numbers instead of one is a rounding error
+ * next to a simResult, and it lets the view answer for whichever player the left
+ * panel has selected without re-running the sweep.
+ *
+ * consumablesUsed survives whole — already keyed by player — because it is small
+ * and because the effective rates are computed later, in the view, from whatever
+ * pricing is loaded then: a sweep run before the iron prices arrive should gain
+ * its effective column when they do, not stay blank because the shard could not
+ * price it.
  */
 export function summariseZoneRun(simResult, combo = {}) {
   const hours = (simResult?.simulatedTime || 0) / ONE_HOUR_NS;
 
-  // Every skill of every player. Summed by iteration rather than by naming the
-  // seven known skills, so a skill added by a future patch counts itself.
-  let experience = 0;
-  for (const bySkill of Object.values(simResult?.experienceGained || {})) {
+  // One total per player, summed over that player's SKILLS by iteration rather
+  // than by naming the seven known ones, so a skill added by a future patch
+  // counts itself. `experienceGained` is players-only (addExperienceGain returns
+  // early for monsters), so every key here is a party member.
+  const experienceByPlayer = {};
+  for (const [hrid, bySkill] of Object.entries(simResult?.experienceGained || {})) {
+    let total = 0;
     for (const amount of Object.values(bySkill || {})) {
-      experience += Number(amount) || 0;
+      total += Number(amount) || 0;
     }
+    experienceByPlayer[hrid] = total;
   }
 
   // `deaths` is keyed by unit hrid — players AND monsters. Only the party's own
-  // deaths belong in a survivability column.
-  let deaths = 0;
+  // deaths belong in a survivability column, and only one member's at a time.
+  const deathsByPlayer = {};
   for (const [hrid, count] of Object.entries(simResult?.deaths || {})) {
-    if (String(hrid).startsWith('player')) deaths += Number(count) || 0;
+    if (String(hrid).startsWith('player')) deathsByPlayer[hrid] = Number(count) || 0;
   }
 
   return {
@@ -80,8 +92,8 @@ export function summariseZoneRun(simResult, combo = {}) {
     difficultyTier: combo.difficultyTier ?? simResult?.difficultyTier ?? 0,
     hours,
     encounters: simResult?.encounters || 0,
-    experience,
-    deaths,
+    experienceByPlayer,
+    deathsByPlayer,
     consumablesUsed: simResult?.consumablesUsed || {},
     isDungeon: !!simResult?.isDungeon,
     dungeonsCompleted: simResult?.dungeonsCompleted || 0,

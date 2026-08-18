@@ -1409,6 +1409,11 @@ function App() {
               meta={allZones.meta}
               running={allZones.running}
               onOpenPicker={() => setAllZonesOpen(true)}
+              // Whose numbers the table shows. The sweep measures every member,
+              // but a party is five characters and their experience is not one
+              // pool — the table answers for the player whose config is open in
+              // the left panel, and follows the P-tab without re-running.
+              focusHrid={`player${activeTab}`}
             />
           ) : activeResults && activeResults.__kind === 'triggerOpt' ? (
             <TriggerOptimizerResults results={activeResults} />
