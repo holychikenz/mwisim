@@ -1,3 +1,5 @@
+import { resolveMonsterStartCooldown } from "./simSettings";
+
 class CombatUnit {
     isPlayer;
     isStunned = false;
@@ -705,7 +707,17 @@ class CombatUnit {
                     if (haste > 0) {
                         cooldownDuration = cooldownDuration * 100 / (100 + haste);
                     }
-                    ability.lastUsed = currentTime - Math.floor(cooldownDuration * 0.5) + Math.floor(Math.random() * cooldownDuration * 0.5);
+                    // MWIX adaptation: the opening cooldown a monster carries
+                    // into a fight is measured, and differs by context — a flat
+                    // half in the labyrinth, upstream's randomised U[0.5, 1.0)
+                    // window in zone/dungeon combat. simSettings.js holds the
+                    // capture data and resolves the two (and the manual
+                    // overrides) into one of "half" / "random".
+                    if (resolveMonsterStartCooldown() === "half") {
+                        ability.lastUsed = currentTime - Math.floor(cooldownDuration * 0.5);
+                    } else {
+                        ability.lastUsed = currentTime - Math.floor(cooldownDuration * 0.5) + Math.floor(Math.random() * cooldownDuration * 0.5);
+                    }
                 }
             });
     }

@@ -1,6 +1,20 @@
 /**
  * Calculate expected drops from simulation results
  * This is the "average" (no RNG) calculation
+ *
+ * Chance and quantity are two INDEPENDENT stats, and party size touches only one
+ * of them:
+ *
+ *   chance to drop  - fixed. Every member rolls the full, undiluted rate on every
+ *                     kill. Modified by combatDropRate / combatRareFind.
+ *   drop quantity   - divided by the number of players. Modified by
+ *                     combatDropQuantity.
+ *
+ * Since the expectation is chance x quantity, the divisor may sit on the product
+ * below — but it belongs to the quantity alone, and must never be applied to a
+ * chance (an RNG roll must test the undivided rate; see main.js calcDropMaps).
+ *
+ * All figures are what `playerHrid` alone receives, at that player's own stats.
  */
 export function calculateExpectedDrops(simResult, monsters, items, playerHrid = 'player1') {
   if (!simResult || !monsters || !simResult.deaths) {
@@ -11,8 +25,8 @@ export function calculateExpectedDrops(simResult, monsters, items, playerHrid = 
   const rareFindMultiplier = simResult.rareFindMultiplier?.[playerHrid] || 1;
   const combatDropQuantity = simResult.combatDropQuantity?.[playerHrid] || 0;
   const debuffOnLevelGap = simResult.debuffOnLevelGap?.[playerHrid] || 0;
-  const numberOfPlayers = simResult.numberOfPlayers || 1;
   const difficultyTier = simResult.difficultyTier || 0;
+  const numberOfPlayers = simResult.numberOfPlayers || 1;
 
   const dropMap = new Map();
 
@@ -32,8 +46,19 @@ export function calculateExpectedDrops(simResult, monsters, items, playerHrid = 
           continue;
         }
 
-        // Calculate effective drop rate
-        let baseDropRate = drop.dropRate + (drop.dropRatePerDifficultyTier || 0) * difficultyTier;
+        // Effective drop chance, in the same order as the classic path's
+        // calcDropMaps — the order matters because of the 1.0 clamp.
+        //
+        // The COMMON table carries a difficulty-tier bonus of +10% of base per
+        // tier ON TOP of dropRatePerDifficultyTier. Both are needed: a dark key
+        // fragment is dropRate -0.02 + 0.04/tier, which at T5 gives 0.18, and
+        // only the x1.5 tier factor brings it to the 0.27 the game reports. The
+        // rare table below takes no such factor.
+        const tierMultiplier = 1.0 + 0.1 * difficultyTier;
+        let baseDropRate = Math.min(
+          1.0,
+          tierMultiplier * (drop.dropRate + (drop.dropRatePerDifficultyTier || 0) * difficultyTier)
+        );
         if (baseDropRate <= 0) continue;
 
         const effectiveDropRate = Math.min(1.0, baseDropRate * dropRateMultiplier);

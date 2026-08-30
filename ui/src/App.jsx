@@ -40,6 +40,7 @@ import { LoadoutManager } from './components/LoadoutManager';
 import { CharacterImport } from './components/CharacterImport';
 import { TextInput } from '@mantine/core';
 import { toPlayerDTO } from './utils/playerDTO';
+import { loadExperimental, saveExperimental } from './utils/experimental';
 import {
   resolveGuildBuffs,
   resolveGuildBuildingBuffs,
@@ -229,6 +230,15 @@ function App() {
     mooPass: false,
     personalBuffs: []
   });
+  // Experimental engine knobs. Their own localStorage key, deliberately NOT
+  // part of the session blob or an exported build — a bench setting must not
+  // travel with a loadout (see utils/experimental.js). Every run path folds
+  // them into `extra.experimental`, which worker.js applies to the engine.
+  const [experimental, setExperimental] = useState(loadExperimental);
+  const handleExperimentalChange = useCallback((next) => {
+    setExperimental(next);
+    saveExperimental(next);
+  }, []);
   // Set when an MWIX bridge payload carries labyrinth context (maze on) —
   // zone sims then still apply the lab-shop upgrades, like the old UI.
   const [mazeContext, setMazeContext] = useState(false);
@@ -659,7 +669,10 @@ function App() {
         comExp: 0,
         comDrop: 0,
         mooPass: false,
-        personalBuffs: []
+        personalBuffs: [],
+        // Experimental knobs are not buffs — they are which engine you are
+        // running, so they travel even on the otherwise-neutral trial extra.
+        experimental
       },
       iterations: trialConfig.iterations,
       aggregateOptions: {
@@ -679,7 +692,7 @@ function App() {
         hridToBuild
       }
     });
-  }, [roster, masterBuilds, trialConfig, gameData, runGuildTrial]);
+  }, [roster, masterBuilds, trialConfig, gameData, runGuildTrial, experimental]);
 
   // ---------------------------------------------------------------------------
   // Trigger optimiser
@@ -974,6 +987,7 @@ function App() {
       workers: allZonesWorkers,
       extra: {
         ...extraOptions,
+        experimental,
         mwixLabUpgrades: labConfig.upgrades,
         mwixMaze: { enabled: mazeContext }
       },
@@ -990,6 +1004,7 @@ function App() {
     selectedPlayers,
     mazeContext,
     extraOptions,
+    experimental,
     labConfig,
     trialConfig,
     runAllZones
@@ -1027,6 +1042,7 @@ function App() {
     );
     const extra = {
       ...extraOptions,
+      experimental,
       // Lab-shop upgrades apply only when the maze context is on; the
       // worker gates them on extra.mwixMaze.enabled (see csim/src/worker.js).
       mwixLabUpgrades: labConfig.upgrades,
@@ -1051,7 +1067,7 @@ function App() {
       // with trial mode, so a shrine set once is reflected in both.
       guildBuffs: resolveGuildBuffs(trialConfig.guildBuffLevels)
     });
-  }, [players, selectedPlayers, simMode, zone, difficultyTier, labConfig, mazeContext, duration, extraOptions, trialConfig, runSimulation, handleStartTrial, handleStartTriggerOpt, handleStartEquipOpt]);
+  }, [players, selectedPlayers, simMode, zone, difficultyTier, labConfig, mazeContext, duration, extraOptions, experimental, trialConfig, runSimulation, handleStartTrial, handleStartTriggerOpt, handleStartEquipOpt]);
 
   // The header, progress bar and results pane read from whichever engine the
   // current mode uses. Both optimisers go through an API hook; every other mode
@@ -1135,6 +1151,8 @@ function App() {
             trialConfig={trialConfig}
             onTrialConfigChange={setTrialConfig}
             rosterLength={rosterSize(roster)}
+            experimental={experimental}
+            onExperimentalChange={handleExperimentalChange}
           />
         </Group>
       </AppShell.Header>

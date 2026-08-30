@@ -4,6 +4,7 @@ import Zone from "./combatsimulator/zone";
 import Labyrinth from "./combatsimulator/labyrinth";
 import GuildTrial from "./combatsimulator/guildTrial";
 import { extractTrialSummary } from "./combatsimulator/guildTrialStats";
+import { applySimSettingsFromExtra } from "./combatsimulator/simSettings";
 
 // Build the community / pass / personal-seal buffs shared by every sim mode.
 // (Labyrinth shop upgrades are appended separately by the labyrinth path only;
@@ -164,6 +165,10 @@ function buildLabUpgradeBuffs(extra = {}) {
 onmessage = async function (event) {
     switch (event.data.type) {
         case "start_simulation": {
+            // MWIX adaptation: experimental engine knobs (extra.experimental)
+            // are module-level, so they are applied once per job — a fresh
+            // worker per run means no state can bleed between simulations.
+            applySimSettingsFromExtra(event.data.extra);
             // MWIX adaptation (guild expansion, 7/13/2026): guild SHRINE buffs are
             // permanent character buffs — the server exposes them in
             // `guildActionTypeBuffsMap["/action_types/combat"]`, which applies to
@@ -230,6 +235,8 @@ onmessage = async function (event) {
             const iterations = event.data.iterations || 1;
             const guildBuffs = event.data.guildBuffs || [];
             const playersData = event.data.players;
+
+            applySimSettingsFromExtra(event.data.extra);
 
             // Buffs that apply in trials: community / seals + guild shrine buffs.
             // Labyrinth crates & lab-shop upgrades are excluded by construction.

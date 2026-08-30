@@ -23,6 +23,7 @@ import AwaitCooldownEvent from "./events/awaitCooldownEvent";
 import Monster from "./monster";
 import Ability from "./ability";
 import Labyrinth from "./labyrinth";
+import { setEncounterContext } from "./simSettings";
 import GuildTrial from "./guildTrial";
 
 const ONE_SECOND = 1e9;
@@ -59,6 +60,13 @@ class CombatSimulator extends EventTarget {
         // Guild Trial mode. Passed via options (not a positional arg) so the
         // existing (players, zone, labyrinth, options) call sites are untouched.
         this.guildTrial = options.guildTrial || null;
+        // Which opening-cooldown model the monsters get. Declared here rather
+        // than passed down through CombatUnit because it is a property of the
+        // encounter, not of any one unit: a labyrinth room starts from a
+        // standing start (flat half cooldown), while zone/dungeon/trial fights
+        // spawn monsters into combat already running (randomised). Measured
+        // both ways — see simSettings.js.
+        setEncounterContext(labyrinth ? "labyrinth" : "zone");
         this.eventQueue = new EventQueue();
         this.simResult = new SimResult(zone, labyrinth, players.length);
         this.allPlayersDead = false;
@@ -328,6 +336,10 @@ class CombatSimulator extends EventTarget {
     }
 
     reset() {
+        // Re-assert the encounter context: the setting is module-level, so a
+        // process running a lab sim and a zone sim in turn must not let the
+        // first one's model leak into the second.
+        setEncounterContext(this.labyrinth ? "labyrinth" : "zone");
         this.tempDungeonCount = 0;
         this.simulationTime = 0;
         this.eventQueue.clear();

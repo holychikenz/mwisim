@@ -22,6 +22,7 @@ import {
 } from '../utils/guildBuffs';
 import { levelToTierIndex, tierIndexToLevel, MAX_TIER_INDEX } from '../utils/trialTiers';
 import { simulableZones, zoneTiers, findZone } from '../utils/zones';
+import { SettingsMenu } from './SettingsMenu';
 
 // =============================================================================
 // HeaderControls — the sticky simulation bar: mode (zone / labyrinth), the
@@ -30,9 +31,11 @@ import { simulableZones, zoneTiers, findZone } from '../utils/zones';
 // scrolling.
 // =============================================================================
 
+// Community buffs run from level 1 to 20 (both the experience and the
+// combat-drop lines share the same ladder).
 const BUFF_LEVEL_OPTIONS = [
   { value: '0', label: 'None' },
-  ...[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(l => ({
+  ...Array.from({ length: 20 }, (_, i) => i + 1).map(l => ({
     value: String(l),
     label: `Level ${l}`
   }))
@@ -96,7 +99,11 @@ export function HeaderControls({
   guildTrials,
   trialConfig,
   onTrialConfigChange,
-  rosterLength = 0
+  rosterLength = 0,
+  // Experimental engine knobs (see utils/experimental.js). Kept beside Run
+  // because they change what a run MEANS, not merely what it targets.
+  experimental,
+  onExperimentalChange
 }) {
   // Planets and dungeons only. The 44 solo-monster combat actions ("Fly",
   // "Granite Golem") are spawns inside a planet rather than places to send a
@@ -582,6 +589,11 @@ export function HeaderControls({
           All Zones
         </Button>
       )}
+
+      {/* The cog. Present in every mode, including Costs — an experiment left
+          on is a fact about the whole app, so hiding it anywhere would be a
+          way to forget it. */}
+      <SettingsMenu settings={experimental} onChange={onExperimentalChange} />
 
       {/* Costs is a settings view, not a simulation mode — there is nothing to
           run, and a Run button that did nothing would be worse than none. */}

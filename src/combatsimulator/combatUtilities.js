@@ -1,4 +1,47 @@
+// =============================================================================
+// MWIX adaptation: taskDamage is NEVER applied.
+//
+// In the game, Task Damage is a task-only bonus — it applies solely to monsters
+// on the player's own task list. The engine has no notion of a task list, so
+// upstream multiplies EVERY damage roll by (1 + taskDamage) unconditionally.
+// A task badge therefore reads to the simulator as a flat global damage
+// multiplier, which silently inflated every number that depends on damage:
+//   - labyrinth clear rates (the visible symptom: 46.7% predicted at giant
+//     scorpion room 264, against a lived experience of losing twenty in a row);
+//   - the equipment enhancement scan, where an Expert Task Badge duly ranked
+//     first at 1.35% per level, ahead of the weapon (see the CAVEATED_STATS
+//     note in api/lib/equipmentScan/candidates.js, which documented the cause
+//     but left the engine alone).
+//
+// Measured against 4,277 damage-casts recorded from the live game (giant
+// scorpion, room levels 220-259, 110 fights, gear matched to within 5% on
+// magicAccuracyRating, normalised by each fight's own magicMaxDamage):
+//
+//   taskDamage applied (0.1995)  ->  sim damage/hit = 1.21-1.23x the game's
+//   taskDamage neutralised       ->  sim damage/hit = 1.005-1.011x the game's
+//
+// The stat is still parsed, still aggregated, and still reported on the stat
+// sheet exactly as the game reports it — so lab-parity fixtures continue to
+// match. It simply never multiplies damage. Flip TASK_DAMAGE_APPLIES to true to
+// restore upstream behaviour.
+//
+// NOTE: the vendored third-party userscript at csim/lab-crr.js (dakonglong's
+// Labyrinth Clear Rate Calculator) carries the same unconditional multiplier at
+// its own lines ~10317/10354/10376. It is not ours and is left untouched.
+// =============================================================================
+const TASK_DAMAGE_APPLIES = false;
+
 class CombatUtilities {
+    /**
+     * The (1 + taskDamage) damage multiplier for a unit — forced to 1 unless
+     * TASK_DAMAGE_APPLIES is re-enabled. Every site that would consume
+     * combatStats.taskDamage must go through here.
+     */
+    static taskDamageMultiplier(unit) {
+        if (!TASK_DAMAGE_APPLIES) return 1;
+        return 1 + unit.combatDetails.combatStats.taskDamage;
+    }
+
     static getTarget(enemies) {
         if (!enemies) {
             return null;
@@ -174,7 +217,7 @@ class CombatUtilities {
         }
 
         let damageRoll = CombatUtilities.randomInt(sourceMinDamage, sourceMaxDamage);
-        damageRoll *= (1 + source.combatDetails.combatStats.taskDamage);
+        damageRoll *= CombatUtilities.taskDamageMultiplier(source);
         damageRoll *= (1 + target.combatDetails.combatStats.damageTaken);
         if (!abilityEffect) {
             damageRoll += damageRoll * source.combatDetails.combatStats.autoAttackDamage;
@@ -216,7 +259,7 @@ class CombatUtilities {
                 sourceDamageTakenRatio = (100 - penetratedSourceResistance) / 100;
             }
 
-            let targetTaskDamageMultiplier = 1.0 + target.combatDetails.combatStats.taskDamage;
+            let targetTaskDamageMultiplier = CombatUtilities.taskDamageMultiplier(target);
             let sourceDamageTakenMultiplier = 1.0 + source.combatDetails.combatStats.damageTaken;
             let targetDamageMultiplier = targetTaskDamageMultiplier * sourceDamageTakenMultiplier;
 
@@ -249,7 +292,7 @@ class CombatUtilities {
                     sourceDamageTakenRatio = (100.0 - sourceEffectiveArmor) / 100.0;
                 }
 
-                let targetTaskDamageMultiplier = 1.0 + target.combatDetails.combatStats.taskDamage;
+                let targetTaskDamageMultiplier = CombatUtilities.taskDamageMultiplier(target);
                 let sourceDamageTakenMultiplier = 1.0 + source.combatDetails.combatStats.damageTaken;
                 let retaliationDamageMultiplier = targetTaskDamageMultiplier * sourceDamageTakenMultiplier;
 

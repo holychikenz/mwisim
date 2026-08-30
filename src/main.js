@@ -1822,6 +1822,12 @@ function calcDropMaps(simResult, playerToDisplay) {
     let combatDropQuantity = simResult.combatDropQuantity[playerToDisplay];
     let debuffOnLevelGap = simResult.debuffOnLevelGap[playerToDisplay];
 
+    // Chance and quantity are two INDEPENDENT stats, and party size touches only
+    // one of them. The chance to drop is fixed: every member rolls the full,
+    // undiluted drop rate on every kill. The QUANTITY dropped is divided by the
+    // number of players. Each stat is separately modified by coffee / buffs /
+    // gear (combatDropRate and combatRareFind on the chance, combatDropQuantity
+    // on the quantity) — never conflate the two.
     let numberOfPlayers = simResult.numberOfPlayers;
     let monsters = Object.keys(simResult.deaths)
         .filter(enemy => enemy !== "player1" && enemy !== "player2" && enemy !== "player3" && enemy !== "player4" && enemy !== "player5")
@@ -1863,15 +1869,15 @@ function calcDropMaps(simResult, playerToDisplay) {
             for (let i = 0; i < simResult.deaths[monster]; i++) {
                 for (let dropObject of dropMap.values()) {
                     let chance = Math.random();
-                    if (chance <= dropObject.dropRate / numberOfPlayers) {
-                        let amount = Math.floor(Math.random() * (dropObject.dropMax - dropObject.dropMin + 1) + dropObject.dropMin) * (1 + debuffOnLevelGap) * (1 + combatDropQuantity);
+                    if (chance <= dropObject.dropRate) {
+                        let amount = Math.floor(Math.random() * (dropObject.dropMax - dropObject.dropMin + 1) + dropObject.dropMin) * (1 + debuffOnLevelGap) * (1 + combatDropQuantity) / numberOfPlayers;
                         dropObject.number = dropObject.number + fidDropAmount(amount);
                     }
                 }
                 for (let dropObject of rareDropMap.values()) {
                     let chance = Math.random();
-                    if (chance <= dropObject.dropRate / numberOfPlayers) {
-                        let amount = Math.floor(Math.random() * (dropObject.dropMax - dropObject.dropMin + 1) + dropObject.dropMin) * (1 + debuffOnLevelGap) * (1 + combatDropQuantity);
+                    if (chance <= dropObject.dropRate) {
+                        let amount = Math.floor(Math.random() * (dropObject.dropMax - dropObject.dropMin + 1) + dropObject.dropMin) * (1 + debuffOnLevelGap) * (1 + combatDropQuantity) / numberOfPlayers;
                         dropObject.number = dropObject.number + fidDropAmount(amount);
                     }
                 }
