@@ -804,7 +804,10 @@ function LabOutcomesPanel({ results }) {
   );
 }
 
-export function SimulationResults({ results, monsters, items, pricing }) {
+// `focusHrid` names the player the Drops tab answers for — the member whose
+// config is open in the left panel's P-tab. Per-character drop stats (magnetic
+// gloves, lucky coffee) mean the party does not share one loot table.
+export function SimulationResults({ results, monsters, items, pricing, focusHrid }) {
   const handleDownload = useCallback(() => {
     const blob = new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -874,6 +877,7 @@ export function SimulationResults({ results, monsters, items, pricing }) {
             monsters={monsters}
             items={items}
             pricing={pricing}
+            focusHrid={focusHrid}
           />
         </Tabs.Panel>
 

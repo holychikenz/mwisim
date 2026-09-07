@@ -12,8 +12,14 @@ const ONE_HOUR = 60 * 60 * 1e9;
 // table, the consumable expense table, and the profit line. Ported from the
 // old UI's Get Prices / Edit Prices / expenses flow.
 //
-// Economy numbers are computed for player1 (matching the old UI's
-// per-displayed-player convention).
+// ONE PLAYER, NEVER THE PARTY SUMMED. Every figure here — drops, income,
+// consumable expenses, profit — answers for `focusHrid`, the member whose
+// config is open in the left panel's P-tab, and follows that tab immediately
+// without a re-run. This is not cosmetic: chance-to-drop is modified per
+// character by combatDropRate / combatRareFind (magnetic gloves, lucky coffee,
+// necklace of efficiency), so two members of the same party walk away from the
+// same kills with materially different loot. Summing them would report a
+// composite nobody plays.
 // =============================================================================
 
 const SOURCE_OPTIONS = [
@@ -27,9 +33,9 @@ const MODE_OPTIONS = [
   { value: 'ask', label: 'Ask first' }
 ];
 
-function ExpensesTable({ rows, unit }) {
+function ExpensesTable({ rows, unit, playerName }) {
   if (rows.length === 0) {
-    return <Text size="sm" c="dimmed">No consumables used by player1.</Text>;
+    return <Text size="sm" c="dimmed">No consumables used by {playerName}.</Text>;
   }
   return (
     <Table striped highlightOnHover withTableBorder>
@@ -57,7 +63,12 @@ function ExpensesTable({ rows, unit }) {
   );
 }
 
-export function DropsEconomy({ results, monsters, items, pricing }) {
+function playerLabel(hrid) {
+  const m = /^player(\d+)$/.exec(String(hrid || ''));
+  return m ? `P${m[1]}` : String(hrid || 'P?');
+}
+
+export function DropsEconomy({ results, monsters, items, pricing, focusHrid }) {
   const {
     source, setSource, prices, unit, fetching, error, fetchedLabel, fetchPrices,
     revenueMode, setRevenueMode, expenseMode, setExpenseMode,
@@ -66,17 +77,35 @@ export function DropsEconomy({ results, monsters, items, pricing }) {
 
   const hours = results.simulatedTime / ONE_HOUR;
 
+  // The party as SIMULATED, not as currently ticked — dropRateMultiplier carries
+  // one entry per player the run actually included (see simResult
+  // setDropRateMultipliers). The checkboxes may have moved since.
+  const partyHrids = useMemo(() => {
+    const keys = Object.keys(results.dropRateMultiplier || {});
+    keys.sort((a, b) => (parseInt(a.slice(6), 10) || 0) - (parseInt(b.slice(6), 10) || 0));
+    return keys;
+  }, [results.dropRateMultiplier]);
+
+  // The P-tab can point at a player who was not in the run — the user editing P4
+  // while the simulated party was [P1, P2]. Rather than print a table of a
+  // never-simulated build's default multipliers, fall back to the first member
+  // actually simulated and say so.
+  const focusMissing =
+    !!focusHrid && partyHrids.length > 0 && !partyHrids.includes(focusHrid);
+  const activeHrid = focusMissing ? partyHrids[0] : focusHrid || partyHrids[0] || 'player1';
+  const activeLabel = playerLabel(activeHrid);
+
   // Income: expected drops priced by the active source.
   const drops = useMemo(() => {
     if (!results || !monsters || !items) return [];
-    const expected = calculateExpectedDrops(results, monsters, items, 'player1');
+    const expected = calculateExpectedDrops(results, monsters, items, activeHrid);
     const priced = expected.map((d) => ({
       ...d,
       sellPrice: prices ? priceOf(prices, d.itemHrid, revenueMode) : d.sellPrice
     }));
     priced.sort((a, b) => (b.amount * b.sellPrice) - (a.amount * a.sellPrice));
     return calculateDropsPerHour(priced, results.simulatedTime);
-  }, [results, monsters, items, prices, revenueMode]);
+  }, [results, monsters, items, prices, revenueMode, activeHrid]);
 
   const income = drops.reduce((s, d) => s + d.amount * d.sellPrice, 0);
 
@@ -90,9 +119,9 @@ export function DropsEconomy({ results, monsters, items, pricing }) {
     [creditMode, drops, items]
   );
 
-  // Expenses: player1's consumables at the expense-mode price.
+  // Expenses: the focused player's consumables at the expense-mode price.
   const expenseRows = useMemo(() => {
-    const used = results.consumablesUsed?.player1 || {};
+    const used = results.consumablesUsed?.[activeHrid] || {};
     return Object.entries(used)
       .map(([hrid, count]) => {
         const price = prices
@@ -108,7 +137,7 @@ export function DropsEconomy({ results, monsters, items, pricing }) {
         };
       })
       .sort((a, b) => b.total - a.total);
-  }, [results.consumablesUsed, prices, expenseMode, items, hours]);
+  }, [results.consumablesUsed, prices, expenseMode, items, hours, activeHrid]);
 
   const expenseTotal = expenseRows.reduce((s, r) => s + r.total, 0);
   const profit = income - expenseTotal;
@@ -184,18 +213,29 @@ export function DropsEconomy({ results, monsters, items, pricing }) {
         </Alert>
       )}
 
+      {focusMissing && (
+        <Alert color="yellow" variant="light" p="xs">
+          <Text size="xs">
+            {playerLabel(focusHrid)} was not in the simulated party (
+            {partyHrids.map(playerLabel).join(', ')}), so these figures read{' '}
+            {activeLabel}. Tick {playerLabel(focusHrid)} into the party and run
+            again to see that build's loot.
+          </Text>
+        </Alert>
+      )}
+
       <Paper p="sm" radius="md" withBorder>
         <Group gap="xl">
           <div>
-            <Text size="xs" c="dimmed" tt="uppercase">Income/hr (P1)</Text>
+            <Text size="xs" c="dimmed" tt="uppercase">Income/hr ({activeLabel})</Text>
             <Text fw={700}>{formatValue(income / hours, unit)}</Text>
           </div>
           <div>
-            <Text size="xs" c="dimmed" tt="uppercase">Expenses/hr (P1)</Text>
+            <Text size="xs" c="dimmed" tt="uppercase">Expenses/hr ({activeLabel})</Text>
             <Text fw={700}>{formatValue(expenseTotal / hours, unit)}</Text>
           </div>
           <div>
-            <Text size="xs" c="dimmed" tt="uppercase">Profit/hr (P1)</Text>
+            <Text size="xs" c="dimmed" tt="uppercase">Profit/hr ({activeLabel})</Text>
             <Text fw={700} c={profit >= 0 ? 'teal' : 'red'}>
               {formatValue(profit / hours, unit)}
             </Text>
@@ -242,8 +282,8 @@ export function DropsEconomy({ results, monsters, items, pricing }) {
       />
 
       <div>
-        <Text size="sm" fw={600} mb={6}>Consumable expenses (P1)</Text>
-        <ExpensesTable rows={expenseRows} unit={unit} />
+        <Text size="sm" fw={600} mb={6}>Consumable expenses ({activeLabel})</Text>
+        <ExpensesTable rows={expenseRows} unit={unit} playerName={activeLabel} />
       </div>
     </Stack>
   );

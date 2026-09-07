@@ -1457,6 +1457,12 @@ function App() {
               monsters={gameData?.monsters}
               items={gameData?.items}
               pricing={pricing}
+              // Whose loot the Drops tab shows. Same convention as the All Zones
+              // table: the party's members do not share a drop table — drop
+              // rate and rare find are per-character stats — so the panel
+              // answers for the player open in the P-tab, and follows it
+              // immediately without a re-run.
+              focusHrid={`player${activeTab}`}
             />
           )}
 
