@@ -57,6 +57,47 @@ export function sumDamageToEnemies(attacks, sourceHrid, playerHridSet) {
 }
 
 /**
+ * Heal sources that are a unit's own upkeep rather than output to the party.
+ *
+ * The board's Healing column measures healing GIVEN to other members, so a
+ * player's own regen tick and their own lifesteal must not count — otherwise
+ * every bruiser posts a healing figure that is not comparable with a real
+ * healer's. Consumables (food/drink) are self-upkeep for the same reason and
+ * are matched by their "/items/" hrid prefix; abilities use "/abilities/".
+ *
+ * The raw simResult.healingDone keeps every source unfiltered — the exclusion
+ * happens only here, at the summary layer, so the decision stays revisable.
+ */
+export const SELF_UPKEEP_SOURCES = new Set(["regen", "lifesteal"]);
+const CONSUMABLE_SOURCE_PREFIX = "/items/";
+
+function isSelfUpkeepSource(source) {
+    return SELF_UPKEEP_SOURCES.has(source) || String(source).startsWith(CONSUMABLE_SOURCE_PREFIX);
+}
+
+/**
+ * Total healing a unit PERFORMED, excluding its own upkeep.
+ *
+ * Sibling of sumDamageToEnemies: same "one implementation, no drift" rationale.
+ * Walks simResult.healingDone, which combatSimulator keys by the HEALER (the
+ * caster/reviver), unlike hitpointsGained which is keyed by the target that
+ * received the healing.
+ */
+export function sumHealingDone(healingDone, healerHrid) {
+    let total = 0;
+    const bySource = healingDone?.[healerHrid];
+    if (!bySource) return 0;
+    for (const [source, amount] of Object.entries(bySource)) {
+        if (isSelfUpkeepSource(source)) continue;
+        const healed = Number(amount);
+        if (Number.isFinite(healed)) {
+            total += healed;
+        }
+    }
+    return total;
+}
+
+/**
  * Pull the small, serialisable trial fields out of a full SimResult so many
  * iterations can be shuttled between workers cheaply.
  */
@@ -73,6 +114,12 @@ export function extractTrialSummary(simResult) {
         playerDamageDone[hrid] = sumDamageToEnemies(simResult.attacks, hrid, playerHridSet);
     }
 
+    // Per-player total healing GIVEN over the whole run, self-upkeep excluded.
+    const playerHealingDone = {};
+    for (const hrid of playerHrids) {
+        playerHealingDone[hrid] = sumHealingDone(simResult.healingDone, hrid);
+    }
+
     return {
         maxTierCleared: simResult.trialMaxTierCleared ?? 0,
         tiersCleared: simResult.trialTiersCleared ?? 0,
@@ -86,6 +133,8 @@ export function extractTrialSummary(simResult) {
         finalTierHpRemovedFrac: simResult.trialFinalTierHpRemovedFrac ?? 0,
         // { hrid: totalDamageDealtToEnemies } — endTime is the DPS denominator.
         playerDamageDone,
+        // { hrid: totalHealingGiven } — self-upkeep sources already excluded.
+        playerHealingDone,
         tierTimes: simResult.trialTierTimes ?? {}, // { tier: nsSpent }
         playerDeaths: simResult.trialPlayerDeaths ?? {}, // { hrid: [tier, ...] }
     };
@@ -154,6 +203,8 @@ export function aggregateTrialResults(summaries, opts = {}) {
             endedAtTierCount: {},
             avgFinalTierHpRemoved: {},
             avgPlayerDps: {},
+            avgPlayerDamage: {},
+            avgPlayerHealing: {},
             avgPartyDps: 0,
             expectedGuildPoints: 0,
             expectedTokensPerEligibleMember: 0,
@@ -184,6 +235,14 @@ export function aggregateTrialResults(summaries, opts = {}) {
     // iterations — a player absent from an iteration contributes 0 to it.
     const playerDpsSum = {};
     let partyDpsSum = 0;
+    // Means of per-iteration TOTALS, which is a different quantity from the
+    // rate means above: a mean of damage/duration cannot be turned back into a
+    // total by multiplying by the mean duration, because duration and damage
+    // correlate across iterations (Jensen's inequality). These sums are
+    // therefore accumulated independently, with no duration guard — a
+    // degenerate short run still contributes its real total.
+    const playerDamageSum = {};
+    const playerHealingSum = {};
 
     // Ensure the "0" (wiped on first tier, cleared nothing) bucket exists.
     maxTierDistribution[0] = 0;
@@ -244,6 +303,14 @@ export function aggregateTrialResults(summaries, opts = {}) {
             partyDpsSum += partyDamage / endSeconds;
         }
 
+        // Totals, accumulated regardless of duration (see note above).
+        for (const [hrid, damage] of Object.entries(s.playerDamageDone || {})) {
+            playerDamageSum[hrid] = (playerDamageSum[hrid] || 0) + (damage || 0);
+        }
+        for (const [hrid, healing] of Object.entries(s.playerHealingDone || {})) {
+            playerHealingSum[hrid] = (playerHealingSum[hrid] || 0) + (healing || 0);
+        }
+
         // Rewards are paid per tier cleared. No tier is ever re-cleared (the
         // run completes on clearing the cap), so deriving the count from the
         // max tier reached is exact — and robust even if a summary's
@@ -279,6 +346,16 @@ export function aggregateTrialResults(summaries, opts = {}) {
         avgPlayerDps[hrid] = sum / n;
     }
 
+    // Mean per-iteration TOTAL damage / healing across ALL n iterations.
+    const avgPlayerDamage = {};
+    for (const [hrid, sum] of Object.entries(playerDamageSum)) {
+        avgPlayerDamage[hrid] = sum / n;
+    }
+    const avgPlayerHealing = {};
+    for (const [hrid, sum] of Object.entries(playerHealingSum)) {
+        avgPlayerHealing[hrid] = sum / n;
+    }
+
     return {
         iterations: n,
         startTier,
@@ -302,6 +379,11 @@ export function aggregateTrialResults(summaries, opts = {}) {
         // Who is (not) contributing: mean over iterations of each player's
         // total damage-to-enemies / run duration, and the party-wide total.
         avgPlayerDps,
+        // Means of per-iteration TOTALS — comparable with the real board's
+        // Damage/Healing columns, which are totals over the whole trial.
+        // NOT reconstructible from avgPlayerDps × mean duration.
+        avgPlayerDamage,
+        avgPlayerHealing,
         avgPartyDps: partyDpsSum / n,
         expectedGuildPoints: sumPoints / n,
         expectedTokensPerEligibleMember: sumTokensEligible / n,

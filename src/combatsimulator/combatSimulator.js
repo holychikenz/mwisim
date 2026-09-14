@@ -797,7 +797,7 @@ class CombatSimulator extends EventTarget {
             }
 
             if (attackResult.lifeStealHeal > 0) {
-                this.simResult.addHitpointsGained(source, "lifesteal", attackResult.lifeStealHeal);
+                this.simResult.addHitpointsGained(source, "lifesteal", attackResult.lifeStealHeal, source);
             }
 
             if (attackResult.manaLeechMana > 0) {
@@ -1154,7 +1154,7 @@ class CombatSimulator extends EventTarget {
                 event.currentTick
             );
             let hitpointsAdded = event.source.addHitpoints(tickValue);
-            this.simResult.addHitpointsGained(event.source, event.consumable.hrid, hitpointsAdded);
+            this.simResult.addHitpointsGained(event.source, event.consumable.hrid, hitpointsAdded, event.source);
             // console.log("Added hitpoints:", hitpointsAdded);
         }
 
@@ -1250,7 +1250,7 @@ class CombatSimulator extends EventTarget {
 
             let hitpointRegen = Math.floor(unit.combatDetails.maxHitpoints * (unit.combatDetails.combatStats.hpRegenPer10 + bonusHpRegen));
             let hitpointsAdded = unit.addHitpoints(hitpointRegen);
-            this.simResult.addHitpointsGained(unit, "regen", hitpointsAdded);
+            this.simResult.addHitpointsGained(unit, "regen", hitpointsAdded, unit);
             // console.log("Added hitpoints:", hitpointsAdded);
 
             let manapointRegen = Math.floor(unit.combatDetails.maxManapoints * (unit.combatDetails.combatStats.mpRegenPer10 + bonusMpRegen));
@@ -1431,7 +1431,7 @@ class CombatSimulator extends EventTarget {
         if (consumable.recoveryDuration == 0) {
             if (consumable.hitpointRestore > 0) {
                 let hitpointsAdded = source.addHitpoints(consumable.hitpointRestore);
-                this.simResult.addHitpointsGained(source, consumable.hrid, hitpointsAdded);
+                this.simResult.addHitpointsGained(source, consumable.hrid, hitpointsAdded, source);
                 // console.log("Added hitpoints:", hitpointsAdded);
             }
 
@@ -1725,7 +1725,7 @@ class CombatSimulator extends EventTarget {
                 );
 
                 if (attackResult.lifeStealHeal > 0) {
-                    this.simResult.addHitpointsGained(tempSource, "lifesteal", attackResult.lifeStealHeal);
+                    this.simResult.addHitpointsGained(tempSource, "lifesteal", attackResult.lifeStealHeal, tempSource);
                 }
 
                 if (attackResult.manaLeechMana > 0) {
@@ -1793,7 +1793,7 @@ class CombatSimulator extends EventTarget {
                 }
 
                 if (attackResult.hpDrain > 0) {
-                    this.simResult.addHitpointsGained(source, ability.hrid, attackResult.hpDrain);
+                    this.simResult.addHitpointsGained(source, ability.hrid, attackResult.hpDrain, source);
                 }
 
                 if (attackResult.didHit && abilityEffect.buffs) {
@@ -2010,7 +2010,7 @@ class CombatSimulator extends EventTarget {
             for (const target of targets.filter((unit) => unit && unit.combatDetails.currentHitpoints > 0)) {
                 let amountHealed = CombatUtilities.processHeal(source, abilityEffect, target);
 
-                this.simResult.addHitpointsGained(target, ability.hrid, amountHealed);
+                this.simResult.addHitpointsGained(target, ability.hrid, amountHealed, source);
             }
             return;
         }
@@ -2034,7 +2034,7 @@ class CombatSimulator extends EventTarget {
             if (healTarget) {
                 let amountHealed = CombatUtilities.processHeal(source, abilityEffect, healTarget);
 
-                this.simResult.addHitpointsGained(healTarget, ability.hrid, amountHealed);
+                this.simResult.addHitpointsGained(healTarget, ability.hrid, amountHealed, source);
             }
             return;
         }
@@ -2045,7 +2045,7 @@ class CombatSimulator extends EventTarget {
 
         let amountHealed = CombatUtilities.processHeal(source, abilityEffect, source);
 
-        this.simResult.addHitpointsGained(source, ability.hrid, amountHealed);
+        this.simResult.addHitpointsGained(source, ability.hrid, amountHealed, source);
     }
 
     processAbilityReviveEffect(source, ability, abilityEffect) {
@@ -2069,7 +2069,7 @@ class CombatSimulator extends EventTarget {
 
             let amountHealed = CombatUtilities.processRevive(source, abilityEffect, reviveTarget);
 
-            this.simResult.addHitpointsGained(reviveTarget, ability.hrid, amountHealed);
+            this.simResult.addHitpointsGained(reviveTarget, ability.hrid, amountHealed, source);
 
             this.addNextAttackEvent(reviveTarget);
 

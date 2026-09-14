@@ -51,6 +51,9 @@ class SimResult {
         this.attacks = {};
         this.consumablesUsed = {};
         this.hitpointsGained = {};
+        // Healing attributed to the HEALER (hitpointsGained is keyed by the
+        // target that RECEIVED the healing, which is a different question).
+        this.healingDone = {};
         this.manapointsGained = {};
         this.debuffOnLevelGap = {};
         this.dropRateMultiplier = {};
@@ -408,7 +411,17 @@ class SimResult {
         this.consumablesUsed[unit.hrid][consumable.hrid] += 1;
     }
 
-    addHitpointsGained(unit, source, amount) {
+    /**
+     * @param unit   the unit that RECEIVED the healing (keys hitpointsGained)
+     * @param source the heal source identifier (ability hrid, "regen", ...)
+     * @param amount hitpoints restored
+     * @param healer optional: the unit that PERFORMED the healing. When
+     *               supplied, the same amount is additionally credited to
+     *               healingDone[healer.hrid][source]. Omitting it leaves
+     *               healingDone completely untouched, so the pre-existing
+     *               3-argument behaviour is unchanged.
+     */
+    addHitpointsGained(unit, source, amount, healer) {
         if (!this.hitpointsGained[unit.hrid]) {
             this.hitpointsGained[unit.hrid] = {};
         }
@@ -417,6 +430,17 @@ class SimResult {
         }
 
         this.hitpointsGained[unit.hrid][source] += amount;
+
+        if (healer) {
+            if (!this.healingDone[healer.hrid]) {
+                this.healingDone[healer.hrid] = {};
+            }
+            if (!this.healingDone[healer.hrid][source]) {
+                this.healingDone[healer.hrid][source] = 0;
+            }
+
+            this.healingDone[healer.hrid][source] += amount;
+        }
     }
 
     addManapointsGained(unit, source, amount) {

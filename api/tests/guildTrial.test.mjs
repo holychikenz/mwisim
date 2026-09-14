@@ -639,3 +639,150 @@ test('runGuildTrialSimulation aggregates multiple iterations', async () => {
   assert.equal(result.aggregate.wipeRate, 1.0);
   assert.equal(result.aggregate.expectedMaxTierCleared, 0);
 });
+
+// --------------------------------------------------------------------------
+// Healing attribution: healingDone is keyed by the HEALER, hitpointsGained by
+// the RECEIVER. These are different questions and must give different answers.
+// --------------------------------------------------------------------------
+
+// A healer built from the base DTO with /abilities/quick_aid (targetType
+// "lowestHpAlly") as its only ability, so the only healing it does is to a
+// party member — never an attack, never self-upkeep from an ability.
+function makeHealer(hrid, level = 100) {
+  const dto = structuredClone(BASE_DTO);
+  dto.hrid = hrid;
+  dto.abilities = [{ hrid: '/abilities/quick_aid', level, triggers: [] }];
+  for (const k of Object.keys(dto)) {
+    if (k.endsWith('Level')) dto[k] = 200; // enough MP/int to actually cast
+  }
+  const p = Player.createFromDTO(dto);
+  p.zoneBuffs = [];
+  p.extraBuffs = [];
+  return p;
+}
+
+test('healing is attributed to the healer, not the unit that received it', async () => {
+  const healer = makeHealer('healer1');
+  const tank = makePlayers(1)[0]; // 'player1' — no abilities, so it heals nobody
+  const gt = new GuildTrial('/guild_combat/chameleon', 100, 5);
+  const sim = new CombatSimulator([healer, tank], null, null, { guildTrial: gt });
+
+  const result = await sim.simulate(GuildTrial.TRIAL_DURATION_NS);
+
+  // The healer actually healed somebody during the run.
+  const healerHeal = result.healingDone?.healer1?.['/abilities/quick_aid'] ?? 0;
+  assert.ok(healerHeal > 0, `healer did no quick_aid healing (healingDone=${JSON.stringify(result.healingDone)})`);
+
+  const summary = extractTrialSummary(result);
+
+  // The whole point: the healer is credited, the tank is not...
+  assert.ok(summary.playerHealingDone.healer1 > 0);
+  assert.equal(summary.playerHealingDone.player1, 0);
+
+  // ...even though the tank is exactly who RECEIVED healing. If attribution
+  // were still keyed by the target (the pre-fix behaviour) the tank would be
+  // the one showing a healing total here.
+  const tankReceived = Object.values(result.hitpointsGained?.player1 ?? {})
+    .reduce((a, b) => a + b, 0);
+  assert.ok(tankReceived > 0, 'tank received no healing — fixture did not exercise the path');
+});
+
+test('self-upkeep (regen, lifesteal, consumables) is excluded from playerHealingDone', () => {
+  // Raw healingDone records every source; the summary filter drops the ones
+  // that are a unit keeping itself alive rather than healing the party.
+  const simResult = {
+    manaUsed: { solo1: 0 },
+    attacks: {},
+    healingDone: {
+      solo1: {
+        regen: 500,
+        lifesteal: 250,
+        '/items/marsberry_donut': 300,   // consumable — self-upkeep by prefix
+        '/abilities/quick_aid': 42,          // genuine output to the party
+      },
+    },
+  };
+
+  const summary = extractTrialSummary(simResult);
+  assert.equal(summary.playerHealingDone.solo1, 42);
+
+  // The raw data is untouched — the exclusion lives only at the summary layer.
+  assert.equal(simResult.healingDone.solo1.regen, 500);
+  assert.equal(simResult.healingDone.solo1.lifesteal, 250);
+});
+
+test('a lone regenerating player reports zero healing done', () => {
+  const simResult = {
+    manaUsed: { solo1: 0 },
+    attacks: {},
+    healingDone: { solo1: { regen: 1234 } },
+  };
+  assert.equal(extractTrialSummary(simResult).playerHealingDone.solo1, 0);
+});
+
+// --------------------------------------------------------------------------
+// Totals are NOT reconstructible from rates
+// --------------------------------------------------------------------------
+test('avgPlayerDamage is the mean of per-iteration TOTALS, not rate x mean duration', () => {
+  const base = { maxTierCleared: 0, tiersCleared: 0, endReason: 'wipe', finalTier: 100, finalTierHpRemovedFrac: 0, tierTimes: {}, playerDeaths: {} };
+  // Durations and damage correlate hard, so the mean-of-rates and the
+  // mean-of-totals genuinely disagree (Jensen). This is what makes the
+  // assertion below meaningful rather than a coincidental match.
+  const summaries = [
+    { ...base, endTime: 1e9,   playerDamageDone: { a: 100 },   playerHealingDone: { a: 10 } },
+    { ...base, endTime: 100e9, playerDamageDone: { a: 50000 }, playerHealingDone: { a: 90 } },
+  ];
+  const agg = aggregateTrialResults(summaries, { startTier: 100 });
+
+  const meanTotal = (100 + 50000) / 2;
+  assert.ok(Math.abs(agg.avgPlayerDamage.a - meanTotal) < 1e-9);
+  assert.ok(Math.abs(agg.avgPlayerHealing.a - (10 + 90) / 2) < 1e-9);
+
+  // The invalid reconstruction, shown to be a different number.
+  const meanDuration = (1 + 100) / 2;
+  const bogus = agg.avgPlayerDps.a * meanDuration;
+  assert.ok(Math.abs(bogus - agg.avgPlayerDamage.a) > 1,
+    `reconstruction ${bogus} coincidentally matched the true total ${agg.avgPlayerDamage.a}`);
+});
+
+test('a degenerate zero-duration iteration still contributes its real total', () => {
+  const base = { maxTierCleared: 0, tiersCleared: 0, endReason: 'wipe', finalTier: 100, finalTierHpRemovedFrac: 0, tierTimes: {}, playerDeaths: {} };
+  const summaries = [
+    { ...base, endTime: 10e9, playerDamageDone: { a: 1000 }, playerHealingDone: {} },
+    { ...base, endTime: 0,    playerDamageDone: { a: 500 },  playerHealingDone: {} }, // DPS-guarded, total is not
+  ];
+  const agg = aggregateTrialResults(summaries, { startTier: 100 });
+
+  assert.ok(Math.abs(agg.avgPlayerDamage.a - 750) < 1e-9); // (1000 + 500) / 2
+  // ...while the pre-existing rate field still guards it as it always did.
+  assert.ok(Math.abs(agg.avgPlayerDps.a - 100 / 2) < 1e-9);
+});
+
+test('aggregateTrialResults empty case includes the new total fields', () => {
+  const agg = aggregateTrialResults([], {});
+  assert.deepEqual(agg.avgPlayerDamage, {});
+  assert.deepEqual(agg.avgPlayerHealing, {});
+});
+
+test('non-regression: the new fields do not disturb the pre-existing ones', () => {
+  const base = { maxTierCleared: 100, tiersCleared: 1, endReason: 'wipe', finalTier: 110, finalTierHpRemovedFrac: 0.25, tierTimes: { 100: 5e9 }, playerDeaths: { a: [110] } };
+  const summaries = [
+    { ...base, endTime: 10e9, playerDamageDone: { a: 1000, b: 500 }, playerHealingDone: { a: 7 } },
+    { ...base, endTime: 20e9, playerDamageDone: { a: 4000 },         playerHealingDone: {} },
+  ];
+  const agg = aggregateTrialResults(summaries, { startTier: 100 });
+
+  // Exactly the values the rate arithmetic produced before this change.
+  assert.ok(Math.abs(agg.avgPlayerDps.a - (100 + 200) / 2) < 1e-12);
+  assert.ok(Math.abs(agg.avgPlayerDps.b - (50 + 0) / 2) < 1e-12);
+  assert.ok(Math.abs(agg.avgPartyDps - (150 + 200) / 2) < 1e-12);
+  assert.equal(agg.iterations, 2);
+  assert.equal(agg.wipeRate, 1);
+  assert.equal(agg.expectedMaxTierCleared, 100);
+  assert.deepEqual(agg.endedAtTierCount, { 110: 2 });
+  assert.deepEqual(agg.deathsByTier, { 110: 2 });
+
+  // A summary with no playerHealingDone at all (an older/partial record) is
+  // tolerated rather than throwing.
+  assert.ok(Math.abs(agg.avgPlayerHealing.a - 7 / 2) < 1e-12);
+});
