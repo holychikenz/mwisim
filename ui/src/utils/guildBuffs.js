@@ -348,8 +348,32 @@ export function resolveGuildBuildingBuffs(levels = {}) {
  * @param {Record<string, number>} partyLevels  the trial header's knobs
  */
 export function resolveUnitShrineBuffs(build, partyLevels) {
+  return resolveGuildBuffs(ownsShrines(build) ? build.guildShrines : (partyLevels || {}));
+}
+
+/**
+ * Does this build carry its OWN shrine levels, rather than deferring to the
+ * party-wide knobs?
+ *
+ * This exists so that the resolver above and the roster row's "(own)" label
+ * cannot answer the question differently. The row used to gate on plain
+ * truthiness while the resolver required an object, so a build carrying a
+ * truthy NON-object — `guildShrines: 'lol'`, `7`, `true`, which a hand-edited
+ * or half-migrated payload can perfectly well contain — printed "shrines: none
+ * (own)" while the simulation had in fact used the header's levels. The label
+ * is an honesty line; a label that lies is worse than no label. One predicate,
+ * two call sites, no drift.
+ *
+ * `typeof x === 'object'` is deliberately the whole test: it excludes `null`
+ * (and strings and numbers) and admits `{}`, which carries its own meaning —
+ * "we captured this member's shrines and they own none" — as documented above.
+ *
+ * @param {object} build
+ * @returns {boolean}
+ */
+export function ownsShrines(build) {
   const own = build && build.guildShrines;
-  return resolveGuildBuffs(own && typeof own === 'object' ? own : (partyLevels || {}));
+  return Boolean(own) && typeof own === 'object';
 }
 
 /**

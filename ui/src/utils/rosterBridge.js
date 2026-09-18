@@ -42,6 +42,13 @@ export const ROSTER_LINK_PARAM = 'rosterBridge';
 /**
  * Pull the raw parameter value out of a location hash string.
  * Pure: the caller passes `window.location.hash`.
+ *
+ * `null` and `''` are load-bearing and distinct, and the caller branches on
+ * exactly that: `null` means the parameter is ABSENT (not a roster link — do
+ * nothing), `''` means it is PRESENT AND EMPTY (`#rosterBridge=`, a truncated
+ * link — a broken roster link, which must be reported and the hash cleared).
+ * Do not collapse the two into a falsy return.
+ *
  * @param {string} hash
  * @returns {string|null}
  */

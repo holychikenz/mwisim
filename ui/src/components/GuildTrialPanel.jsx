@@ -17,7 +17,7 @@ import {
 } from '@mantine/core';
 import { listRosterEntries, buildSummary, loadSavedLoadouts, MAX_ROW_COUNT } from '../utils/roster';
 import { exportFormatToPlayer } from '../utils/importSet';
-import { describeShrines } from '../utils/guildBuffs';
+import { describeShrines, ownsShrines } from '../utils/guildBuffs';
 
 // Group export format = all keys are player IDs ("1".."5") with no `player`
 // key (same detection as ImportExport.isGroupFormat). Values may be nested
@@ -310,8 +310,12 @@ export function GuildTrialPanel({
                       {/* The honesty line. The header's shrine knobs govern
                           every seat EXCEPT one whose build arrived carrying its
                           own levels; without this the reader would read the
-                          header and believe it. */}
-                      {entry.build?.guildShrines && (
+                          header and believe it.
+                          The gate is `ownsShrines`, the SAME predicate the
+                          resolver uses, and must stay that way: a row that says
+                          "(own)" for a build the resolver fell back on is the
+                          precise lie this line exists to prevent. */}
+                      {ownsShrines(entry.build) && (
                         <Text size="xs" c="dimmed" truncate>
                           shrines: {describeShrines(entry.build.guildShrines)} (own)
                         </Text>

@@ -646,7 +646,17 @@ function App() {
 
     const consume = async () => {
       const value = readRosterLinkValue(window.location.hash);
-      if (!value) return;
+      // `null` and `''` are different answers and only one of them is "do
+      // nothing". ABSENT (null) means this is not a roster link at all — an
+      // ordinary visit, or someone else's fragment — so return before touching
+      // the hash. PRESENT-BUT-EMPTY (`#rosterBridge=`, what a truncated or
+      // hand-mangled link looks like) means this IS a roster link and it is
+      // broken, which is exactly the case the whole design set out to make
+      // diagnosable: it falls through to the `try`, where the `gz:` prefix
+      // check produces "unrecognised roster link encoding" and the `finally`
+      // clears the hash. A falsy test here swallowed it — no message, and an
+      // uncleared fragment that made the reader's second click a no-op.
+      if (value === null) return;
       try {
         const data = validateRosterPayload(await decodeRosterLinkValue(value));
         if (cancelled) return;
