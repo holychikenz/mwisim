@@ -64,7 +64,8 @@ Last audited: 2026-08-17 (all-zones sweep).
   `simulation_result` / `simulation_error`, with `zone`, `labyrinth`
   (`{labyrinthHrid, roomLevel, crates}`) and `extra`
   (`comExp/comDrop/mooPass/personalBuffs/mwixLabUpgrades/mwixMaze`) —
-  identical to upstream `src/worker.js`, consumed verbatim.
+  upstream's `src/worker.js` plus the MWIX adaptations documented in
+  its own comments (guild shrine/building buffs, per-member shrines).
 - **Bridge protocol**: `#mwiLabBridge=json:<payload>` shared with
   `tampermonkey/src/kernel/sim-launch.js` and the old UI's inline bridge.
 - **Pricing endpoints**: marketplace.json shape (`marketData[hrid]['0'].a/.b`)

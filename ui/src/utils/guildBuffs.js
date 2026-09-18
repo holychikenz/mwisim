@@ -321,3 +321,48 @@ export function resolveGuildBuffs(levels = {}) {
 export function resolveGuildBuildingBuffs(levels = {}) {
   return resolveLevelledBuffs(GUILD_COMBAT_BUILDINGS, levels, MAX_GUILD_BUILDING_LEVEL);
 }
+
+/**
+ * Per-member shrine buffs for ONE roster unit.
+ *
+ * Shrines are bought twice over: the guild buys the ceiling, the member buys
+ * their own level up to it. So two people in the same guild, in the same
+ * trial, do not carry the same shrines — which is exactly what the single
+ * party-wide `guildBuffLevels` control in the trial header assumes. A build
+ * that arrived carrying its own `guildShrines` (same key and same shape as the
+ * solo MWIX bridge's `mwixContext.guildShrines`, so there is no third spelling
+ * of this thing anywhere) gets THOSE.
+ *
+ * A build WITHOUT the key falls back to the party-wide knobs, which is what
+ * makes this additive: every payload written before per-member shrines existed
+ * behaves exactly as it did.
+ *
+ * `{}` is NOT the fallback. An empty object means "we captured this member's
+ * shrines and they own none", and yields no shrine buffs at all. That
+ * null-vs-{} distinction mirrors `attachShrineBuffs` on the SCLIRoster side,
+ * and the two must not drift: if `{}` silently meant "use the party default",
+ * a member who genuinely owns nothing would be simulated with someone else's
+ * shrines and the trial would come out optimistic.
+ *
+ * @param {object} build           a master build, possibly carrying guildShrines
+ * @param {Record<string, number>} partyLevels  the trial header's knobs
+ */
+export function resolveUnitShrineBuffs(build, partyLevels) {
+  const own = build && build.guildShrines;
+  return resolveGuildBuffs(own && typeof own === 'object' ? own : (partyLevels || {}));
+}
+
+/**
+ * A one-line human rendering of a shrine level set: "force 5 · tempo 4".
+ * Used by the roster row to say out loud that this member's shrines are their
+ * own and not the header's.
+ * @param {Record<string, number>} levels
+ */
+export function describeShrines(levels) {
+  const parts = [];
+  for (const def of GUILD_COMBAT_BUFFS) {
+    const level = Math.max(0, Math.min(MAX_GUILD_BUFF_LEVEL, Number(levels?.[def.hrid]) || 0));
+    if (level > 0) parts.push(`${def.name.toLowerCase()} ${level}`);
+  }
+  return parts.length ? parts.join(' · ') : 'none';
+}

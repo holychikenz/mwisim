@@ -21,6 +21,12 @@ import { useEquipmentOptimizer } from './hooks/useEquipmentOptimizer';
 import { usePrices } from './hooks/usePrices';
 import { exportFormatToPlayer } from './utils/importSet';
 import { readMwixBridgePayload, clearMwixBridgeHash } from './utils/mwixBridge';
+import {
+  readRosterLinkValue,
+  decodeRosterLinkValue,
+  validateRosterPayload,
+  clearRosterLinkHash
+} from './utils/rosterBridge';
 import { HeaderControls } from './components/HeaderControls';
 import { PlayerConfig } from './components/PlayerConfig';
 import { SimulationResults } from './components/SimulationResults';
@@ -44,6 +50,7 @@ import { loadExperimental, saveExperimental } from './utils/experimental';
 import {
   resolveGuildBuffs,
   resolveGuildBuildingBuffs,
+  resolveUnitShrineBuffs,
   GUILD_COMBAT_BUFFS,
   MAX_GUILD_BUFF_LEVEL
 } from './utils/guildBuffs';
@@ -618,6 +625,58 @@ function App() {
     }
   }, []);
 
+  // SCLIRoster roster link: the dashboard's "open in csim" is a plain <a> at
+  // `#rosterBridge=gz:<base64url>` carrying the whole trial roster. Decoding
+  // lives in utils/rosterBridge.js, which is one half of a two-repo protocol —
+  // the other half is optimizer/src/model/rosterLink.js in SCLIRoster.
+  //
+  // Two cases, one handler. On MOUNT the hash is already there, and this effect
+  // is declared AFTER handleImportRoster deliberately so the dependency reads
+  // top-down and the callback cannot be consumed before it exists — the mount
+  // race the MWIX bridge effect above had to be positioned around too. On a
+  // RELAUNCH the tab is already open and the browser only fires `hashchange`,
+  // with no remount at all, so a mount-only import would silently do nothing
+  // the second time the reader clicked. Both paths run `consume`.
+  //
+  // The hash is cleared on the way out, success or failure. It has to be: an
+  // uncleared fragment makes the NEXT click on the same link a navigation to
+  // the URL already displayed, which fires no event and loads no roster.
+  useEffect(() => {
+    let cancelled = false;
+
+    const consume = async () => {
+      const value = readRosterLinkValue(window.location.hash);
+      if (!value) return;
+      try {
+        const data = validateRosterPayload(await decodeRosterLinkValue(value));
+        if (cancelled) return;
+        handleImportRoster(data);
+        setSimMode('guildTrial');
+        const seats = (data.roster || []).reduce((n, r) => n + (Number(r.count) || 1), 0);
+        const trial = String(data.trialConfig?.trialHrid || '').split('/').pop() || 'trial';
+        const tier = data.trialConfig?.startTier ?? '?';
+        setBridgeMessage(`roster link imported — ${seats} seats · ${trial} · tier ${tier}`);
+      } catch (err) {
+        if (cancelled) return;
+        // The word "failed" is load-bearing: the alert below colours on it.
+        setSimMode('guildTrial');
+        setBridgeMessage(
+          `roster link failed — ${err?.message || 'unknown error'}. ` +
+          'Use Import roster and paste the JSON.'
+        );
+      } finally {
+        clearRosterLinkHash();
+      }
+    };
+
+    consume();
+    window.addEventListener('hashchange', consume);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('hashchange', consume);
+    };
+  }, [handleImportRoster]);
+
   const handleStartTrial = useCallback(() => {
     if (roster.length === 0) return;
     // Counted rows expand into `count` DTOs each, with UNIQUE hrids
@@ -634,7 +693,16 @@ function App() {
       for (let i = 0; i < n; i++) {
         const hrid = `player${playerDTOs.length + 1}`;
         hridToBuild[hrid] = { buildId: build.id, buildName: build.name };
-        playerDTOs.push(toPlayerDTO(build, { hrid, stripConsumables: true }));
+        // Shrines ride on the UNIT, not on the party. The guild buys the
+        // ceiling, the member buys the level (the game's own wording, quoted at
+        // sim/engine.js:attachShrineBuffs in SCLIRoster), so two seats in the
+        // same trial legitimately carry different shrine levels. The worker
+        // concatenates this onto the trial-wide buffs; a DTO without the field
+        // is unchanged.
+        playerDTOs.push({
+          ...toPlayerDTO(build, { hrid, stripConsumables: true }),
+          extraBuffs: resolveUnitShrineBuffs(build, trialConfig.guildBuffLevels)
+        });
       }
     }
 
@@ -655,13 +723,13 @@ function App() {
         participantCount: effectiveParticipants,
         trialOptions: { enemyScale }
       },
-      // Trials get shrine buffs AND guild building buffs. Buildings are
-      // trial-only — the zone/labyrinth path above deliberately ships shrines
-      // alone, because building buffs do not apply to ordinary combat.
-      guildBuffs: [
-        ...resolveGuildBuffs(trialConfig.guildBuffLevels),
-        ...resolveGuildBuildingBuffs(trialConfig.guildBuildingLevels)
-      ],
+      // BUILDINGS only. Buildings are genuinely guild-wide — every
+      // participant stands in the same guild hall — so they belong on the
+      // trial-wide list. Shrines used to be here too and no longer are: they
+      // are a per-member purchase and now travel on each unit's DTO as
+      // `extraBuffs` (see the roster loop above). Buildings remain trial-only;
+      // the zone/labyrinth path deliberately ships shrines alone.
+      guildBuffs: resolveGuildBuildingBuffs(trialConfig.guildBuildingLevels),
       // Community buffs / seals / MooPass do NOT apply inside guild trials —
       // the game does not grant them, so the UI hides the Buffs control in
       // trial mode and sends a neutral extra here to match.

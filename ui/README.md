@@ -9,7 +9,7 @@ conflicts on UI code.
 ## Architecture
 
 ```
-ui/src/hooks/useSimulation.js ──▶ new Worker(../../src/worker.js)   ← upstream's own worker, verbatim
+ui/src/hooks/useSimulation.js ──▶ new Worker(../../src/worker.js)   ← upstream's worker plus documented MWIX adaptations
 ui/src/hooks/useGameData.js  ──▶ imports ../../src/combatsimulator/data/*.json
 ui/src/utils/characterToPlayer.js ──▶ port of tampermonkey/src/kernel/csim-dto.js
 ```

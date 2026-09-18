@@ -21,8 +21,17 @@
 //     source, version, monsterHrid, loadout?: { name, ... }
 //   }
 //
-// This mirrors the inline bridge in the old webpack UI (csim/index.html,
-// the `mwiLabBridge` IIFE) — keep the two in sync if the protocol changes.
+// The inline bridge in the old webpack UI (csim/index.html, the
+// `mwiLabBridge` IIFE) speaks the same PARAM but is NOT the same decoder, and
+// no longer pretends to be: it decodes `lz:` through LZString, tries LZString
+// first on the legacy plain form, polls for up to 8 s waiting for its own DOM
+// to be ready, and re-runs on `hashchange`. This file does none of those. That
+// divergence is deliberate — index.html is upstream-owned and frozen (see
+// ui/README.md), so it is not kept in step, and THIS file is canonical for the
+// React UI. Do not "reconcile" them.
+//
+// A roster, as opposed to one character, comes through a different door:
+// utils/rosterBridge.js, at `#rosterBridge=`.
 // =============================================================================
 
 const PARAM = 'mwiLabBridge';

@@ -17,6 +17,7 @@ import {
 } from '@mantine/core';
 import { listRosterEntries, buildSummary, loadSavedLoadouts, MAX_ROW_COUNT } from '../utils/roster';
 import { exportFormatToPlayer } from '../utils/importSet';
+import { describeShrines } from '../utils/guildBuffs';
 
 // Group export format = all keys are player IDs ("1".."5") with no `player`
 // key (same detection as ImportExport.isGroupFormat). Values may be nested
@@ -306,6 +307,15 @@ export function GuildTrialPanel({
                       <Text size="xs" c="dimmed" truncate>
                         {buildSummary(entry.build, items)}
                       </Text>
+                      {/* The honesty line. The header's shrine knobs govern
+                          every seat EXCEPT one whose build arrived carrying its
+                          own levels; without this the reader would read the
+                          header and believe it. */}
+                      {entry.build?.guildShrines && (
+                        <Text size="xs" c="dimmed" truncate>
+                          shrines: {describeShrines(entry.build.guildShrines)} (own)
+                        </Text>
+                      )}
                     </div>
                     {/* Count + actions: clicks here must not toggle row selection. */}
                     <Group gap={4} wrap="nowrap" onClick={(e) => e.stopPropagation()}>

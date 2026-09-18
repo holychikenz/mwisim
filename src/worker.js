@@ -249,7 +249,20 @@ onmessage = async function (event) {
                     for (let i = 0; i < playersData.length; i++) {
                         const p = Player.createFromDTO(structuredClone(playersData[i]));
                         p.zoneBuffs = []; // no labyrinth crates in trials
-                        p.extraBuffs = trialExtraBuffs;
+                        // MWIX adaptation (per-member shrines, 2026-09-18):
+                        // guild SHRINES are bought per member, not per guild, so
+                        // the UI now attaches each unit's own resolved shrine
+                        // buffs to its DTO and they are concatenated here. A DTO
+                        // without `extraBuffs` yields the old behaviour exactly;
+                        // `Player.createFromDTO` ignores the field, so it reaches
+                        // this line only via the DTO object itself.
+                        // NOTE: api/lib/simulator.js:189 deliberately still
+                        // OVERWRITES extraBuffs on the headless path. SCLIRoster's
+                        // trialRequest.js folds shrines in around that overwrite
+                        // and pins the line by test
+                        // (optimizer/test/trial-request.test.js:356-369).
+                        // Unlocking the API is a separate two-repo change.
+                        p.extraBuffs = trialExtraBuffs.concat(playersData[i].extraBuffs || []);
                         players.push(p);
                     }
                     const participantCount = cfg.participantCount ?? players.length;
