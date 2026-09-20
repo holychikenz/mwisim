@@ -1,20 +1,19 @@
 # Closing the performance gap
 
-**Revision 3, 2026-09-20.** Reconciled against what actually shipped. Revision 2
-listed six stages as pending; four shipped, two were dropped on measurement, and
-two more have been tried and dropped since. The profile it was built on is now
-stale — this revision replaces it with one taken on the current tree.
+**Revision 4, 2026-09-20.** Revision 3 reconciled the plan against what had
+shipped. This revision replaces its *framing*, which was wrong in a way that
+explains why the last stage paid nothing on the cases we care about.
 
 Revision 1's proposals (`Float64Array` stat blocks, event-object pooling) remain
 rejected with evidence in §6. Do not re-propose them.
 
 ---
 
-## 1. Where we actually are
+## 1. The reframing: our problem is per-unit cost, not per-encounter cost
 
-Measured today on this machine, 22 cases, `--reps=3`, both engines interleaved.
-The reference figures live outside this repository, with the harness that
-produces them (see `api/bench/README.md` for why).
+Measured today, 22 cases, both engines interleaved. The reference figures live
+outside this repository with the harness that produces them (see
+`api/bench/README.md` for why).
 
 | | round 1 | now |
 |---|---|---|
@@ -24,16 +23,44 @@ produces them (see `api/bench/README.md` for why).
 | 5-player dungeon | 5.5–7.1× | **5.2–6.7×** |
 | geometric mean | 3.85× | **3.70×** |
 
-Two caveats, both mine to flag rather than yours to discover.
+That table has been the scoreboard since round 1 and it has been quietly
+misleading us. Convert it to cost per ENCOUNTER and hold the zone fixed while
+varying only party size — the candle has exactly one such pair:
 
-**The ratio flatters us.** The `enc/h` control shows this engine simulating
-2.5–6.8% FEWER encounters per simulated hour than the reference in the party and
-dungeon cases. That is the combat-mechanics delta held out of scope (§7), and it
-means the per-ENCOUNTER gap is a few percent worse than the per-hour gap above.
+| | csim µs/enc | reference | ratio |
+|---|---|---|---|
+| `melee-swarm` (aqua_planet, **1** player) | 32.8 | 12.3 | 2.67× |
+| `party3-swarm` (aqua_planet, **3** players) | 73.2 | 17.5 | 4.17× |
 
-**Cross-run drift is larger than most of these deltas.** The reference engine's
-own column moved 1–2% between recordings on an unchanged binary. Any claim
-smaller than that needs a paired measurement, not two recordings compared.
+Fit a line through the two points:
+
+```
+                fixed cost/enc    marginal cost per extra unit
+  csim              12.6 µs                 20.2 µs
+  reference          9.7 µs                  2.6 µs
+                    ──────                  ──────
+  ratio              1.30×                   7.77×
+```
+
+**Our fixed per-encounter cost is within 30% of the reference. Our cost per
+additional unit is roughly eight times theirs.** The dungeons are not a
+different problem; they are that multiplier applied five times over.
+
+*Caveat, stated so nobody over-reads it:* `aqua_planet` is the only pair in the
+candle that varies party size with everything else held constant. This is one
+controlled observation, not a curve. The monotone ordering across all 22 cases
+(solos 1.4–5.0×, two- and three-player 3.5–4.2×, five-player dungeons 5.5–6.8×)
+is consistent with it but confounded, since the dungeons also have waves.
+
+### The rule this gives us, and it is the useful part
+
+**Before measuring a candidate, ask whether its cost scales with unit count.**
+A change that removes fixed per-encounter or per-pass work cannot move a
+dungeon, however large it looks in a profile.
+
+This is retrospectively why §5a paid `starter-solo` −5.3% and `dungeon-den-600`
+nothing: it removed two array allocations per trigger PASS, a cost independent
+of roster size. The profile did not mislead us. We optimised the wrong term.
 
 ## 2. What shipped
 
@@ -49,147 +76,178 @@ smaller than that needs a paired measurement, not two recordings compared.
 
 ## 3. What was dropped, and why that matters
 
-Four ideas were measured and thrown away. They are in the `upstream-update.sh`
-ledger in full; the summary is here so this file stops claiming they are pending.
+Four ideas were measured and thrown away; the `upstream-update.sh` ledger has
+them in full.
 
 - **Trigger derived-key precompute.** Correct, `sim:check` 3/3, and four
-  interleaved rounds could not separate it from noise. The string work is real
-  but small beside the trigger evaluation around it.
+  interleaved rounds could not separate it from noise.
 - **Single-compaction heapify.** Failed the parity gate: 2 of 3 fixtures
   drifted, ability casts landing in a different order. The array one compaction
-  produces is not the array N successive removals produce. Fixtures untouched.
-  This is why `clearMatching`'s collect-then-remove shape is load-bearing.
-- **Integer dispatch in `processEvent`.** Correct, `sim:check` 3/3, medians
-  straddle zero. V8 already lowers a string switch to pointer compares; the
-  reference's jump table is not available to us.
+  produces is not the array N successive removals produce. This is why
+  `clearMatching`'s collect-then-remove shape is load-bearing.
+- **Integer dispatch in `processEvent`.** Correct, medians straddle zero. V8
+  already lowers a string switch to pointer compares.
 - **Cached `_nextBuffExpiry` early-out.** Dropped in an earlier round as noise.
 
-A stage that cannot be separated from noise is a stage that costs review effort
-and upstream-merge friction forever in exchange for nothing. Dropping it is the
+A stage that cannot be separated from noise costs review effort and
+upstream-merge friction forever in exchange for nothing. Dropping it is the
 result, not a failure to find one.
 
 ## 4. How to measure, or you will ship an artefact
 
 **Interleaving rounds is not enough. The order WITHIN a round must alternate.**
 
-The synchronous-`processEvent` change first measured as a consistent REGRESSION —
-`melee-solo` +6.1%, `dungeon-den-600` +1.6%, losing in all three rounds. It was
-an artefact. Every round ran the baseline first and the change second, and this
-machine warms within a round, so the second arm was systematically penalised.
-Counterbalancing the order (ABBA over four rounds) inverted both to small wins.
+The synchronous-`processEvent` change first measured as a consistent REGRESSION
+— `melee-solo` +6.1%, `dungeon-den-600` +1.6%, losing in all three rounds. It
+was an artefact. Every round ran the baseline first and the change second, and
+this machine warms within a round. Counterbalancing (ABBA over four rounds)
+inverted both to small wins. Every A/B on this branch predating that correction
+carries the same bias; treat their magnitudes as soft.
 
-Three interleaved rounds looked like plenty of rigour and manufactured a
-false regression out of nothing but thermal drift. Every A/B on this branch
-predating this note carries that bias; treat their magnitudes as soft.
+**Run one benchmark at a time.** A later investigation had two processes
+benchmarking this worktree concurrently, and one of them had instrumentation
+live in `eventQueue.js` for part of the window. Every absolute millisecond
+figure from that window is contaminated. Counter deltas and `sim:check` results
+survive it; timings do not.
 
-The rest of the discipline is unchanged and still binding:
+The rest is unchanged and still binding:
 
 - Every stage passes `npm run sim:check` **3/3 bit-identical**. Re-recording
   fixtures to make a stage pass is forbidden.
 - A stage that regresses any candle case is reverted, not tuned — **after** the
   regression survives a counterbalanced re-measurement.
 - Run the WHOLE candle before believing a stage. The eager-allocation
-  regression in the buff-ordinal work (`starter-solo` +24%) reproduced only in a
-  full run, never with that case measured alone.
+  regression in the buff-ordinal work (`starter-solo` +24%) reproduced only in
+  a full run.
 
-## 5. What is left, ranked by the current profile
+## 5. What the reference actually does differently — and mostly, it does not
 
-Self time on `dungeon-den-600`, taken on the current tree and aggregated across
-duplicate frames:
+A second architecture read was done against the reference kernel, aimed at
+cooldowns, buff application and the dungeon cases. **The dominant result is
+negative, and it is worth more than the positives.**
 
-| family | share | attacked? |
-|---|---|---|
-| buff aggregation | 17.4% | twice — still the largest |
-| trigger evaluation | 16.6% | **never successfully** |
-| stat recompute | 15.1% | yes |
-| event queue / heap | 8.2% | partly — **and unmoved** |
-| result accounting | 3.4% | never looked at |
-| GC | 1.2% | — |
+### 5a. Cooldowns: there is no gap. We already do what it does.
 
-### 5a. Trigger evaluation — half attacked, and the half that paid was the small one
+The reference decides readiness by an INLINE POLL —
+`scaled_cooldown + last_used > now`, recomputed from raw inputs, per ability,
+per living unit, on every event, with no cache and therefore no invalidation.
+A unit that wants to act and cannot **pushes nothing**: that function contains
+no floating-point stores at all and cannot construct an event. What it does
+push, once per SUCCESSFUL use, is a single payload-free wake-up at exactly the
+ready instant, whose dispatch arm is empty — it advances the clock so the
+unconditional act scan runs. It is never cancelled.
 
-**Done, and the result is more instructive than the gain.** `checkTriggers()`
-and `addNextAttackEvent()` no longer allocate: the `filter().forEach()` pairs
-are gone, membership decided up front into a 32-bit mask so the snapshot
-semantics survive exactly. 18 of 22 candle medians improved.
+Ours is the same design, independently arrived at: `cooldownReady` is 2.07% of
+dispatched events, its handler an empty case marked "Only used to check
+triggers", and `Ability.shouldTrigger` polls `lastUsed + cooldownDuration`.
 
-**But `dungeon-den-600` did not move, and nor did `party3-sorcerer`** — the
-case the kernel study specifically predicted. The win is confined to the cheap
-cases: `starter-solo` −5.3%, `floor-party` −4.2%, `mid-solo` −2.9%.
+- [x] **Nothing to do here.** Recorded so it is not re-investigated.
+- [ ] One divergence, and it is dead code: `awaitCooldownEvent` is **0 created,
+      0 dispatched, 0 cancelled** over five simulated hours — mechanically
+      unreachable, not merely rare. Its guard `isOutOfMana` is set in exactly
+      one place, when a BLINDED unit fails to queue an ability and parks itself
+      with an empty queue; the three `// when oom check ability trigger`
+      comments are wrong. Delete for honesty. Expect no speed.
 
-The lesson for whoever picks this up: **the allocation was a small part of that
-16.6%.** The cost is the evaluation itself —
+### 5b. Buff application: the same algorithm, at a twentieth of the cost
 
-| | share |
-|---|---|
-| `getDependencyValue` (`trigger.js:85`) | 6.1% |
-| `shouldTrigger` (`consumable.js:53`) | 4.0% |
-| `checkTriggersForUnit` | 2.7% |
-| `isActiveSingleTarget` (`trigger.js:25`) | 2.3% |
+The reference's ability-cast effect loop is, per effect: apply the buff, consult
+a changed-flag, and on change run a FULL stat recompute, then push one expiry
+event. That is our `processAbilityBuffEffect` transliterated. **It does not
+batch.** A three-buff ability costs it three recomputes and three pushes,
+exactly as it costs us.
 
-- [ ] Attack the **evaluation**, not the iteration. The iteration is done.
-- [ ] Note that an earlier attempt on `getDependencyValue`'s string work was
-      dropped as noise. Two attempts on this family have now produced a win
-      only on cases nobody runs for real work. A third should start by
-      establishing what `shouldTrigger` actually spends its time on, rather
-      than by assuming — the profile has been a poor guide to this family
-      twice.
-- [ ] The eight remaining `filter()` sites (`:595`, `:639`, `:1603`, `:1676`,
-      `:1685`, `:1766`, `:2010`, `:2021`) were deliberately LEFT. They filter
-      target lists where mid-loop death is real, so their snapshots are
-      load-bearing in a way `checkTriggers`'s was not — and on this evidence
-      the gain would not repay the risk.
+So there is no structural advantage to copy here. Its advantage is constant
+factor, which is the same answer the first read reached about party work. Treat
+that as the general finding rather than a coincidence.
 
-### 5b. The heap's N removals — 8.2% and completely unmoved
+Two things still worth doing, with honest labels:
 
-`Heap.remove` alone is 3.0%. Shipping integer type ids removed the per-entry
-closure and did not touch this: the queue still re-heapifies once per match.
-The obvious fix is the single-compaction pass, which failed parity.
+- [ ] **Batch our multi-buff effects.** One line. This is us going BEYOND the
+      reference, not copying it — say so. Measured (counter deltas are exact;
+      the timing is from the contaminated window and needs re-measuring):
+      rebuilds −29.5% on `selfbuff-solo`, −6.4% on `dungeon-den-600`;
+      `sim:check` 3/3. It is per-CAST work, so §1's rule predicts it will pay
+      the buff-heavy solo cases and little on the dungeons.
+      **Flag:** the `allAllies` branch reads `source.combatDetails` INSIDE the
+      buff loop for the special-ability multiplier, so batching it would change
+      which snapshot later buffs see when the caster is also a target. Do the
+      `self` path only, unless someone proves no self-targeted `allAllies`
+      special ability buffs a level stat.
+- [ ] **Skip the recompute prologue when only buffs changed.** `Player`
+      re-copies 76 equipment stats per call and `Monster` re-derives its whole
+      flat block — values that cannot have changed, since equipment is immutable
+      for the run and monster game data is constant. **12.3% of dungeon self
+      time.** Per-UNIT work, so §1's rule says this one can move a dungeon.
+      **Flag:** the guild-trial path grows monster max HP on top on every
+      recompute, so it is not a pure copy there and must keep the full path.
 
-- [ ] **Experiment, not a plan.** Tombstone cancelled events — mark them and
-      skip on pop — leaving the heap permutation alone rather than rebuilding
-      it. It changes ordering in its own way and must be gated on `sim:check`
-      exactly as the compaction was, and dropped just as readily.
-- [ ] Do not attempt this before 5a; it is the riskier of the two.
+### 5c. The one real structural difference, and it is ours to fix
 
-### 5c. Result accounting — 3.4%, and nobody has ever looked
+```
+addNextAttackEvent()                          combatSimulator.js:1094
+    if (this.eventQueue.getMatchingEitherTypeAndSource(
+            AbilityCastEndEvent.type, AutoAttackEvent.type, source)) return;
+```
 
-`addExperienceGain` 2.0%, `addAttack` 1.4% (`simResult.js`). Pure bookkeeping,
-no arithmetic on the simulation's own state, so the parity surface is small.
-Cheapest remaining item by difficulty.
+10 249 calls per simulated hour, each a full linear walk of the heap:
+**56.5% of every heap entry the queue touches** on `dungeon-den-600` (81.8% on
+`floor-solo`). More units means more calls AND a longer heap — quadratic in
+party size, which is §1's term exactly.
 
-### 5d. Buff aggregation — still 17.4%, and there is a wall
+**The reference never asks its queue this question.** It stamps `last_used` at
+cast START, so "mid-cast" and "on cooldown" are the same scalar on the ability
+record. We split them: the cooldown lives on `ability.lastUsed`, but "already
+has an action pending" is delegated to a heap scan.
 
-`_buildBuffBoostIndex` is 8.3% because it is rebuilt IN FULL on every write to
-`combatBuffs`. The reference does one linear pass on change, which we now match
-in shape; what we do not match is doing it incrementally.
+The copyable thing is the principle, not a mechanism: **state that belongs to a
+unit lives on the unit, not in the event queue.**
 
-**Incremental add/remove cannot be bit-identical.** Float subtraction is not
-the inverse of float addition, so removing a buff by subtracting its
-contribution does not restore the sum that re-adding the survivors produces.
-This is a wall, not a difficulty. Any attempt here is a decision to break parity
-and must be argued as such, in public, before any code is written.
+- [ ] Maintain the pending-action count as an invariant of `EventQueue`. The
+      surface is small: the heap is mutated in exactly four places —
+      `addEvent`, `getNextEvent`, `clear`, and `_removeCollected`, which every
+      cancellation funnels through.
+
+### 5d. Pure waste, found while counting events
+
+Neither is a structural finding; both are own-goals.
+
+- [ ] `enrageTick` is cleared and immediately re-added 530 times an hour and
+      **never once dispatched** — plus ~55 000 heap entries scanned for it.
+- [ ] `curseExpiration` creates 1 798 events an hour and dispatches **none**.
+- [ ] The buff-refresh paths scan the queue TWICE for the same predicate
+      (`getMatchingTypeAndSource` then `clearMatchingTypeAndSource`, always
+      back to back on the same key) — 25.0% of all scanning, halvable by having
+      the clear return what it removed.
 
 ## 6. Rejected, with evidence — do not re-propose
 
-- **Event object pooling.** GC is 1.2% of self time on `dungeon-den-600`.
-  Pooling can recover at most that, in exchange for use-after-free bugs that
-  produce wrong numbers with no error.
+- **Event object pooling.** GC is 1.2–1.5% of self time. Pooling can recover at
+  most that, in exchange for use-after-free bugs that produce wrong numbers with
+  no error. Note also that the reference is not allocation-free either.
 - **`Float64Array` flat state.** In JS an element read costs a load *plus a
   bounds check*, where a monomorphic object field costs one load once the
-  inline cache is warm. It is genuinely why the reference scales per unit and
-  it is the one thing that does not port honestly. Take the *idea* — dense
-  integer indexing — which is what the ordinal table already did.
+  inline cache is warm. Take the *idea* — dense integer indexing — which is what
+  the ordinal table already did.
+- **Incremental add/remove of buff sums.** Float subtraction is not the inverse
+  of float addition, so maintaining a running total cannot be bit-identical.
+  Viable only behind an opt-in "fast, not bit-exact" mode, which is a different
+  project.
 - **Events stored by value.** Swapping JS object references is already strictly
   better than copying 232-byte records.
 - **One giant inlined `processEvent`.** A 2000-line JS function would exceed
-  TurboFan's inlining budget and deoptimise. LLVM's constraints are not ours.
+  TurboFan's inlining budget and deoptimise.
 - **Swapping in an LCG for `Math.random()`.** Ceiling under 0.1 ms/h, and it
-  invalidates `sim:check` and every recorded baseline by construction. The real
-  case for a seeded PRNG is reproducibility — a different project.
+  invalidates `sim:check` and every recorded baseline by construction.
 - **Source-to-source rewriting.** This codebase indexes stats dynamically
-  (`combatStats[style + "Accuracy"]`, `combatUnit.js:15`), so a transform cannot
-  see every access, and a mis-rewrite is silent where a wrong number is not.
+  (`combatStats[style + "Accuracy"]`), so a transform cannot see every access.
+- **An O(1) "does the queue contain type X" index, on the grounds that the
+  reference has one.** *It does not.* The per-tag counter in its heap push is
+  incremented and **never decremented** — none of its three removal or pop
+  routines touches it — so it is a cumulative statistic, not a live population
+  index. The adjacent call that looked like a hashmap insert is a string clone:
+  it reads a (pointer, length) pair, allocates, and copies an hrid. Recorded
+  because this claim was made, believed, and only caught on re-verification.
 
 ## 7. Not in scope
 
@@ -206,4 +264,4 @@ Every departure in `src/combatsimulator/` must be listed in the
 `upstream-update.sh` adaptation ledger or the next sync silently reverts it. One
 commit and one ledger entry per stage, in the house voice: the measurement that
 justifies it and the argument for why it is safe — **including negative
-results**, so nobody re-derives a discarded idea. Four are recorded there now.
+results**, so nobody re-derives a discarded idea.
