@@ -1,12 +1,53 @@
 # Closing the performance gap
 
-**Revision 5, 2026-09-20.** Revision 4 replaced the framing: our problem is
-per-UNIT cost, not per-encounter cost. Two stages were then shipped against
-that framing and it held — the per-unit term moved for the first time. This
-revision records the result and what is left.
+**Revision 6, 2026-09-20.** Revision 5 recorded that the problem is per-UNIT
+cost. This revision records the round that acted on it hardest, and the
+measurement that made it possible — one that should have been taken in round
+one and was not.
+
+**Five stages shipped, compounding to -23.3% on the candle's geometric mean**
+(-16.8%, then -6.0%, then -1.9%, each over four counterbalanced rounds). The
+first of them improved all 22 cases and won every round on all 22, which no
+earlier stage had come close to.
 
 Revision 1's proposals (`Float64Array` stat blocks, event-object pooling) remain
-rejected with evidence in §6. Do not re-propose them.
+rejected with evidence in §6 — but the `Float64Array` entry now has a NUMBER
+against it rather than an argument, and the number says the rejection was right
+for a reason nobody had stated. Do not re-propose them.
+
+## 0. The measurement that had never been taken
+
+On node 26.8.2, a keyed property store costs **about 21.5 ns** as soon as the
+loop touches more than one name. V8's keyed inline cache goes megamorphic at the
+SECOND distinct key and the cost is flat per access thereafter — measured at 1,
+2, 4, 8, 16, 32 and 63 keys, the per-key cost sits between 20.7 and 23.9 ns
+throughout. The same store written as a named field costs **0.35 ns**.
+
+```
+  obj[nameString] = v      21.5 ns      obj.stabAccuracy = v      0.35 ns
+```
+
+The engine was performing **844 458 such accesses per simulated dungeon hour**
+in two loops — player.js's 70-name equipment copy and monster.js's 63-name
+zero-fill — or 18.2 ms of a 132 ms hour. Compiling them into straight-line field
+code is the same work, the same values, the same order, for 0.3 ms.
+
+Three consequences worth carrying forward:
+
+- **The gain is at DYNAMIC-key sites only.** Interning an hrid into an ordinal —
+  the thing `generated/buffTypes.js` already did — is worth 11.7 ns to 7.1 ns,
+  a factor of 1.6. Compiling a keyed STAT access is worth a factor of 61. The
+  phrase "indexed lookup" points at the smaller of the two.
+- **A megamorphic SOURCE defeats a compiled loop.** Compiling monster.js's
+  zero-fill alone recovered only a third of its cost, because the game-data
+  blocks it reads come in ~95 distinct shapes. Normalising the block once, per
+  block, took it from 3844 ns to 43.6 ns. Ask where the megamorphic reads went,
+  not just where the megamorphic writes went.
+- **Ask what a stage moves cost TO.** Hoisting a string concatenation out of
+  trigger evaluation paid -4.0% and cost `floor-party` +1.2%, because that case
+  spawns many monsters into cheap fights and the concatenation had simply moved
+  from evaluation to construction. A build-time table fixed it. Neither the
+  profile nor the candle would have found this without the per-case table.
 
 ---
 
@@ -117,6 +158,10 @@ of roster size. The profile did not mislead us. We optimised the wrong term.
 | allocation-free trigger fixpoint and ability scan | `starter-solo` −5.3%, `floor-party` −4.2%; **nothing on the dungeons** |
 | per-unit pending-action count (retires a heap scan) | **every dungeon −3.7% to −8.9%**, `mid-solo` −20.1%, 11 of 22 won every round |
 | batched multi-buff ability effects | `selfbuff-solo` −17.4%, `tank-solo` −9.8%, dungeons −4.3% to −7.7% |
+| `abilityHaste`/`tenacity` declared — one hidden class per unit | too small to measure alone; folded into the row below |
+| **compiled stat-block copies** (generated) | **all 22 cases, all winning every round; geometric mean −16.8%** |
+| trigger constants hoisted + generated condition index | 20 of 22, geometric mean −6.0%; `dungeon-den-200` −10.6% |
+| normalised monster stat blocks (generated) | 20 of 22, none lost every round, geometric mean −1.9% |
 
 Cumulative for those two, four counterbalanced rounds at `--reps=5`: **18 of 22
 medians improved, 14 won every round, none lost every round.** Every dungeon
@@ -294,6 +339,14 @@ measured.** Recorded so nobody "fixes" them again.
   bounds check*, where a monomorphic object field costs one load once the
   inline cache is warm. Take the *idea* — dense integer indexing — which is what
   the ordinal table already did.
+  **Revision 6 puts a number on this and the rejection stands, comfortably.**
+  A typed-array copy of a 63-field stat block measured 13.9 ns against
+  straight-line generated field code's 21.6 ns — within a factor of 2, where the
+  keyed loop both replace costs 1437 ns. The object model keeps essentially all
+  of the available win, so there is no reason to pay the bounds checks, the
+  parallel-view bookkeeping, or the break with every external consumer that
+  reads `combatDetails.combatStats.x` — `api/lib`, `ui/src` and `simResult`
+  among them. Generate the ACCESS, not a new representation.
 - **Incremental add/remove of buff sums.** Float subtraction is not the inverse
   of float addition, so maintaining a running total cannot be bit-identical.
   Viable only behind an opt-in "fast, not bit-exact" mode, which is a different
@@ -335,6 +388,36 @@ measured.** Recorded so nobody "fixes" them again.
   index. The adjacent call that looked like a hashmap insert is a string clone:
   it reads a (pointer, length) pair, allocates, and copies an hrid. Recorded
   because this claim was made, believed, and only caught on re-verification.
+
+## 6a. What is left, with sizes measured rather than guessed
+
+A CPU profile of `geared-party` over one simulated hour, engine self time only,
+after this round. Engine self time fell 331 ms -> 242 ms across it.
+
+| family | share | indexable? |
+|---|---|---|
+| heap operations (`Heap.remove` alone ~9%) | **16%** | **no** — this is queue design, not representation |
+| trigger evaluation (`getDependencyValue` ~8%) | 12–17% | partly: a 50-case string switch remains |
+| buff machinery (`_buildBuffBoostIndex`, `_buffBoostFor`, `_makeBuffInstance`) | ~10% | partly |
+| result recording (`addAttack` ~4%) | ~7% | yes, but it changes the output shape |
+| stat recompute (all three levels) | ~8% | mostly done |
+
+Two things follow.
+
+**The largest single item left is not an indexing problem.** `heap-js` is 16% of
+engine self time and `Heap.remove` alone is 9% — it does a BFS from the root
+with `queue.shift()` and a spread per visited node. No amount of build-time
+indexing touches it. §5c's principle is the relevant one: state that belongs to
+a unit lives on the unit, not in the event queue.
+
+**The next indexing stage was deliberately NOT taken, and here is why.**
+`getDependencyValue`'s remaining cost is a 50-case string switch, and a
+generated condition-kind ordinal would reduce it to about nine integer arms —
+worth perhaps 3%. It was left because testing it honestly means mechanically
+extracting the existing switch's grouping to compare against, the failure mode
+is reading a DIFFERENT buff and reporting a plausible wrong number with no
+error, and it permanently diverges a readable upstream switch. Worth doing;
+worth doing carefully, with the differential harness built first.
 
 ## 7. Not in scope
 
