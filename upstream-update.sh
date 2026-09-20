@@ -601,6 +601,24 @@ upstream specifically changed the same surface area.
       both to small wins. Interleaving rounds is NOT sufficient; the ORDER
       WITHIN a round must alternate, or a consistent-looking regression can be
       manufactured out of nothing but thermal drift.
+    TRIED AND DISCARDED alongside it, so nobody re-derives it: dispatching
+    `processEvent`'s 19-arm switch on the integer `event.typeId` (which every
+    event already carries for the queue's scans) instead of the string
+    `event.type`, with the ids interned into module-level constants so the case
+    labels are plain reads. Correct, and `sim:check` 3/3. But a counterbalanced
+    four-round A/B at `--reps=9` put SIX of seven cases on both sides of zero —
+    `dungeon-den-600` +0.9%, `melee-solo` +1.2%, `melee-swarm` +0.8%,
+    `floor-solo` +2.6%, `healer-solo` -2.1%, `mid-solo` +0.5% — with only
+    `starter-solo` (-4.9%) consistent. The medians straddle zero, so there is
+    nothing here to ship.
+    The reason is worth keeping: V8 interns the `type` strings and lowers a
+    string switch to POINTER comparisons, which are already integer compares.
+    The kernel study proposed this from a wasm `br_table` on a u8 tag
+    (a jump table LLVM can build and V8 cannot), and it flagged the ceiling as
+    small — `processEvent`'s own self time was 1.1% then and does not appear in
+    the top 25 of the current profile at all. The int is not cheaper than the
+    interned pointer; only the jump table would have been, and that is not
+    available to us. Do not re-propose without a measurement that clears noise.
     ALSO TRIED AND DISCARDED, and this one is a HARD no: replacing the N
     \`Heap.remove()\` calls in the queue's clear methods with a single
     compaction pass over \`heapArray\` plus one \`init()\` re-heapify. It is
