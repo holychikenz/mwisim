@@ -538,6 +538,36 @@ upstream specifically changed the same surface area.
       contract, no engine path holds across a mutation (a buff change is what
       triggers a recompute, not the other way round), and both properties are
       pinned in \`api/tests/statCaching.test.mjs\`.
+    - \`events/eventTypeIds.js\` (NEW), \`events/combatEvent.js\`,
+      \`events/eventQueue.js\`, \`combatSimulator.js\`: every combat event
+      now carries an integer \`typeId\` beside its string \`type\`, and the
+      queue's hot scans are specialised and closure-free —
+      \`clearEventsOfType\`, \`clearEventsForUnit\`,
+      \`getMatchingTypeAndSource\`, \`clearMatchingTypeAndSource\`,
+      \`getMatchingEitherTypeAndSource\`. Upstream (and our previous round)
+      built a closure and called it once per heap entry, and a simulated hour
+      visits 2 305 965 entries; the profile put the queue family at ~8.3% of
+      self time on \`dungeon-den-600\`. The generic \`clearMatching(fn)\` /
+      \`getMatching(fn)\` remain for the cold callers with odd predicates.
+      Measured by THREE interleaved A/B rounds at \`--reps=9\`, because the
+      effect is smaller than this machine's cross-run drift: the paired
+      medians favoured the change in every round on every deep-queue case —
+      \`dungeon-den-600\` 107.5 -> 104.0 ms/sim-h, \`dungeon-fort-t2\`
+      118.6 -> 117.5, \`melee-swarm\` 12.3 -> 12.1 — and were a wash on the
+      solo cases, which is where the queue is shallow and the profile
+      predicted nothing. \`sim:check\` 3/3.
+      TWO THINGS PRESERVED VERBATIM, both observable: the unit comparisons stay
+      \`==\` (callers pass \`event.target\`, which can be null, and
+      \`null == undefined\` is TRUE where \`===\` is false — tightening it
+      would silently stop clearing events), and matches are still COLLECTED in
+      heapArray order and removed afterwards, because \`remove()\` re-heapifies
+      in place and the removal order fixes the heap permutation and hence the
+      tie-break order among equal-\`time\` events. Type ids are interned on
+      first use rather than listed, so no table can go stale when a twentieth
+      event type is added; the assignment order is irrelevant because an id is
+      only ever compared with another id from the same registry in the same
+      process. If an id is ever persisted or compared across runs, it must
+      become a sorted generated table instead.
     TRIED AND DISCARDED in this round, so nobody re-derives it: precomputing
     \`trigger.js\`'s derived buff-unique hrid at \`Trigger\` construction
     instead of rebuilding it with \`lastIndexOf\` + \`slice\` +

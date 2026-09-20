@@ -1,4 +1,5 @@
 import Heap from "heap-js";
+import { eventTypeId } from "./eventTypeIds";
 
 // =============================================================================
 // MWIX adaptation (performance): scan the heap's backing array in place.
@@ -59,9 +60,10 @@ class EventQueue {
 
     containsEventOfType(type) {
         let events = this.minHeap.heapArray;
+        let typeId = eventTypeId(type);
 
         for (let i = 0; i < events.length; i++) {
-            if (events[i].type == type) {
+            if (events[i].typeId === typeId) {
                 return true;
             }
         }
@@ -70,9 +72,10 @@ class EventQueue {
 
     containsEventOfTypeAndHrid(type, hrid) {
         let events = this.minHeap.heapArray;
+        let typeId = eventTypeId(type);
 
         for (let i = 0; i < events.length; i++) {
-            if (events[i].type == type && events[i].hrid == hrid) {
+            if (events[i].typeId === typeId && events[i].hrid == hrid) {
                 return true;
             }
         }
@@ -83,12 +86,114 @@ class EventQueue {
         this.minHeap = new Heap((a, b) => a.time - b.time);
     }
 
+    // =========================================================================
+    // MWIX adaptation (performance): the specialised, closure-free scans.
+    //
+    // Every method below used to build a closure and call it once per heap
+    // entry, and a simulated hour visits 2 305 965 entries. The queue family
+    // held ~8.3% of self time on dungeon-den-600 in a CPU profile of the
+    // candle. These do the same walk with the test INLINE and the type compared
+    // as an integer (see events/eventTypeIds.js).
+    //
+    // Two things are deliberately preserved verbatim from the closures they
+    // replace, because both are observable:
+    //
+    //   * The unit comparisons stay `==`, not `===`. Callers pass
+    //     `event.target`, which can be null or undefined, and `null == undefined`
+    //     is TRUE where `null === undefined` is false. Tightening it would
+    //     silently stop clearing some events.
+    //   * Matches are COLLECTED first and removed second, in heapArray order.
+    //     `remove()` re-heapifies in place, so removing mid-walk would skip
+    //     entries, and the removal order is what fixes the resulting heap
+    //     permutation — and thus the tie-break order among equal-`time` events.
+    //
+    // The generic clearMatching(fn) / getMatching(fn) remain for the cold
+    // callers that need an arbitrary predicate.
+    // =========================================================================
     clearEventsForUnit(unit) {
-        this.clearMatching((event) => event.source == unit || event.target == unit);
+        let events = this.minHeap.heapArray;
+
+        let matches = null;
+        for (let i = 0; i < events.length; i++) {
+            let event = events[i];
+            if (event.source == unit || event.target == unit) {
+                if (matches === null) {
+                    matches = [];
+                }
+                matches.push(event);
+            }
+        }
+        return this._removeCollected(matches);
     }
 
     clearEventsOfType(type) {
-        this.clearMatching((event) => event.type == type);
+        let events = this.minHeap.heapArray;
+        let typeId = eventTypeId(type);
+
+        let matches = null;
+        for (let i = 0; i < events.length; i++) {
+            if (events[i].typeId === typeId) {
+                if (matches === null) {
+                    matches = [];
+                }
+                matches.push(events[i]);
+            }
+        }
+        return this._removeCollected(matches);
+    }
+
+    /** The (type, source) pair the buff-refresh paths ask for. */
+    getMatchingTypeAndSource(type, source) {
+        let events = this.minHeap.heapArray;
+        let typeId = eventTypeId(type);
+
+        for (let i = 0; i < events.length; i++) {
+            if (events[i].typeId === typeId && events[i].source == source) {
+                return events[i];
+            }
+        }
+        return null;
+    }
+
+    clearMatchingTypeAndSource(type, source) {
+        let events = this.minHeap.heapArray;
+        let typeId = eventTypeId(type);
+
+        let matches = null;
+        for (let i = 0; i < events.length; i++) {
+            if (events[i].typeId === typeId && events[i].source == source) {
+                if (matches === null) {
+                    matches = [];
+                }
+                matches.push(events[i]);
+            }
+        }
+        return this._removeCollected(matches);
+    }
+
+    /** "Is this unit mid-action?" — either of two types, same source. */
+    getMatchingEitherTypeAndSource(typeA, typeB, source) {
+        let events = this.minHeap.heapArray;
+        let typeIdA = eventTypeId(typeA);
+        let typeIdB = eventTypeId(typeB);
+
+        for (let i = 0; i < events.length; i++) {
+            let event = events[i];
+            if ((event.typeId === typeIdA || event.typeId === typeIdB) && event.source == source) {
+                return event;
+            }
+        }
+        return null;
+    }
+
+    _removeCollected(matches) {
+        if (matches === null) {
+            return false;
+        }
+        for (let i = 0; i < matches.length; i++) {
+            this.minHeap.remove(matches[i]);
+        }
+        return true;
     }
 
     clearMatching(fn) {
@@ -109,13 +214,7 @@ class EventQueue {
             }
         }
 
-        if (matches === null) {
-            return false;
-        }
-        for (let i = 0; i < matches.length; i++) {
-            this.minHeap.remove(matches[i]);
-        }
-        return true;
+        return this._removeCollected(matches);
     }
 
     getMatching(fn) {

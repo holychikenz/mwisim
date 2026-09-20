@@ -691,10 +691,10 @@ class CombatSimulator extends EventTarget {
 
             if (attackResult.didHit && source.combatDetails.combatStats.curse > 0) {
                 const curseExpireTime = 15000000000;
-                let currentCurseEvent = this.eventQueue.getMatching((event) => event.type == CurseExpirationEvent.type && event.source == target);
+                let currentCurseEvent = this.eventQueue.getMatchingTypeAndSource(CurseExpirationEvent.type, target);
                 let currentCurseAmount = 0;
                 if (currentCurseEvent) currentCurseAmount = currentCurseEvent.curseAmount;
-                this.eventQueue.clearMatching((event) => event.type == CurseExpirationEvent.type && event.source == target);
+                this.eventQueue.clearMatchingTypeAndSource(CurseExpirationEvent.type, target);
 
                 let curseExpirationEvent = new CurseExpirationEvent(this.simulationTime + curseExpireTime, currentCurseAmount, target);
                 const curseBuff = {
@@ -712,8 +712,8 @@ class CombatSimulator extends EventTarget {
             }
 
             if (source.combatDetails.combatStats.fury > 0) {
-                let currentFuryEvent = this.eventQueue.getMatching((event) => event.type == FuryExpirationEvent.type && event.source == source);
-                this.eventQueue.clearMatching((event) => event.type == FuryExpirationEvent.type && event.source == source);
+                let currentFuryEvent = this.eventQueue.getMatchingTypeAndSource(FuryExpirationEvent.type, source);
+                this.eventQueue.clearMatchingTypeAndSource(FuryExpirationEvent.type, source);
 
                 const furyExpireTime = 15000000000;
                 const maxFuryStack = 5;
@@ -765,11 +765,11 @@ class CombatSimulator extends EventTarget {
 
             if (target.combatDetails.combatStats.weaken > 0) {
                 const weakenExpireTime = 15000000000;
-                let currentWeakenEvent = this.eventQueue.getMatching((event) => event.type == WeakenExpirationEvent.type && event.source == source);
+                let currentWeakenEvent = this.eventQueue.getMatchingTypeAndSource(WeakenExpirationEvent.type, source);
                 let weakenAmount = 0;
                 if (currentWeakenEvent)
                     weakenAmount = currentWeakenEvent.weakenAmount;
-                this.eventQueue.clearMatching((event) => event.type == WeakenExpirationEvent.type && event.source == source);
+                this.eventQueue.clearMatchingTypeAndSource(WeakenExpirationEvent.type, source);
                 let weakenExpirationEvent = new WeakenExpirationEvent(this.simulationTime + 15000000000, weakenAmount, source);
                 const weakenBuff = {
                     "uniqueHrid": "/buff_uniques/weaken",
@@ -1077,7 +1077,7 @@ class CombatSimulator extends EventTarget {
     }
 
     addNextAttackEvent(source) {
-        if (this.eventQueue.getMatching((event) => (event.type == AbilityCastEndEvent.type || event.type == AutoAttackEvent.type)&& event.source == source)) {
+        if (this.eventQueue.getMatchingEitherTypeAndSource(AbilityCastEndEvent.type, AutoAttackEvent.type, source)) {
             return;
         }
 
@@ -1833,8 +1833,8 @@ class CombatSimulator extends EventTarget {
                 if (attackResult.didHit && abilityEffect.blindChance > 0 && Math.random() < (abilityEffect.blindChance * 100 / (100 + target.combatDetails.combatStats.tenacity))) {
                     target.isBlinded = true;
                     target.blindExpireTime = this.simulationTime + abilityEffect.blindDuration;
-                    this.eventQueue.clearMatching((event) => event.type == BlindExpirationEvent.type && event.source == target)
-                    if (this.eventQueue.clearMatching((event) => event.type == AutoAttackEvent.type && event.source == target)) {
+                    this.eventQueue.clearMatchingTypeAndSource(BlindExpirationEvent.type, target)
+                    if (this.eventQueue.clearMatchingTypeAndSource(AutoAttackEvent.type, target)) {
                         // console.log("Blind " + (this.simulationTime / 1000000000));
                         this.addNextAttackEvent(target);
                     }
@@ -1845,8 +1845,8 @@ class CombatSimulator extends EventTarget {
                 if (attackResult.didHit && abilityEffect.silenceChance > 0 && Math.random() < (abilityEffect.silenceChance * 100 / (100 + target.combatDetails.combatStats.tenacity))) {
                     target.isSilenced = true;
                     target.silenceExpireTime = this.simulationTime + abilityEffect.silenceDuration;
-                    this.eventQueue.clearMatching((event) => event.type == SilenceExpirationEvent.type && event.source == target)
-                    if (this.eventQueue.clearMatching((event) => event.type == AbilityCastEndEvent.type && event.source == target)) {
+                    this.eventQueue.clearMatchingTypeAndSource(SilenceExpirationEvent.type, target)
+                    if (this.eventQueue.clearMatchingTypeAndSource(AbilityCastEndEvent.type, target)) {
                         // console.log("Silence " + (this.simulationTime / 1000000000));
                         this.addNextAttackEvent(target);
                     }
@@ -1856,10 +1856,10 @@ class CombatSimulator extends EventTarget {
 
                 if (attackResult.didHit && source.combatDetails.combatStats.curse > 0) {
                     const curseExpireTime = 15000000000;
-                    let currentCurseEvent = this.eventQueue.getMatching((event) => event.type == CurseExpirationEvent.type && event.source == target);
+                    let currentCurseEvent = this.eventQueue.getMatchingTypeAndSource(CurseExpirationEvent.type, target);
                     let currentCurseAmount = 0;
                     if (currentCurseEvent) currentCurseAmount = currentCurseEvent.curseAmount;
-                    this.eventQueue.clearMatching((event) => event.type == CurseExpirationEvent.type && event.source == target);
+                    this.eventQueue.clearMatchingTypeAndSource(CurseExpirationEvent.type, target);
 
                     let curseExpirationEvent = new CurseExpirationEvent(this.simulationTime + curseExpireTime, currentCurseAmount, target);
                     const curseBuff = {
@@ -1877,8 +1877,8 @@ class CombatSimulator extends EventTarget {
                 }
 
                 if (source.combatDetails.combatStats.fury > 0) {
-                    let currentFuryEvent = this.eventQueue.getMatching((event) => event.type == FuryExpirationEvent.type && event.source == source);
-                    this.eventQueue.clearMatching((event) => event.type == FuryExpirationEvent.type && event.source == source);
+                    let currentFuryEvent = this.eventQueue.getMatchingTypeAndSource(FuryExpirationEvent.type, source);
+                    this.eventQueue.clearMatchingTypeAndSource(FuryExpirationEvent.type, source);
 
                     const furyExpireTime = 15000000000;
                     const maxFuryStack = 5;
@@ -1931,11 +1931,11 @@ class CombatSimulator extends EventTarget {
                 if (target.combatDetails.combatStats.weaken > 0) {
                     const weakenExpireTime = 15000000000;
                     source.weakenExpireTime = this.simulationTime + weakenExpireTime;
-                    let currentWeakenEvent = this.eventQueue.getMatching((event) => event.type == WeakenExpirationEvent.type && event.source == source);
+                    let currentWeakenEvent = this.eventQueue.getMatchingTypeAndSource(WeakenExpirationEvent.type, source);
                     let weakenAmount = 0;
                     if (currentWeakenEvent)
                         weakenAmount = currentWeakenEvent.weakenAmount;
-                    this.eventQueue.clearMatching((event) => event.type == WeakenExpirationEvent.type && event.source == source);
+                    this.eventQueue.clearMatchingTypeAndSource(WeakenExpirationEvent.type, source);
                     let weakenExpirationEvent = new WeakenExpirationEvent(this.simulationTime + weakenExpireTime, weakenAmount, source);
                     const weakenBuff = {
                         "uniqueHrid": "/buff_uniques/weaken",

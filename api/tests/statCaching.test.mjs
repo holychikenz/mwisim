@@ -20,6 +20,7 @@ const { default: Player, EQUIPMENT_COMBAT_STATS } = await import(SRC + 'player.j
 const { default: Equipment } = await import(SRC + 'equipment.js');
 const { default: CombatUnit } = await import(SRC + 'combatUnit.js');
 const { default: EventQueue } = await import(SRC + 'events/eventQueue.js');
+const { eventTypeId } = await import(SRC + 'events/eventTypeIds.js');
 const { default: Monster, MONSTER_ZEROED_COMBAT_STATS } = await import(SRC + 'monster.js');
 const dataProvider = await import(SRC + 'dataProvider.js');
 
@@ -436,10 +437,15 @@ test('EventQueue scans the live heap and clears every match', () => {
   assert.ok(Array.isArray(q.minHeap.heapArray),
     'heap-js stopped exposing heapArray — the in-place scans are broken');
 
+  // Events carry an integer typeId alongside `type` so the queue's scans can
+  // compare an int; CombatEvent's constructor mints it. Anything pushed onto
+  // the queue must have one, which is what these hand-rolled events model.
+  const ev = (time, type, hrid, source, target = null) =>
+    ({ time, type, typeId: eventTypeId(type), hrid, source, target });
+
   const unitA = {}, unitB = {};
   for (let i = 0; i < 40; i++) {
-    q.addEvent({ time: (i * 37) % 40, type: i % 2 ? 'odd' : 'even', hrid: 'e' + i,
-      source: i % 3 === 0 ? unitA : unitB, target: null });
+    q.addEvent(ev((i * 37) % 40, i % 2 ? 'odd' : 'even', 'e' + i, i % 3 === 0 ? unitA : unitB));
   }
 
   assert.ok(q.containsEventOfType('odd'));
@@ -447,6 +453,16 @@ test('EventQueue scans the live heap and clears every match', () => {
   assert.ok(!q.containsEventOfType('missing'));
   assert.equal(q.getMatching((e) => e.hrid === 'e7').hrid, 'e7');
   assert.equal(q.getMatching((e) => e.hrid === 'nope'), null);
+
+  // The specialised scans must agree with the generic predicate forms they
+  // replaced — that equivalence is the whole claim of the change.
+  assert.equal(
+    q.getMatchingTypeAndSource('odd', unitA),
+    q.getMatching((e) => e.type === 'odd' && e.source === unitA));
+  assert.equal(q.getMatchingTypeAndSource('missing', unitA), null);
+  assert.equal(
+    q.getMatchingEitherTypeAndSource('odd', 'even', unitB),
+    q.getMatching((e) => (e.type === 'odd' || e.type === 'even') && e.source === unitB));
 
   // The removal-during-iteration trap: remove() re-heapifies in place, so a
   // scan that removed as it walked would miss entries.
@@ -462,4 +478,44 @@ test('EventQueue scans the live heap and clears every match', () => {
     assert.ok(e.time >= last, 'heap ordering broken');
     last = e.time;
   }
+});
+
+test('the specialised clears remove exactly what the predicate forms did', () => {
+  const ev = (time, type, source, target = null) =>
+    ({ time, type, typeId: eventTypeId(type), source, target });
+  const unitA = {}, unitB = {};
+  const fill = (q) => {
+    for (let i = 0; i < 30; i++) {
+      q.addEvent(ev((i * 11) % 30, i % 3 ? 'tick' : 'expire', i % 2 ? unitA : unitB,
+        i % 5 === 0 ? unitA : null));
+    }
+  };
+  const drain = (q) => {
+    const out = [];
+    for (let e = q.getNextEvent(); e; e = q.getNextEvent()) out.push(`${e.time}:${e.type}`);
+    return out;
+  };
+
+  for (const [specialised, generic] of [
+    [(q) => q.clearEventsOfType('tick'), (q) => q.clearMatching((e) => e.type == 'tick')],
+    [(q) => q.clearEventsForUnit(unitA),
+      (q) => q.clearMatching((e) => e.source == unitA || e.target == unitA)],
+    [(q) => q.clearMatchingTypeAndSource('expire', unitB),
+      (q) => q.clearMatching((e) => e.type == 'expire' && e.source == unitB)],
+  ]) {
+    const a = new EventQueue(); fill(a);
+    const b = new EventQueue(); fill(b);
+    assert.equal(specialised(a), generic(b), 'return values disagree');
+    assert.deepStrictEqual(drain(a), drain(b), 'the two forms left different queues behind');
+  }
+});
+
+test('clearEventsForUnit keeps the loose equality its closure had', () => {
+  // The closure compared with `==`, and callers pass event.target, which can be
+  // null. `null == undefined` is true where `null === undefined` is false, so
+  // tightening the comparison would silently stop clearing some events.
+  const q = new EventQueue();
+  q.addEvent({ time: 1, type: 't', typeId: eventTypeId('t'), source: null, target: null });
+  assert.equal(q.clearEventsForUnit(undefined), true,
+    'a null source no longer matches an undefined unit — the comparison was tightened');
 });
