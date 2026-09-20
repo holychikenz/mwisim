@@ -36,3 +36,8 @@ pnpm-debug.log*
 # excludes any directory named lib/, which would otherwise drop api/lib/.
 !api/lib/
 
+
+# Ad-hoc benchmark recordings. Committed baselines under api/bench/records/ are
+# tracked deliberately (that is what `npm run bench --baseline=` reads); a local
+# run should not dirty the tree.
+api/bench/records/*.local.json

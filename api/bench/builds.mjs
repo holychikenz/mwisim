@@ -5,14 +5,14 @@
 // WHY A CATALOGUE AND NOT A SCRIPT
 // --------------------------------
 // A benchmark is only a candle if it does not move. Every number this repo has
-// quoted about engine speed so far came from an ad-hoc script with its own
-// hand-rolled loadout, which makes two measurements taken a week apart
-// incomparable — and makes a comparison against another engine an argument
-// about whether the two were fed the same thing.
+// quoted about engine speed came from an ad-hoc script with its own hand-rolled
+// loadout, which makes two measurements taken a week apart incomparable — and
+// turns any disagreement between them into an argument about whether the two
+// were fed the same thing.
 //
-// So the builds live here, declaratively, and BOTH adapters below derive their
-// input from the same declaration. If csim and a rival engine disagree on
-// throughput, it is not because one of them was handed different gear.
+// So the builds live here, declaratively, and the adapter below derives its
+// input from that declaration. When a number moves, it moved because the
+// engine changed, not because the gear did.
 //
 // DO NOT EDIT A BUILD TO MAKE A NUMBER LOOK BETTER. Adding a case is fine and
 // welcome; changing an existing one silently invalidates every prior reading.
@@ -327,13 +327,11 @@ export const MIXED_PARTY = ["tank", "healer", "melee", "ranged", "magic"];
 // ---- cases ------------------------------------------------------------------
 // EVERY CASE MUST BE A PARTY THE GAME WOULD ALLOW. Open zones cap the party at
 // 3 and most single-monster zones at 1; only dungeons take 5. csim does not
-// enforce this and will happily simulate five players against a fly, but a
-// rival engine is entitled to assume its caller validated first — metz's wasm
-// kernel traps outright, because its server layer checks maxPartySize before
-// the kernel ever sees the job. An illegal case therefore does not compare two
-// engines, it compares one engine against a crash. validateCases() below is
-// run by the harness at startup so this is caught at the door rather than
-// showing up as an unexplained ERR in a results table.
+// enforce this and will happily simulate five players against a fly, which
+// makes such a case measurable but meaningless: it is not a load any player
+// can produce, so a number taken from it describes nothing. validateCases()
+// below runs at startup and refuses the whole run, so an illegal case is
+// caught at the door rather than quietly skewing a table.
 //
 // party: a build name (all players identical) or an array of build names.
 // hours: the two simulated-hour points used for the marginal fit. The pair is
@@ -471,33 +469,5 @@ export function toCsimPlayer(build, { level, index, items, abilityData }) {
     houseRooms: {},
     achievements: {},
     debuffOnLevelGap: 0,
-  };
-}
-
-/** metz kernel player (server/zoneImport.mjs record/loadout shape). */
-export function toMetzPlayer(build, { level, index, items }) {
-  for (const [hrid] of build.equipment) mustItem(items, hrid, "equipment");
-  return {
-    record: {
-      name: "player" + index,
-      levels: {
-        stamina: level,
-        intelligence: level,
-        attack: level,
-        melee: level,
-        defense: level,
-        ranged: level,
-        magic: level,
-      },
-      rooms: {},
-      combatBuffs: [],
-    },
-    loadout: {
-      equipment: build.equipment.map(([itemHrid, enhancementLevel]) => ({ itemHrid, enhancementLevel })),
-      abilities: build.abilities.map(([hrid, abilityLevel]) => ({ hrid, level: abilityLevel })),
-      abilityTriggers: {},
-      food: { "/action_types/combat": build.food.map((itemHrid) => ({ itemHrid })) },
-      drinks: { "/action_types/combat": build.drinks.map((itemHrid) => ({ itemHrid })) },
-    },
   };
 }

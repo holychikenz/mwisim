@@ -9,7 +9,6 @@ were measuring the same thing.
 npm run bench                                  # csim only, ~15 s
 npm run bench -- --json=bench/records/x.json   # record it
 npm run bench -- --baseline=bench/records/x.json   # show the delta since
-npm run bench -- --engines=csim,metz --metz=/path/to/metz-combat-simulator
 npm run bench -- --only=dungeon-den-600 --reps=9   # zoom in on one case
 ```
 
@@ -26,8 +25,8 @@ Differencing two lengths cancels every cost that does not scale with simulated
 time — module load, game-data parse, `structuredClone` of the player DTOs,
 worker spawn, V8 tier-up. What is left is the cost of simulating combat, which
 is the only part a performance change is trying to move, and the only part that
-is comparable between a JavaScript engine and a wasm one with entirely
-different startup costs.
+is comparable across runs, machines and Node versions, whose fixed costs are
+nothing alike.
 
 Each point is the **median** of `--reps` runs after one untimed warm-up.
 Median, because the failure mode is an occasional long sample (GC, scheduler),
@@ -46,11 +45,10 @@ should not be quoted until the divergence is explained.
   never sit in the same table.
 - **Every case must be a party the game would allow.** Open zones cap the party
   at 3, single-monster zones at 1; only dungeons take 5. csim does not enforce
-  this — it will cheerfully simulate five players against a fly — but metz's
-  wasm kernel traps, because its *server* validates `maxPartySize` before the
-  kernel sees the job. An illegal case does not compare two engines; it
-  compares one engine against a crash. `validateCases()` runs at startup and
-  refuses the whole run rather than let one through.
+  this — it will cheerfully simulate five players against a fly — which makes
+  such a case measurable but meaningless: it is not a load any player can
+  produce, so a number taken from it describes nothing. `validateCases()` runs
+  at startup and refuses the whole run rather than let one through.
 - **This is not a parity check.** `npm run sim:check` proves bit-identical
   output across an engine change. The candle proves nothing about correctness
   beyond the coarse `enc/h` control. Run both.
@@ -74,17 +72,9 @@ regression lands somewhere specific instead of being smeared across a mean.
 The five-player dungeon party is `tank, healer, melee, ranged, magic` —
 `MIXED_PARTY` in `builds.mjs`.
 
-## Comparing against the web version (metz)
-
-`--engines=csim,metz --metz=<clone>` runs both from the *same* build
-declaration, so neither can be accused of having been handed different gear.
-The metz adapter needs a clone of `Metzlii/metz-combat-simulator` with its
-prebuilt kernel at `kernel-zone/wasm/pkg/` and its `init_client_data.json`.
-That clone is deliberately not vendored here; point at your own.
-
 ## Files
 
 - `builds.mjs` — the catalogue: builds, cases, the legality validator, and the
-  two adapters that turn one declaration into each engine's input.
+  adapter that turns a build declaration into engine input.
 - `candle.mjs` — the runner, the measurement method, and the table.
 - `records/` — recorded runs, for `--baseline`.

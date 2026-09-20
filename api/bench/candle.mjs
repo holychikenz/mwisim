@@ -3,7 +3,6 @@
 // bench/candle.mjs — run the standard candle and print a comparison table.
 //
 //   npm run bench                     # csim only, ~2 min
-//   npm run bench -- --engines=csim,metz --metz=/path/to/metz-combat-simulator
 //   npm run bench -- --only=dungeon-den-600,melee-solo --reps=5
 //   npm run bench -- --json=bench.json            # machine-readable, for diffing
 //   npm run bench -- --baseline=bench.json        # show the delta vs a recording
@@ -23,10 +22,10 @@
 // cancels every term that does not depend on simulated time, which leaves the
 // thing we actually care about: the cost of simulating combat.
 //
-// It also makes the number COMPARABLE ACROSS ENGINES that have wildly different
-// startup costs. A wasm kernel pays for module instantiation once and a
-// JavaScript engine pays for parse and tier-up; neither belongs in a claim
-// about which simulates a dungeon faster.
+// It also makes the number comparable across machines and Node versions, whose
+// fixed costs are nothing alike: one may spend longer on module parse and
+// another on tier-up, and neither belongs in a claim about how fast we
+// simulate a dungeon.
 //
 // Each point is the MEDIAN of `--reps` runs, after one untimed warm-up run at
 // the short length, so V8 has tiered up the hot loop before the clock starts.
@@ -49,7 +48,7 @@
 import { readFileSync, writeFileSync } from "fs";
 import { join, dirname } from "path";
 import { fileURLToPath } from "url";
-import { BUILDS, CASES, partyBuilds, toCsimPlayer, toMetzPlayer, validateCases } from "./builds.mjs";
+import { BUILDS, CASES, partyBuilds, toCsimPlayer, validateCases } from "./builds.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const SRC = join(__dirname, "..", "..", "src", "combatsimulator");
@@ -65,7 +64,6 @@ const arg = (name, fallback = null) => {
 const REPS = Number(arg("reps", "3"));
 const ONLY = arg("only") ? new Set(arg("only").split(",")) : null;
 const ENGINES = arg("engines", "csim").split(",").filter(Boolean);
-const METZ_ROOT = arg("metz", process.env.METZ_ROOT);
 const JSON_OUT = arg("json");
 const BASELINE = arg("baseline");
 
@@ -128,42 +126,6 @@ async function csimEngine() {
   };
 }
 
-async function metzEngine(root) {
-  if (!root) throw new Error("bench: --engines includes metz but no --metz=<path> / METZ_ROOT given");
-  const { initSync, simulate } = await import(join(root, "kernel-zone", "wasm", "pkg", "mwi_zone_wasm.js"));
-  initSync({
-    module: new WebAssembly.Module(readFileSync(join(root, "kernel-zone", "wasm", "pkg", "mwi_zone_wasm_bg.wasm"))),
-  });
-  const items = JSON.parse(readFileSync(join(root, "init_client_data.json"), "utf8")).itemDetailMap;
-
-  return {
-    name: "metz",
-    prepare(kase) {
-      const players = partyBuilds(kase).map((name, i) =>
-        toMetzPlayer(BUILDS[name], { level: kase.level, index: i + 1, items })
-      );
-      return { players, zone: `/actions/combat/${kase.zone}`, tier: kase.tier };
-    },
-    async run(job, hours) {
-      // Serialise outside the clock: the kernel takes a JSON string, and
-      // JSON.stringify of five endgame loadouts is not simulation work.
-      const payload = JSON.stringify({
-        zone: job.zone,
-        difficultyTier: job.tier,
-        hours,
-        seed: 1,
-        players: job.players,
-        playerOptions: {},
-        epochAnchorMs: 17e11,
-      });
-      const t0 = performance.now();
-      const raw = simulate(payload);
-      const ms = performance.now() - t0;
-      const result = JSON.parse(raw);
-      return { ms, encounters: result.encountersStarted ?? 0 };
-    },
-  };
-}
 
 // ---- measurement ------------------------------------------------------------
 
@@ -198,7 +160,6 @@ async function measure(engine, kase) {
 const engines = [];
 for (const name of ENGINES) {
   if (name === "csim") engines.push(await csimEngine());
-  else if (name === "metz") engines.push(await metzEngine(METZ_ROOT));
   else throw new Error(`bench: unknown engine "${name}"`);
 }
 
@@ -228,44 +189,27 @@ const baseline = BASELINE ? JSON.parse(readFileSync(BASELINE, "utf8")) : null;
 const cell = (v) => (v === null || v === undefined || !Number.isFinite(v) ? "—" : v.toFixed(1));
 const pad = (s, w, right = true) => (right ? String(s).padStart(w) : String(s).padEnd(w));
 
-const hasMetz = engines.some((e) => e.name === "metz");
 const idW = Math.max(12, ...cases.map((c) => c.id.length));
-const scenW = Math.max(28, ...cases.map((c) => `${c.zone} T${c.tier} L${c.level} ×${c.n}`.length));
+const scenW = Math.max(28, ...cases.map((c) => `${c.zone} T${c.tier} L${c.level} \u00d7${c.n}`.length));
 
-const head = [pad("case", idW, false), pad("scenario", scenW, false), pad("ms/sim-h csim", 14)];
-if (hasMetz) head.push(pad("metz", 8), pad("gap", 7));
-head.push(pad("enc/h csim", 11));
-if (hasMetz) head.push(pad("metz", 9), pad("Δenc", 7));
+const head = [pad("case", idW, false), pad("scenario", scenW, false), pad("ms/sim-h", 10), pad("enc/h", 8)];
 if (baseline) head.push(pad("vs base", 9));
 
 const lines = [head.join(" | "), head.map((h) => "-".repeat(h.length)).join("-|-")];
 
 for (const kase of cases) {
-  const r = results[kase.id] || {};
-  const c = r.csim, m = r.metz;
+  const c = (results[kase.id] || {}).csim;
   const cMs = c && !c.error ? c.msPerSimHour : null;
-  const mMs = m && !m.error ? m.msPerSimHour : null;
 
   const row = [
     pad(kase.id, idW, false),
-    pad(`${kase.zone} T${kase.tier} L${kase.level} ×${kase.n}`, scenW, false),
-    pad(cMs === null ? (c?.error ? "ERR" : "—") : cell(cMs), 14),
+    pad(`${kase.zone} T${kase.tier} L${kase.level} \u00d7${kase.n}`, scenW, false),
+    pad(cMs === null ? (c?.error ? "ERR" : "\u2014") : cell(cMs), 10),
+    pad(c && !c.error ? c.encPerHour.toFixed(0) : "\u2014", 8),
   ];
-  if (hasMetz) {
-    row.push(pad(mMs === null ? (m?.error ? "ERR" : "—") : cell(mMs), 8));
-    row.push(pad(cMs !== null && mMs !== null && mMs > 0 ? (cMs / mMs).toFixed(1) + "×" : "—", 7));
-  }
-  row.push(pad(c && !c.error ? c.encPerHour.toFixed(0) : "—", 11));
-  if (hasMetz) {
-    row.push(pad(m && !m.error ? m.encPerHour.toFixed(0) : "—", 9));
-    const d = c && m && !c.error && !m.error && m.encPerHour > 0
-      ? ((c.encPerHour / m.encPerHour - 1) * 100).toFixed(1) + "%"
-      : "—";
-    row.push(pad(d, 7));
-  }
   if (baseline) {
     const b = baseline.results?.[kase.id]?.csim?.msPerSimHour;
-    row.push(pad(b && cMs !== null ? ((cMs / b - 1) * 100).toFixed(1) + "%" : "—", 9));
+    row.push(pad(b && cMs !== null ? ((cMs / b - 1) * 100).toFixed(1) + "%" : "\u2014", 9));
   }
   lines.push(row.join(" | "));
 }
