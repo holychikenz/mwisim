@@ -1,5 +1,10 @@
 import { resolveMonsterStartCooldown } from "./simSettings";
 
+// MWIX adaptation (performance): the result for a buff type nothing grants.
+// Frozen because getBuffBoosts hands it to callers directly, and a caller that
+// pushed onto it would poison every unit in the simulation at once.
+const EMPTY_BUFF_BOOSTS = Object.freeze([]);
+
 class CombatUnit {
     isPlayer;
     isStunned = false;
@@ -161,6 +166,12 @@ class CombatUnit {
     // active instance) that all existing readers keep consuming UNCHANGED.
     buffInstances = {};
     permanentBuffs = {};
+    // MWIX adaptation (performance): a lazy typeHrid -> boosts index over
+    // `combatBuffs`, and a typeHrid -> summed-boost cache over that index.
+    // Both are null when stale; see _invalidateBuffBoostIndex /
+    // _buildBuffBoostIndex at the bottom of the buff section.
+    _buffBoostIndex = null;
+    _buffBoostSums = null;
     // MWIX adaptation: zoneBuffs / extraBuffs are iterated with `.forEach`
     // in generatePermanentBuffs(). Upstream defaults them to `{}` because
     // worker.js reassigns them to arrays before each simulate(). For
@@ -465,6 +476,14 @@ class CombatUnit {
     // as a change. Recomputes the effective view via _effectiveInstance. Does NOT
     // call updateCombatDetails so callers can batch it.
     _commitInstances(hrid, arr) {
+        // The ONLY place `combatBuffs` is mutated entry-by-entry (the other
+        // writer is clearBuffs, which replaces the object wholesale). Both
+        // branches below write, so invalidating unconditionally here is
+        // sufficient — and, being at the top, cannot be skipped by the early
+        // return. A grep of the whole engine confirms no third writer exists;
+        // trigger.js only READS combatBuffs.
+        this._invalidateBuffBoostIndex();
+
         let prev = this.combatBuffs[hrid];
         if (arr.length === 0) {
             delete this.buffInstances[hrid];
@@ -632,6 +651,7 @@ class CombatUnit {
     clearBuffs() {
         this.buffInstances = {};
         this.combatBuffs = structuredClone(this.permanentBuffs);
+        this._invalidateBuffBoostIndex();
         this.updateCombatDetails();
     }
 
@@ -645,21 +665,70 @@ class CombatUnit {
         this.combatDetails.combatStats.damageTaken = 0;
     }
 
-    getBuffBoosts(type) {
-        let boosts = [];
-        Object.values(this.combatBuffs)
-            .filter((buff) => buff.typeHrid == type)
-            .forEach((buff) => {
-                boosts.push({ ratioBoost: buff.ratioBoost, flatBoost: buff.flatBoost });
-            });
-
-        return boosts;
+    // MWIX adaptation (performance): mark the boost index stale. Called from
+    // every write to `combatBuffs` — _commitInstances and clearBuffs — rather
+    // than trying to patch the index incrementally, because a missed write path
+    // here produces WRONG COMBAT NUMBERS with no error anywhere. Rebuilding is
+    // O(#combatBuffs) (a dozen or so entries), about the cost of one of the
+    // 359 394 queries per simulated hour it saves.
+    _invalidateBuffBoostIndex() {
+        this._buffBoostIndex = null;
+        this._buffBoostSums = null;
     }
 
-    getBuffBoost(type) {
-        let boosts = this.getBuffBoosts(type);
+    // Build (or return) typeHrid -> [{ratioBoost, flatBoost}, ...].
+    //
+    // Still `Object.values`, deliberately: it is own-properties-only and
+    // insertion-ordered, so the boosts arrive in exactly the order the old
+    // code produced them and the floating-point sums downstream come out
+    // bit-identical. (A `for...in` would also walk inherited enumerables — a
+    // polluted Object.prototype would inject phantom buffs. It allocates one
+    // array, but only on a rebuild, not on the 359 394 queries per hour.)
+    _buildBuffBoostIndex() {
+        let index = new Map();
+        for (const buff of Object.values(this.combatBuffs)) {
+            let boosts = index.get(buff.typeHrid);
+            if (boosts === undefined) {
+                boosts = [];
+                index.set(buff.typeHrid, boosts);
+            }
+            boosts.push({ ratioBoost: buff.ratioBoost, flatBoost: buff.flatBoost });
+        }
+        this._buffBoostIndex = index;
+        this._buffBoostSums = new Map();
+        return index;
+    }
 
-        let boost = {
+    // MWIX adaptation (performance): an index lookup, not a scan.
+    //
+    // Upstream ran Object.values(this.combatBuffs).filter(...) here on every
+    // query — 359 394 queries per simulated hour of chimerical_den T0 / L600 /
+    // 5 geared players, 28 per event processed, each allocating two arrays.
+    // This method held 16.2% of self time, the single largest entry in the
+    // profile.
+    //
+    // THE RETURNED ARRAY IS SHARED AND MUST BE TREATED AS READ-ONLY. Every
+    // caller in the engine only reads .ratioBoost / .flatBoost off it; if you
+    // need to mutate, copy first.
+    getBuffBoosts(type) {
+        let index = this._buffBoostIndex ?? this._buildBuffBoostIndex();
+        return index.get(type) ?? EMPTY_BUFF_BOOSTS;
+    }
+
+    // As above, and the SUM is cached per type too — updateCombatDetails alone
+    // makes ~30 getBuffBoost calls, and it re-runs on every buff add/remove.
+    // The returned object is shared: read-only, same contract as getBuffBoosts.
+    getBuffBoost(type) {
+        if (this._buffBoostIndex === null) {
+            this._buildBuffBoostIndex();
+        }
+        let boost = this._buffBoostSums.get(type);
+        if (boost !== undefined) {
+            return boost;
+        }
+
+        let boosts = this.getBuffBoosts(type);
+        boost = {
             ratioBoost: 0,
             flatBoost: 0,
         };
@@ -669,6 +738,7 @@ class CombatUnit {
             boost.flatBoost += boosts[i]?.flatBoost ?? 0;
         }
 
+        this._buffBoostSums.set(type, boost);
         return boost;
     }
 

@@ -1,0 +1,806 @@
+{
+  "name": "geared-solo",
+  "label": "geared solo player — infernal_abyss T0 L100",
+  "seed": 23456,
+  "request": {
+    "players": [
+      {
+        "hrid": "player1",
+        "staminaLevel": 100,
+        "intelligenceLevel": 100,
+        "attackLevel": 100,
+        "meleeLevel": 100,
+        "defenseLevel": 100,
+        "rangedLevel": 100,
+        "magicLevel": 100,
+        "equipment": {
+          "/equipment_types/head": {
+            "hrid": "/items/acrobatic_hood",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/charm": {
+            "hrid": "/items/master_attack_charm",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/trinket": {
+            "hrid": "/items/expert_task_badge",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/body": {
+            "hrid": "/items/anchorbound_plate_body",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/legs": {
+            "hrid": "/items/anchorbound_plate_legs",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/two_hand": {
+            "hrid": "/items/cursed_bow",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/off_hand": {
+            "hrid": "/items/bishops_codex",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/feet": {
+            "hrid": "/items/pathbreaker_boots",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/hands": {
+            "hrid": "/items/dodocamel_gauntlets",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/back": {
+            "hrid": "/items/chimerical_quiver_refined",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/earrings": {
+            "hrid": "/items/philosophers_earrings",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/neck": {
+            "hrid": "/items/philosophers_necklace",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/ring": {
+            "hrid": "/items/philosophers_ring",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/pouch": {
+            "hrid": "/items/small_pouch",
+            "enhancementLevel": 5
+          }
+        },
+        "food": [
+          {
+            "hrid": "/items/spaceberry_cake",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/missing_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 350
+              }
+            ]
+          },
+          {
+            "hrid": "/items/spaceberry_donut",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/missing_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 280
+              }
+            ]
+          },
+          {
+            "hrid": "/items/star_fruit_gummy",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/missing_mp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 280
+              }
+            ]
+          }
+        ],
+        "drinks": [
+          {
+            "hrid": "/items/ultra_magic_coffee",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/magic_coffee",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "hrid": "/items/ultra_melee_coffee",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/melee_coffee",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "hrid": "/items/ultra_ranged_coffee",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/ranged_coffee",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          }
+        ],
+        "abilities": [
+          {
+            "hrid": "/abilities/aqua_arrow",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/targeted_enemy",
+                "conditionHrid": "/combat_trigger_conditions/current_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "hrid": "/abilities/berserk",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/berserk",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "hrid": "/abilities/cleave",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/all_enemies",
+                "conditionHrid": "/combat_trigger_conditions/number_of_active_units",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 1
+              },
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/all_enemies",
+                "conditionHrid": "/combat_trigger_conditions/current_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "hrid": "/abilities/crippling_slash",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/targeted_enemy",
+                "conditionHrid": "/combat_trigger_conditions/current_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "hrid": "/abilities/critical_aura",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/critical_aura",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          }
+        ],
+        "houseRooms": {},
+        "achievements": {},
+        "debuffOnLevelGap": 0
+      }
+    ],
+    "zone": {
+      "zoneHrid": "/actions/combat/infernal_abyss",
+      "difficultyTier": 0
+    },
+    "simulationTimeLimit": 600000000000,
+    "extra": {}
+  },
+  "expected": {
+    "sha256": "638976f93a083de514571294bf6c88b298a1b8bcb6de584395a18d11f2252248",
+    "headline": {
+      "encounters": 8,
+      "elapsedTime": null,
+      "dungeonsCompleted": 0,
+      "deathCount": 3,
+      "experienceKeys": 1
+    },
+    "result": {
+      "attacks": {
+        "/monsters/abyssal_imp": {
+          "player1": {
+            "/abilities/fireball": {
+              "6": 1,
+              "10": 3,
+              "13": 1,
+              "15": 2,
+              "18": 1,
+              "19": 1,
+              "25": 1,
+              "26": 1,
+              "31": 1,
+              "32": 1,
+              "33": 1,
+              "36": 1,
+              "38": 4,
+              "40": 1,
+              "41": 1,
+              "42": 1,
+              "43": 2,
+              "46": 1,
+              "47": 1,
+              "48": 1,
+              "miss": 34
+            },
+            "/abilities/firestorm": {
+              "15": 1,
+              "miss": 8
+            },
+            "damageOverTime": {
+              "7": 1,
+              "8": 1
+            }
+          }
+        },
+        "/monsters/infernal_warlock": {
+          "player1": {
+            "/abilities/firestorm": {
+              "10": 2,
+              "23": 1,
+              "25": 2,
+              "42": 1,
+              "44": 1,
+              "59": 1,
+              "70": 1,
+              "71": 1,
+              "73": 1,
+              "miss": 18
+            },
+            "/abilities/flame_blast": {
+              "19": 1,
+              "20": 1,
+              "38": 1,
+              "45": 1,
+              "51": 1,
+              "53": 2,
+              "65": 1,
+              "80": 1,
+              "83": 1,
+              "84": 1,
+              "87": 1,
+              "101": 1,
+              "miss": 16
+            },
+            "autoAttack": {
+              "1": 1,
+              "2": 2,
+              "3": 1,
+              "5": 1,
+              "6": 1,
+              "7": 3,
+              "8": 1,
+              "9": 1,
+              "10": 2,
+              "11": 3,
+              "12": 1,
+              "14": 1,
+              "15": 3,
+              "16": 2,
+              "19": 1,
+              "21": 2,
+              "23": 4,
+              "24": 2,
+              "25": 1,
+              "26": 3,
+              "28": 2,
+              "29": 1,
+              "33": 1,
+              "34": 2,
+              "35": 1,
+              "36": 2,
+              "37": 3,
+              "38": 1,
+              "39": 1,
+              "40": 1,
+              "41": 1,
+              "42": 1,
+              "44": 2,
+              "45": 1,
+              "46": 2,
+              "47": 2,
+              "50": 1,
+              "51": 3,
+              "54": 1,
+              "56": 2,
+              "58": 2,
+              "59": 1,
+              "60": 3,
+              "miss": 93
+            },
+            "damageOverTime": {
+              "5": 4,
+              "11": 1,
+              "12": 3,
+              "13": 2,
+              "21": 2,
+              "22": 2,
+              "29": 1,
+              "35": 3,
+              "36": 2,
+              "37": 1
+            }
+          }
+        },
+        "/monsters/soul_hunter": {
+          "player1": {
+            "/abilities/flame_arrow": {
+              "12": 1,
+              "25": 1,
+              "99": 1,
+              "102": 1,
+              "105": 1,
+              "miss": 7
+            },
+            "/abilities/silencing_shot": {
+              "23": 1,
+              "73": 1,
+              "miss": 7
+            },
+            "autoAttack": {
+              "7": 1,
+              "10": 1,
+              "13": 1,
+              "15": 1,
+              "18": 1,
+              "20": 2,
+              "22": 1,
+              "23": 2,
+              "30": 1,
+              "32": 1,
+              "37": 2,
+              "40": 1,
+              "41": 1,
+              "43": 1,
+              "44": 2,
+              "45": 1,
+              "46": 1,
+              "51": 1,
+              "55": 1,
+              "58": 1,
+              "63": 2,
+              "66": 1,
+              "67": 1,
+              "70": 1,
+              "72": 1,
+              "73": 1,
+              "76": 1,
+              "85": 3,
+              "miss": 58
+            }
+          }
+        },
+        "player1": {
+          "/monsters/abyssal_imp": {
+            "/abilities/aqua_arrow": {
+              "181": 1,
+              "337": 1
+            },
+            "/abilities/cleave": {
+              "56": 1,
+              "80": 1,
+              "87": 1,
+              "94": 1,
+              "104": 1,
+              "109": 1,
+              "miss": 3
+            },
+            "/abilities/crippling_slash": {
+              "74": 1,
+              "78": 1,
+              "126": 1,
+              "158": 1,
+              "miss": 5
+            },
+            "autoAttack": {
+              "49": 1,
+              "64": 1,
+              "87": 1,
+              "89": 1,
+              "98": 1,
+              "112": 1,
+              "150": 1,
+              "167": 1,
+              "221": 1,
+              "249": 1,
+              "269": 1,
+              "276": 1,
+              "280": 1,
+              "328": 1,
+              "359": 1,
+              "387": 1,
+              "426": 1,
+              "446": 1,
+              "482": 1,
+              "491": 2,
+              "518": 1,
+              "miss": 3
+            }
+          },
+          "/monsters/infernal_warlock": {
+            "/abilities/aqua_arrow": {
+              "55": 1,
+              "87": 1,
+              "104": 1,
+              "110": 1,
+              "158": 1,
+              "171": 1,
+              "224": 1,
+              "238": 1,
+              "246": 1,
+              "291": 1,
+              "324": 1,
+              "361": 1,
+              "miss": 3
+            },
+            "/abilities/cleave": {
+              "27": 1,
+              "32": 1,
+              "34": 1,
+              "42": 1,
+              "53": 1,
+              "56": 1,
+              "60": 2,
+              "62": 1,
+              "66": 1,
+              "miss": 17
+            },
+            "/abilities/crippling_slash": {
+              "23": 1,
+              "24": 1,
+              "29": 1,
+              "30": 1,
+              "32": 1,
+              "40": 1,
+              "41": 2,
+              "62": 1,
+              "74": 1,
+              "85": 1,
+              "93": 1,
+              "102": 1,
+              "105": 1,
+              "122": 1,
+              "135": 2,
+              "miss": 10
+            },
+            "autoAttack": {
+              "26": 1,
+              "28": 1,
+              "39": 1,
+              "57": 1,
+              "59": 1,
+              "61": 1,
+              "63": 1,
+              "72": 1,
+              "73": 1,
+              "75": 1,
+              "83": 1,
+              "87": 1,
+              "94": 1,
+              "99": 1,
+              "109": 1,
+              "134": 1,
+              "136": 1,
+              "137": 1,
+              "158": 1,
+              "162": 1,
+              "168": 2,
+              "172": 1,
+              "178": 1,
+              "179": 1,
+              "182": 1,
+              "190": 1,
+              "191": 1,
+              "210": 1,
+              "215": 1,
+              "219": 1,
+              "222": 1,
+              "245": 1,
+              "252": 1,
+              "288": 1,
+              "292": 1,
+              "316": 1,
+              "317": 2,
+              "328": 1,
+              "341": 1,
+              "342": 2,
+              "343": 1,
+              "346": 1,
+              "348": 1,
+              "350": 1,
+              "355": 1,
+              "362": 1,
+              "367": 2,
+              "369": 3,
+              "383": 1,
+              "401": 1,
+              "409": 1,
+              "413": 1,
+              "415": 1,
+              "416": 2,
+              "423": 1,
+              "425": 1,
+              "432": 2,
+              "433": 2,
+              "441": 11,
+              "miss": 35
+            }
+          },
+          "/monsters/soul_hunter": {
+            "/abilities/aqua_arrow": {
+              "28": 1,
+              "93": 1,
+              "113": 1,
+              "119": 1,
+              "143": 1,
+              "172": 1,
+              "204": 1,
+              "229": 1,
+              "237": 1,
+              "266": 1,
+              "288": 3
+            },
+            "/abilities/cleave": {
+              "41": 1,
+              "47": 1,
+              "55": 1,
+              "56": 1,
+              "85": 1,
+              "95": 1,
+              "99": 1,
+              "102": 1,
+              "miss": 6
+            },
+            "/abilities/crippling_slash": {
+              "46": 1,
+              "77": 1,
+              "107": 1,
+              "112": 1,
+              "122": 1,
+              "143": 1,
+              "miss": 8
+            },
+            "autoAttack": {
+              "49": 1,
+              "64": 1,
+              "81": 1,
+              "117": 1,
+              "143": 1,
+              "146": 1,
+              "149": 1,
+              "159": 1,
+              "166": 1,
+              "167": 1,
+              "174": 1,
+              "199": 1,
+              "214": 1,
+              "237": 1,
+              "255": 1,
+              "262": 1,
+              "268": 1,
+              "276": 1,
+              "278": 1,
+              "284": 1,
+              "296": 1,
+              "297": 1,
+              "325": 1,
+              "331": 1,
+              "338": 1,
+              "346": 1,
+              "376": 1,
+              "392": 3,
+              "399": 2,
+              "407": 3,
+              "414": 3,
+              "422": 1,
+              "423": 1,
+              "450": 2,
+              "466": 1,
+              "468": 1,
+              "477": 2,
+              "486": 3,
+              "494": 1,
+              "495": 3,
+              "miss": 13
+            }
+          }
+        }
+      },
+      "bossSpawns": [],
+      "combatDropQuantity": {
+        "player1": 0
+      },
+      "consumablesUsed": {
+        "player1": {
+          "/items/spaceberry_cake": 8,
+          "/items/spaceberry_donut": 8,
+          "/items/star_fruit_gummy": 10,
+          "/items/ultra_magic_coffee": 3,
+          "/items/ultra_melee_coffee": 3,
+          "/items/ultra_ranged_coffee": 3
+        }
+      },
+      "deaths": {
+        "/monsters/abyssal_imp": 4,
+        "/monsters/infernal_warlock": 9,
+        "/monsters/soul_hunter": 9
+      },
+      "debuffOnLevelGap": {
+        "player1": 0
+      },
+      "difficultyTier": 0,
+      "dropRateMultiplier": {
+        "player1": 1
+      },
+      "dungeonsCompleted": 0,
+      "dungeonsFailed": 0,
+      "encounters": 8,
+      "experienceGained": {
+        "player1": {
+          "attack": 6922.9931890215685,
+          "defense": 0,
+          "intelligence": 0,
+          "magic": 0,
+          "melee": 0,
+          "ranged": 2687.497355986633,
+          "stamina": 0
+        }
+      },
+      "firstEncounterFinishTime": 79289516010.37083,
+      "healingDone": {
+        "/monsters/abyssal_imp": {
+          "/abilities/quick_aid": 725
+        },
+        "player1": {
+          "/items/spaceberry_cake": 2508,
+          "/items/spaceberry_donut": 2240,
+          "regen": 1520
+        }
+      },
+      "hitpointsGained": {
+        "/monsters/abyssal_imp": {
+          "/abilities/quick_aid": 323
+        },
+        "/monsters/infernal_warlock": {
+          "/abilities/quick_aid": 119
+        },
+        "/monsters/soul_hunter": {
+          "/abilities/quick_aid": 283
+        },
+        "player1": {
+          "/items/spaceberry_cake": 2508,
+          "/items/spaceberry_donut": 2240,
+          "regen": 1520
+        }
+      },
+      "hitpointsSpent": {},
+      "isDungeon": false,
+      "isGuildTrial": false,
+      "isLabyrinth": false,
+      "labRoomOutcomes": [],
+      "labyAttemptCount": 0,
+      "labyrinthName": "@undefined",
+      "lastDungeonFinishTime": 0,
+      "lastEncounterFinishTime": 574478342491.538,
+      "manaUsed": {
+        "player1": {
+          "/abilities/aqua_arrow": 1050,
+          "/abilities/berserk": 1300,
+          "/abilities/cleave": 945,
+          "/abilities/crippling_slash": 1485,
+          "/abilities/critical_aura": 500
+        }
+      },
+      "manapointsGained": {
+        "/monsters/soul_hunter": {
+          "manaLeech": 5
+        },
+        "player1": {
+          "/items/star_fruit_gummy": 2800,
+          "regen": 1720
+        }
+      },
+      "maxDungenonTime": 0,
+      "maxEnrageStack": 0,
+      "maxWaveReached": 0,
+      "minDungenonTime": 0,
+      "monsterStats": [],
+      "numberOfPlayers": 1,
+      "playerRanOutOfMana": {
+        "player1": false,
+        "player2": false,
+        "player3": false,
+        "player4": false,
+        "player5": false
+      },
+      "playerRanOutOfManaTime": {
+        "player1": {
+          "isOutOfMana": false,
+          "startTimeForOutOfMana": 0,
+          "totalTimeForOutOfMana": 0
+        }
+      },
+      "playerStats": [],
+      "rareFindMultiplier": {
+        "player1": 1.256
+      },
+      "roomLevel": "@undefined",
+      "simulatedTime": 600000000000,
+      "timeSeriesData": {
+        "players": {},
+        "timestamps": []
+      },
+      "timeSpentAlive": [
+        {
+          "alive": true,
+          "count": 9,
+          "name": "/monsters/soul_hunter",
+          "spawnedAt": 577478342491.538,
+          "timeSpentAlive": 246908353429.19827
+        },
+        {
+          "alive": true,
+          "count": 9,
+          "name": "/monsters/infernal_warlock",
+          "spawnedAt": 577478342491.538,
+          "timeSpentAlive": 548627972430.4278
+        },
+        {
+          "alive": false,
+          "count": 4,
+          "name": "/monsters/abyssal_imp",
+          "spawnedAt": 486774837874.019,
+          "timeSpentAlive": 194796783501.7459
+        }
+      ],
+      "trialCurrentTier": 0,
+      "trialEndReason": null,
+      "trialEndTime": 0,
+      "trialFinalTierHpRemovedFrac": 0,
+      "trialHrid": null,
+      "trialMaxTierCleared": 0,
+      "trialParticipantCount": 0,
+      "trialPlayerDeaths": {},
+      "trialStartTier": 0,
+      "trialTierStartTimes": {},
+      "trialTierTimes": {},
+      "trialTiersCleared": 0,
+      "wipeEvents": [],
+      "zoneName": "/actions/combat/infernal_abyss"
+    }
+  }
+}

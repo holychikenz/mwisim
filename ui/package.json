@@ -12,7 +12,7 @@
   "dependencies": {
     "@mantine/core": "^9.3.0",
     "@mantine/hooks": "^9.3.0",
-    "heap-js": "^2.2.0",
+    "heap-js": "2.7.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },

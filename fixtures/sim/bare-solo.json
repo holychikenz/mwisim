@@ -1,0 +1,214 @@
+{
+  "name": "bare-solo",
+  "label": "bare solo player — no equipment, fly T0 L40",
+  "seed": 12345,
+  "request": {
+    "players": [
+      {
+        "hrid": "player1",
+        "staminaLevel": 40,
+        "intelligenceLevel": 40,
+        "attackLevel": 40,
+        "meleeLevel": 40,
+        "defenseLevel": 40,
+        "rangedLevel": 40,
+        "magicLevel": 40,
+        "equipment": {},
+        "food": [],
+        "drinks": [],
+        "abilities": [],
+        "houseRooms": {},
+        "achievements": {},
+        "debuffOnLevelGap": 0
+      }
+    ],
+    "zone": {
+      "zoneHrid": "/actions/combat/fly",
+      "difficultyTier": 0
+    },
+    "simulationTimeLimit": 600000000000,
+    "extra": {}
+  },
+  "expected": {
+    "sha256": "45a452eb453b85dbeb66c55e96cd34b89f7962973fbe161997c6f0a769031953",
+    "headline": {
+      "encounters": 50,
+      "elapsedTime": null,
+      "dungeonsCompleted": 0,
+      "deathCount": 1,
+      "experienceKeys": 1
+    },
+    "result": {
+      "attacks": {
+        "/monsters/fly": {
+          "player1": {
+            "autoAttack": {
+              "1": 1,
+              "2": 2,
+              "3": 1,
+              "4": 1,
+              "5": 2,
+              "miss": 81
+            }
+          }
+        },
+        "player1": {
+          "/monsters/fly": {
+            "autoAttack": {
+              "1": 4,
+              "2": 4,
+              "3": 6,
+              "4": 3,
+              "5": 6,
+              "6": 1,
+              "7": 4,
+              "8": 3,
+              "9": 5,
+              "10": 3,
+              "11": 2,
+              "12": 5,
+              "13": 3,
+              "14": 5,
+              "15": 4,
+              "16": 3,
+              "17": 1,
+              "18": 5,
+              "19": 5,
+              "20": 2,
+              "21": 6,
+              "22": 4,
+              "23": 4,
+              "24": 4,
+              "25": 1,
+              "26": 2,
+              "27": 3,
+              "28": 1,
+              "29": 1,
+              "30": 2,
+              "31": 1,
+              "32": 3,
+              "33": 2,
+              "34": 1,
+              "35": 2,
+              "36": 2,
+              "37": 2,
+              "38": 3,
+              "40": 1,
+              "41": 3,
+              "43": 1,
+              "45": 2,
+              "46": 1,
+              "47": 1,
+              "48": 3,
+              "miss": 22
+            }
+          }
+        }
+      },
+      "bossSpawns": [],
+      "combatDropQuantity": {
+        "player1": 0
+      },
+      "consumablesUsed": {},
+      "deaths": {
+        "/monsters/fly": 50
+      },
+      "debuffOnLevelGap": {
+        "player1": 0
+      },
+      "difficultyTier": 0,
+      "dropRateMultiplier": {
+        "player1": 1
+      },
+      "dungeonsCompleted": 0,
+      "dungeonsFailed": 0,
+      "encounters": 50,
+      "experienceGained": {
+        "player1": {
+          "attack": 73.40849673202614,
+          "defense": 73.40849673202614,
+          "intelligence": 73.40849673202614,
+          "magic": 0,
+          "melee": 230.71241830065358,
+          "ranged": 0,
+          "stamina": 73.40849673202614
+        }
+      },
+      "firstEncounterFinishTime": 5882352941.176471,
+      "healingDone": {
+        "player1": {
+          "regen": 22
+        }
+      },
+      "hitpointsGained": {
+        "player1": {
+          "regen": 22
+        }
+      },
+      "hitpointsSpent": {},
+      "isDungeon": false,
+      "isGuildTrial": false,
+      "isLabyrinth": false,
+      "labRoomOutcomes": [],
+      "labyAttemptCount": 0,
+      "labyrinthName": "@undefined",
+      "lastDungeonFinishTime": 0,
+      "lastEncounterFinishTime": 585235294117.6486,
+      "manaUsed": {
+        "player1": {}
+      },
+      "manapointsGained": {
+        "player1": {
+          "regen": 0
+        }
+      },
+      "maxDungenonTime": 0,
+      "maxEnrageStack": 0,
+      "maxWaveReached": 0,
+      "minDungenonTime": 0,
+      "monsterStats": [],
+      "numberOfPlayers": 1,
+      "playerRanOutOfMana": {
+        "player1": false,
+        "player2": false,
+        "player3": false,
+        "player4": false,
+        "player5": false
+      },
+      "playerRanOutOfManaTime": {},
+      "playerStats": [],
+      "rareFindMultiplier": {
+        "player1": 1
+      },
+      "roomLevel": "@undefined",
+      "simulatedTime": 600000000000,
+      "timeSeriesData": {
+        "players": {},
+        "timestamps": []
+      },
+      "timeSpentAlive": [
+        {
+          "alive": true,
+          "count": 50,
+          "name": "/monsters/fly",
+          "spawnedAt": 588235294117.6486,
+          "timeSpentAlive": 438235294117.64856
+        }
+      ],
+      "trialCurrentTier": 0,
+      "trialEndReason": null,
+      "trialEndTime": 0,
+      "trialFinalTierHpRemovedFrac": 0,
+      "trialHrid": null,
+      "trialMaxTierCleared": 0,
+      "trialParticipantCount": 0,
+      "trialPlayerDeaths": {},
+      "trialStartTier": 0,
+      "trialTierStartTimes": {},
+      "trialTierTimes": {},
+      "trialTiersCleared": 0,
+      "wipeEvents": [],
+      "zoneName": "/actions/combat/fly"
+    }
+  }
+}

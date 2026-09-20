@@ -401,6 +401,44 @@ upstream specifically changed the same surface area.
   add/remove. \`zoneBuffs\` / \`extraBuffs\` default to \`[]\` instead of
   upstream's \`{}\` so callers that drive CombatSimulator directly (no
   worker) do not crash in \`generatePermanentBuffs()\`.
+- **Hot-path caches (performance, measured)** — four behaviour-preserving
+  changes that took a geared 5-player \`chimerical_den\` hour from 550 ms to
+  216 ms (2.55x) and a geared solo \`fly\` run from 350 ms to 142 ms (2.46x),
+  with output BIT-IDENTICAL under a seeded PRNG (see \`npm run sim:check\`).
+  Upstream will show its unmemoised originals on the \`+\` side of every one of
+  these; keep ours.
+    - \`player.js\`: the 70-name stat array is hoisted to a module-level
+      \`export const EQUIPMENT_COMBAT_STATS\`, and \`updateCombatDetails()\`
+      copies the per-player sums from \`_equipmentStatTotals\` instead of
+      re-running \`Object.values().filter().map().reduce()\` 70 times (210
+      allocations per call, 2 574 calls per simulated hour, 19.3% of profiled
+      self time). \`_computeEquipmentStatTotals\` / \`_equipmentChanged\` keep
+      the cache honest against the browser's equip-then-recompute path.
+      NOTE: this supersedes the older claim below that \`player.js\` is
+      byte-identical to upstream — it no longer is.
+    - \`combatUnit.js\`: \`getBuffBoosts\`/\`getBuffBoost\` read a lazy
+      \`_buffBoostIndex\` (typeHrid -> boosts) and \`_buffBoostSums\` instead of
+      scanning \`Object.values(this.combatBuffs).filter(...)\` on each of
+      359 394 queries per hour (16.2% of self time, the profile's largest
+      entry). \`_invalidateBuffBoostIndex()\` is called from the ONLY two
+      writers of \`combatBuffs\` — \`_commitInstances\` and \`clearBuffs\`. If
+      upstream adds a third writer, it MUST invalidate too; a missed write path
+      yields wrong combat numbers with no error. The returned arrays/objects
+      are shared and read-only by contract.
+    - \`events/eventQueue.js\`: the predicate methods iterate
+      \`this.minHeap.heapArray\` directly rather than calling \`toArray()\`,
+      which heap-js implements as a per-element ES5-iterator copy (2 305 965
+      entries walked per hour). \`heapArray\` is public but undocumented, so
+      \`heap-js\` is pinned to an exact \`2.7.1\` in every package.json that
+      declares it, and the constructor asserts the field exists.
+      \`clearMatching\` collects before removing, because \`remove()\`
+      re-heapifies in place.
+    - \`equipment.js\`: \`getCombatStat\` is a memo over the verbatim upstream
+      body, now named \`_computeCombatStat\`; 2 710 422 calls per hour. The memo
+      is keyed on \`enhancementLevel\` as well as the stat name.
+  Guarded by ours-only \`api/tests/statCaching.test.mjs\` and the
+  \`fixtures/sim/\` golden replays (\`api/sim-parity.mjs\`). Run both after any
+  rebase that touches these four files.
 - Any other local edits beneath \`${SCOPED_PATH}/\` — list them in the
   rebase report so we keep a running ledger.
 
@@ -408,8 +446,9 @@ NOTE: the labyrinth "maze" player-buff mechanism (\`options.maze\`,
 \`MAZE_DEFAULTS\`, \`resolveMazeBonuses\`, \`mazeBonuses\`,
 \`Player.applyMazeBonuses\`) was REMOVED deliberately — it double-counted the
 labyrinth crate buffs, which are now the single source of truth. The
-rationale is preserved at \`combatSimulator.js:44-51\` and \`player.js\` is
-byte-identical to upstream. Do NOT reintroduce it.
+rationale is preserved at \`combatSimulator.js:44-51\`. Do NOT reintroduce it.
+(\`player.js\` used to be byte-identical to upstream and is cited as such in
+older reports; it no longer is — see the hot-path caches entry above.)
 
 ## How to read the patch — polarity matters
 

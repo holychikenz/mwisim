@@ -27,7 +27,7 @@
         "webpack-dev-server": "^5.0.4"
     },
     "dependencies": {
-        "heap-js": "^2.2.0",
+        "heap-js": "2.7.1",
         "mwicombatsimulator": "file:"
     }
 }

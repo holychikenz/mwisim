@@ -5,6 +5,95 @@ import Equipment from "./equipment";
 import HouseRoom from "./houseRoom";
 import Achievement from "./achievement";
 
+// =============================================================================
+// MWIX adaptation (performance): the equipment stat list, hoisted out of
+// updateCombatDetails().
+//
+// These are the stats whose value on a player is the plain SUM over worn
+// equipment. Upstream declares this array inline inside updateCombatDetails,
+// which reallocates it — and re-derives all 70 sums — on every call. Hoisting
+// it gives the cache below something to enumerate, and makes the list a thing
+// that can be asserted about (see api/tests/statCaching.test.mjs).
+//
+// If you add or remove a name here you are changing what equipment contributes
+// to a player. Two of these names carry DIGITS ("hpRegenPer10",
+// "mpRegenPer10"); any tooling that rediscovers this list by pattern-matching
+// must allow for that. An earlier attempt scraped it with /"([a-zA-Z]+)"/ and
+// silently dropped exactly those two, which moved kills/hr by 2%.
+// =============================================================================
+export const EQUIPMENT_COMBAT_STATS = [
+    "stabAccuracy",
+    "slashAccuracy",
+    "smashAccuracy",
+    "rangedAccuracy",
+    "magicAccuracy",
+    "stabDamage",
+    "slashDamage",
+    "smashDamage",
+    "rangedDamage",
+    "magicDamage",
+    "defensiveDamage",
+    "taskDamage",
+    "physicalAmplify",
+    "waterAmplify",
+    "natureAmplify",
+    "fireAmplify",
+    "healingAmplify",
+    "stabEvasion",
+    "slashEvasion",
+    "smashEvasion",
+    "rangedEvasion",
+    "magicEvasion",
+    "armor",
+    "waterResistance",
+    "natureResistance",
+    "fireResistance",
+    "maxHitpoints",
+    "maxManapoints",
+    "lifeSteal",
+    "hpRegenPer10",
+    "mpRegenPer10",
+    "physicalThorns",
+    "elementalThorns",
+    "combatDropRate",
+    "combatRareFind",
+    "combatDropQuantity",
+    "combatExperience",
+    "criticalRate",
+    "criticalDamage",
+    "armorPenetration",
+    "waterPenetration",
+    "naturePenetration",
+    "firePenetration",
+    "abilityHaste",
+    "tenacity",
+    "manaLeech",
+    "castSpeed",
+    "threat",
+    "parry",
+    "mayhem",
+    "pierce",
+    "curse",
+    "fury",
+    "weaken",
+    "ripple",
+    "bloom",
+    "blaze",
+    "attackSpeed",
+    "foodHaste",
+    "drinkConcentration",
+    "autoAttackDamage",
+    "abilityDamage",
+    "staminaExperience",
+    "intelligenceExperience",
+    "attackExperience",
+    "defenseExperience",
+    "meleeExperience",
+    "rangedExperience",
+    "magicExperience",
+    "retaliation",
+];
+
 class Player extends CombatUnit {
     equipment = {
         "/equipment_types/head": null,
@@ -89,83 +178,31 @@ class Player extends CombatUnit {
             this.combatDetails.combatStats.focusTraining = "";
         }
 
-        [
-            "stabAccuracy",
-            "slashAccuracy",
-            "smashAccuracy",
-            "rangedAccuracy",
-            "magicAccuracy",
-            "stabDamage",
-            "slashDamage",
-            "smashDamage",
-            "rangedDamage",
-            "magicDamage",
-            "defensiveDamage",
-            "taskDamage",
-            "physicalAmplify",
-            "waterAmplify",
-            "natureAmplify",
-            "fireAmplify",
-            "healingAmplify",
-            "stabEvasion",
-            "slashEvasion",
-            "smashEvasion",
-            "rangedEvasion",
-            "magicEvasion",
-            "armor",
-            "waterResistance",
-            "natureResistance",
-            "fireResistance",
-            "maxHitpoints",
-            "maxManapoints",
-            "lifeSteal",
-            "hpRegenPer10",
-            "mpRegenPer10",
-            "physicalThorns",
-            "elementalThorns",
-            "combatDropRate",
-            "combatRareFind",
-            "combatDropQuantity",
-            "combatExperience",
-            "criticalRate",
-            "criticalDamage",
-            "armorPenetration",
-            "waterPenetration",
-            "naturePenetration",
-            "firePenetration",
-            "abilityHaste",
-            "tenacity",
-            "manaLeech",
-            "castSpeed",
-            "threat",
-            "parry",
-            "mayhem",
-            "pierce",
-            "curse",
-            "fury",
-            "weaken",
-            "ripple",
-            "bloom",
-            "blaze",
-            "attackSpeed",
-            "foodHaste",
-            "drinkConcentration",
-            "autoAttackDamage",
-            "abilityDamage",
-            "staminaExperience",
-            "intelligenceExperience",
-            "attackExperience",
-            "defenseExperience",
-            "meleeExperience",
-            "rangedExperience",
-            "magicExperience",
-            "retaliation"
-        ].forEach((stat) => {
-            this.combatDetails.combatStats[stat] = Object.values(this.equipment)
-                .filter((equipment) => equipment != null)
-                .map((equipment) => equipment.getCombatStat(stat))
-                .reduce((prev, cur) => prev + cur, 0);
-        });
+        // MWIX adaptation (performance): copy the 70 equipment sums from a
+        // per-player cache instead of re-deriving them.
+        //
+        // Upstream computes each of the 70 stats as
+        //   Object.values(this.equipment).filter(...).map(...).reduce(...)
+        // — 210 array allocations and ~1 050 property lookups PER CALL. One
+        // simulated hour of chimerical_den T0 / L600 / 5 geared players calls
+        // this method 2 574 times, and the .map closure alone held 16.2% of
+        // self time in the CPU profile (the .reduce another 3.1%).
+        //
+        // Equipment is immutable for the duration of a simulation, so the sums
+        // are constant and computing them once is exact, not approximate. The
+        // browser UI is the one place that DOES swap gear on a live Player
+        // (src/main.js updateEquipmentState, then updateCombatStatsUI ->
+        // updateCombatDetails), so the cache is validated against a cheap
+        // allocation-free signature rather than trusted blindly.
+        let totals = this._equipmentStatTotals;
+        if (totals === undefined || this._equipmentChanged()) {
+            totals = this._equipmentStatTotals = this._computeEquipmentStatTotals();
+        }
+        let combatStats = this.combatDetails.combatStats;
+        for (let i = 0; i < EQUIPMENT_COMBAT_STATS.length; i++) {
+            let stat = EQUIPMENT_COMBAT_STATS[i];
+            combatStats[stat] = totals[stat];
+        }
 
         if (this.equipment["/equipment_types/pouch"]) {
             this.combatDetails.combatStats.foodSlots =
@@ -178,6 +215,57 @@ class Player extends CombatUnit {
         }
 
         super.updateCombatDetails();
+    }
+
+    // Sum every stat in EQUIPMENT_COMBAT_STATS over the worn equipment, exactly
+    // as upstream's inline filter/map/reduce did, and snapshot the equipment
+    // this result was derived from.
+    _computeEquipmentStatTotals() {
+        let worn = Object.values(this.equipment).filter((equipment) => equipment != null);
+
+        let totals = {};
+        for (let i = 0; i < EQUIPMENT_COMBAT_STATS.length; i++) {
+            let stat = EQUIPMENT_COMBAT_STATS[i];
+            let sum = 0;
+            for (let j = 0; j < worn.length; j++) {
+                sum += worn[j].getCombatStat(stat);
+            }
+            totals[stat] = sum;
+        }
+
+        // Flat [slotKey, piece, enhancementLevel, ...]. Flat rather than nested so
+        // the validity check below can walk it without allocating.
+        let signature = [];
+        for (const [slot, piece] of Object.entries(this.equipment)) {
+            signature.push(slot, piece, piece == null ? null : piece.enhancementLevel);
+        }
+        this._equipmentSignature = signature;
+
+        return totals;
+    }
+
+    // True when this.equipment no longer matches the snapshot the cached totals
+    // were computed from. ~30 identity comparisons and no allocation, against
+    // the 210 allocations a recompute costs — cheap enough to run every call,
+    // which is what lets the browser's equip-then-recompute path stay correct.
+    // Fails SAFE in every direction: anything it cannot account for — a slot
+    // added or removed, a different piece, a re-enhanced piece — reads as
+    // changed and triggers a recompute.
+    _equipmentChanged() {
+        let signature = this._equipmentSignature;
+        let i = 0;
+        for (const slot in this.equipment) {
+            let piece = this.equipment[slot];
+            if (
+                signature[i] !== slot ||
+                signature[i + 1] !== piece ||
+                signature[i + 2] !== (piece == null ? null : piece.enhancementLevel)
+            ) {
+                return true;
+            }
+            i += 3;
+        }
+        return i !== signature.length;
     }
 }
 

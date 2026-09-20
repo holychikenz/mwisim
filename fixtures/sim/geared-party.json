@@ -1,0 +1,4921 @@
+{
+  "name": "geared-party",
+  "label": "geared 5-player party — chimerical_den dungeon T0 L600",
+  "seed": 34567,
+  "request": {
+    "players": [
+      {
+        "hrid": "player1",
+        "staminaLevel": 600,
+        "intelligenceLevel": 600,
+        "attackLevel": 600,
+        "meleeLevel": 600,
+        "defenseLevel": 600,
+        "rangedLevel": 600,
+        "magicLevel": 600,
+        "equipment": {
+          "/equipment_types/head": {
+            "hrid": "/items/acrobatic_hood",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/charm": {
+            "hrid": "/items/master_attack_charm",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/trinket": {
+            "hrid": "/items/expert_task_badge",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/body": {
+            "hrid": "/items/anchorbound_plate_body",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/legs": {
+            "hrid": "/items/anchorbound_plate_legs",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/two_hand": {
+            "hrid": "/items/cursed_bow",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/off_hand": {
+            "hrid": "/items/bishops_codex",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/feet": {
+            "hrid": "/items/pathbreaker_boots",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/hands": {
+            "hrid": "/items/dodocamel_gauntlets",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/back": {
+            "hrid": "/items/chimerical_quiver_refined",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/earrings": {
+            "hrid": "/items/philosophers_earrings",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/neck": {
+            "hrid": "/items/philosophers_necklace",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/ring": {
+            "hrid": "/items/philosophers_ring",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/pouch": {
+            "hrid": "/items/small_pouch",
+            "enhancementLevel": 5
+          }
+        },
+        "food": [
+          {
+            "hrid": "/items/spaceberry_cake",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/missing_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 350
+              }
+            ]
+          },
+          {
+            "hrid": "/items/spaceberry_donut",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/missing_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 280
+              }
+            ]
+          },
+          {
+            "hrid": "/items/star_fruit_gummy",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/missing_mp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 280
+              }
+            ]
+          }
+        ],
+        "drinks": [
+          {
+            "hrid": "/items/ultra_magic_coffee",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/magic_coffee",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "hrid": "/items/ultra_melee_coffee",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/melee_coffee",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "hrid": "/items/ultra_ranged_coffee",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/ranged_coffee",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          }
+        ],
+        "abilities": [
+          {
+            "hrid": "/abilities/aqua_arrow",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/targeted_enemy",
+                "conditionHrid": "/combat_trigger_conditions/current_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "hrid": "/abilities/berserk",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/berserk",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "hrid": "/abilities/cleave",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/all_enemies",
+                "conditionHrid": "/combat_trigger_conditions/number_of_active_units",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 1
+              },
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/all_enemies",
+                "conditionHrid": "/combat_trigger_conditions/current_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "hrid": "/abilities/crippling_slash",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/targeted_enemy",
+                "conditionHrid": "/combat_trigger_conditions/current_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "hrid": "/abilities/critical_aura",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/critical_aura",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          }
+        ],
+        "houseRooms": {},
+        "achievements": {},
+        "debuffOnLevelGap": 0
+      },
+      {
+        "hrid": "player2",
+        "staminaLevel": 600,
+        "intelligenceLevel": 600,
+        "attackLevel": 600,
+        "meleeLevel": 600,
+        "defenseLevel": 600,
+        "rangedLevel": 600,
+        "magicLevel": 600,
+        "equipment": {
+          "/equipment_types/head": {
+            "hrid": "/items/acrobatic_hood",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/charm": {
+            "hrid": "/items/master_attack_charm",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/trinket": {
+            "hrid": "/items/expert_task_badge",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/body": {
+            "hrid": "/items/anchorbound_plate_body",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/legs": {
+            "hrid": "/items/anchorbound_plate_legs",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/two_hand": {
+            "hrid": "/items/cursed_bow",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/off_hand": {
+            "hrid": "/items/bishops_codex",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/feet": {
+            "hrid": "/items/pathbreaker_boots",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/hands": {
+            "hrid": "/items/dodocamel_gauntlets",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/back": {
+            "hrid": "/items/chimerical_quiver_refined",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/earrings": {
+            "hrid": "/items/philosophers_earrings",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/neck": {
+            "hrid": "/items/philosophers_necklace",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/ring": {
+            "hrid": "/items/philosophers_ring",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/pouch": {
+            "hrid": "/items/small_pouch",
+            "enhancementLevel": 5
+          }
+        },
+        "food": [
+          {
+            "hrid": "/items/spaceberry_cake",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/missing_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 350
+              }
+            ]
+          },
+          {
+            "hrid": "/items/spaceberry_donut",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/missing_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 280
+              }
+            ]
+          },
+          {
+            "hrid": "/items/star_fruit_gummy",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/missing_mp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 280
+              }
+            ]
+          }
+        ],
+        "drinks": [
+          {
+            "hrid": "/items/ultra_magic_coffee",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/magic_coffee",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "hrid": "/items/ultra_melee_coffee",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/melee_coffee",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "hrid": "/items/ultra_ranged_coffee",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/ranged_coffee",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          }
+        ],
+        "abilities": [
+          {
+            "hrid": "/abilities/aqua_arrow",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/targeted_enemy",
+                "conditionHrid": "/combat_trigger_conditions/current_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "hrid": "/abilities/berserk",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/berserk",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "hrid": "/abilities/cleave",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/all_enemies",
+                "conditionHrid": "/combat_trigger_conditions/number_of_active_units",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 1
+              },
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/all_enemies",
+                "conditionHrid": "/combat_trigger_conditions/current_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "hrid": "/abilities/crippling_slash",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/targeted_enemy",
+                "conditionHrid": "/combat_trigger_conditions/current_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "hrid": "/abilities/critical_aura",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/critical_aura",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          }
+        ],
+        "houseRooms": {},
+        "achievements": {},
+        "debuffOnLevelGap": 0
+      },
+      {
+        "hrid": "player3",
+        "staminaLevel": 600,
+        "intelligenceLevel": 600,
+        "attackLevel": 600,
+        "meleeLevel": 600,
+        "defenseLevel": 600,
+        "rangedLevel": 600,
+        "magicLevel": 600,
+        "equipment": {
+          "/equipment_types/head": {
+            "hrid": "/items/acrobatic_hood",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/charm": {
+            "hrid": "/items/master_attack_charm",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/trinket": {
+            "hrid": "/items/expert_task_badge",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/body": {
+            "hrid": "/items/anchorbound_plate_body",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/legs": {
+            "hrid": "/items/anchorbound_plate_legs",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/two_hand": {
+            "hrid": "/items/cursed_bow",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/off_hand": {
+            "hrid": "/items/bishops_codex",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/feet": {
+            "hrid": "/items/pathbreaker_boots",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/hands": {
+            "hrid": "/items/dodocamel_gauntlets",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/back": {
+            "hrid": "/items/chimerical_quiver_refined",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/earrings": {
+            "hrid": "/items/philosophers_earrings",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/neck": {
+            "hrid": "/items/philosophers_necklace",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/ring": {
+            "hrid": "/items/philosophers_ring",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/pouch": {
+            "hrid": "/items/small_pouch",
+            "enhancementLevel": 5
+          }
+        },
+        "food": [
+          {
+            "hrid": "/items/spaceberry_cake",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/missing_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 350
+              }
+            ]
+          },
+          {
+            "hrid": "/items/spaceberry_donut",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/missing_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 280
+              }
+            ]
+          },
+          {
+            "hrid": "/items/star_fruit_gummy",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/missing_mp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 280
+              }
+            ]
+          }
+        ],
+        "drinks": [
+          {
+            "hrid": "/items/ultra_magic_coffee",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/magic_coffee",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "hrid": "/items/ultra_melee_coffee",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/melee_coffee",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "hrid": "/items/ultra_ranged_coffee",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/ranged_coffee",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          }
+        ],
+        "abilities": [
+          {
+            "hrid": "/abilities/aqua_arrow",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/targeted_enemy",
+                "conditionHrid": "/combat_trigger_conditions/current_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "hrid": "/abilities/berserk",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/berserk",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "hrid": "/abilities/cleave",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/all_enemies",
+                "conditionHrid": "/combat_trigger_conditions/number_of_active_units",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 1
+              },
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/all_enemies",
+                "conditionHrid": "/combat_trigger_conditions/current_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "hrid": "/abilities/crippling_slash",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/targeted_enemy",
+                "conditionHrid": "/combat_trigger_conditions/current_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "hrid": "/abilities/critical_aura",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/critical_aura",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          }
+        ],
+        "houseRooms": {},
+        "achievements": {},
+        "debuffOnLevelGap": 0
+      },
+      {
+        "hrid": "player4",
+        "staminaLevel": 600,
+        "intelligenceLevel": 600,
+        "attackLevel": 600,
+        "meleeLevel": 600,
+        "defenseLevel": 600,
+        "rangedLevel": 600,
+        "magicLevel": 600,
+        "equipment": {
+          "/equipment_types/head": {
+            "hrid": "/items/acrobatic_hood",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/charm": {
+            "hrid": "/items/master_attack_charm",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/trinket": {
+            "hrid": "/items/expert_task_badge",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/body": {
+            "hrid": "/items/anchorbound_plate_body",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/legs": {
+            "hrid": "/items/anchorbound_plate_legs",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/two_hand": {
+            "hrid": "/items/cursed_bow",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/off_hand": {
+            "hrid": "/items/bishops_codex",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/feet": {
+            "hrid": "/items/pathbreaker_boots",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/hands": {
+            "hrid": "/items/dodocamel_gauntlets",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/back": {
+            "hrid": "/items/chimerical_quiver_refined",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/earrings": {
+            "hrid": "/items/philosophers_earrings",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/neck": {
+            "hrid": "/items/philosophers_necklace",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/ring": {
+            "hrid": "/items/philosophers_ring",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/pouch": {
+            "hrid": "/items/small_pouch",
+            "enhancementLevel": 5
+          }
+        },
+        "food": [
+          {
+            "hrid": "/items/spaceberry_cake",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/missing_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 350
+              }
+            ]
+          },
+          {
+            "hrid": "/items/spaceberry_donut",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/missing_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 280
+              }
+            ]
+          },
+          {
+            "hrid": "/items/star_fruit_gummy",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/missing_mp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 280
+              }
+            ]
+          }
+        ],
+        "drinks": [
+          {
+            "hrid": "/items/ultra_magic_coffee",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/magic_coffee",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "hrid": "/items/ultra_melee_coffee",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/melee_coffee",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "hrid": "/items/ultra_ranged_coffee",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/ranged_coffee",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          }
+        ],
+        "abilities": [
+          {
+            "hrid": "/abilities/aqua_arrow",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/targeted_enemy",
+                "conditionHrid": "/combat_trigger_conditions/current_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "hrid": "/abilities/berserk",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/berserk",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "hrid": "/abilities/cleave",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/all_enemies",
+                "conditionHrid": "/combat_trigger_conditions/number_of_active_units",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 1
+              },
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/all_enemies",
+                "conditionHrid": "/combat_trigger_conditions/current_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "hrid": "/abilities/crippling_slash",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/targeted_enemy",
+                "conditionHrid": "/combat_trigger_conditions/current_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "hrid": "/abilities/critical_aura",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/critical_aura",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          }
+        ],
+        "houseRooms": {},
+        "achievements": {},
+        "debuffOnLevelGap": 0
+      },
+      {
+        "hrid": "player5",
+        "staminaLevel": 600,
+        "intelligenceLevel": 600,
+        "attackLevel": 600,
+        "meleeLevel": 600,
+        "defenseLevel": 600,
+        "rangedLevel": 600,
+        "magicLevel": 600,
+        "equipment": {
+          "/equipment_types/head": {
+            "hrid": "/items/acrobatic_hood",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/charm": {
+            "hrid": "/items/master_attack_charm",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/trinket": {
+            "hrid": "/items/expert_task_badge",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/body": {
+            "hrid": "/items/anchorbound_plate_body",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/legs": {
+            "hrid": "/items/anchorbound_plate_legs",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/two_hand": {
+            "hrid": "/items/cursed_bow",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/off_hand": {
+            "hrid": "/items/bishops_codex",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/feet": {
+            "hrid": "/items/pathbreaker_boots",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/hands": {
+            "hrid": "/items/dodocamel_gauntlets",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/back": {
+            "hrid": "/items/chimerical_quiver_refined",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/earrings": {
+            "hrid": "/items/philosophers_earrings",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/neck": {
+            "hrid": "/items/philosophers_necklace",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/ring": {
+            "hrid": "/items/philosophers_ring",
+            "enhancementLevel": 5
+          },
+          "/equipment_types/pouch": {
+            "hrid": "/items/small_pouch",
+            "enhancementLevel": 5
+          }
+        },
+        "food": [
+          {
+            "hrid": "/items/spaceberry_cake",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/missing_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 350
+              }
+            ]
+          },
+          {
+            "hrid": "/items/spaceberry_donut",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/missing_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 280
+              }
+            ]
+          },
+          {
+            "hrid": "/items/star_fruit_gummy",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/missing_mp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 280
+              }
+            ]
+          }
+        ],
+        "drinks": [
+          {
+            "hrid": "/items/ultra_magic_coffee",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/magic_coffee",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "hrid": "/items/ultra_melee_coffee",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/melee_coffee",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "hrid": "/items/ultra_ranged_coffee",
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/ranged_coffee",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          }
+        ],
+        "abilities": [
+          {
+            "hrid": "/abilities/aqua_arrow",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/targeted_enemy",
+                "conditionHrid": "/combat_trigger_conditions/current_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "hrid": "/abilities/berserk",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/berserk",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          },
+          {
+            "hrid": "/abilities/cleave",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/all_enemies",
+                "conditionHrid": "/combat_trigger_conditions/number_of_active_units",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 1
+              },
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/all_enemies",
+                "conditionHrid": "/combat_trigger_conditions/current_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "hrid": "/abilities/crippling_slash",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/targeted_enemy",
+                "conditionHrid": "/combat_trigger_conditions/current_hp",
+                "comparatorHrid": "/combat_trigger_comparators/greater_than_equal",
+                "value": 1
+              }
+            ]
+          },
+          {
+            "hrid": "/abilities/critical_aura",
+            "level": 10,
+            "triggers": [
+              {
+                "dependencyHrid": "/combat_trigger_dependencies/self",
+                "conditionHrid": "/combat_trigger_conditions/critical_aura",
+                "comparatorHrid": "/combat_trigger_comparators/is_inactive",
+                "value": 0
+              }
+            ]
+          }
+        ],
+        "houseRooms": {},
+        "achievements": {},
+        "debuffOnLevelGap": 0
+      }
+    ],
+    "zone": {
+      "zoneHrid": "/actions/combat/chimerical_den",
+      "difficultyTier": 0
+    },
+    "simulationTimeLimit": 600000000000,
+    "extra": {}
+  },
+  "expected": {
+    "sha256": "67d9ba66502a21d30b59f443e7fbe207f8891988523e7ee4d137927cfa8823d1",
+    "headline": {
+      "encounters": 70,
+      "elapsedTime": null,
+      "dungeonsCompleted": 1,
+      "deathCount": 29,
+      "experienceKeys": 5
+    },
+    "result": {
+      "attacks": {
+        "/monsters/aquahorse": {
+          "player2": {
+            "autoAttack": {
+              "62": 1
+            }
+          }
+        },
+        "/monsters/butterjerry": {
+          "player1": {
+            "autoAttack": {
+              "miss": 3
+            }
+          },
+          "player2": {
+            "autoAttack": {
+              "miss": 3
+            }
+          },
+          "player3": {
+            "autoAttack": {
+              "2": 1,
+              "miss": 2
+            }
+          },
+          "player4": {
+            "autoAttack": {
+              "29": 1,
+              "miss": 4
+            }
+          },
+          "player5": {
+            "autoAttack": {
+              "miss": 2
+            }
+          }
+        },
+        "/monsters/centaur_archer": {
+          "player1": {
+            "autoAttack": {
+              "77": 1,
+              "miss": 1
+            }
+          },
+          "player2": {
+            "autoAttack": {
+              "85": 1
+            }
+          },
+          "player5": {
+            "autoAttack": {
+              "miss": 1
+            }
+          }
+        },
+        "/monsters/crab": {
+          "player2": {
+            "autoAttack": {
+              "miss": 2
+            }
+          }
+        },
+        "/monsters/dodocamel": {
+          "player1": {
+            "/abilities/sweep": {
+              "miss": 1
+            },
+            "autoAttack": {
+              "miss": 4
+            }
+          },
+          "player2": {
+            "/abilities/shield_bash": {
+              "miss": 1
+            },
+            "/abilities/sweep": {
+              "miss": 1
+            },
+            "autoAttack": {
+              "49": 1,
+              "miss": 3
+            }
+          },
+          "player3": {
+            "/abilities/sweep": {
+              "miss": 1
+            },
+            "autoAttack": {
+              "miss": 6
+            }
+          },
+          "player4": {
+            "/abilities/shield_bash": {
+              "miss": 2
+            },
+            "/abilities/sweep": {
+              "miss": 1
+            },
+            "autoAttack": {
+              "miss": 2
+            }
+          },
+          "player5": {
+            "/abilities/shield_bash": {
+              "miss": 1
+            },
+            "/abilities/sweep": {
+              "miss": 1
+            },
+            "autoAttack": {
+              "78": 1,
+              "miss": 5
+            }
+          }
+        },
+        "/monsters/eye": {
+          "player1": {
+            "autoAttack": {
+              "miss": 2
+            }
+          },
+          "player2": {
+            "autoAttack": {
+              "miss": 2
+            }
+          },
+          "player4": {
+            "autoAttack": {
+              "54": 1,
+              "miss": 1
+            }
+          }
+        },
+        "/monsters/eyes": {
+          "player1": {
+            "autoAttack": {
+              "57": 1,
+              "miss": 1
+            }
+          },
+          "player2": {
+            "autoAttack": {
+              "67": 1
+            }
+          }
+        },
+        "/monsters/gobo_boomy": {
+          "player2": {
+            "/abilities/fireball": {
+              "miss": 1
+            }
+          },
+          "player3": {
+            "/abilities/fireball": {
+              "miss": 3
+            }
+          },
+          "player4": {
+            "/abilities/fireball": {
+              "miss": 2
+            }
+          },
+          "player5": {
+            "/abilities/fireball": {
+              "miss": 1
+            }
+          }
+        },
+        "/monsters/gobo_shooty": {
+          "player5": {
+            "autoAttack": {
+              "miss": 1
+            }
+          }
+        },
+        "/monsters/gobo_slashy": {
+          "player1": {
+            "autoAttack": {
+              "10": 1
+            }
+          }
+        },
+        "/monsters/gobo_smashy": {
+          "player1": {
+            "autoAttack": {
+              "1": 1,
+              "miss": 1
+            }
+          },
+          "player3": {
+            "autoAttack": {
+              "miss": 1
+            }
+          },
+          "player5": {
+            "autoAttack": {
+              "miss": 1
+            }
+          }
+        },
+        "/monsters/gobo_stabby": {
+          "player1": {
+            "autoAttack": {
+              "miss": 1
+            }
+          },
+          "player2": {
+            "autoAttack": {
+              "miss": 3
+            }
+          },
+          "player3": {
+            "autoAttack": {
+              "21": 1,
+              "miss": 2
+            }
+          },
+          "player4": {
+            "autoAttack": {
+              "11": 1,
+              "miss": 1
+            }
+          },
+          "player5": {
+            "autoAttack": {
+              "miss": 1
+            }
+          }
+        },
+        "/monsters/griffin": {
+          "player1": {
+            "/abilities/crippling_slash": {
+              "76": 1
+            },
+            "/abilities/rain_of_arrows": {
+              "miss": 1
+            },
+            "autoAttack": {
+              "miss": 2
+            }
+          },
+          "player2": {
+            "/abilities/crippling_slash": {
+              "miss": 1
+            },
+            "/abilities/rain_of_arrows": {
+              "10": 1
+            },
+            "autoAttack": {
+              "miss": 1
+            }
+          },
+          "player3": {
+            "/abilities/crippling_slash": {
+              "miss": 1
+            },
+            "/abilities/rain_of_arrows": {
+              "miss": 1
+            },
+            "autoAttack": {
+              "miss": 2
+            }
+          },
+          "player4": {
+            "/abilities/crippling_slash": {
+              "miss": 1
+            },
+            "/abilities/rain_of_arrows": {
+              "miss": 1
+            },
+            "autoAttack": {
+              "miss": 2
+            }
+          },
+          "player5": {
+            "/abilities/crippling_slash": {
+              "miss": 1
+            },
+            "/abilities/rain_of_arrows": {
+              "miss": 1
+            },
+            "autoAttack": {
+              "miss": 1
+            }
+          }
+        },
+        "/monsters/jackalope": {
+          "player1": {
+            "/abilities/entangle": {
+              "43": 1,
+              "miss": 3
+            }
+          },
+          "player2": {
+            "/abilities/entangle": {
+              "miss": 2
+            }
+          },
+          "player4": {
+            "/abilities/entangle": {
+              "miss": 2
+            }
+          },
+          "player5": {
+            "/abilities/entangle": {
+              "miss": 2
+            }
+          }
+        },
+        "/monsters/jungle_sprite": {
+          "player1": {
+            "/abilities/entangle": {
+              "miss": 4
+            }
+          },
+          "player2": {
+            "/abilities/entangle": {
+              "miss": 1
+            }
+          },
+          "player3": {
+            "/abilities/entangle": {
+              "miss": 1
+            }
+          },
+          "player4": {
+            "/abilities/entangle": {
+              "miss": 1
+            }
+          },
+          "player5": {
+            "/abilities/entangle": {
+              "34": 1,
+              "miss": 3
+            }
+          }
+        },
+        "/monsters/manticore": {
+          "player1": {
+            "/abilities/rain_of_arrows": {
+              "13": 1
+            },
+            "/abilities/steady_shot": {
+              "110": 1
+            },
+            "autoAttack": {
+              "miss": 2
+            }
+          },
+          "player2": {
+            "/abilities/rain_of_arrows": {
+              "miss": 1
+            },
+            "autoAttack": {
+              "miss": 2
+            }
+          },
+          "player3": {
+            "/abilities/pestilent_shot": {
+              "miss": 1
+            },
+            "/abilities/rain_of_arrows": {
+              "57": 1
+            },
+            "autoAttack": {
+              "18": 1,
+              "miss": 1
+            }
+          },
+          "player4": {
+            "/abilities/pestilent_shot": {
+              "miss": 1
+            },
+            "/abilities/rain_of_arrows": {
+              "miss": 1
+            },
+            "/abilities/steady_shot": {
+              "miss": 1
+            },
+            "autoAttack": {
+              "miss": 4
+            }
+          },
+          "player5": {
+            "/abilities/rain_of_arrows": {
+              "miss": 1
+            },
+            "autoAttack": {
+              "20": 1,
+              "miss": 3
+            }
+          }
+        },
+        "/monsters/myconid": {
+          "player2": {
+            "autoAttack": {
+              "46": 1
+            }
+          },
+          "player3": {
+            "autoAttack": {
+              "miss": 3
+            }
+          },
+          "player4": {
+            "autoAttack": {
+              "miss": 3
+            }
+          },
+          "player5": {
+            "autoAttack": {
+              "miss": 1
+            }
+          }
+        },
+        "/monsters/nom_nom": {
+          "player1": {
+            "autoAttack": {
+              "miss": 1
+            }
+          },
+          "player2": {
+            "autoAttack": {
+              "miss": 3
+            }
+          },
+          "player3": {
+            "autoAttack": {
+              "miss": 1
+            }
+          },
+          "player5": {
+            "autoAttack": {
+              "miss": 1
+            }
+          }
+        },
+        "/monsters/sea_snail": {
+          "player3": {
+            "autoAttack": {
+              "miss": 1
+            }
+          },
+          "player4": {
+            "autoAttack": {
+              "miss": 1
+            }
+          },
+          "player5": {
+            "autoAttack": {
+              "miss": 1
+            }
+          }
+        },
+        "/monsters/skunk": {
+          "player3": {
+            "autoAttack": {
+              "miss": 1
+            }
+          }
+        },
+        "/monsters/slimy": {
+          "player5": {
+            "/abilities/water_strike": {
+              "miss": 1
+            }
+          }
+        },
+        "/monsters/snake": {
+          "player4": {
+            "autoAttack": {
+              "miss": 1
+            }
+          }
+        },
+        "/monsters/swampy": {
+          "player1": {
+            "autoAttack": {
+              "miss": 1
+            }
+          },
+          "player4": {
+            "autoAttack": {
+              "miss": 1
+            }
+          },
+          "player5": {
+            "autoAttack": {
+              "miss": 1
+            }
+          }
+        },
+        "/monsters/turtle": {
+          "player2": {
+            "autoAttack": {
+              "miss": 3
+            }
+          }
+        },
+        "/monsters/veyes": {
+          "player3": {
+            "autoAttack": {
+              "miss": 1
+            }
+          }
+        },
+        "player1": {
+          "/monsters/alligator": {
+            "/abilities/aqua_arrow": {
+              "1987": 1
+            },
+            "/abilities/cleave": {
+              "512": 1
+            },
+            "/abilities/crippling_slash": {
+              "72": 1
+            },
+            "autoAttack": {
+              "1047": 1,
+              "1808": 1
+            }
+          },
+          "/monsters/aquahorse": {
+            "/abilities/aqua_arrow": {
+              "1749": 1
+            },
+            "/abilities/cleave": {
+              "180": 1,
+              "472": 1,
+              "565": 1
+            },
+            "/abilities/crippling_slash": {
+              "194": 1,
+              "492": 1,
+              "513": 1
+            },
+            "autoAttack": {
+              "253": 1,
+              "495": 1,
+              "1777": 1
+            }
+          },
+          "/monsters/butterjerry": {
+            "/abilities/aqua_arrow": {
+              "1131": 1
+            },
+            "/abilities/cleave": {
+              "192": 1,
+              "201": 1,
+              "218": 1,
+              "326": 1,
+              "515": 1,
+              "567": 1,
+              "miss": 3
+            },
+            "/abilities/crippling_slash": {
+              "33": 1,
+              "221": 1,
+              "260": 1,
+              "294": 1,
+              "418": 1,
+              "492": 1,
+              "miss": 1
+            },
+            "autoAttack": {
+              "18": 1,
+              "140": 1,
+              "395": 1,
+              "516": 1,
+              "652": 1,
+              "890": 1,
+              "1166": 1,
+              "2486": 1,
+              "miss": 4
+            }
+          },
+          "/monsters/centaur_archer": {
+            "/abilities/cleave": {
+              "134": 1,
+              "561": 1
+            },
+            "/abilities/crippling_slash": {
+              "32": 1,
+              "155": 1,
+              "305": 1
+            },
+            "autoAttack": {
+              "465": 1,
+              "499": 1,
+              "911": 1,
+              "1605": 1,
+              "2328": 1
+            }
+          },
+          "/monsters/crab": {
+            "/abilities/cleave": {
+              "377": 1
+            },
+            "/abilities/crippling_slash": {
+              "miss": 1
+            },
+            "autoAttack": {
+              "663": 1
+            }
+          },
+          "/monsters/dodocamel": {
+            "/abilities/aqua_arrow": {
+              "946": 1,
+              "miss": 1
+            },
+            "/abilities/cleave": {
+              "32": 1,
+              "254": 2,
+              "298": 1,
+              "miss": 1
+            },
+            "/abilities/crippling_slash": {
+              "179": 1,
+              "303": 1,
+              "362": 1,
+              "miss": 2
+            },
+            "autoAttack": {
+              "131": 1,
+              "218": 1,
+              "281": 1,
+              "454": 1,
+              "489": 1,
+              "502": 1,
+              "658": 1,
+              "672": 1,
+              "687": 1,
+              "764": 1,
+              "779": 1,
+              "1039": 1,
+              "1052": 1,
+              "1356": 5,
+              "miss": 5
+            }
+          },
+          "/monsters/eye": {
+            "/abilities/cleave": {
+              "48": 1,
+              "134": 1,
+              "215": 1,
+              "448": 1
+            },
+            "/abilities/crippling_slash": {
+              "66": 1,
+              "155": 1,
+              "540": 1
+            },
+            "autoAttack": {
+              "893": 1,
+              "miss": 1
+            }
+          },
+          "/monsters/eyes": {
+            "/abilities/cleave": {
+              "45": 1,
+              "miss": 1
+            },
+            "/abilities/crippling_slash": {
+              "228": 1
+            },
+            "autoAttack": {
+              "163": 1,
+              "233": 1,
+              "1396": 1
+            }
+          },
+          "/monsters/frog": {
+            "/abilities/crippling_slash": {
+              "104": 1
+            },
+            "autoAttack": {
+              "1800": 1
+            }
+          },
+          "/monsters/gobo_boomy": {
+            "/abilities/aqua_arrow": {
+              "1110": 1,
+              "miss": 1
+            },
+            "/abilities/cleave": {
+              "89": 1,
+              "204": 1,
+              "207": 1,
+              "320": 1
+            },
+            "/abilities/crippling_slash": {
+              "322": 1,
+              "341": 1,
+              "368": 1,
+              "426": 1,
+              "666": 1
+            },
+            "autoAttack": {
+              "15": 1,
+              "542": 1
+            }
+          },
+          "/monsters/gobo_shooty": {
+            "/abilities/aqua_arrow": {
+              "1634": 1
+            }
+          },
+          "/monsters/gobo_slashy": {
+            "/abilities/cleave": {
+              "344": 1
+            },
+            "/abilities/crippling_slash": {
+              "213": 1
+            },
+            "autoAttack": {
+              "26": 1,
+              "2159": 1,
+              "miss": 1
+            }
+          },
+          "/monsters/gobo_smashy": {
+            "/abilities/cleave": {
+              "48": 1,
+              "349": 1,
+              "446": 1
+            },
+            "/abilities/crippling_slash": {
+              "86": 1,
+              "miss": 1
+            },
+            "autoAttack": {
+              "42": 1,
+              "477": 1,
+              "1112": 1,
+              "1327": 1,
+              "1670": 1
+            }
+          },
+          "/monsters/gobo_stabby": {
+            "/abilities/aqua_arrow": {
+              "miss": 1
+            },
+            "/abilities/cleave": {
+              "109": 1,
+              "446": 1
+            },
+            "/abilities/crippling_slash": {
+              "286": 1,
+              "532": 1
+            },
+            "autoAttack": {
+              "533": 1,
+              "609": 1,
+              "826": 1,
+              "951": 1,
+              "1993": 1,
+              "2384": 1,
+              "2385": 1
+            }
+          },
+          "/monsters/griffin": {
+            "/abilities/aqua_arrow": {
+              "345": 1,
+              "935": 1
+            },
+            "/abilities/cleave": {
+              "389": 1
+            },
+            "/abilities/crippling_slash": {
+              "miss": 1
+            },
+            "autoAttack": {
+              "175": 1,
+              "1158": 1,
+              "1169": 1,
+              "1368": 1,
+              "1507": 1,
+              "1698": 1,
+              "1763": 1,
+              "1849": 1,
+              "2233": 1,
+              "miss": 2
+            }
+          },
+          "/monsters/jackalope": {
+            "/abilities/aqua_arrow": {
+              "455": 1,
+              "1067": 1,
+              "1131": 1,
+              "1152": 1,
+              "1173": 1
+            },
+            "/abilities/cleave": {
+              "180": 1,
+              "375": 1,
+              "441": 1
+            },
+            "/abilities/crippling_slash": {
+              "149": 1,
+              "578": 1
+            },
+            "autoAttack": {
+              "98": 1,
+              "315": 1,
+              "792": 1,
+              "1027": 1,
+              "1092": 1,
+              "1094": 1,
+              "1553": 1,
+              "1607": 1,
+              "2145": 1,
+              "2332": 1,
+              "2565": 4,
+              "miss": 1
+            }
+          },
+          "/monsters/jungle_sprite": {
+            "/abilities/aqua_arrow": {
+              "1931": 1
+            },
+            "/abilities/cleave": {
+              "386": 1,
+              "miss": 1
+            },
+            "/abilities/crippling_slash": {
+              "259": 1,
+              "335": 1
+            },
+            "autoAttack": {
+              "314": 1,
+              "569": 1,
+              "916": 1,
+              "1348": 1,
+              "1542": 1,
+              "2500": 2
+            }
+          },
+          "/monsters/manticore": {
+            "/abilities/aqua_arrow": {
+              "26": 1,
+              "1339": 1
+            },
+            "/abilities/cleave": {
+              "miss": 2
+            },
+            "/abilities/crippling_slash": {
+              "70": 1,
+              "miss": 1
+            },
+            "autoAttack": {
+              "57": 1,
+              "129": 1,
+              "253": 1,
+              "254": 1,
+              "472": 1,
+              "521": 1,
+              "671": 1,
+              "1173": 1,
+              "1214": 1,
+              "1470": 2,
+              "1758": 5,
+              "1759": 2,
+              "miss": 1
+            }
+          },
+          "/monsters/myconid": {
+            "/abilities/aqua_arrow": {
+              "1298": 1
+            },
+            "/abilities/crippling_slash": {
+              "84": 1,
+              "248": 1,
+              "569": 1
+            },
+            "autoAttack": {
+              "231": 1,
+              "402": 1,
+              "928": 1,
+              "980": 1,
+              "1715": 1,
+              "2553": 1
+            }
+          },
+          "/monsters/nom_nom": {
+            "/abilities/aqua_arrow": {
+              "170": 1,
+              "1001": 1,
+              "1749": 1
+            },
+            "/abilities/crippling_slash": {
+              "105": 1,
+              "248": 1,
+              "545": 1
+            },
+            "autoAttack": {
+              "566": 1,
+              "1515": 1,
+              "1615": 1,
+              "2460": 1
+            }
+          },
+          "/monsters/porcupine": {
+            "/abilities/cleave": {
+              "504": 1,
+              "603": 1
+            },
+            "/abilities/crippling_slash": {
+              "668": 1
+            }
+          },
+          "/monsters/rat": {
+            "/abilities/cleave": {
+              "111": 1
+            }
+          },
+          "/monsters/sea_snail": {
+            "/abilities/cleave": {
+              "212": 1,
+              "325": 1
+            },
+            "/abilities/crippling_slash": {
+              "313": 1,
+              "573": 1,
+              "712": 1,
+              "miss": 1
+            },
+            "autoAttack": {
+              "11": 1,
+              "353": 1,
+              "389": 1,
+              "861": 1,
+              "1398": 1,
+              "1460": 1,
+              "2145": 1
+            }
+          },
+          "/monsters/skunk": {
+            "autoAttack": {
+              "454": 1,
+              "540": 1,
+              "miss": 1
+            }
+          },
+          "/monsters/slimy": {
+            "/abilities/aqua_arrow": {
+              "1780": 1
+            },
+            "/abilities/cleave": {
+              "172": 1
+            },
+            "/abilities/crippling_slash": {
+              "314": 1
+            },
+            "autoAttack": {
+              "1216": 1,
+              "1780": 2
+            }
+          },
+          "/monsters/snake": {
+            "/abilities/crippling_slash": {
+              "586": 1
+            }
+          },
+          "/monsters/swampy": {
+            "/abilities/aqua_arrow": {
+              "961": 1
+            },
+            "/abilities/cleave": {
+              "451": 1
+            },
+            "/abilities/crippling_slash": {
+              "186": 1
+            },
+            "autoAttack": {
+              "115": 1
+            }
+          },
+          "/monsters/turtle": {
+            "/abilities/crippling_slash": {
+              "miss": 1
+            },
+            "autoAttack": {
+              "1219": 1
+            }
+          },
+          "/monsters/veyes": {
+            "autoAttack": {
+              "444": 1,
+              "881": 1,
+              "2220": 1
+            }
+          }
+        },
+        "player2": {
+          "/monsters/alligator": {
+            "/abilities/aqua_arrow": {
+              "54": 1,
+              "712": 1
+            },
+            "/abilities/cleave": {
+              "128": 1,
+              "591": 1
+            },
+            "autoAttack": {
+              "1010": 1
+            }
+          },
+          "/monsters/aquahorse": {
+            "/abilities/cleave": {
+              "miss": 1
+            },
+            "/abilities/crippling_slash": {
+              "358": 1
+            },
+            "autoAttack": {
+              "190": 1,
+              "357": 1,
+              "1301": 1,
+              "2041": 1,
+              "2047": 1
+            }
+          },
+          "/monsters/butterjerry": {
+            "/abilities/aqua_arrow": {
+              "190": 1,
+              "1204": 1,
+              "1266": 1,
+              "1715": 1
+            },
+            "/abilities/cleave": {
+              "57": 1,
+              "77": 1,
+              "104": 1,
+              "135": 1,
+              "190": 1,
+              "329": 1,
+              "392": 1,
+              "miss": 2
+            },
+            "/abilities/crippling_slash": {
+              "41": 1,
+              "75": 1,
+              "84": 1,
+              "164": 1,
+              "428": 1,
+              "554": 1,
+              "638": 1,
+              "676": 1,
+              "miss": 1
+            },
+            "autoAttack": {
+              "407": 1,
+              "491": 1,
+              "524": 1,
+              "894": 1,
+              "1067": 1,
+              "1074": 1,
+              "1117": 1,
+              "1382": 1,
+              "1732": 1,
+              "1924": 1,
+              "1962": 1,
+              "2001": 1,
+              "2439": 1,
+              "miss": 1
+            }
+          },
+          "/monsters/centaur_archer": {
+            "/abilities/cleave": {
+              "158": 1
+            },
+            "/abilities/crippling_slash": {
+              "203": 1,
+              "435": 1
+            },
+            "autoAttack": {
+              "355": 1,
+              "551": 1,
+              "miss": 2
+            }
+          },
+          "/monsters/crab": {
+            "/abilities/cleave": {
+              "160": 1
+            },
+            "/abilities/crippling_slash": {
+              "495": 1
+            },
+            "autoAttack": {
+              "2076": 1
+            }
+          },
+          "/monsters/dodocamel": {
+            "/abilities/aqua_arrow": {
+              "472": 1,
+              "1591": 1
+            },
+            "/abilities/cleave": {
+              "61": 1,
+              "160": 1,
+              "187": 1,
+              "287": 1,
+              "miss": 2
+            },
+            "/abilities/crippling_slash": {
+              "37": 1,
+              "217": 1,
+              "247": 1,
+              "286": 1,
+              "304": 1,
+              "362": 1
+            },
+            "autoAttack": {
+              "19": 1,
+              "31": 1,
+              "248": 1,
+              "256": 1,
+              "287": 1,
+              "315": 1,
+              "390": 1,
+              "429": 1,
+              "484": 1,
+              "496": 1,
+              "521": 1,
+              "557": 1,
+              "616": 1,
+              "656": 1,
+              "1093": 1,
+              "1134": 1,
+              "1283": 1,
+              "1356": 3,
+              "1357": 1,
+              "miss": 1
+            }
+          },
+          "/monsters/eye": {
+            "/abilities/aqua_arrow": {
+              "1773": 1
+            },
+            "/abilities/cleave": {
+              "142": 1,
+              "420": 1
+            },
+            "/abilities/crippling_slash": {
+              "427": 1,
+              "527": 1
+            },
+            "autoAttack": {
+              "67": 1,
+              "994": 1,
+              "1262": 1,
+              "2330": 1
+            }
+          },
+          "/monsters/eyes": {
+            "/abilities/cleave": {
+              "270": 1,
+              "miss": 1
+            },
+            "/abilities/crippling_slash": {
+              "259": 1
+            },
+            "autoAttack": {
+              "165": 1,
+              "2273": 1
+            }
+          },
+          "/monsters/frog": {
+            "/abilities/cleave": {
+              "272": 1
+            },
+            "/abilities/crippling_slash": {
+              "36": 1
+            }
+          },
+          "/monsters/gobo_boomy": {
+            "/abilities/cleave": {
+              "485": 1
+            },
+            "/abilities/crippling_slash": {
+              "53": 1,
+              "567": 1
+            },
+            "autoAttack": {
+              "155": 1,
+              "254": 1,
+              "410": 1,
+              "430": 1,
+              "607": 1,
+              "1032": 1,
+              "2545": 1,
+              "miss": 1
+            }
+          },
+          "/monsters/gobo_shooty": {
+            "/abilities/cleave": {
+              "192": 1
+            },
+            "/abilities/crippling_slash": {
+              "miss": 1
+            },
+            "autoAttack": {
+              "291": 1,
+              "716": 1,
+              "1304": 1
+            }
+          },
+          "/monsters/gobo_slashy": {
+            "/abilities/aqua_arrow": {
+              "108": 1,
+              "miss": 1
+            },
+            "/abilities/cleave": {
+              "99": 1
+            },
+            "/abilities/crippling_slash": {
+              "miss": 1
+            },
+            "autoAttack": {
+              "694": 1
+            }
+          },
+          "/monsters/gobo_smashy": {
+            "/abilities/cleave": {
+              "72": 1
+            },
+            "autoAttack": {
+              "2033": 1,
+              "miss": 2
+            }
+          },
+          "/monsters/gobo_stabby": {
+            "/abilities/cleave": {
+              "197": 1,
+              "446": 1
+            },
+            "/abilities/crippling_slash": {
+              "388": 1,
+              "miss": 1
+            },
+            "autoAttack": {
+              "54": 1,
+              "71": 1,
+              "1993": 1,
+              "miss": 1
+            }
+          },
+          "/monsters/griffin": {
+            "/abilities/aqua_arrow": {
+              "646": 1
+            },
+            "/abilities/cleave": {
+              "445": 1
+            },
+            "/abilities/crippling_slash": {
+              "301": 1
+            },
+            "autoAttack": {
+              "314": 1,
+              "413": 1,
+              "514": 1,
+              "740": 1,
+              "1166": 1,
+              "1207": 1,
+              "1567": 1,
+              "1862": 1,
+              "1867": 1,
+              "2233": 1,
+              "miss": 2
+            }
+          },
+          "/monsters/jackalope": {
+            "/abilities/aqua_arrow": {
+              "132": 1,
+              "miss": 1
+            },
+            "/abilities/cleave": {
+              "121": 1,
+              "159": 1,
+              "164": 1,
+              "436": 1
+            },
+            "/abilities/crippling_slash": {
+              "245": 1,
+              "279": 1,
+              "562": 1,
+              "miss": 1
+            },
+            "autoAttack": {
+              "251": 1,
+              "327": 1,
+              "614": 1,
+              "822": 1,
+              "1017": 1,
+              "1442": 1,
+              "1478": 1,
+              "1989": 1,
+              "2145": 5,
+              "2565": 1,
+              "miss": 2
+            }
+          },
+          "/monsters/jungle_sprite": {
+            "/abilities/aqua_arrow": {
+              "569": 1,
+              "1931": 1
+            },
+            "/abilities/cleave": {
+              "489": 1
+            },
+            "/abilities/crippling_slash": {
+              "259": 1
+            },
+            "autoAttack": {
+              "192": 1,
+              "1536": 1,
+              "1537": 1,
+              "2230": 1,
+              "2500": 1
+            }
+          },
+          "/monsters/manticore": {
+            "/abilities/aqua_arrow": {
+              "41": 1,
+              "1339": 1
+            },
+            "/abilities/cleave": {
+              "31": 1,
+              "128": 1,
+              "miss": 1
+            },
+            "/abilities/crippling_slash": {
+              "325": 1,
+              "370": 1
+            },
+            "autoAttack": {
+              "13": 1,
+              "21": 1,
+              "480": 1,
+              "578": 1,
+              "720": 1,
+              "1068": 1,
+              "1088": 1,
+              "1455": 1,
+              "1470": 2,
+              "1630": 1,
+              "1758": 6,
+              "miss": 2
+            }
+          },
+          "/monsters/myconid": {
+            "/abilities/aqua_arrow": {
+              "92": 1,
+              "1889": 1
+            },
+            "/abilities/cleave": {
+              "67": 1,
+              "95": 1,
+              "123": 1
+            },
+            "/abilities/crippling_slash": {
+              "410": 1,
+              "565": 1,
+              "736": 1
+            },
+            "autoAttack": {
+              "114": 1,
+              "306": 1,
+              "2177": 1
+            }
+          },
+          "/monsters/nom_nom": {
+            "/abilities/aqua_arrow": {
+              "1459": 1
+            },
+            "autoAttack": {
+              "12": 1,
+              "519": 1
+            }
+          },
+          "/monsters/porcupine": {
+            "/abilities/cleave": {
+              "226": 1,
+              "miss": 1
+            },
+            "/abilities/crippling_slash": {
+              "miss": 2
+            },
+            "autoAttack": {
+              "1740": 1
+            }
+          },
+          "/monsters/rat": {
+            "/abilities/cleave": {
+              "152": 1
+            },
+            "/abilities/crippling_slash": {
+              "618": 1
+            },
+            "autoAttack": {
+              "129": 1
+            }
+          },
+          "/monsters/sea_snail": {
+            "/abilities/cleave": {
+              "46": 1,
+              "148": 1
+            },
+            "/abilities/crippling_slash": {
+              "293": 2,
+              "726": 1
+            },
+            "autoAttack": {
+              "977": 1
+            }
+          },
+          "/monsters/skunk": {
+            "/abilities/aqua_arrow": {
+              "1529": 1
+            },
+            "/abilities/cleave": {
+              "197": 1,
+              "345": 1
+            },
+            "/abilities/crippling_slash": {
+              "246": 1,
+              "444": 1
+            },
+            "autoAttack": {
+              "1177": 1
+            }
+          },
+          "/monsters/slimy": {
+            "/abilities/cleave": {
+              "421": 1
+            },
+            "/abilities/crippling_slash": {
+              "123": 1
+            },
+            "autoAttack": {
+              "623": 1
+            }
+          },
+          "/monsters/snake": {
+            "autoAttack": {
+              "1189": 1,
+              "1900": 1
+            }
+          },
+          "/monsters/swampy": {
+            "/abilities/aqua_arrow": {
+              "498": 1
+            },
+            "/abilities/cleave": {
+              "369": 1
+            },
+            "autoAttack": {
+              "98": 1,
+              "686": 1,
+              "827": 1,
+              "1061": 1
+            }
+          },
+          "/monsters/turtle": {
+            "/abilities/aqua_arrow": {
+              "1681": 1
+            },
+            "autoAttack": {
+              "206": 1
+            }
+          },
+          "/monsters/veyes": {
+            "autoAttack": {
+              "112": 1,
+              "793": 1,
+              "2134": 1,
+              "2176": 1,
+              "miss": 1
+            }
+          }
+        },
+        "player3": {
+          "/monsters/alligator": {
+            "/abilities/cleave": {
+              "59": 1,
+              "292": 1,
+              "miss": 1
+            },
+            "/abilities/crippling_slash": {
+              "246": 1
+            },
+            "autoAttack": {
+              "miss": 1
+            }
+          },
+          "/monsters/aquahorse": {
+            "/abilities/aqua_arrow": {
+              "112": 1,
+              "1240": 1
+            },
+            "/abilities/cleave": {
+              "32": 1,
+              "166": 1,
+              "367": 1,
+              "565": 1
+            },
+            "/abilities/crippling_slash": {
+              "103": 1,
+              "194": 1,
+              "713": 1
+            },
+            "autoAttack": {
+              "887": 1,
+              "1052": 1
+            }
+          },
+          "/monsters/butterjerry": {
+            "/abilities/aqua_arrow": {
+              "1105": 1,
+              "1224": 1,
+              "1261": 1
+            },
+            "/abilities/cleave": {
+              "89": 1,
+              "145": 1,
+              "204": 1,
+              "250": 1,
+              "276": 1,
+              "330": 1,
+              "567": 1,
+              "miss": 1
+            },
+            "/abilities/crippling_slash": {
+              "248": 1,
+              "306": 1,
+              "319": 1,
+              "432": 1,
+              "464": 1,
+              "miss": 1
+            },
+            "autoAttack": {
+              "5": 1,
+              "15": 1,
+              "285": 1,
+              "536": 1,
+              "908": 1,
+              "1075": 1,
+              "1412": 1,
+              "1696": 1,
+              "1862": 1,
+              "1962": 1,
+              "2116": 1,
+              "2532": 1,
+              "miss": 1
+            }
+          },
+          "/monsters/centaur_archer": {
+            "/abilities/aqua_arrow": {
+              "1204": 1,
+              "1559": 1
+            },
+            "/abilities/cleave": {
+              "364": 1,
+              "378": 1
+            },
+            "/abilities/crippling_slash": {
+              "421": 1,
+              "445": 1
+            },
+            "autoAttack": {
+              "37": 1,
+              "miss": 1
+            }
+          },
+          "/monsters/crab": {
+            "/abilities/aqua_arrow": {
+              "408": 1,
+              "1003": 1
+            },
+            "/abilities/cleave": {
+              "224": 1,
+              "miss": 1
+            },
+            "/abilities/crippling_slash": {
+              "218": 1
+            },
+            "autoAttack": {
+              "546": 1,
+              "2300": 2
+            }
+          },
+          "/monsters/dodocamel": {
+            "/abilities/aqua_arrow": {
+              "387": 1,
+              "987": 1
+            },
+            "/abilities/cleave": {
+              "27": 1,
+              "73": 1,
+              "80": 1,
+              "149": 1,
+              "209": 1,
+              "miss": 1
+            },
+            "/abilities/crippling_slash": {
+              "34": 1,
+              "153": 1,
+              "215": 1,
+              "303": 1
+            },
+            "autoAttack": {
+              "8": 1,
+              "47": 1,
+              "181": 1,
+              "205": 1,
+              "412": 1,
+              "634": 1,
+              "732": 1,
+              "928": 1,
+              "978": 1,
+              "1044": 1,
+              "1133": 2,
+              "1134": 2,
+              "1185": 1,
+              "1356": 3,
+              "1357": 1,
+              "miss": 4
+            }
+          },
+          "/monsters/eye": {
+            "/abilities/aqua_arrow": {
+              "1673": 1
+            },
+            "/abilities/cleave": {
+              "180": 1,
+              "miss": 1
+            },
+            "/abilities/crippling_slash": {
+              "175": 1,
+              "406": 1,
+              "531": 1,
+              "592": 1,
+              "610": 1
+            },
+            "autoAttack": {
+              "1005": 1,
+              "1109": 1,
+              "1200": 1,
+              "1511": 1,
+              "1873": 1
+            }
+          },
+          "/monsters/eyes": {
+            "/abilities/cleave": {
+              "273": 1,
+              "409": 1
+            },
+            "/abilities/crippling_slash": {
+              "201": 1
+            },
+            "autoAttack": {
+              "1157": 1
+            }
+          },
+          "/monsters/frog": {
+            "/abilities/aqua_arrow": {
+              "1696": 1
+            },
+            "autoAttack": {
+              "1438": 1
+            }
+          },
+          "/monsters/gobo_boomy": {
+            "/abilities/cleave": {
+              "170": 1,
+              "481": 1,
+              "581": 1
+            },
+            "/abilities/crippling_slash": {
+              "396": 1,
+              "733": 1
+            },
+            "autoAttack": {
+              "13": 1,
+              "22": 1,
+              "100": 1,
+              "760": 1,
+              "1220": 1,
+              "1580": 1,
+              "1945": 1,
+              "2232": 1
+            }
+          },
+          "/monsters/gobo_shooty": {
+            "/abilities/aqua_arrow": {
+              "1571": 2
+            },
+            "/abilities/cleave": {
+              "416": 1
+            },
+            "autoAttack": {
+              "725": 1,
+              "1993": 1
+            }
+          },
+          "/monsters/gobo_slashy": {
+            "/abilities/aqua_arrow": {
+              "977": 1
+            },
+            "/abilities/cleave": {
+              "299": 1
+            }
+          },
+          "/monsters/gobo_smashy": {
+            "/abilities/aqua_arrow": {
+              "610": 1
+            },
+            "/abilities/cleave": {
+              "46": 1,
+              "377": 1
+            },
+            "/abilities/crippling_slash": {
+              "208": 1,
+              "497": 1
+            }
+          },
+          "/monsters/gobo_stabby": {
+            "/abilities/cleave": {
+              "217": 1,
+              "286": 1
+            },
+            "/abilities/crippling_slash": {
+              "298": 1,
+              "320": 1,
+              "542": 1,
+              "636": 1
+            },
+            "autoAttack": {
+              "282": 1,
+              "716": 1,
+              "1019": 1,
+              "1107": 1,
+              "1587": 1,
+              "1685": 1
+            }
+          },
+          "/monsters/griffin": {
+            "/abilities/aqua_arrow": {
+              "1082": 1
+            },
+            "/abilities/cleave": {
+              "366": 1
+            },
+            "/abilities/crippling_slash": {
+              "596": 1
+            },
+            "autoAttack": {
+              "55": 1,
+              "458": 1,
+              "589": 1,
+              "914": 1,
+              "1531": 1,
+              "1673": 1,
+              "1679": 1,
+              "1732": 1,
+              "1867": 1,
+              "1908": 1,
+              "2234": 1,
+              "miss": 1
+            }
+          },
+          "/monsters/jackalope": {
+            "/abilities/aqua_arrow": {
+              "375": 1
+            },
+            "/abilities/cleave": {
+              "62": 1,
+              "382": 1,
+              "miss": 1
+            },
+            "/abilities/crippling_slash": {
+              "90": 1,
+              "515": 1
+            },
+            "autoAttack": {
+              "273": 1,
+              "302": 1,
+              "584": 1,
+              "659": 1,
+              "892": 1,
+              "906": 1,
+              "1310": 1,
+              "1418": 1,
+              "1595": 1,
+              "1629": 1,
+              "1752": 1,
+              "2519": 1,
+              "2565": 3
+            }
+          },
+          "/monsters/jungle_sprite": {
+            "/abilities/cleave": {
+              "50": 1,
+              "262": 1,
+              "miss": 1
+            },
+            "/abilities/crippling_slash": {
+              "214": 1,
+              "274": 1
+            },
+            "autoAttack": {
+              "491": 1,
+              "693": 1,
+              "963": 1,
+              "1392": 1,
+              "miss": 1
+            }
+          },
+          "/monsters/manticore": {
+            "/abilities/aqua_arrow": {
+              "601": 1,
+              "1338": 1,
+              "1339": 1
+            },
+            "/abilities/cleave": {
+              "394": 1,
+              "miss": 1
+            },
+            "/abilities/crippling_slash": {
+              "82": 1,
+              "443": 1,
+              "469": 1
+            },
+            "autoAttack": {
+              "52": 1,
+              "218": 1,
+              "277": 1,
+              "328": 1,
+              "444": 1,
+              "478": 1,
+              "639": 1,
+              "894": 1,
+              "1000": 1,
+              "1007": 1,
+              "1238": 1,
+              "1390": 1,
+              "1410": 1,
+              "1470": 1,
+              "1758": 2,
+              "miss": 3
+            }
+          },
+          "/monsters/myconid": {
+            "/abilities/aqua_arrow": {
+              "674": 1,
+              "930": 1,
+              "1011": 1,
+              "1125": 1
+            },
+            "/abilities/cleave": {
+              "196": 1,
+              "487": 1
+            },
+            "/abilities/crippling_slash": {
+              "297": 1,
+              "472": 1
+            },
+            "autoAttack": {
+              "347": 1,
+              "1066": 1,
+              "1879": 1,
+              "2517": 1
+            }
+          },
+          "/monsters/nom_nom": {
+            "/abilities/cleave": {
+              "86": 1,
+              "344": 1
+            },
+            "/abilities/crippling_slash": {
+              "168": 1,
+              "684": 1
+            },
+            "autoAttack": {
+              "786": 1,
+              "845": 1,
+              "2061": 1,
+              "2164": 1
+            }
+          },
+          "/monsters/porcupine": {
+            "/abilities/cleave": {
+              "118": 1
+            },
+            "/abilities/crippling_slash": {
+              "351": 1
+            },
+            "autoAttack": {
+              "1740": 1
+            }
+          },
+          "/monsters/rat": {
+            "autoAttack": {
+              "986": 1
+            }
+          },
+          "/monsters/sea_snail": {
+            "/abilities/cleave": {
+              "282": 1,
+              "349": 1,
+              "377": 1
+            },
+            "/abilities/crippling_slash": {
+              "87": 1,
+              "579": 1,
+              "712": 1
+            },
+            "autoAttack": {
+              "44": 1,
+              "519": 1,
+              "1039": 1,
+              "2200": 1
+            }
+          },
+          "/monsters/skunk": {
+            "autoAttack": {
+              "38": 1,
+              "69": 1,
+              "866": 1
+            }
+          },
+          "/monsters/slimy": {
+            "/abilities/cleave": {
+              "436": 1
+            },
+            "/abilities/crippling_slash": {
+              "231": 1,
+              "235": 1,
+              "421": 1
+            },
+            "autoAttack": {
+              "1008": 1
+            }
+          },
+          "/monsters/snake": {
+            "/abilities/cleave": {
+              "miss": 1
+            },
+            "/abilities/crippling_slash": {
+              "345": 1
+            },
+            "autoAttack": {
+              "1421": 1
+            }
+          },
+          "/monsters/swampy": {
+            "/abilities/aqua_arrow": {
+              "290": 1
+            },
+            "/abilities/cleave": {
+              "365": 1,
+              "487": 1
+            },
+            "autoAttack": {
+              "1334": 1,
+              "2020": 1,
+              "miss": 1
+            }
+          },
+          "/monsters/turtle": {
+            "/abilities/cleave": {
+              "293": 1
+            },
+            "/abilities/crippling_slash": {
+              "miss": 1
+            },
+            "autoAttack": {
+              "917": 1
+            }
+          },
+          "/monsters/veyes": {
+            "/abilities/crippling_slash": {
+              "258": 1,
+              "321": 1
+            },
+            "autoAttack": {
+              "504": 1,
+              "635": 1
+            }
+          }
+        },
+        "player4": {
+          "/monsters/alligator": {
+            "/abilities/aqua_arrow": {
+              "1388": 1,
+              "1509": 1
+            },
+            "/abilities/cleave": {
+              "miss": 1
+            },
+            "/abilities/crippling_slash": {
+              "53": 1
+            },
+            "autoAttack": {
+              "2100": 1
+            }
+          },
+          "/monsters/aquahorse": {
+            "/abilities/cleave": {
+              "183": 1
+            },
+            "/abilities/crippling_slash": {
+              "616": 1
+            }
+          },
+          "/monsters/butterjerry": {
+            "/abilities/aqua_arrow": {
+              "717": 1,
+              "815": 1
+            },
+            "/abilities/cleave": {
+              "40": 1,
+              "49": 1,
+              "114": 1,
+              "148": 1,
+              "175": 1,
+              "270": 1,
+              "444": 1,
+              "miss": 2
+            },
+            "/abilities/crippling_slash": {
+              "22": 1,
+              "110": 2,
+              "147": 1,
+              "347": 1,
+              "664": 1,
+              "miss": 2
+            },
+            "autoAttack": {
+              "12": 1,
+              "16": 1,
+              "166": 1,
+              "181": 1,
+              "483": 1,
+              "574": 1,
+              "754": 1,
+              "847": 1,
+              "1283": 1,
+              "1331": 1,
+              "1351": 1,
+              "2077": 1,
+              "2393": 1,
+              "miss": 1
+            }
+          },
+          "/monsters/centaur_archer": {
+            "/abilities/aqua_arrow": {
+              "1121": 1,
+              "1335": 1,
+              "miss": 1
+            },
+            "/abilities/cleave": {
+              "247": 1,
+              "453": 1
+            },
+            "/abilities/crippling_slash": {
+              "244": 1
+            },
+            "autoAttack": {
+              "111": 1,
+              "123": 1,
+              "304": 1,
+              "1347": 1,
+              "miss": 1
+            }
+          },
+          "/monsters/crab": {
+            "/abilities/cleave": {
+              "347": 1
+            },
+            "/abilities/crippling_slash": {
+              "117": 1
+            },
+            "autoAttack": {
+              "88": 1
+            }
+          },
+          "/monsters/dodocamel": {
+            "/abilities/aqua_arrow": {
+              "1591": 1,
+              "miss": 1
+            },
+            "/abilities/cleave": {
+              "82": 1,
+              "134": 1,
+              "303": 1,
+              "304": 1,
+              "miss": 2
+            },
+            "/abilities/crippling_slash": {
+              "46": 1,
+              "261": 1,
+              "362": 2,
+              "miss": 2
+            },
+            "autoAttack": {
+              "330": 1,
+              "375": 1,
+              "653": 1,
+              "851": 1,
+              "914": 1,
+              "1017": 1,
+              "1024": 1,
+              "1031": 1,
+              "1114": 1,
+              "1134": 2,
+              "1307": 1,
+              "1356": 2,
+              "miss": 9
+            }
+          },
+          "/monsters/eye": {
+            "/abilities/aqua_arrow": {
+              "1018": 1,
+              "1311": 1
+            },
+            "/abilities/cleave": {
+              "93": 1,
+              "314": 1
+            },
+            "/abilities/crippling_slash": {
+              "215": 1,
+              "312": 1
+            },
+            "autoAttack": {
+              "100": 1,
+              "474": 1,
+              "498": 1,
+              "565": 1,
+              "585": 1,
+              "1910": 1
+            }
+          },
+          "/monsters/eyes": {
+            "/abilities/cleave": {
+              "126": 1,
+              "miss": 1
+            },
+            "/abilities/crippling_slash": {
+              "512": 1
+            },
+            "autoAttack": {
+              "570": 1
+            }
+          },
+          "/monsters/frog": {
+            "/abilities/cleave": {
+              "miss": 1
+            },
+            "/abilities/crippling_slash": {
+              "54": 1
+            }
+          },
+          "/monsters/gobo_boomy": {
+            "/abilities/cleave": {
+              "178": 1,
+              "495": 1
+            },
+            "/abilities/crippling_slash": {
+              "102": 1
+            },
+            "autoAttack": {
+              "12": 1,
+              "1096": 1,
+              "1364": 1,
+              "1401": 1,
+              "2053": 1
+            }
+          },
+          "/monsters/gobo_shooty": {
+            "/abilities/cleave": {
+              "75": 1
+            },
+            "/abilities/crippling_slash": {
+              "517": 1
+            },
+            "autoAttack": {
+              "2375": 1,
+              "miss": 1
+            }
+          },
+          "/monsters/gobo_slashy": {
+            "/abilities/aqua_arrow": {
+              "526": 1
+            },
+            "/abilities/cleave": {
+              "268": 1
+            },
+            "/abilities/crippling_slash": {
+              "257": 1
+            },
+            "autoAttack": {
+              "1993": 1,
+              "2406": 1
+            }
+          },
+          "/monsters/gobo_smashy": {
+            "/abilities/aqua_arrow": {
+              "1773": 1
+            },
+            "/abilities/cleave": {
+              "249": 1
+            },
+            "/abilities/crippling_slash": {
+              "630": 1
+            },
+            "autoAttack": {
+              "590": 1,
+              "766": 1,
+              "2033": 1,
+              "miss": 1
+            }
+          },
+          "/monsters/gobo_stabby": {
+            "/abilities/aqua_arrow": {
+              "1107": 1,
+              "1808": 1
+            },
+            "/abilities/cleave": {
+              "456": 1,
+              "544": 1
+            },
+            "/abilities/crippling_slash": {
+              "48": 1,
+              "191": 1
+            },
+            "autoAttack": {
+              "551": 1,
+              "759": 1,
+              "1871": 1,
+              "2095": 1
+            }
+          },
+          "/monsters/griffin": {
+            "/abilities/aqua_arrow": {
+              "1081": 1
+            },
+            "/abilities/cleave": {
+              "500": 1
+            },
+            "/abilities/crippling_slash": {
+              "219": 1
+            },
+            "autoAttack": {
+              "239": 1,
+              "426": 1,
+              "904": 1,
+              "1193": 1,
+              "1553": 1,
+              "1867": 2,
+              "2112": 1,
+              "2233": 1,
+              "2234": 1,
+              "miss": 1
+            }
+          },
+          "/monsters/jackalope": {
+            "/abilities/aqua_arrow": {
+              "miss": 1
+            },
+            "/abilities/cleave": {
+              "159": 1,
+              "304": 1,
+              "454": 1,
+              "miss": 1
+            },
+            "/abilities/crippling_slash": {
+              "415": 1,
+              "573": 1,
+              "648": 1,
+              "miss": 1
+            },
+            "autoAttack": {
+              "30": 1,
+              "93": 1,
+              "127": 1,
+              "429": 1,
+              "445": 1,
+              "482": 1,
+              "941": 1,
+              "1221": 1,
+              "1332": 1,
+              "1378": 1,
+              "1814": 1,
+              "2067": 1,
+              "2112": 1,
+              "2145": 1,
+              "2565": 1
+            }
+          },
+          "/monsters/jungle_sprite": {
+            "/abilities/cleave": {
+              "113": 1,
+              "509": 1
+            },
+            "/abilities/crippling_slash": {
+              "500": 1
+            },
+            "autoAttack": {
+              "29": 1,
+              "267": 1,
+              "831": 1,
+              "1832": 1,
+              "2186": 1
+            }
+          },
+          "/monsters/manticore": {
+            "/abilities/aqua_arrow": {
+              "489": 1,
+              "704": 1,
+              "1339": 1
+            },
+            "/abilities/cleave": {
+              "75": 1,
+              "248": 1,
+              "323": 1
+            },
+            "/abilities/crippling_slash": {
+              "195": 1,
+              "342": 1
+            },
+            "autoAttack": {
+              "10": 1,
+              "30": 1,
+              "195": 1,
+              "429": 1,
+              "474": 1,
+              "1051": 1,
+              "1283": 1,
+              "1416": 1,
+              "1469": 1,
+              "1470": 4,
+              "1694": 1,
+              "1758": 3,
+              "1759": 1,
+              "miss": 2
+            }
+          },
+          "/monsters/myconid": {
+            "/abilities/aqua_arrow": {
+              "385": 1,
+              "528": 1
+            },
+            "/abilities/cleave": {
+              "111": 1,
+              "153": 1,
+              "487": 1
+            },
+            "/abilities/crippling_slash": {
+              "480": 1,
+              "604": 1,
+              "609": 1
+            },
+            "autoAttack": {
+              "293": 1
+            }
+          },
+          "/monsters/nom_nom": {
+            "autoAttack": {
+              "265": 1,
+              "367": 1,
+              "446": 1,
+              "1184": 1
+            }
+          },
+          "/monsters/porcupine": {
+            "/abilities/cleave": {
+              "186": 1,
+              "201": 1
+            },
+            "/abilities/crippling_slash": {
+              "163": 1,
+              "288": 1
+            },
+            "autoAttack": {
+              "1740": 1
+            }
+          },
+          "/monsters/rat": {
+            "/abilities/cleave": {
+              "miss": 1
+            },
+            "/abilities/crippling_slash": {
+              "630": 1
+            },
+            "autoAttack": {
+              "564": 1
+            }
+          },
+          "/monsters/sea_snail": {
+            "/abilities/aqua_arrow": {
+              "1161": 1
+            },
+            "/abilities/cleave": {
+              "256": 1,
+              "260": 1,
+              "445": 1
+            },
+            "/abilities/crippling_slash": {
+              "220": 1,
+              "328": 1,
+              "miss": 1
+            },
+            "autoAttack": {
+              "727": 1,
+              "740": 1,
+              "802": 1
+            }
+          },
+          "/monsters/skunk": {
+            "/abilities/cleave": {
+              "254": 1,
+              "348": 1
+            },
+            "/abilities/crippling_slash": {
+              "463": 1,
+              "476": 1
+            },
+            "autoAttack": {
+              "834": 1,
+              "1700": 1,
+              "miss": 1
+            }
+          },
+          "/monsters/slimy": {
+            "/abilities/cleave": {
+              "252": 1
+            },
+            "/abilities/crippling_slash": {
+              "456": 1
+            },
+            "autoAttack": {
+              "1780": 1
+            }
+          },
+          "/monsters/snake": {
+            "autoAttack": {
+              "28": 1,
+              "398": 1,
+              "429": 1,
+              "957": 1,
+              "1900": 1
+            }
+          },
+          "/monsters/swampy": {
+            "/abilities/aqua_arrow": {
+              "472": 1
+            },
+            "/abilities/cleave": {
+              "411": 1
+            },
+            "autoAttack": {
+              "1165": 1,
+              "1195": 1,
+              "2020": 1
+            }
+          },
+          "/monsters/turtle": {
+            "autoAttack": {
+              "888": 1,
+              "2056": 1
+            }
+          },
+          "/monsters/veyes": {
+            "autoAttack": {
+              "1182": 1,
+              "1826": 1,
+              "2262": 1
+            }
+          }
+        },
+        "player5": {
+          "/monsters/alligator": {
+            "/abilities/cleave": {
+              "537": 1
+            },
+            "/abilities/crippling_slash": {
+              "552": 1
+            },
+            "autoAttack": {
+              "43": 1,
+              "2100": 1
+            }
+          },
+          "/monsters/aquahorse": {
+            "/abilities/cleave": {
+              "23": 1,
+              "576": 1
+            },
+            "/abilities/crippling_slash": {
+              "65": 1,
+              "miss": 1
+            },
+            "autoAttack": {
+              "461": 1,
+              "551": 1,
+              "2110": 1,
+              "miss": 1
+            }
+          },
+          "/monsters/butterjerry": {
+            "/abilities/aqua_arrow": {
+              "825": 1,
+              "1614": 1,
+              "1818": 1,
+              "1853": 1
+            },
+            "/abilities/cleave": {
+              "118": 1,
+              "273": 1,
+              "338": 1,
+              "388": 1,
+              "448": 1,
+              "556": 1,
+              "miss": 2
+            },
+            "/abilities/crippling_slash": {
+              "205": 1,
+              "358": 1,
+              "514": 1,
+              "664": 1,
+              "675": 2,
+              "676": 1,
+              "miss": 2
+            },
+            "autoAttack": {
+              "104": 1,
+              "109": 1,
+              "150": 1,
+              "243": 1,
+              "385": 1,
+              "1102": 1,
+              "1871": 1,
+              "1924": 1,
+              "2098": 1,
+              "2115": 1,
+              "2116": 1,
+              "2347": 2,
+              "2393": 1,
+              "2439": 1,
+              "2531": 1,
+              "miss": 1
+            }
+          },
+          "/monsters/centaur_archer": {
+            "/abilities/aqua_arrow": {
+              "1590": 1
+            },
+            "/abilities/cleave": {
+              "395": 1,
+              "483": 1
+            },
+            "/abilities/crippling_slash": {
+              "37": 1,
+              "622": 1,
+              "miss": 1
+            },
+            "autoAttack": {
+              "425": 1,
+              "794": 1,
+              "863": 1,
+              "2301": 1
+            }
+          },
+          "/monsters/crab": {
+            "/abilities/aqua_arrow": {
+              "1732": 1
+            },
+            "/abilities/cleave": {
+              "495": 1
+            },
+            "/abilities/crippling_slash": {
+              "251": 1
+            }
+          },
+          "/monsters/dodocamel": {
+            "/abilities/aqua_arrow": {
+              "983": 1,
+              "1252": 1,
+              "1591": 1
+            },
+            "/abilities/cleave": {
+              "125": 1,
+              "183": 1,
+              "195": 1,
+              "250": 1,
+              "miss": 1
+            },
+            "/abilities/crippling_slash": {
+              "14": 1,
+              "32": 1,
+              "63": 1,
+              "miss": 2
+            },
+            "autoAttack": {
+              "54": 1,
+              "229": 1,
+              "254": 1,
+              "269": 1,
+              "324": 1,
+              "359": 1,
+              "375": 1,
+              "601": 1,
+              "667": 1,
+              "683": 1,
+              "718": 1,
+              "752": 1,
+              "810": 1,
+              "813": 1,
+              "912": 1,
+              "1040": 1,
+              "1134": 3,
+              "1282": 1,
+              "1356": 2
+            }
+          },
+          "/monsters/eye": {
+            "/abilities/aqua_arrow": {
+              "1707": 1
+            },
+            "/abilities/cleave": {
+              "102": 1,
+              "173": 1,
+              "308": 1,
+              "316": 1,
+              "522": 1
+            },
+            "/abilities/crippling_slash": {
+              "102": 1,
+              "367": 1,
+              "407": 1,
+              "490": 1
+            },
+            "autoAttack": {
+              "576": 1,
+              "1325": 1,
+              "1546": 1,
+              "1638": 1
+            }
+          },
+          "/monsters/eyes": {
+            "/abilities/cleave": {
+              "509": 1
+            },
+            "/abilities/crippling_slash": {
+              "578": 1
+            },
+            "autoAttack": {
+              "57": 1,
+              "1736": 1
+            }
+          },
+          "/monsters/frog": {
+            "autoAttack": {
+              "1800": 1
+            }
+          },
+          "/monsters/gobo_boomy": {
+            "/abilities/cleave": {
+              "152": 1,
+              "281": 1,
+              "387": 1,
+              "569": 1
+            },
+            "/abilities/crippling_slash": {
+              "202": 1,
+              "322": 1,
+              "432": 1,
+              "679": 1
+            },
+            "autoAttack": {
+              "610": 1,
+              "934": 1,
+              "1450": 1
+            }
+          },
+          "/monsters/gobo_shooty": {
+            "/abilities/aqua_arrow": {
+              "225": 1,
+              "1529": 1
+            },
+            "/abilities/cleave": {
+              "miss": 1
+            },
+            "/abilities/crippling_slash": {
+              "266": 1
+            },
+            "autoAttack": {
+              "816": 1,
+              "2384": 1
+            }
+          },
+          "/monsters/gobo_slashy": {
+            "/abilities/aqua_arrow": {
+              "1571": 1
+            },
+            "/abilities/cleave": {
+              "18": 1,
+              "191": 1
+            },
+            "autoAttack": {
+              "999": 1,
+              "2352": 1
+            }
+          },
+          "/monsters/gobo_smashy": {
+            "/abilities/cleave": {
+              "228": 1,
+              "319": 1
+            },
+            "/abilities/crippling_slash": {
+              "424": 1,
+              "674": 1
+            },
+            "autoAttack": {
+              "64": 1,
+              "415": 1,
+              "1035": 1
+            }
+          },
+          "/monsters/gobo_stabby": {
+            "/abilities/cleave": {
+              "117": 1,
+              "238": 1,
+              "319": 1,
+              "555": 1
+            },
+            "/abilities/crippling_slash": {
+              "131": 1,
+              "252": 1,
+              "585": 1,
+              "662": 1
+            },
+            "autoAttack": {
+              "611": 1,
+              "687": 1,
+              "715": 1
+            }
+          },
+          "/monsters/griffin": {
+            "/abilities/aqua_arrow": {
+              "462": 1
+            },
+            "/abilities/cleave": {
+              "112": 1
+            },
+            "/abilities/crippling_slash": {
+              "54": 1
+            },
+            "autoAttack": {
+              "632": 1,
+              "1152": 1,
+              "1481": 1,
+              "1696": 1,
+              "1867": 4,
+              "2233": 1,
+              "2234": 1,
+              "miss": 2
+            }
+          },
+          "/monsters/jackalope": {
+            "/abilities/aqua_arrow": {
+              "1088": 1
+            },
+            "/abilities/cleave": {
+              "142": 1,
+              "374": 1,
+              "388": 1,
+              "miss": 1
+            },
+            "/abilities/crippling_slash": {
+              "83": 1,
+              "411": 1,
+              "541": 1
+            },
+            "autoAttack": {
+              "154": 1,
+              "286": 1,
+              "344": 1,
+              "466": 1,
+              "918": 1,
+              "1496": 1,
+              "1568": 1,
+              "1598": 1,
+              "1636": 1,
+              "1859": 1,
+              "2099": 1,
+              "2106": 1,
+              "2145": 3,
+              "2472": 1
+            }
+          },
+          "/monsters/jungle_sprite": {
+            "/abilities/aqua_arrow": {
+              "1123": 1,
+              "1739": 1
+            },
+            "/abilities/cleave": {
+              "349": 1
+            },
+            "autoAttack": {
+              "3": 1,
+              "668": 1,
+              "1669": 1
+            }
+          },
+          "/monsters/manticore": {
+            "/abilities/aqua_arrow": {
+              "960": 1,
+              "1338": 1,
+              "miss": 1
+            },
+            "/abilities/cleave": {
+              "106": 1,
+              "223": 1,
+              "386": 1
+            },
+            "/abilities/crippling_slash": {
+              "43": 1,
+              "77": 1,
+              "371": 1
+            },
+            "autoAttack": {
+              "693": 1,
+              "751": 1,
+              "879": 1,
+              "931": 1,
+              "1071": 1,
+              "1091": 1,
+              "1332": 1,
+              "1470": 5,
+              "1758": 5,
+              "miss": 2
+            }
+          },
+          "/monsters/myconid": {
+            "/abilities/aqua_arrow": {
+              "430": 1,
+              "1470": 1,
+              "1927": 1
+            },
+            "/abilities/cleave": {
+              "124": 1,
+              "474": 1
+            },
+            "/abilities/crippling_slash": {
+              "86": 1,
+              "301": 1,
+              "475": 1,
+              "508": 1
+            },
+            "autoAttack": {
+              "625": 1,
+              "790": 1,
+              "1185": 1,
+              "1972": 1
+            }
+          },
+          "/monsters/nom_nom": {
+            "/abilities/crippling_slash": {
+              "44": 1
+            },
+            "autoAttack": {
+              "126": 1,
+              "219": 1,
+              "387": 1,
+              "miss": 1
+            }
+          },
+          "/monsters/porcupine": {
+            "/abilities/aqua_arrow": {
+              "887": 1
+            },
+            "autoAttack": {
+              "1025": 1
+            }
+          },
+          "/monsters/rat": {
+            "autoAttack": {
+              "90": 1
+            }
+          },
+          "/monsters/sea_snail": {
+            "/abilities/cleave": {
+              "43": 1,
+              "151": 1,
+              "207": 1,
+              "232": 1
+            },
+            "/abilities/crippling_slash": {
+              "171": 1,
+              "712": 1,
+              "740": 1
+            },
+            "autoAttack": {
+              "55": 1,
+              "504": 1,
+              "1223": 1
+            }
+          },
+          "/monsters/skunk": {
+            "/abilities/cleave": {
+              "87": 1
+            },
+            "autoAttack": {
+              "133": 1
+            }
+          },
+          "/monsters/slimy": {
+            "/abilities/crippling_slash": {
+              "143": 1,
+              "541": 1
+            },
+            "autoAttack": {
+              "528": 1
+            }
+          },
+          "/monsters/snake": {
+            "/abilities/cleave": {
+              "600": 1
+            },
+            "/abilities/crippling_slash": {
+              "316": 1,
+              "598": 1
+            },
+            "autoAttack": {
+              "50": 1,
+              "683": 1
+            }
+          },
+          "/monsters/swampy": {
+            "/abilities/aqua_arrow": {
+              "1232": 1,
+              "1922": 1
+            },
+            "/abilities/cleave": {
+              "238": 1
+            },
+            "autoAttack": {
+              "232": 1,
+              "740": 1,
+              "825": 1,
+              "2020": 1
+            }
+          },
+          "/monsters/turtle": {
+            "autoAttack": {
+              "345": 1,
+              "1095": 1
+            }
+          },
+          "/monsters/veyes": {
+            "/abilities/cleave": {
+              "150": 1
+            },
+            "/abilities/crippling_slash": {
+              "188": 1,
+              "592": 1
+            },
+            "autoAttack": {
+              "903": 1,
+              "2219": 1
+            }
+          }
+        }
+      },
+      "bossSpawns": [
+        "#5,/monsters/butterjerry",
+        "#10,/monsters/jackalope",
+        "#15,/monsters/jackalope,/monsters/butterjerry",
+        "#20,/monsters/dodocamel",
+        "#25,/monsters/dodocamel,/monsters/butterjerry",
+        "#30,/monsters/jackalope,/monsters/dodocamel",
+        "#35,/monsters/manticore",
+        "#40,/monsters/jackalope,/monsters/manticore",
+        "#45,/monsters/manticore,/monsters/dodocamel",
+        "#50,/monsters/griffin"
+      ],
+      "combatDropQuantity": {
+        "player1": 0,
+        "player2": 0,
+        "player3": 0,
+        "player4": 0,
+        "player5": 0
+      },
+      "consumablesUsed": {
+        "player1": {
+          "/items/star_fruit_gummy": 1,
+          "/items/ultra_magic_coffee": 2,
+          "/items/ultra_melee_coffee": 2,
+          "/items/ultra_ranged_coffee": 2
+        },
+        "player2": {
+          "/items/star_fruit_gummy": 1,
+          "/items/ultra_magic_coffee": 2,
+          "/items/ultra_melee_coffee": 2,
+          "/items/ultra_ranged_coffee": 2
+        },
+        "player3": {
+          "/items/star_fruit_gummy": 1,
+          "/items/ultra_magic_coffee": 2,
+          "/items/ultra_melee_coffee": 2,
+          "/items/ultra_ranged_coffee": 2
+        },
+        "player4": {
+          "/items/star_fruit_gummy": 2,
+          "/items/ultra_magic_coffee": 2,
+          "/items/ultra_melee_coffee": 2,
+          "/items/ultra_ranged_coffee": 2
+        },
+        "player5": {
+          "/items/star_fruit_gummy": 1,
+          "/items/ultra_magic_coffee": 2,
+          "/items/ultra_melee_coffee": 2,
+          "/items/ultra_ranged_coffee": 2
+        }
+      },
+      "deaths": {
+        "/monsters/alligator": 8,
+        "/monsters/aquahorse": 10,
+        "/monsters/butterjerry": 20,
+        "/monsters/centaur_archer": 7,
+        "/monsters/crab": 6,
+        "/monsters/dodocamel": 5,
+        "/monsters/eye": 11,
+        "/monsters/eyes": 3,
+        "/monsters/frog": 4,
+        "/monsters/gobo_boomy": 11,
+        "/monsters/gobo_shooty": 6,
+        "/monsters/gobo_slashy": 5,
+        "/monsters/gobo_smashy": 6,
+        "/monsters/gobo_stabby": 12,
+        "/monsters/griffin": 1,
+        "/monsters/jackalope": 9,
+        "/monsters/jungle_sprite": 16,
+        "/monsters/manticore": 3,
+        "/monsters/myconid": 14,
+        "/monsters/nom_nom": 9,
+        "/monsters/porcupine": 6,
+        "/monsters/rat": 2,
+        "/monsters/sea_snail": 12,
+        "/monsters/skunk": 6,
+        "/monsters/slimy": 8,
+        "/monsters/snake": 6,
+        "/monsters/swampy": 11,
+        "/monsters/turtle": 3,
+        "/monsters/veyes": 5
+      },
+      "debuffOnLevelGap": {
+        "player1": 0,
+        "player2": 0,
+        "player3": 0,
+        "player4": 0,
+        "player5": 0
+      },
+      "difficultyTier": 0,
+      "dropRateMultiplier": {
+        "player1": 1,
+        "player2": 1,
+        "player3": 1,
+        "player4": 1,
+        "player5": 1
+      },
+      "dungeonsCompleted": 1,
+      "dungeonsFailed": 0,
+      "encounters": 70,
+      "experienceGained": {
+        "player1": {
+          "attack": 31207.927750359824,
+          "defense": 0,
+          "intelligence": 0,
+          "magic": 0,
+          "melee": 0,
+          "ranged": 12114.87878507757,
+          "stamina": 0
+        },
+        "player2": {
+          "attack": 31207.927750359824,
+          "defense": 0,
+          "intelligence": 0,
+          "magic": 0,
+          "melee": 0,
+          "ranged": 12114.87878507757,
+          "stamina": 0
+        },
+        "player3": {
+          "attack": 31207.927750359824,
+          "defense": 0,
+          "intelligence": 0,
+          "magic": 0,
+          "melee": 0,
+          "ranged": 12114.87878507757,
+          "stamina": 0
+        },
+        "player4": {
+          "attack": 31207.927750359824,
+          "defense": 0,
+          "intelligence": 0,
+          "magic": 0,
+          "melee": 0,
+          "ranged": 12114.87878507757,
+          "stamina": 0
+        },
+        "player5": {
+          "attack": 31207.927750359824,
+          "defense": 0,
+          "intelligence": 0,
+          "magic": 0,
+          "melee": 0,
+          "ranged": 12114.87878507757,
+          "stamina": 0
+        }
+      },
+      "firstEncounterFinishTime": 1038575667.6557864,
+      "healingDone": {
+        "player1": {
+          "regen": 387
+        },
+        "player2": {
+          "regen": 319
+        },
+        "player3": {
+          "regen": 98
+        },
+        "player4": {
+          "regen": 94
+        },
+        "player5": {
+          "regen": 132
+        }
+      },
+      "hitpointsGained": {
+        "player1": {
+          "regen": 387
+        },
+        "player2": {
+          "regen": 319
+        },
+        "player3": {
+          "regen": 98
+        },
+        "player4": {
+          "regen": 94
+        },
+        "player5": {
+          "regen": 132
+        }
+      },
+      "hitpointsSpent": {},
+      "isDungeon": true,
+      "isGuildTrial": false,
+      "isLabyrinth": false,
+      "labRoomOutcomes": [],
+      "labyAttemptCount": 0,
+      "labyrinthName": "@undefined",
+      "lastDungeonFinishTime": 458057879079.0067,
+      "lastEncounterFinishTime": 596696168374.5782,
+      "manaUsed": {
+        "player1": {
+          "/abilities/aqua_arrow": 1050,
+          "/abilities/berserk": 1235,
+          "/abilities/cleave": 980,
+          "/abilities/crippling_slash": 1540,
+          "/abilities/critical_aura": 300
+        },
+        "player2": {
+          "/abilities/aqua_arrow": 1050,
+          "/abilities/berserk": 1235,
+          "/abilities/cleave": 980,
+          "/abilities/crippling_slash": 1540,
+          "/abilities/critical_aura": 200
+        },
+        "player3": {
+          "/abilities/aqua_arrow": 1050,
+          "/abilities/berserk": 1235,
+          "/abilities/cleave": 980,
+          "/abilities/crippling_slash": 1540,
+          "/abilities/critical_aura": 300
+        },
+        "player4": {
+          "/abilities/aqua_arrow": 1085,
+          "/abilities/berserk": 1235,
+          "/abilities/cleave": 980,
+          "/abilities/crippling_slash": 1540,
+          "/abilities/critical_aura": 400
+        },
+        "player5": {
+          "/abilities/aqua_arrow": 1050,
+          "/abilities/berserk": 1235,
+          "/abilities/cleave": 980,
+          "/abilities/crippling_slash": 1540,
+          "/abilities/critical_aura": 300
+        }
+      },
+      "manapointsGained": {
+        "player1": {
+          "/items/star_fruit_gummy": 280,
+          "regen": 4735
+        },
+        "player2": {
+          "/items/star_fruit_gummy": 280,
+          "regen": 4635
+        },
+        "player3": {
+          "/items/star_fruit_gummy": 280,
+          "regen": 4735
+        },
+        "player4": {
+          "/items/star_fruit_gummy": 560,
+          "regen": 4555
+        },
+        "player5": {
+          "/items/star_fruit_gummy": 280,
+          "regen": 4735
+        }
+      },
+      "maxDungenonTime": 458057879079.0067,
+      "maxEnrageStack": 0,
+      "maxWaveReached": 50,
+      "minDungenonTime": 458057879079.0067,
+      "monsterStats": [],
+      "numberOfPlayers": 5,
+      "playerRanOutOfMana": {
+        "player1": false,
+        "player2": false,
+        "player3": false,
+        "player4": false,
+        "player5": false
+      },
+      "playerRanOutOfManaTime": {
+        "player1": {
+          "isOutOfMana": false,
+          "startTimeForOutOfMana": 0,
+          "totalTimeForOutOfMana": 0
+        },
+        "player2": {
+          "isOutOfMana": false,
+          "startTimeForOutOfMana": 0,
+          "totalTimeForOutOfMana": 0
+        },
+        "player3": {
+          "isOutOfMana": false,
+          "startTimeForOutOfMana": 0,
+          "totalTimeForOutOfMana": 0
+        },
+        "player4": {
+          "isOutOfMana": false,
+          "startTimeForOutOfMana": 0,
+          "totalTimeForOutOfMana": 0
+        },
+        "player5": {
+          "isOutOfMana": false,
+          "startTimeForOutOfMana": 0,
+          "totalTimeForOutOfMana": 0
+        }
+      },
+      "playerStats": [],
+      "rareFindMultiplier": {
+        "player1": 1.256,
+        "player2": 1.256,
+        "player3": 1.256,
+        "player4": 1.256,
+        "player5": 1.256
+      },
+      "roomLevel": "@undefined",
+      "simulatedTime": 600000000000,
+      "timeSeriesData": {
+        "players": {},
+        "timestamps": []
+      },
+      "timeSpentAlive": [
+        {
+          "alive": false,
+          "count": 2,
+          "name": "#1",
+          "spawnedAt": 461057879079.0067,
+          "timeSpentAlive": 3181279760.220606
+        },
+        {
+          "alive": false,
+          "count": 14,
+          "name": "/monsters/myconid",
+          "spawnedAt": 578029583940.2745,
+          "timeSpentAlive": 46043992830.52498
+        },
+        {
+          "alive": false,
+          "count": 16,
+          "name": "/monsters/jungle_sprite",
+          "spawnedAt": 565156367805.0134,
+          "timeSpentAlive": 55867305578.215485
+        },
+        {
+          "alive": false,
+          "count": 8,
+          "name": "/monsters/alligator",
+          "spawnedAt": 499084055674.7014,
+          "timeSpentAlive": 11315623491.921082
+        },
+        {
+          "alive": false,
+          "count": 11,
+          "name": "/monsters/swampy",
+          "spawnedAt": 565156367805.0134,
+          "timeSpentAlive": 30006488514.915356
+        },
+        {
+          "alive": false,
+          "count": 2,
+          "name": "#2",
+          "spawnedAt": 466200583171.57153,
+          "timeSpentAlive": 4656328066.435301
+        },
+        {
+          "alive": false,
+          "count": 8,
+          "name": "/monsters/slimy",
+          "spawnedAt": 510408039527.4869,
+          "timeSpentAlive": 17735104550.607594
+        },
+        {
+          "alive": false,
+          "count": 4,
+          "name": "/monsters/frog",
+          "spawnedAt": 471714207145.442,
+          "timeSpentAlive": 6799032159.00012
+        },
+        {
+          "alive": false,
+          "count": 2,
+          "name": "#3",
+          "spawnedAt": 471714207145.442,
+          "timeSpentAlive": 8570816370.259274
+        },
+        {
+          "alive": false,
+          "count": 6,
+          "name": "/monsters/porcupine",
+          "spawnedAt": 504820231577.3553,
+          "timeSpentAlive": 11752096130.479914
+        },
+        {
+          "alive": true,
+          "count": 12,
+          "name": "/monsters/sea_snail",
+          "spawnedAt": 599696168374.5782,
+          "timeSpentAlive": 31778272726.17444
+        },
+        {
+          "alive": false,
+          "count": 2,
+          "name": "#4",
+          "spawnedAt": 478999615330.57166,
+          "timeSpentAlive": 6650664206.47784
+        },
+        {
+          "alive": false,
+          "count": 6,
+          "name": "/monsters/skunk",
+          "spawnedAt": 499084055674.7014,
+          "timeSpentAlive": 13672248294.261318
+        },
+        {
+          "alive": false,
+          "count": 2,
+          "name": "#5",
+          "spawnedAt": 486507575444.4847,
+          "timeSpentAlive": 4878879995.2186775
+        },
+        {
+          "alive": false,
+          "count": 20,
+          "name": "/monsters/butterjerry",
+          "spawnedAt": 547626823603.3171,
+          "timeSpentAlive": 85956609288.39973
+        },
+        {
+          "alive": false,
+          "count": 2,
+          "name": "#6",
+          "spawnedAt": 491798647489.5718,
+          "timeSpentAlive": 8570816370.25927
+        },
+        {
+          "alive": false,
+          "count": 10,
+          "name": "/monsters/aquahorse",
+          "spawnedAt": 539970495536.8818,
+          "timeSpentAlive": 23207456355.91528
+        },
+        {
+          "alive": false,
+          "count": 2,
+          "name": "/monsters/rat",
+          "spawnedAt": 504820231577.3553,
+          "timeSpentAlive": 4730512042.696407
+        },
+        {
+          "alive": false,
+          "count": 2,
+          "name": "#7",
+          "spawnedAt": 499084055674.7014,
+          "timeSpentAlive": 7021584087.783508
+        },
+        {
+          "alive": false,
+          "count": 6,
+          "name": "/monsters/snake",
+          "spawnedAt": 510408039527.4869,
+          "timeSpentAlive": 15444032505.520508
+        },
+        {
+          "alive": true,
+          "count": 6,
+          "name": "/monsters/crab",
+          "spawnedAt": 599696168374.5782,
+          "timeSpentAlive": 13894800223.044594
+        },
+        {
+          "alive": false,
+          "count": 2,
+          "name": "#8",
+          "spawnedAt": 504820231577.3553,
+          "timeSpentAlive": 4730512042.696411
+        },
+        {
+          "alive": false,
+          "count": 2,
+          "name": "#9",
+          "spawnedAt": 510408039527.4869,
+          "timeSpentAlive": 4507960113.913025
+        },
+        {
+          "alive": false,
+          "count": 2,
+          "name": "#10",
+          "spawnedAt": 515773295548.8351,
+          "timeSpentAlive": 8793368299.042664
+        },
+        {
+          "alive": false,
+          "count": 9,
+          "name": "/monsters/jackalope",
+          "spawnedAt": 547626823603.3171,
+          "timeSpentAlive": 43456184880.39328
+        },
+        {
+          "alive": false,
+          "count": 2,
+          "name": "#11",
+          "spawnedAt": 523281255662.7481,
+          "timeSpentAlive": 5101431924.002052
+        },
+        {
+          "alive": false,
+          "count": 2,
+          "name": "#12",
+          "spawnedAt": 528869063612.8797,
+          "timeSpentAlive": 6873216135.261223
+        },
+        {
+          "alive": true,
+          "count": 12,
+          "name": "/monsters/gobo_stabby",
+          "spawnedAt": 599696168374.5782,
+          "timeSpentAlive": 35033736462.65631
+        },
+        {
+          "alive": false,
+          "count": 2,
+          "name": "#13",
+          "spawnedAt": 534456871563.0113,
+          "timeSpentAlive": 6799032159.000122
+        },
+        {
+          "alive": false,
+          "count": 11,
+          "name": "/monsters/eye",
+          "spawnedAt": 398761389871.0505,
+          "timeSpentAlive": 30525776348.743317
+        },
+        {
+          "alive": false,
+          "count": 9,
+          "name": "/monsters/nom_nom",
+          "spawnedAt": 578029583940.2745,
+          "timeSpentAlive": 31926640678.69684
+        },
+        {
+          "alive": false,
+          "count": 2,
+          "name": "#14",
+          "spawnedAt": 539970495536.8818,
+          "timeSpentAlive": 9312656132.870575
+        },
+        {
+          "alive": false,
+          "count": 2,
+          "name": "#15",
+          "spawnedAt": 547626823603.3171,
+          "timeSpentAlive": 13968984199.305664
+        },
+        {
+          "alive": false,
+          "count": 2,
+          "name": "#16",
+          "spawnedAt": 557500039738.5781,
+          "timeSpentAlive": 7021584087.783508
+        },
+        {
+          "alive": false,
+          "count": 5,
+          "name": "/monsters/gobo_slashy",
+          "spawnedAt": 534456871563.0113,
+          "timeSpentAlive": 14117352151.828125
+        },
+        {
+          "alive": false,
+          "count": 2,
+          "name": "#17",
+          "spawnedAt": 565156367805.0134,
+          "timeSpentAlive": 8941736251.56491
+        },
+        {
+          "alive": false,
+          "count": 2,
+          "name": "#18",
+          "spawnedAt": 572441775990.1431,
+          "timeSpentAlive": 5175615900.263062
+        },
+        {
+          "alive": false,
+          "count": 2,
+          "name": "#19",
+          "spawnedAt": 578029583940.2745,
+          "timeSpentAlive": 10936072391.607422
+        },
+        {
+          "alive": false,
+          "count": 3,
+          "name": "/monsters/turtle",
+          "spawnedAt": 162266298062.2199,
+          "timeSpentAlive": 12856224555.388916
+        },
+        {
+          "alive": false,
+          "count": 2,
+          "name": "#20",
+          "spawnedAt": 585537544054.1875,
+          "timeSpentAlive": 22910720450.870636
+        },
+        {
+          "alive": false,
+          "count": 5,
+          "name": "/monsters/dodocamel",
+          "spawnedAt": 585537544054.1875,
+          "timeSpentAlive": 76857873865.30469
+        },
+        {
+          "alive": true,
+          "count": 1,
+          "name": "#21",
+          "spawnedAt": 599696168374.5782,
+          "timeSpentAlive": 4285408185.1296387
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#22",
+          "spawnedAt": 147250377834.39386,
+          "timeSpentAlive": 6428112277.694458
+        },
+        {
+          "alive": false,
+          "count": 6,
+          "name": "/monsters/gobo_shooty",
+          "spawnedAt": 565156367805.0134,
+          "timeSpentAlive": 11900464083.002167
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#23",
+          "spawnedAt": 156678490112.08832,
+          "timeSpentAlive": 2587807950.131592
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#24",
+          "spawnedAt": 162266298062.2199,
+          "timeSpentAlive": 6428112277.694458
+        },
+        {
+          "alive": true,
+          "count": 7,
+          "name": "/monsters/centaur_archer",
+          "spawnedAt": 599696168374.5782,
+          "timeSpentAlive": 21584040097.17816
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#25",
+          "spawnedAt": 171694410339.91437,
+          "timeSpentAlive": 13301328412.955688
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#26",
+          "spawnedAt": 187995738752.87006,
+          "timeSpentAlive": 4656328066.435272
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#27",
+          "spawnedAt": 195652066819.30533,
+          "timeSpentAlive": 5101431924.002045
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#28",
+          "spawnedAt": 203753498743.30737,
+          "timeSpentAlive": 2142704092.5648193
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#29",
+          "spawnedAt": 208896202835.8722,
+          "timeSpentAlive": 4285408185.1296387
+        },
+        {
+          "alive": false,
+          "count": 11,
+          "name": "/monsters/gobo_boomy",
+          "spawnedAt": 572441775990.1431,
+          "timeSpentAlive": 40794192954.00052
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#30",
+          "spawnedAt": 216181611021.00183,
+          "timeSpentAlive": 13894800223.044708
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#31",
+          "spawnedAt": 233076411244.04654,
+          "timeSpentAlive": 6428112277.694458
+        },
+        {
+          "alive": false,
+          "count": 3,
+          "name": "/monsters/eyes",
+          "spawnedAt": 304892188285.8307,
+          "timeSpentAlive": 14191536128.089233
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#32",
+          "spawnedAt": 242504523521.741,
+          "timeSpentAlive": 4878879995.218658
+        },
+        {
+          "alive": false,
+          "count": 6,
+          "name": "/monsters/gobo_smashy",
+          "spawnedAt": 539970495536.8818,
+          "timeSpentAlive": 21138936239.611603
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#33",
+          "spawnedAt": 250383403516.95966,
+          "timeSpentAlive": 6428112277.694458
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#34",
+          "spawnedAt": 259811515794.6541,
+          "timeSpentAlive": 4507960113.913025
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#35",
+          "spawnedAt": 267319475908.56714,
+          "timeSpentAlive": 13672248294.261353
+        },
+        {
+          "alive": false,
+          "count": 3,
+          "name": "/monsters/manticore",
+          "spawnedAt": 369010365092.6168,
+          "timeSpentAlive": 49810113181.82672
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#36",
+          "spawnedAt": 283991724202.8285,
+          "timeSpentAlive": 4730512042.696411
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#37",
+          "spawnedAt": 291722236245.5249,
+          "timeSpentAlive": 4656328066.435303
+        },
+        {
+          "alive": false,
+          "count": 5,
+          "name": "/monsters/veyes",
+          "spawnedAt": 341236684874.3534,
+          "timeSpentAlive": 13672248294.261353
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#38",
+          "spawnedAt": 299378564311.9602,
+          "timeSpentAlive": 2513623973.8704834
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#39",
+          "spawnedAt": 304892188285.8307,
+          "timeSpentAlive": 4656328066.435303
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#40",
+          "spawnedAt": 312548516352.266,
+          "timeSpentAlive": 18180208408.174377
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#41",
+          "spawnedAt": 333728724760.44037,
+          "timeSpentAlive": 4507960113.913025
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#42",
+          "spawnedAt": 341236684874.3534,
+          "timeSpentAlive": 7021584087.783508
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#43",
+          "spawnedAt": 351258268962.1369,
+          "timeSpentAlive": 4953063971.479797
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#44",
+          "spawnedAt": 359211332933.6167,
+          "timeSpentAlive": 6799032159.000122
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#45",
+          "spawnedAt": 369010365092.6168,
+          "timeSpentAlive": 26751024778.433655
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#46",
+          "spawnedAt": 398761389871.0505,
+          "timeSpentAlive": 4507960113.913025
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#47",
+          "spawnedAt": 406269349984.9635,
+          "timeSpentAlive": 6650664206.477844
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#48",
+          "spawnedAt": 415920014191.44135,
+          "timeSpentAlive": 4730512042.696411
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#49",
+          "spawnedAt": 423650526234.13776,
+          "timeSpentAlive": 4656328066.435303
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "#50",
+          "spawnedAt": 431306854300.57306,
+          "timeSpentAlive": 26751024778.433655
+        },
+        {
+          "alive": false,
+          "count": 1,
+          "name": "/monsters/griffin",
+          "spawnedAt": 431306854300.57306,
+          "timeSpentAlive": 26751024778.433655
+        }
+      ],
+      "trialCurrentTier": 0,
+      "trialEndReason": null,
+      "trialEndTime": 0,
+      "trialFinalTierHpRemovedFrac": 0,
+      "trialHrid": null,
+      "trialMaxTierCleared": 0,
+      "trialParticipantCount": 0,
+      "trialPlayerDeaths": {},
+      "trialStartTier": 0,
+      "trialTierStartTimes": {},
+      "trialTierTimes": {},
+      "trialTiersCleared": 0,
+      "wipeEvents": [],
+      "zoneName": "/actions/combat/chimerical_den"
+    }
+  }
+}
