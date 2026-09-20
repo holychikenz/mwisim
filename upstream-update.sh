@@ -811,6 +811,66 @@ upstream specifically changed the same surface area.
       failure mode the pin and the constructor assertion in \`eventQueue.js\`
       exist to make loud, and it worked.
 
+- **Batched multi-buff ability effects (performance, measured)** — an ability
+  effect carrying N buffs paid N boost-index rebuilds and N FULL stat
+  recomputes, because \`addBuff\` recomputes per call.
+  \`elemental_affinity\` (3 buffs, 20 s duration, 30 s cooldown) is the case
+  users notice; \`toughness\` (4 buffs, same cycle) is worse, and
+  \`guardian_aura\` carries 6.
+    - \`combatSimulator.js\`: \`processAbilityBuffEffect\`'s \`self\` branch and
+      \`processAbilityDamageEffect\`'s on-hit branch call
+      \`addBuffs(abilityEffect.buffs, ...)\` once instead of \`addBuff\` per
+      buff, with the expiry events queued in their own loop afterwards — same
+      events, same order, same times, so the heap sequence is unchanged.
+      Bit-identical because \`_applyBuff\` reads nothing derived (only
+      \`buffInstances\`, the incoming buff, and the clock) and the recompute
+      RESETS to base and re-adds every active buff, so running it once after
+      all N is the same arithmetic as running it after each. \`addBuffs\` was
+      already in the file for exactly this; nothing in the engine was calling
+      it with more than one buff.
+      \`combatUnit.js\`: \`addBuff\` no longer wraps its argument in a
+      throwaway one-element array to call \`addBuffs\`; it inlines the same two
+      statements.
+      NOT DONE, deliberately: the \`allAllies\` branch. Its special-ability
+      multiplier reads \`source.combatDetails\` INSIDE the per-buff loop, so
+      when the caster is one of its own allies a recompute between buffs can
+      move the level it reads and change the later buffs' magnitudes. Batching
+      it requires proving no self-targeted \`allAllies\` special ability
+      multiplies against a level stat. Nobody has.
+      Measured over four counterbalanced full-candle rounds at \`--reps=5\`:
+      14 of 22 medians improved, 10 won every round, NONE lost every round —
+      \`selfbuff-solo\` 12.54 -> 10.36 (-17.4%), \`tank-solo\` -9.8%,
+      \`magic-solo\` -7.8%, \`dungeon-pirate\` -7.7%, \`dungeon-den-200\`
+      -7.0%, \`dungeon-fort-t2\` -6.3%, \`dungeon-den-600\` 100.8 -> 94.5
+      (-6.3%), \`party3-sorcerer\` -5.1%. \`sim:check\` 3/3.
+      \`floor-solo\` (+1.9%) and \`floor-party\` (+2.2%) read as small
+      regressions over six focused counterbalanced rounds at \`--reps=9\`, and
+      they are NOISE BY CONSTRUCTION: instrumenting the two batched call sites
+      shows both cases execute them ZERO times (the \`bare\` build has no
+      abilities, and nothing else reaches them). Recorded because "mixed-sign
+      and small" was not a good enough answer, and counting the executions was
+      cheaper than arguing about it.
+    TRIED AND PROVEN UNSAFE in this round, and this one is a HARD no: skipping
+    the PROLOGUE of \`Player.updateCombatDetails\` /
+    \`Monster.updateCombatDetails\` when only buffs changed. The prologue looks
+    like dead weight — \`Player\` re-copies 76 equipment stats from a cache and
+    \`Monster\` re-derives its whole flat stat block, and both are pure
+    functions of data that is immutable for the run, together 12.3% of self
+    time on \`dungeon-den-600\`. IT IS NOT A REDUNDANT COPY. It is the RESET
+    that makes the shared suffix correct: \`CombatUnit.updateCombatDetails\`
+    mutates \`combatStats\` IN PLACE with \`+=\` throughout — amplifies, crit
+    rate and damage, life steal, thorns, threat, tenacity, drop rate, cast
+    speed, and the player's \`hpRegenPer10\`/\`mpRegenPer10\` — adding each
+    buff's contribution ONTO the base value, and \`Monster\` likewise does
+    \`armor *= labyrinthScaleFactor\` after its copy. Skip the reset and every
+    recompute compounds the last one's boosts, at roughly 0.9 recomputes per
+    event. A crude version was tried and \`npm run sim:check\` caught it at
+    once: 2 of 3 fixtures drifted. Do not re-propose "the prologue is a pure
+    copy, cache it" — it is, and that is exactly why it cannot be skipped. A
+    safe variant would have to restore ONLY the fields the suffix clobbers,
+    which means auditing every \`+=\` in a 270-line method, and getting it
+    wrong is a wrong combat number with no error.
+
 NOTE: the labyrinth "maze" player-buff mechanism (\`options.maze\`,
 \`MAZE_DEFAULTS\`, \`resolveMazeBonuses\`, \`mazeBonuses\`,
 \`Player.applyMazeBonuses\`) was REMOVED deliberately — it double-counted the

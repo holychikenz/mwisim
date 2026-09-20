@@ -669,7 +669,12 @@ class CombatUnit {
     }
 
     addBuff(buff, currentTime, sourceRef = this) {
-        this.addBuffs([buff], currentTime, sourceRef);
+        // MWIX adaptation (performance): the single-buff case inlined rather
+        // than wrapped in a throwaway one-element array. Identical work in
+        // identical order — addBuffs() over one buff is exactly this.
+        if (this._applyBuff(buff, currentTime, sourceRef)) {
+            this.updateCombatDetails();
+        }
     }
 
     removeBuffs(buffs, sourceRef = this) {

@@ -1708,6 +1708,13 @@ class CombatSimulator extends EventTarget {
     }
 
     processAbilityBuffEffect(source, ability, abilityEffect) {
+        // The allAllies branch is NOT batched, deliberately. Its special-ability
+        // multiplier reads source.combatDetails INSIDE the per-buff loop, and
+        // when the caster is one of its own allies a recompute between buffs can
+        // move the level it reads — batching would then change the second and
+        // third buffs' magnitudes. Proving that no self-targeted allAllies
+        // special ability multiplies against a level stat is a precondition for
+        // touching it; nobody has.
         if (abilityEffect.targetType == "allAllies") {
             let targets = source.isPlayer ? this.players : this.enemies;
             for (const target of targets.filter((unit) => unit && unit.combatDetails.currentHitpoints > 0)) {
@@ -1735,9 +1742,18 @@ class CombatSimulator extends EventTarget {
             throw new Error("Unsupported target type for buff ability effect: " + ability.hrid);
         }
 
+        // MWIX adaptation (performance): apply the whole effect's buffs in ONE
+        // batch. Upstream calls addBuff per buff, and each call runs a boost-index
+        // rebuild AND a full stat recompute — so a three-buff ability like
+        // elemental_affinity paid three of each where one would do. addBuffs()
+        // exists for exactly this: _applyBuff is documented as not recomputing so
+        // callers can batch, and it reads nothing derived, only buffInstances and
+        // the incoming buff. The recompute resets to base and re-adds every active
+        // buff, so running it once after all three is the same arithmetic as
+        // running it after each. The expiry events follow in their own loop, in
+        // the same order and at the same times, so the heap sequence is unchanged.
+        source.addBuffs(abilityEffect.buffs, this.simulationTime);
         for (const buff of abilityEffect.buffs) {
-            source.addBuff(buff, this.simulationTime);
-            // console.log("Added buff:", abilityEffect.buff);
             let checkBuffExpirationEvent = new CheckBuffExpirationEvent(this.simulationTime + buff.duration, source);
             this.eventQueue.addEvent(checkBuffExpirationEvent);
         }
@@ -1907,11 +1923,13 @@ class CombatSimulator extends EventTarget {
                 }
 
                 if (attackResult.didHit && abilityEffect.buffs) {
+                    // MWIX adaptation (7/15/2026 patch parity): buffs/debuffs are
+                    // attributed to the caster so multiple sources arbitrate by
+                    // strength (strongest active wins) instead of last-writer-wins.
+                    // MWIX adaptation (performance): batched — see the `self`
+                    // branch in processAbilityBuffEffect for the argument.
+                    target.addBuffs(abilityEffect.buffs, this.simulationTime, source);
                     for (const buff of abilityEffect.buffs) {
-                        // MWIX adaptation (7/15/2026 patch parity): buffs/debuffs are
-                        // attributed to the caster so multiple sources arbitrate by
-                        // strength (strongest active wins) instead of last-writer-wins.
-                        target.addBuff(buff, this.simulationTime, source);
                         let checkBuffExpirationEvent = new CheckBuffExpirationEvent(
                             this.simulationTime + buff.duration,
                             target
