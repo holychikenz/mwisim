@@ -174,3 +174,39 @@ test("every stat the monster zero-fill covers is also one the equipment sum cove
     const stray = MONSTER_ZEROED_COMBAT_STATS.filter((s) => !covered.has(s));
     assert.deepStrictEqual(stray, [], "monster zero-fill names not in EQUIPMENT_COMBAT_STATS");
 });
+
+// ---- 4. the stat block declares every field the role lists write -------------
+
+// Reads the combatStats literal out of combatUnit.js rather than importing a
+// unit, because the question is what the LITERAL declares — i.e. what hidden
+// class a unit is born with — and by the time a unit exists the very writes
+// under test have already added the missing fields and hidden the defect.
+function declaredCombatStatKeys() {
+    const src = fs.readFileSync(path.join(ROOT, "src/combatsimulator/combatUnit.js"), "utf8");
+    const start = src.indexOf("combatStats: {");
+    assert.ok(start > 0, "combatStats literal not found in combatUnit.js");
+    const end = src.indexOf("\n        },", start);
+    assert.ok(end > start, "combatStats literal is unterminated");
+    return new Set([...src.slice(start, end).matchAll(/^\s{12}([A-Za-z0-9_]+):/gm)].map((m) => m[1]));
+}
+
+test("the combatStats literal declares every stat the role lists write", () => {
+    const declared = declaredCombatStatKeys();
+    const written = [...new Set([...EQUIPMENT_COMBAT_STATS, ...MONSTER_ZEROED_COMBAT_STATS])];
+    const undeclared = written.filter((s) => !declared.has(s)).sort();
+    assert.deepStrictEqual(
+        undeclared,
+        [],
+        "these stats are written into combatStats but not declared in the literal, so " +
+            "every unit changes hidden class on its first recompute and players and " +
+            "monsters end up with different shapes — declare them in combatUnit.js"
+    );
+});
+
+test("the combatStats literal is the superset it is assumed to be", () => {
+    const declared = declaredCombatStatKeys();
+    assert.strictEqual(declared.size, 82, "the combatStats literal changed size unexpectedly");
+    for (const stat of ["abilityHaste", "tenacity", "hpRegenPer10", "mpRegenPer10"]) {
+        assert.ok(declared.has(stat), stat + " is not declared in the combatStats literal");
+    }
+});

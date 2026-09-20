@@ -248,6 +248,8 @@ class CombatUnit {
             retaliation: 0,
             maxHitpointsRatio: 0,
             maxManapointsRatio: 0,
+            abilityHaste: 0,
+            tenacity: 0,
         },
     };
     combatBuffs = {};

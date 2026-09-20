@@ -966,6 +966,21 @@ upstream specifically changed the same surface area.
       question the data CAN answer is asked separately: a test asserts every
       numeric stat any item grants is either summed or named, with its reason,
       in \`DELIBERATELY_UNSUMMED\`.
+    - \`combatUnit.js\` \`combatDetails.combatStats\`: \`abilityHaste\` and
+      \`tenacity\` are now DECLARED in the literal. Both were written into
+      \`combatStats\` by the equipment copy and by the monster zero-fill, and
+      declared by neither the literal nor upstream's — so every unit changed
+      HIDDEN CLASS on its first recompute, and monsters (which additionally
+      acquire \`combatStyleHrids\` from their game-data block) ended up shaped
+      differently from players. Every \`combatStats.x\` read in the engine was
+      therefore polymorphic across the roster at best. Declaring two fields
+      that were being added anyway cannot move a number and \`sim:check\`
+      stayed 3/3; it is listed separately from the copy work below because it
+      is a shape fix, not a copy fix, and because it is far too small to
+      measure on its own. \`api/tests/statSchema.test.mjs\` now parses the
+      literal out of the source — not out of a constructed unit, where the
+      very writes under test have already hidden the defect — and fails if any
+      stat either role list writes is left undeclared.
 
 NOTE: the labyrinth "maze" player-buff mechanism (\`options.maze\`,
 \`MAZE_DEFAULTS\`, \`resolveMazeBonuses\`, \`mazeBonuses\`,
