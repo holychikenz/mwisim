@@ -11,7 +11,8 @@
     "lab:check": "node --import ./register-loader.js lab-parity.mjs check",
     "lab:record": "node --import ./register-loader.js lab-parity.mjs record",
     "sim:check": "node --import ./register-loader.js sim-parity.mjs check",
-    "sim:record": "node --import ./register-loader.js sim-parity.mjs record"
+    "sim:record": "node --import ./register-loader.js sim-parity.mjs record",
+    "bench": "node --import ./register-loader.js bench/candle.mjs"
   },
   "dependencies": {
     "cors": "^2.8.5",
