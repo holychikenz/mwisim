@@ -538,6 +538,22 @@ upstream specifically changed the same surface area.
       contract, no engine path holds across a mutation (a buff change is what
       triggers a recompute, not the other way round), and both properties are
       pinned in \`api/tests/statCaching.test.mjs\`.
+    TRIED AND DISCARDED in this round, so nobody re-derives it: precomputing
+    \`trigger.js\`'s derived buff-unique hrid at \`Trigger\` construction
+    instead of rebuilding it with \`lastIndexOf\` + \`slice\` +
+    concatenation on every evaluation (and replacing the
+    \`Object.keys().filter()\` in the prefix branch with a first-match scan).
+    The profile made it look worthwhile — \`getDependencyValue\` held 5.73% of
+    self time on \`dungeon-den-600\`, and \`checkTriggers()\` runs after every
+    event. It is correct and it passed \`sim:check\` 3/3. But FOUR interleaved
+    A/B rounds at \`--reps=9\` and \`--reps=15\` could not separate it from
+    noise: \`dungeon-den-600\` medians 105.9 ms/sim-h before against 104.7
+    after, \`melee-solo\` 8.65 against 8.45, and \`melee-swarm\` and
+    \`dungeon-fort-t2\` each landed on the WRONG side in half the rounds. The
+    string work is real but it is small beside the trigger evaluation around
+    it. Dropped rather than shipped, on the same rule that discarded the
+    buff-expiry early-out above. Do not re-propose it without a measurement
+    that clears noise.
     - \`generated/buffTypes.js\` (NEW, and ours alone): the buff-type ordinal
       table the dense buff-boost index below is keyed on — \`BUFF_TYPE\`
       (hrid -> ordinal, null-prototype), \`BUFF_TYPE_NAMES\`,
