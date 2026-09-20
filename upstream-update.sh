@@ -578,6 +578,29 @@ upstream specifically changed the same surface area.
       only ever compared with another id from the same registry in the same
       process. If an id is ever persisted or compared across runs, it must
       become a sorted generated table instead.
+    - `combatSimulator.js`: `processEvent` is SYNCHRONOUS. Upstream declares it
+      `async` and `await`s it from `simulate()`'s loop, but its body contains no
+      `await` — it was the only one in the engine — so every event allocated a
+      throwaway promise and took a microtask-queue round trip for nothing
+      (~19 ns per call on this machine, Node v26.8.2). Nothing observable
+      changes: microtasks never yielded to the browser's event loop, so the UI
+      was not becoming responsive between events, and `simulate()` stays
+      `async` so no caller moves. `sim:check` 3/3.
+      The gain lands exactly where the theory says it should — on the cases
+      whose cost IS per-event overhead, and nowhere else: `floor-solo`
+      1.17 -> 1.10 ms/sim-h (-6.5%), `mid-solo` 4.36 -> 4.15 (-4.9%),
+      `starter-solo` 2.07 -> 1.99 (-3.8%); `dungeon-den-600`, `melee-solo` and
+      `melee-swarm` are a wash, because there the per-event constant is
+      swamped by the work inside each event.
+      A METHOD WARNING, learned here and applicable to every A/B on this
+      branch: the first measurement of this change showed melee-solo +6.1% and
+      dungeon-den-600 +1.6%, losing in ALL THREE rounds, and it was an
+      artefact. Each round ran base first and the change second, and this
+      machine warms within a round, so the second arm was systematically
+      penalised. Re-running with the arm order counterbalanced (ABBA) inverted
+      both to small wins. Interleaving rounds is NOT sufficient; the ORDER
+      WITHIN a round must alternate, or a consistent-looking regression can be
+      manufactured out of nothing but thermal drift.
     ALSO TRIED AND DISCARDED, and this one is a HARD no: replacing the N
     \`Heap.remove()\` calls in the queue's clear methods with a single
     compaction pass over \`heapArray\` plus one \`init()\` re-heapify. It is
