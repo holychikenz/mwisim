@@ -413,6 +413,10 @@ export function buildMonsterZeroMask(gameStats) {
 /**
  * Apply a prebuilt mask. Same names, same order, same written value as the
  * keyed loop this replaces, so no number can move.
+ *
+ * Superseded on the hot path by the source-block trio below, which folds
+ * this and the flat key/value copy into one pass. Kept for the tests, which
+ * check that fold against it.
  */
 export function applyMonsterZeroMask(combatStats, mask) {
     if (mask.stabAccuracy) combatStats.stabAccuracy = 0;
@@ -478,4 +482,264 @@ export function applyMonsterZeroMask(combatStats, mask) {
     if (mask.autoAttackDamage) combatStats.autoAttackDamage = 0;
     if (mask.abilityDamage) combatStats.abilityDamage = 0;
     if (mask.retaliation) combatStats.retaliation = 0;
+}
+
+export const MONSTER_RESIDUAL_STATS = Object.freeze([
+    "attackInterval",
+    "combatStyleHrids",
+    "damageType",
+    "maxHitpointsRatio",
+    "maxManapointsRatio",
+]);
+
+/**
+ * A per-block SOURCE: the monster's game-data stat block, normalised to one
+ * fixed shape, so a recompute copies it with straight-line field code.
+ *
+ * The two loops this replaces did, in order: copy the keys the block has,
+ * scale armour and the three resistances, then write 0 into every zero-fill
+ * name the block lacks. For a zero-fill name the composition of those is
+ * exactly `the block's value, or 0` — an absent one is scaled while stale and
+ * then overwritten with 0, so the scaling cannot be observed — which is why
+ * the 63 below are copied unconditionally and the scaling still happens
+ * afterwards. The residual names carry no such guarantee: nothing zero-fills
+ * them, so they keep `write only when present` and their flags say which.
+ */
+export function makeMonsterStatSource() {
+    return {
+        stabAccuracy: 0,
+        slashAccuracy: 0,
+        smashAccuracy: 0,
+        rangedAccuracy: 0,
+        magicAccuracy: 0,
+        stabDamage: 0,
+        slashDamage: 0,
+        smashDamage: 0,
+        rangedDamage: 0,
+        magicDamage: 0,
+        defensiveDamage: 0,
+        taskDamage: 0,
+        physicalAmplify: 0,
+        waterAmplify: 0,
+        natureAmplify: 0,
+        fireAmplify: 0,
+        healingAmplify: 0,
+        stabEvasion: 0,
+        slashEvasion: 0,
+        smashEvasion: 0,
+        rangedEvasion: 0,
+        magicEvasion: 0,
+        armor: 0,
+        waterResistance: 0,
+        natureResistance: 0,
+        fireResistance: 0,
+        maxHitpoints: 0,
+        maxManapoints: 0,
+        lifeSteal: 0,
+        hpRegenPer10: 0,
+        mpRegenPer10: 0,
+        physicalThorns: 0,
+        elementalThorns: 0,
+        combatDropRate: 0,
+        combatRareFind: 0,
+        combatDropQuantity: 0,
+        combatExperience: 0,
+        criticalRate: 0,
+        criticalDamage: 0,
+        armorPenetration: 0,
+        waterPenetration: 0,
+        naturePenetration: 0,
+        firePenetration: 0,
+        abilityHaste: 0,
+        tenacity: 0,
+        manaLeech: 0,
+        castSpeed: 0,
+        threat: 0,
+        parry: 0,
+        mayhem: 0,
+        pierce: 0,
+        curse: 0,
+        fury: 0,
+        weaken: 0,
+        ripple: 0,
+        bloom: 0,
+        blaze: 0,
+        attackSpeed: 0,
+        foodHaste: 0,
+        drinkConcentration: 0,
+        autoAttackDamage: 0,
+        abilityDamage: 0,
+        retaliation: 0,
+        attackInterval: undefined,
+        combatStyleHrids: undefined,
+        damageType: undefined,
+        maxHitpointsRatio: undefined,
+        maxManapointsRatio: undefined,
+        has_attackInterval: false,
+        has_combatStyleHrids: false,
+        has_damageType: false,
+        has_maxHitpointsRatio: false,
+        has_maxManapointsRatio: false,
+    };
+}
+
+/** Normalise one game-data stat block. Once per block, not per recompute. */
+export function buildMonsterStatSource(gameStats) {
+    const source = makeMonsterStatSource();
+    if (gameStats.stabAccuracy != null) source.stabAccuracy = gameStats.stabAccuracy;
+    if (gameStats.slashAccuracy != null) source.slashAccuracy = gameStats.slashAccuracy;
+    if (gameStats.smashAccuracy != null) source.smashAccuracy = gameStats.smashAccuracy;
+    if (gameStats.rangedAccuracy != null) source.rangedAccuracy = gameStats.rangedAccuracy;
+    if (gameStats.magicAccuracy != null) source.magicAccuracy = gameStats.magicAccuracy;
+    if (gameStats.stabDamage != null) source.stabDamage = gameStats.stabDamage;
+    if (gameStats.slashDamage != null) source.slashDamage = gameStats.slashDamage;
+    if (gameStats.smashDamage != null) source.smashDamage = gameStats.smashDamage;
+    if (gameStats.rangedDamage != null) source.rangedDamage = gameStats.rangedDamage;
+    if (gameStats.magicDamage != null) source.magicDamage = gameStats.magicDamage;
+    if (gameStats.defensiveDamage != null) source.defensiveDamage = gameStats.defensiveDamage;
+    if (gameStats.taskDamage != null) source.taskDamage = gameStats.taskDamage;
+    if (gameStats.physicalAmplify != null) source.physicalAmplify = gameStats.physicalAmplify;
+    if (gameStats.waterAmplify != null) source.waterAmplify = gameStats.waterAmplify;
+    if (gameStats.natureAmplify != null) source.natureAmplify = gameStats.natureAmplify;
+    if (gameStats.fireAmplify != null) source.fireAmplify = gameStats.fireAmplify;
+    if (gameStats.healingAmplify != null) source.healingAmplify = gameStats.healingAmplify;
+    if (gameStats.stabEvasion != null) source.stabEvasion = gameStats.stabEvasion;
+    if (gameStats.slashEvasion != null) source.slashEvasion = gameStats.slashEvasion;
+    if (gameStats.smashEvasion != null) source.smashEvasion = gameStats.smashEvasion;
+    if (gameStats.rangedEvasion != null) source.rangedEvasion = gameStats.rangedEvasion;
+    if (gameStats.magicEvasion != null) source.magicEvasion = gameStats.magicEvasion;
+    if (gameStats.armor != null) source.armor = gameStats.armor;
+    if (gameStats.waterResistance != null) source.waterResistance = gameStats.waterResistance;
+    if (gameStats.natureResistance != null) source.natureResistance = gameStats.natureResistance;
+    if (gameStats.fireResistance != null) source.fireResistance = gameStats.fireResistance;
+    if (gameStats.maxHitpoints != null) source.maxHitpoints = gameStats.maxHitpoints;
+    if (gameStats.maxManapoints != null) source.maxManapoints = gameStats.maxManapoints;
+    if (gameStats.lifeSteal != null) source.lifeSteal = gameStats.lifeSteal;
+    if (gameStats.hpRegenPer10 != null) source.hpRegenPer10 = gameStats.hpRegenPer10;
+    if (gameStats.mpRegenPer10 != null) source.mpRegenPer10 = gameStats.mpRegenPer10;
+    if (gameStats.physicalThorns != null) source.physicalThorns = gameStats.physicalThorns;
+    if (gameStats.elementalThorns != null) source.elementalThorns = gameStats.elementalThorns;
+    if (gameStats.combatDropRate != null) source.combatDropRate = gameStats.combatDropRate;
+    if (gameStats.combatRareFind != null) source.combatRareFind = gameStats.combatRareFind;
+    if (gameStats.combatDropQuantity != null) source.combatDropQuantity = gameStats.combatDropQuantity;
+    if (gameStats.combatExperience != null) source.combatExperience = gameStats.combatExperience;
+    if (gameStats.criticalRate != null) source.criticalRate = gameStats.criticalRate;
+    if (gameStats.criticalDamage != null) source.criticalDamage = gameStats.criticalDamage;
+    if (gameStats.armorPenetration != null) source.armorPenetration = gameStats.armorPenetration;
+    if (gameStats.waterPenetration != null) source.waterPenetration = gameStats.waterPenetration;
+    if (gameStats.naturePenetration != null) source.naturePenetration = gameStats.naturePenetration;
+    if (gameStats.firePenetration != null) source.firePenetration = gameStats.firePenetration;
+    if (gameStats.abilityHaste != null) source.abilityHaste = gameStats.abilityHaste;
+    if (gameStats.tenacity != null) source.tenacity = gameStats.tenacity;
+    if (gameStats.manaLeech != null) source.manaLeech = gameStats.manaLeech;
+    if (gameStats.castSpeed != null) source.castSpeed = gameStats.castSpeed;
+    if (gameStats.threat != null) source.threat = gameStats.threat;
+    if (gameStats.parry != null) source.parry = gameStats.parry;
+    if (gameStats.mayhem != null) source.mayhem = gameStats.mayhem;
+    if (gameStats.pierce != null) source.pierce = gameStats.pierce;
+    if (gameStats.curse != null) source.curse = gameStats.curse;
+    if (gameStats.fury != null) source.fury = gameStats.fury;
+    if (gameStats.weaken != null) source.weaken = gameStats.weaken;
+    if (gameStats.ripple != null) source.ripple = gameStats.ripple;
+    if (gameStats.bloom != null) source.bloom = gameStats.bloom;
+    if (gameStats.blaze != null) source.blaze = gameStats.blaze;
+    if (gameStats.attackSpeed != null) source.attackSpeed = gameStats.attackSpeed;
+    if (gameStats.foodHaste != null) source.foodHaste = gameStats.foodHaste;
+    if (gameStats.drinkConcentration != null) source.drinkConcentration = gameStats.drinkConcentration;
+    if (gameStats.autoAttackDamage != null) source.autoAttackDamage = gameStats.autoAttackDamage;
+    if (gameStats.abilityDamage != null) source.abilityDamage = gameStats.abilityDamage;
+    if (gameStats.retaliation != null) source.retaliation = gameStats.retaliation;
+    if (gameStats.attackInterval !== undefined) {
+        source.attackInterval = gameStats.attackInterval;
+        source.has_attackInterval = true;
+    }
+    if (gameStats.combatStyleHrids !== undefined) {
+        source.combatStyleHrids = gameStats.combatStyleHrids;
+        source.has_combatStyleHrids = true;
+    }
+    if (gameStats.damageType !== undefined) {
+        source.damageType = gameStats.damageType;
+        source.has_damageType = true;
+    }
+    if (gameStats.maxHitpointsRatio !== undefined) {
+        source.maxHitpointsRatio = gameStats.maxHitpointsRatio;
+        source.has_maxHitpointsRatio = true;
+    }
+    if (gameStats.maxManapointsRatio !== undefined) {
+        source.maxManapointsRatio = gameStats.maxManapointsRatio;
+        source.has_maxManapointsRatio = true;
+    }
+    return source;
+}
+
+/** Copy a normalised source into a unit's combatStats. */
+export function applyMonsterStatSource(combatStats, source) {
+    combatStats.stabAccuracy = source.stabAccuracy;
+    combatStats.slashAccuracy = source.slashAccuracy;
+    combatStats.smashAccuracy = source.smashAccuracy;
+    combatStats.rangedAccuracy = source.rangedAccuracy;
+    combatStats.magicAccuracy = source.magicAccuracy;
+    combatStats.stabDamage = source.stabDamage;
+    combatStats.slashDamage = source.slashDamage;
+    combatStats.smashDamage = source.smashDamage;
+    combatStats.rangedDamage = source.rangedDamage;
+    combatStats.magicDamage = source.magicDamage;
+    combatStats.defensiveDamage = source.defensiveDamage;
+    combatStats.taskDamage = source.taskDamage;
+    combatStats.physicalAmplify = source.physicalAmplify;
+    combatStats.waterAmplify = source.waterAmplify;
+    combatStats.natureAmplify = source.natureAmplify;
+    combatStats.fireAmplify = source.fireAmplify;
+    combatStats.healingAmplify = source.healingAmplify;
+    combatStats.stabEvasion = source.stabEvasion;
+    combatStats.slashEvasion = source.slashEvasion;
+    combatStats.smashEvasion = source.smashEvasion;
+    combatStats.rangedEvasion = source.rangedEvasion;
+    combatStats.magicEvasion = source.magicEvasion;
+    combatStats.armor = source.armor;
+    combatStats.waterResistance = source.waterResistance;
+    combatStats.natureResistance = source.natureResistance;
+    combatStats.fireResistance = source.fireResistance;
+    combatStats.maxHitpoints = source.maxHitpoints;
+    combatStats.maxManapoints = source.maxManapoints;
+    combatStats.lifeSteal = source.lifeSteal;
+    combatStats.hpRegenPer10 = source.hpRegenPer10;
+    combatStats.mpRegenPer10 = source.mpRegenPer10;
+    combatStats.physicalThorns = source.physicalThorns;
+    combatStats.elementalThorns = source.elementalThorns;
+    combatStats.combatDropRate = source.combatDropRate;
+    combatStats.combatRareFind = source.combatRareFind;
+    combatStats.combatDropQuantity = source.combatDropQuantity;
+    combatStats.combatExperience = source.combatExperience;
+    combatStats.criticalRate = source.criticalRate;
+    combatStats.criticalDamage = source.criticalDamage;
+    combatStats.armorPenetration = source.armorPenetration;
+    combatStats.waterPenetration = source.waterPenetration;
+    combatStats.naturePenetration = source.naturePenetration;
+    combatStats.firePenetration = source.firePenetration;
+    combatStats.abilityHaste = source.abilityHaste;
+    combatStats.tenacity = source.tenacity;
+    combatStats.manaLeech = source.manaLeech;
+    combatStats.castSpeed = source.castSpeed;
+    combatStats.threat = source.threat;
+    combatStats.parry = source.parry;
+    combatStats.mayhem = source.mayhem;
+    combatStats.pierce = source.pierce;
+    combatStats.curse = source.curse;
+    combatStats.fury = source.fury;
+    combatStats.weaken = source.weaken;
+    combatStats.ripple = source.ripple;
+    combatStats.bloom = source.bloom;
+    combatStats.blaze = source.blaze;
+    combatStats.attackSpeed = source.attackSpeed;
+    combatStats.foodHaste = source.foodHaste;
+    combatStats.drinkConcentration = source.drinkConcentration;
+    combatStats.autoAttackDamage = source.autoAttackDamage;
+    combatStats.abilityDamage = source.abilityDamage;
+    combatStats.retaliation = source.retaliation;
+    if (source.has_attackInterval) combatStats.attackInterval = source.attackInterval;
+    if (source.has_combatStyleHrids) combatStats.combatStyleHrids = source.combatStyleHrids;
+    if (source.has_damageType) combatStats.damageType = source.damageType;
+    if (source.has_maxHitpointsRatio) combatStats.maxHitpointsRatio = source.maxHitpointsRatio;
+    if (source.has_maxManapointsRatio) combatStats.maxManapointsRatio = source.maxManapointsRatio;
 }

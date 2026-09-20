@@ -2,7 +2,7 @@ import Ability from "./ability";
 import CombatUnit from "./combatUnit";
 import { combatMonsterDetailMap } from "./dataProvider";
 import Drops from "./drops";
-import { applyMonsterZeroMask, buildMonsterZeroMask } from "./generated/statSchema";
+import { applyMonsterStatSource, buildMonsterStatSource } from "./generated/statSchema";
 
 // =============================================================================
 // MWIX adaptation (performance): the monster zero-fill stat list, hoisted out
@@ -123,12 +123,7 @@ const _statBlockCache = new WeakMap();
 function _flatStatBlock(combatStats) {
     let flat = _statBlockCache.get(combatStats);
     if (!flat) {
-        const keys = Object.keys(combatStats);
-        const values = new Array(keys.length);
-        for (let i = 0; i < keys.length; i++) {
-            values[i] = combatStats[keys[i]];
-        }
-        flat = { keys, values, zeroMask: buildMonsterZeroMask(combatStats) };
+        flat = { statSource: buildMonsterStatSource(combatStats) };
         _statBlockCache.set(combatStats, flat);
     }
     return flat;
@@ -214,21 +209,14 @@ class Monster extends CombatUnit {
 
         this.combatDetails.combatStats.combatStyleHrid = gameMonster.combatDetails.combatStats.combatStyleHrids[0];
 
-        // Flat key/value walk over the cached stat block — see
-        // _flatStatBlock above. Identical keys, order and values.
         const flat = _flatStatBlock(gameMonster.combatDetails.combatStats);
-        const flatKeys = flat.keys;
-        const flatValues = flat.values;
-        for (let i = 0; i < flatKeys.length; i++) {
-            this.combatDetails.combatStats[flatKeys[i]] = flatValues[i];
-        }
+        applyMonsterStatSource(this.combatDetails.combatStats, flat.statSource);
 
         this.combatDetails.combatStats.armor *= labyrinthScaleFactor;
         this.combatDetails.combatStats.waterResistance *= labyrinthScaleFactor;
         this.combatDetails.combatStats.natureResistance *= labyrinthScaleFactor;
         this.combatDetails.combatStats.fireResistance *= labyrinthScaleFactor;
 
-        applyMonsterZeroMask(this.combatDetails.combatStats, flat.zeroMask);
 
         if (this.combatDetails.combatStats.attackInterval == 0) {
             this.combatDetails.combatStats.attackInterval = gameMonster.combatDetails.attackInterval;

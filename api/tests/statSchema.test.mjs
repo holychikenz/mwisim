@@ -29,7 +29,12 @@ import {
     makeMonsterZeroMask,
     buildMonsterZeroMask,
     applyMonsterZeroMask,
+    MONSTER_RESIDUAL_STATS,
+    makeMonsterStatSource,
+    buildMonsterStatSource,
+    applyMonsterStatSource,
 } from "../../src/combatsimulator/generated/statSchema.js";
+import CombatUnit from "../../src/combatsimulator/combatUnit.js";
 import { EQUIPMENT_COMBAT_STATS } from "../../src/combatsimulator/player.js";
 import { MONSTER_ZEROED_COMBAT_STATS } from "../../src/combatsimulator/monster.js";
 
@@ -256,12 +261,12 @@ test("two blocks with different presence get different masks", () => {
     assert.notStrictEqual(a.lifeSteal, b.lifeSteal);
 });
 
-// The mask is cached in monster.js against the game-data object's IDENTITY, in
-// the same WeakMap as the flat key/value arrays. This asserts the property that
-// makes that safe: dataProvider.setOverrides() installs fresh nested objects, so
-// an overridden block is a cache MISS rather than a stale hit. An hrid-keyed
-// cache would serve a previous game version's presence set with no error at all.
-test("monster.js keys the mask cache on the stat-block object, not the hrid", () => {
+// The normalised source is cached in monster.js against the game-data object's
+// IDENTITY. This asserts the property that makes that safe:
+// dataProvider.setOverrides() installs fresh nested objects, so an overridden
+// block is a cache MISS rather than a stale hit. An hrid-keyed cache would serve
+// a previous game version's stats with no error at all.
+test("monster.js keys the source cache on the stat-block object, not the hrid", () => {
     const src = fs.readFileSync(path.join(ROOT, "src/combatsimulator/monster.js"), "utf8");
     assert.ok(src.includes("new WeakMap()"), "the stat-block cache must be a WeakMap");
     assert.ok(
@@ -269,7 +274,131 @@ test("monster.js keys the mask cache on the stat-block object, not the hrid", ()
         "the cache must be keyed on the combatStats object, not on a monster hrid"
     );
     assert.ok(
-        /zeroMask: buildMonsterZeroMask\(combatStats\)/.test(src),
-        "the mask must be built inside the identity-keyed cache entry"
+        /statSource: buildMonsterStatSource\(combatStats\)/.test(src),
+        "the normalised source must be built inside the identity-keyed cache entry"
     );
+});
+
+// ---- 6. the normalised source block -----------------------------------------
+//
+// Monster.updateCombatDetails used to do three things in order: copy the keys
+// the game-data block has, scale armour and the three resistances, then write 0
+// into every zero-fill name the block lacks. That is now one compiled copy from
+// a normalised source, followed by the same scaling.
+//
+// The fold is only sound because an absent zero-fill stat is scaled while stale
+// and THEN overwritten with 0, so the scaling of it cannot be observed. The
+// test that decides this is the SECOND recompute, where the block is dirty with
+// the previous pass's values: if the reasoning is wrong, that is where the two
+// forms diverge. A first recompute on a fresh unit would pass either way.
+
+const SCALED = ["armor", "waterResistance", "natureResistance", "fireResistance"];
+
+function freshCombatStats() {
+    return new CombatUnit().combatDetails.combatStats;
+}
+
+// The three steps that were replaced, in their original order.
+function retiredForm(combatStats, gameStats, labyrinthScaleFactor) {
+    for (const key of Object.keys(gameStats)) combatStats[key] = gameStats[key];
+    for (const stat of SCALED) combatStats[stat] *= labyrinthScaleFactor;
+    zeroMissingMonsterStats(combatStats, gameStats);
+    return combatStats;
+}
+
+function compiledForm(combatStats, gameStats, labyrinthScaleFactor) {
+    applyMonsterStatSource(combatStats, buildMonsterStatSource(gameStats));
+    for (const stat of SCALED) combatStats[stat] *= labyrinthScaleFactor;
+    return combatStats;
+}
+
+test("the compiled copy matches the retired three steps on every bestiary block", () => {
+    const monsters = readJson("combatMonsterDetailMap.json");
+    let checked = 0;
+    for (const [hrid, monster] of Object.entries(monsters)) {
+        const gameStats = monster.combatDetails?.combatStats;
+        if (!gameStats) continue;
+        for (const factor of [1, 6]) {
+            const expected = retiredForm(freshCombatStats(), gameStats, factor);
+            const actual = compiledForm(freshCombatStats(), gameStats, factor);
+            assert.deepStrictEqual(actual, expected, `${hrid} @ scale ${factor}`);
+        }
+        checked++;
+    }
+    assert.ok(checked > 90, "checked only " + checked + " monster blocks");
+});
+
+test("the compiled copy matches on a SECOND recompute, over a dirty block", () => {
+    const monsters = readJson("combatMonsterDetailMap.json");
+    let checked = 0;
+    for (const [hrid, monster] of Object.entries(monsters)) {
+        const gameStats = monster.combatDetails?.combatStats;
+        if (!gameStats) continue;
+
+        // Dirty both blocks identically, as a buff-driven recompute would find
+        // them: every numeric stat carries the previous pass's contribution.
+        const dirty = () => {
+            const cs = freshCombatStats();
+            let n = 1;
+            for (const key of Object.keys(cs)) {
+                if (typeof cs[key] === "number") cs[key] = n++ * 1.5;
+            }
+            return cs;
+        };
+        const expected = retiredForm(dirty(), gameStats, 6);
+        const actual = compiledForm(dirty(), gameStats, 6);
+        assert.deepStrictEqual(actual, expected, hrid + " on a dirty block");
+        checked++;
+    }
+    assert.ok(checked > 90, "checked only " + checked + " monster blocks");
+});
+
+test("the source shape covers every key any monster block carries", () => {
+    const monsters = readJson("combatMonsterDetailMap.json");
+    const covered = new Set([...MONSTER_ZEROED_COMBAT_STATS, ...MONSTER_RESIDUAL_STATS]);
+    const uncovered = new Set();
+    for (const monster of Object.values(monsters)) {
+        for (const stat of Object.keys(monster.combatDetails?.combatStats ?? {})) {
+            if (!covered.has(stat)) uncovered.add(stat);
+        }
+    }
+    assert.deepStrictEqual(
+        [...uncovered].sort(),
+        [],
+        "a game-data update added monster stats the compiled copy would silently " +
+            "drop — regenerate with `node tools/genStatSchema.mjs`"
+    );
+});
+
+test("the residual list is exactly the block keys outside the zero-fill list", () => {
+    const zeroed = new Set(MONSTER_ZEROED_COMBAT_STATS);
+    assert.deepStrictEqual(
+        MONSTER_RESIDUAL_STATS.filter((s) => zeroed.has(s)),
+        [],
+        "a residual name must not also be zero-filled, or it is written twice"
+    );
+    assert.deepStrictEqual([...MONSTER_RESIDUAL_STATS], [...MONSTER_RESIDUAL_STATS].sort());
+    assert.ok(MONSTER_RESIDUAL_STATS.includes("combatStyleHrids"));
+    assert.ok(MONSTER_RESIDUAL_STATS.includes("attackInterval"));
+});
+
+test("a residual stat is written only when the block declares it", () => {
+    const source = buildMonsterStatSource({ attackInterval: 3e9 });
+    assert.strictEqual(source.has_attackInterval, true);
+    assert.strictEqual(source.has_maxHitpointsRatio, false);
+
+    const cs = freshCombatStats();
+    cs.maxHitpointsRatio = 0.25;
+    applyMonsterStatSource(cs, source);
+    assert.strictEqual(cs.attackInterval, 3e9, "a declared residual stat must be written");
+    assert.strictEqual(cs.maxHitpointsRatio, 0.25, "an undeclared residual stat must be left alone");
+});
+
+test("makeMonsterStatSource has one shape, with a flag per residual stat", () => {
+    const source = makeMonsterStatSource();
+    for (const stat of MONSTER_ZEROED_COMBAT_STATS) assert.strictEqual(source[stat], 0, stat);
+    for (const stat of MONSTER_RESIDUAL_STATS) {
+        assert.ok(stat in source, stat);
+        assert.strictEqual(source["has_" + stat], false, "has_" + stat);
+    }
 });

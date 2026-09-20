@@ -1075,6 +1075,49 @@ upstream specifically changed the same surface area.
       winning 6/6, \`floor-solo\` -0.2% at 3/6 with per-round swings from -9.2%
       to +10.5% on a 0.83 ms/h case. \`sim:check\` 3/3 bit-identical.
 
+- **Normalised monster stat blocks (performance, measured)** — a seventh round,
+  folding the last two per-monster stat loops into one compiled copy. It
+  SUPERSEDES the presence mask from the fifth round; \`makeMonsterZeroMask\` /
+  \`buildMonsterZeroMask\` / \`applyMonsterZeroMask\` are still generated but
+  are no longer on the hot path, and exist so the tests can check the fold
+  against the form it replaced.
+    - \`monster.js\` \`updateCombatDetails()\`: the cached flat key/value walk
+      and the zero-fill are now a single \`applyMonsterStatSource()\`. The
+      \`WeakMap\` entry holds a NORMALISED SOURCE — the monster's game-data
+      block widened to one fixed shape — instead of key and value arrays, so
+      the recompute reads one hidden class and writes with straight-line field
+      code. Bestiary blocks carry between 3 and 20 keys, median 8, in 95
+      distinct shapes; the old walk therefore did a median of 8 megamorphic
+      keyed stores and the mask a further 63 conditional ones.
+      THE FOLD IS ONLY SOUND BECAUSE OF AN ORDERING ARGUMENT, and it is worth
+      stating. The old order was: copy the keys the block has, scale armour and
+      the three resistances, then write 0 into every zero-fill name the block
+      lacks. For a zero-fill name the composition of those three is exactly
+      "the block's value, or 0" — an ABSENT one is scaled while stale and then
+      overwritten with 0, so the scaling of it can never be observed. That is
+      why the 63 are now copied unconditionally BEFORE the scaling and the
+      scaling is unchanged. The five residual names the bestiary also carries
+      (\`combatStyleHrids\`, \`damageType\`, \`attackInterval\`,
+      \`maxHitpointsRatio\`, \`maxManapointsRatio\`) have NO such guarantee,
+      because nothing zero-fills them, so they keep "write only when present"
+      and the source carries a flag per name saying which.
+      The test that decides this is the SECOND recompute, over a block dirtied
+      with a previous pass's values: a first recompute on a fresh unit passes
+      either way, and only the dirty case can catch the ordering being wrong.
+      \`api/tests/statSchema.test.mjs\` runs both forms over all 95 blocks, at
+      two labyrinth scale factors, fresh and dirty.
+      The residual list is DERIVED from the bestiary, not typed, and a test
+      asserts the union of the two lists covers every key any block carries —
+      so a game-data update that adds a monster stat fails the build instead of
+      silently dropping it from every monster.
+      Candle at \`--reps=5\`, four counterbalanced rounds: 20 of 22 improved,
+      NONE lost every round, geometric mean -1.9%. \`mid-solo\` -6.5%,
+      \`floor-solo\` -5.4%, \`floor-party\` -3.4%, \`magic-abyss-t3\` -3.0%.
+      The two cases showing a positive sign were both at 2/4 rounds — a
+      straddle, not a regression — and a focused six-round re-measurement at
+      \`--reps=9\` turned both into wins: \`dungeon-den-200\` -1.7% at 6/6,
+      \`dungeon-fort-t2\` -1.1% at 5/6. \`sim:check\` 3/3 bit-identical.
+
 NOTE: the labyrinth "maze" player-buff mechanism (\`options.maze\`,
 \`MAZE_DEFAULTS\`, \`resolveMazeBonuses\`, \`mazeBonuses\`,
 \`Player.applyMazeBonuses\`) was REMOVED deliberately — it double-counted the

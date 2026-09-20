@@ -54,6 +54,7 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const ENGINE_DIR = path.join(ROOT, "src/combatsimulator");
+const DATA_DIR = path.join(ROOT, "src/combatsimulator/data");
 const OUT_PATH = path.join(ROOT, "src/combatsimulator/generated/statSchema.js");
 
 // Digits ARE in the class. See the header.
@@ -80,16 +81,42 @@ export function extractList(text, constName) {
     return names;
 }
 
+/**
+ * Every stat key any monster's game-data block carries that is NOT in the
+ * zero-fill list. Derived structurally from the bestiary, sorted, because these
+ * are the keys whose semantics is "write only when present" — the zero-fill
+ * list's own names mean "write the value, or 0". A key that appeared in a data
+ * update and was missed here would be silently dropped from every monster, so
+ * api/tests/statSchema.test.mjs asserts the union covers every block.
+ */
+export function collectResidualMonsterStats(zeroed) {
+    const zeroedSet = new Set(zeroed);
+    const monsters = JSON.parse(
+        fs.readFileSync(path.join(DATA_DIR, "combatMonsterDetailMap.json"), "utf8")
+    );
+    const residual = new Set();
+    for (const hrid of Object.keys(monsters)) {
+        const stats = monsters[hrid].combatDetails?.combatStats;
+        if (!stats) continue;
+        for (const stat of Object.keys(stats)) {
+            if (!zeroedSet.has(stat)) residual.add(stat);
+        }
+    }
+    return [...residual].sort();
+}
+
 export function collect() {
     const playerSrc = fs.readFileSync(path.join(ENGINE_DIR, "player.js"), "utf8");
     const monsterSrc = fs.readFileSync(path.join(ENGINE_DIR, "monster.js"), "utf8");
+    const monsterZeroed = extractList(monsterSrc, "MONSTER_ZEROED_COMBAT_STATS");
     return {
         equipment: extractList(playerSrc, "EQUIPMENT_COMBAT_STATS"),
-        monsterZeroed: extractList(monsterSrc, "MONSTER_ZEROED_COMBAT_STATS"),
+        monsterZeroed,
+        monsterResidual: collectResidualMonsterStats(monsterZeroed),
     };
 }
 
-export function render({ equipment, monsterZeroed }) {
+export function render({ equipment, monsterZeroed, monsterResidual }) {
     const L = [];
     L.push("// =============================================================================");
     L.push("// GENERATED FILE — DO NOT EDIT BY HAND.");
@@ -182,9 +209,57 @@ export function render({ equipment, monsterZeroed }) {
     L.push("/**");
     L.push(" * Apply a prebuilt mask. Same names, same order, same written value as the");
     L.push(" * keyed loop this replaces, so no number can move.");
+    L.push(" *");
+    L.push(" * Superseded on the hot path by the source-block trio below, which folds");
+    L.push(" * this and the flat key/value copy into one pass. Kept for the tests, which");
+    L.push(" * check that fold against it.");
     L.push(" */");
     L.push("export function applyMonsterZeroMask(combatStats, mask) {");
     for (const n of monsterZeroed) L.push(`    if (mask.${n}) combatStats.${n} = 0;`);
+    L.push("}");
+    L.push("");
+    L.push("export const MONSTER_RESIDUAL_STATS = Object.freeze([");
+    for (const n of monsterResidual) L.push(`    ${JSON.stringify(n)},`);
+    L.push("]);");
+    L.push("");
+    L.push("/**");
+    L.push(" * A per-block SOURCE: the monster's game-data stat block, normalised to one");
+    L.push(" * fixed shape, so a recompute copies it with straight-line field code.");
+    L.push(" *");
+    L.push(" * The two loops this replaces did, in order: copy the keys the block has,");
+    L.push(" * scale armour and the three resistances, then write 0 into every zero-fill");
+    L.push(" * name the block lacks. For a zero-fill name the composition of those is");
+    L.push(" * exactly `the block's value, or 0` — an absent one is scaled while stale and");
+    L.push(" * then overwritten with 0, so the scaling cannot be observed — which is why");
+    L.push(" * the 63 below are copied unconditionally and the scaling still happens");
+    L.push(" * afterwards. The residual names carry no such guarantee: nothing zero-fills");
+    L.push(" * them, so they keep `write only when present` and their flags say which.");
+    L.push(" */");
+    L.push("export function makeMonsterStatSource() {");
+    L.push("    return {");
+    for (const n of monsterZeroed) L.push(`        ${n}: 0,`);
+    for (const n of monsterResidual) L.push(`        ${n}: undefined,`);
+    for (const n of monsterResidual) L.push(`        has_${n}: false,`);
+    L.push("    };");
+    L.push("}");
+    L.push("");
+    L.push("/** Normalise one game-data stat block. Once per block, not per recompute. */");
+    L.push("export function buildMonsterStatSource(gameStats) {");
+    L.push("    const source = makeMonsterStatSource();");
+    for (const n of monsterZeroed) L.push(`    if (gameStats.${n} != null) source.${n} = gameStats.${n};`);
+    for (const n of monsterResidual) {
+        L.push(`    if (gameStats.${n} !== undefined) {`);
+        L.push(`        source.${n} = gameStats.${n};`);
+        L.push(`        source.has_${n} = true;`);
+        L.push("    }");
+    }
+    L.push("    return source;");
+    L.push("}");
+    L.push("");
+    L.push("/** Copy a normalised source into a unit's combatStats. */");
+    L.push("export function applyMonsterStatSource(combatStats, source) {");
+    for (const n of monsterZeroed) L.push(`    combatStats.${n} = source.${n};`);
+    for (const n of monsterResidual) L.push(`    if (source.has_${n}) combatStats.${n} = source.${n};`);
     L.push("}");
     L.push("");
     return L.join("\n");
