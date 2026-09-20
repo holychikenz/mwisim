@@ -37,6 +37,16 @@ encounters per hour to within a few percent are simulating the same fight. If
 that column diverges, the speed column is comparing two different games and
 should not be quoted until the divergence is explained.
 
+**It has been explained, and the explanation is not symmetric.** This engine is
+validated against the live game; a comparison engine that reports a different
+encounter rate is wrong, not differently-opinionated. So a divergence here is a
+reason to distrust the OTHER column's owner, and never a target to converge on.
+It does, however, contaminate any per-ENCOUNTER normalisation of their numbers:
+dividing by encounters credits them with encounters that are cheap partly
+because they are wrongly short. Compare milliseconds per simulated hour — a
+simulated hour is the same quantity of simulated combat either way, however it
+is divided into encounters.
+
 ## Rules
 
 - **Do not edit an existing build or case to make a number look better.** Every

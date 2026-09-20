@@ -59,6 +59,31 @@ improved. That is the trade being made, and it is the right one: the fixed
 term is multiplied once per encounter and the marginal term five times over in
 a dungeon.
 
+### The encounter-rate control, and a correction to the arithmetic above
+
+The `enc/h` column shows this engine simulating **2.6–7.4% FEWER encounters per
+simulated hour** than the reference in the party and dungeon cases. Earlier
+revisions filed that under "our combat-mechanics delta, out of scope", which
+implied it was ours to close. **It is not. This engine matches the live game.
+Where the reference's encounter rate differs, the reference is wrong.**
+
+That has a consequence for the per-ENCOUNTER arithmetic above, and it cuts
+against the number we quoted. Dividing by encounters credits the reference with
+encounters that are cheap partly because they are wrongly SHORT — a fight that
+ends early has fewer events in it. Correcting `party3-swarm`'s reference figure
+by its own 7.4% excess moves the marginal-cost-per-unit ratio from **5.86× to
+roughly 4.8×**. Still several times ours, so nothing about the strategy
+changes; but 5.86× is an overestimate and should not be quoted as it stands.
+
+It also retires a claim revisions 3 and 4 made in the other direction — that
+"the per-encounter gap is worse than the per-hour gap, so the ratio flatters
+us". That reading was wrong. **Milliseconds per SIMULATED HOUR is the robust
+metric and stays the headline:** a simulated hour is the same quantity of
+simulated combat in either engine, however it happens to be divided into
+encounters. Use per-encounter figures only to compare a case against ITSELF
+across party sizes, and say out loud that the reference column is contaminated
+when you do.
+
 **Our fixed per-encounter cost is within 30% of the reference. Our cost per
 additional unit is roughly eight times theirs.** The dungeons are not a
 different problem; they are that multiplier applied five times over.
@@ -313,10 +338,13 @@ measured.** Recorded so nobody "fixes" them again.
 
 ## 7. Not in scope
 
-The combat **mechanics** deltas — the 2.5–6.8% encounter-rate difference in
-party cases, the inter-encounter gap, `debuffOnLevelGap` on loot — held back
-deliberately, and the reason the gap table understates the per-encounter
-difference. Worker-pool reuse (55 ms per spawn — real, but startup, which the
+The combat **mechanics** deltas — the 2.6–7.4% encounter-rate difference in
+party cases, the inter-encounter gap, `debuffOnLevelGap` on loot. These are
+**not ours to close.** This engine matches the live game, so where the
+reference's encounter rate differs, the reference is the one that is wrong.
+They are out of scope as a matter of fact rather than of priority, and `enc/h`
+stays in the candle as a control on whether WE have broken our own mechanics —
+never as a target to converge on. Worker-pool reuse (55 ms per spawn — real, but startup, which the
 candle's slope cancels by design). Rewriting in AssemblyScript or Rust: finish
 this list first, to find out how much of the gap is language at all.
 
