@@ -568,6 +568,19 @@ upstream specifically changed the same surface area.
       only ever compared with another id from the same registry in the same
       process. If an id is ever persisted or compared across runs, it must
       become a sorted generated table instead.
+    ALSO TRIED AND DISCARDED, and this one is a HARD no: replacing the N
+    \`Heap.remove()\` calls in the queue's clear methods with a single
+    compaction pass over \`heapArray\` plus one \`init()\` re-heapify. It is
+    less work by construction — \`remove()\` re-heapifies per match and
+    \`Heap.remove\` held 2.65% of self time on \`dungeon-den-600\` — but the
+    array one compaction produces is NOT the array N successive removals
+    produce, so the heap permutation differs and equal-\`time\` events come out
+    in a different order. \`npm run sim:check\` caught it immediately: 2 of 3
+    fixtures drifted, with ability casts landing in different sequence
+    (\`attacks./monsters/abyssal_imp.player1./abilities/fireball\` counts moved).
+    The fixtures were NOT re-recorded; the change was reverted. That drift is
+    the harness working correctly, and it is the reason the collect-then-remove
+    shape in \`clearMatching\` is load-bearing and must stay.
     TRIED AND DISCARDED in this round, so nobody re-derives it: precomputing
     \`trigger.js\`'s derived buff-unique hrid at \`Trigger\` construction
     instead of rebuilding it with \`lastIndexOf\` + \`slice\` +
