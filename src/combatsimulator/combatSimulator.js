@@ -1092,7 +1092,11 @@ class CombatSimulator extends EventTarget {
     }
 
     addNextAttackEvent(source) {
-        if (this.eventQueue.getMatchingEitherTypeAndSource(AbilityCastEndEvent.type, AutoAttackEvent.type, source)) {
+        // MWIX adaptation (performance): answered from a per-unit counter the
+        // queue maintains, not by scanning the heap. This guard was 56.5% of
+        // every heap entry the event queue touched on dungeon-den-600, and it
+        // grew quadratically with party size. See events/eventQueue.js.
+        if (this.eventQueue.hasPendingAction(source)) {
             return;
         }
 

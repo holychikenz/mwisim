@@ -1,5 +1,12 @@
 import Heap from "heap-js";
 import { eventTypeId } from "./eventTypeIds";
+import AutoAttackEvent from "./autoAttackEvent";
+import AbilityCastEndEvent from "./abilityCastEndEvent";
+
+// The two event types that mean "this unit already has an action in flight".
+// Interned once at module load; see the pending-action note on the class.
+const ID_AUTO_ATTACK = eventTypeId(AutoAttackEvent.type);
+const ID_ABILITY_CAST_END = eventTypeId(AbilityCastEndEvent.type);
 
 // =============================================================================
 // MWIX adaptation (performance): scan the heap's backing array in place.
@@ -50,12 +57,96 @@ class EventQueue {
         }
     }
 
+    // =========================================================================
+    // MWIX adaptation (performance): "is this unit mid-action?" is answered
+    // from a counter, not by walking the heap.
+    //
+    // addNextAttackEvent() opens by asking whether `source` already has an
+    // AutoAttackEvent or an AbilityCastEndEvent pending, and upstream answers
+    // it by scanning every entry in the queue. Measured on dungeon-den-600:
+    // 10 249 calls per simulated hour over a heap averaging 111 entries —
+    // 56.5% of ALL heap entries this queue touches, and 81.8% of them on
+    // floor-solo. Worse, it is quadratic in party size: more units means both
+    // more calls and a longer heap, and per-unit cost is precisely what this
+    // engine is bad at relative to the reference (see todo.md §1).
+    //
+    // WHY A COUNTER IS EXACTLY EQUIVALENT, AND NOT MERELY USUALLY RIGHT.
+    // The scan's answer is a pure function of the heap's contents, so a count
+    // maintained on every mutation gives the same answer iff every mutation is
+    // covered. The heap is mutated in exactly FOUR places and they are all in
+    // this file: addEvent (push), getNextEvent (pop), clear (a fresh Heap),
+    // and _removeCollected — which every cancellation path funnels through.
+    // Everything else in this class only READS heapArray. If a fifth mutation
+    // site is ever added and does not maintain the count, this silently starts
+    // returning wrong answers, so: the count is maintained HERE, beside the
+    // mutations, rather than at the call site that consumes it.
+    //
+    // WHERE THE COUNT LIVES, AND WHY NOT IN A MAP HERE.
+    // It is a field on the unit. A Map keyed by unit was measured first and it
+    // LOST on the cheap cases — floor-solo +9.3%, floor-party +6.9%, both in
+    // every counterbalanced round — because a shallow heap (3.9 entries on
+    // floor-solo) is cheaper to scan than two Map operations are to perform,
+    // and the Map was touched on every add and every removal while the scan
+    // only ran on the guard. A field read is cheaper than either. It also puts
+    // the state where it belongs: "am I mid-action?" is a property of the unit.
+    //
+    // Two deliberate departures from the scan it replaces, both unobservable
+    // on today's path and both recorded so the next reader need not re-derive
+    // them:
+    //
+    //   * The scan compared `event.source == source` (loose), which would also
+    //     match a null-sourced event when asked about `undefined`. The map is
+    //     keyed by identity and null/undefined sources are never tracked at
+    //     all. The only caller passes a live unit, so this cannot differ.
+    //   * The scan returned the matching EVENT; this returns a boolean. The
+    //     only caller tests it for truthiness and discards it.
+    //
+    // getMatchingEitherTypeAndSource() is kept below as the scanning form. It
+    // is no longer on the hot path, and it is what the differential test
+    // checks this counter against.
+    // =========================================================================
+
+    /** Is `source` mid-action — auto-attack or ability cast still pending? */
+    hasPendingAction(source) {
+        return source._pendingActionCount > 0;
+    }
+
+    _trackAdded(event) {
+        if (event.typeId !== ID_AUTO_ATTACK && event.typeId !== ID_ABILITY_CAST_END) {
+            return;
+        }
+        let source = event.source;
+        if (source == null) {
+            return;
+        }
+        let n = source._pendingActionCount;
+        source._pendingActionCount = n === undefined ? 1 : n + 1;
+    }
+
+    _trackRemoved(event) {
+        if (event.typeId !== ID_AUTO_ATTACK && event.typeId !== ID_ABILITY_CAST_END) {
+            return;
+        }
+        let source = event.source;
+        if (source == null) {
+            return;
+        }
+        if (source._pendingActionCount > 0) {
+            source._pendingActionCount--;
+        }
+    }
+
     addEvent(event) {
         this.minHeap.push(event);
+        this._trackAdded(event);
     }
 
     getNextEvent() {
-        return this.minHeap.pop();
+        let event = this.minHeap.pop();
+        if (event !== undefined) {
+            this._trackRemoved(event);
+        }
+        return event;
     }
 
     containsEventOfType(type) {
@@ -83,6 +174,14 @@ class EventQueue {
     }
 
     clear() {
+        // Decrement before dropping the heap. The counts live on the UNITS, and
+        // the units outlive this queue's contents — a wipe that discards the
+        // heap without settling them would leave a unit permanently "mid-action"
+        // and it would never attack again.
+        let events = this.minHeap.heapArray;
+        for (let i = 0; i < events.length; i++) {
+            this._trackRemoved(events[i]);
+        }
         this.minHeap = new Heap((a, b) => a.time - b.time);
     }
 
@@ -191,7 +290,11 @@ class EventQueue {
             return false;
         }
         for (let i = 0; i < matches.length; i++) {
-            this.minHeap.remove(matches[i]);
+            // heap-js compares with `===`, so a true return means THIS object
+            // left the heap — which is what makes the decrement exact.
+            if (this.minHeap.remove(matches[i])) {
+                this._trackRemoved(matches[i]);
+            }
         }
         return true;
     }

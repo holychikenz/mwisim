@@ -101,6 +101,14 @@ class CombatUnit {
 
     isOutOfMana = false;
 
+    // MWIX adaptation (performance): how many AutoAttack/AbilityCastEnd events
+    // this unit currently has in the event queue — i.e. "am I mid-action?".
+    // Owned and maintained exclusively by EventQueue, which is the only thing
+    // that knows when such an event enters or leaves the heap; declared here so
+    // every unit has the field from birth and the shape stays monomorphic.
+    // Read it through EventQueue.hasPendingAction(), not directly.
+    _pendingActionCount = 0;
+
     // Base levels which don't change after initialization
     staminaLevel = 1;
     intelligenceLevel = 1;

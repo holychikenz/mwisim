@@ -732,6 +732,85 @@ upstream specifically changed the same surface area.
 - Any other local edits beneath \`${SCOPED_PATH}/\` — list them in the
   rebase report so we keep a running ledger.
 
+- **Per-unit pending-action count (performance, measured)** — a fourth round,
+  aimed for the first time at a cost that SCALES WITH UNIT COUNT rather than a
+  large share of a profile. The framing came from converting the candle to cost
+  per ENCOUNTER and holding the zone fixed while varying only party size (the
+  one such pair is aqua_planet, 1 player against 3): our fixed per-encounter
+  cost is within 30% of the reference implementation's, while our cost per
+  ADDITIONAL UNIT is roughly eight times it. A change that removes fixed
+  per-encounter or per-pass work therefore cannot move a dungeon, whatever the
+  profile says — which is exactly what happened to the trigger round above.
+    - \`events/eventQueue.js\`, \`combatUnit.js\`, \`combatSimulator.js\`:
+      \`addNextAttackEvent()\` opens by asking whether the unit already has an
+      \`AutoAttackEvent\` or \`AbilityCastEndEvent\` in flight, and upstream
+      answers it by SCANNING THE WHOLE HEAP
+      (\`getMatchingEitherTypeAndSource\`). Instrumented on
+      \`dungeon-den-600\`: 10 249 calls per simulated hour over a heap
+      averaging 111 entries — **56.5% of every heap entry the queue touches**,
+      and 81.8% of them on \`floor-solo\`. It is quadratic in party size,
+      because more units means both more calls and a longer heap. The queue now
+      maintains a count on the unit instead: \`_pendingActionCount\`,
+      incremented on push and decremented on pop, on removal and on clear, with
+      \`hasPendingAction(source)\` reading the field.
+      THE EQUIVALENCE ARGUMENT, which is the whole of the risk. The scan's
+      answer is a pure function of the heap's contents, so a maintained count
+      agrees with it if and only if EVERY mutation maintains it. The heap is
+      mutated in exactly four places and all four are in \`eventQueue.js\` —
+      \`addEvent\`, \`getNextEvent\`, \`clear\`, and \`_removeCollected\`,
+      which every cancellation path funnels through; every other method only
+      READS \`heapArray\`. That is why the count is maintained beside the
+      mutations rather than at the call site that consumes it. If a fifth
+      mutation site is ever added and skips it, this silently returns wrong
+      answers: a unit stuck above zero never attacks again, one stuck below
+      queues two actions at once. Neither throws. \`clear()\` therefore walks
+      the outgoing heap and settles every count before dropping it, because the
+      counts live on units that outlive the queue's contents.
+      A FIELD, NOT A MAP, AND THAT WAS MEASURED. The first version kept a
+      \`Map\` from unit to count inside the queue. It won the dungeons but LOST
+      the cheap cases in every counterbalanced round — \`floor-solo\` +9.3%,
+      \`floor-party\` +6.9%, \`buffstack-solo\` +1.1% — because a shallow heap
+      (3.9 entries on \`floor-solo\`) is cheaper to scan than two \`Map\`
+      operations are to perform, and the \`Map\` was touched on every add and
+      every removal while the scan only ran on the guard. Moving the count onto
+      the unit turned all three into wins. It also puts the state where it
+      belongs: "am I mid-action?" is a property of the unit, which is precisely
+      how the reference implementation avoids the question — it stamps
+      last-used at cast START, so "mid-cast" and "on cooldown" are the same
+      scalar on its ability record, and it never asks its queue anything.
+      Measured over four counterbalanced full-candle rounds at \`--reps=5\`:
+      20 of 22 medians improved, 11 won every round, NONE lost every round —
+      \`mid-solo\` 4.57 -> 3.65 (-20.1%), \`dungeon-den-200\` 105.4 -> 96.0
+      (-8.9%), \`melee-swarm\` -7.8%, \`melee-abyss\` -7.7%, \`magic-abyss-t3\`
+      -7.4%, \`party3-swarm\` -6.7%, \`dungeon-fort-t2\` -5.7%,
+      \`dungeon-den-600\` 104.2 -> 99.0 (-5.1%), \`dungeon-circus\` -4.4%,
+      \`dungeon-pirate\` -3.7%. This is the first stage that moved every
+      dungeon, and it is the first one aimed at per-unit cost. \`sim:check\`
+      3/3; \`enc/h\` within 1.2% everywhere.
+      \`floor-solo\` read +5.8% in that run, so it was re-measured on its own
+      terms — six counterbalanced rounds at \`--reps=9\` — and came back +1.2%
+      with three rounds either way, i.e. noise; \`starter-solo\` -3.7% (won all
+      six), \`floor-party\` -2.0%, \`ranged-solo\` -1.1% in the same run. No
+      regression survived, so nothing was reverted.
+      COVERED BY \`api/tests/pendingAction.test.mjs\` (NEW), whose central case
+      is DIFFERENTIAL: 4 000 randomised mutations from a seeded LCG, asserting
+      after every single one that the count agrees with
+      \`getMatchingEitherTypeAndSource\` — which is kept in the class, off the
+      hot path, precisely to be that oracle. Four mutants were confirmed to
+      fail it before it was trusted: dropping the decrement in
+      \`_removeCollected\`, dropping it on pop, forgetting the reset in
+      \`clear()\`, and tracking only auto-attacks. The suite also pins the
+      subtle one — an event removed by TARGET must still decrement its
+      SOURCE's count.
+      AN ENVIRONMENT TRAP FOUND WHILE MEASURING, recorded because it cost time
+      and will cost it again: the repository ROOT \`node_modules\` carries
+      heap-js 2.2.0 while \`api/node_modules\` carries the pinned 2.7.1. A
+      worktree without its own \`api/node_modules\` resolves upward to 2.2.0
+      and every bench case dies with "Heap is not a constructor". Symlink
+      \`api/node_modules\` into any worktree used as an A/B arm. This is the
+      failure mode the pin and the constructor assertion in \`eventQueue.js\`
+      exist to make loud, and it worked.
+
 NOTE: the labyrinth "maze" player-buff mechanism (\`options.maze\`,
 \`MAZE_DEFAULTS\`, \`resolveMazeBonuses\`, \`mazeBonuses\`,
 \`Player.applyMazeBonuses\`) was REMOVED deliberately — it double-counted the
