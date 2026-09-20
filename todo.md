@@ -57,6 +57,17 @@ Measured today, 22 cases, both engines interleaved. The reference figures live
 outside this repository with the harness that produces them (see
 `api/bench/README.md` for why).
 
+> **STALE AS OF REVISION 6 — DO NOT QUOTE THESE RATIOS.** Every figure in this
+> section predates the compiled-stat round, which took the csim column down
+> -23.3% on the geometric mean without the reference column being re-measured at
+> all. The ratios below are therefore all too high by roughly a factor of 1.3,
+> and the per-unit arithmetic that follows is correspondingly overstated. The
+> ANALYSIS stands — per-unit cost is still the term that matters, and the
+> compiled-stat round was aimed at it and moved every dungeon — but the numbers
+> need a fresh interleaved run against the reference harness before anyone
+> repeats them. Left in place, rather than deleted, because the reasoning in
+> this section is what directed the round.
+
 | | round 1 | before today | now |
 |---|---|---|---|
 | cheapest case | 1.6× | 1.4× | **1.4×** |
