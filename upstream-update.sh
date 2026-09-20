@@ -578,19 +578,19 @@ upstream specifically changed the same surface area.
       only ever compared with another id from the same registry in the same
       process. If an id is ever persisted or compared across runs, it must
       become a sorted generated table instead.
-    - `combatSimulator.js`: `processEvent` is SYNCHRONOUS. Upstream declares it
-      `async` and `await`s it from `simulate()`'s loop, but its body contains no
-      `await` — it was the only one in the engine — so every event allocated a
+    - \`combatSimulator.js\`: \`processEvent\` is SYNCHRONOUS. Upstream declares it
+      \`async\` and \`await\`s it from \`simulate()\`'s loop, but its body contains no
+      \`await\` — it was the only one in the engine — so every event allocated a
       throwaway promise and took a microtask-queue round trip for nothing
       (~19 ns per call on this machine, Node v26.8.2). Nothing observable
       changes: microtasks never yielded to the browser's event loop, so the UI
-      was not becoming responsive between events, and `simulate()` stays
-      `async` so no caller moves. `sim:check` 3/3.
+      was not becoming responsive between events, and \`simulate()\` stays
+      \`async\` so no caller moves. \`sim:check\` 3/3.
       The gain lands exactly where the theory says it should — on the cases
-      whose cost IS per-event overhead, and nowhere else: `floor-solo`
-      1.17 -> 1.10 ms/sim-h (-6.5%), `mid-solo` 4.36 -> 4.15 (-4.9%),
-      `starter-solo` 2.07 -> 1.99 (-3.8%); `dungeon-den-600`, `melee-solo` and
-      `melee-swarm` are a wash, because there the per-event constant is
+      whose cost IS per-event overhead, and nowhere else: \`floor-solo\`
+      1.17 -> 1.10 ms/sim-h (-6.5%), \`mid-solo\` 4.36 -> 4.15 (-4.9%),
+      \`starter-solo\` 2.07 -> 1.99 (-3.8%); \`dungeon-den-600\`, \`melee-solo\` and
+      \`melee-swarm\` are a wash, because there the per-event constant is
       swamped by the work inside each event.
       A METHOD WARNING, learned here and applicable to every A/B on this
       branch: the first measurement of this change showed melee-solo +6.1% and
@@ -601,69 +601,69 @@ upstream specifically changed the same surface area.
       both to small wins. Interleaving rounds is NOT sufficient; the ORDER
       WITHIN a round must alternate, or a consistent-looking regression can be
       manufactured out of nothing but thermal drift.
-    - `combatSimulator.js`: `checkTriggers()` and `addNextAttackEvent()` no
-      longer allocate. Upstream runs `players.filter(alive).forEach(check)` and
+    - \`combatSimulator.js\`: \`checkTriggers()\` and \`addNextAttackEvent()\` no
+      longer allocate. Upstream runs \`players.filter(alive).forEach(check)\` and
       the same for enemies — TWO arrays and FOUR closures per fixpoint pass,
-      and `checkTriggers()` runs after EVERY event — plus
-      `source.abilities.filter(notNull).forEach(...)` on every attack and
+      and \`checkTriggers()\` runs after EVERY event — plus
+      \`source.abilities.filter(notNull).forEach(...)\` on every attack and
       cooldown wake-up, for at most four slots.
-      THE SNAPSHOT IS PRESERVED, and this is the whole subtlety. `filter` runs
-      its predicate over every element BEFORE `forEach` invokes the first
+      THE SNAPSHOT IS PRESERVED, and this is the whole subtlety. \`filter\` runs
+      its predicate over every element BEFORE \`forEach\` invokes the first
       callback, so membership is decided up front. A plain indexed loop with
       the aliveness test in the body decides it lazily, and the two differ the
       moment a unit's hitpoints cross zero mid-pass: the snapshot still visits
-      a unit that has since died — and `checkTriggersForUnit` THROWS on a dead
+      a unit that has since died — and \`checkTriggersForUnit\` THROWS on a dead
       unit — and skips one that has since been revived. Nothing on today's path
       does either (this method only eats and drinks), but that is not a
       property the next reader can see. So membership is still computed first,
-      into a 32-bit liveness MASK. `addNextAttackEvent` has no such subtlety:
+      into a 32-bit liveness MASK. \`addNextAttackEvent\` has no such subtlety:
       its predicate is null-ness, which cannot change mid-loop.
       A MASK RATHER THAN A REUSED ARRAY OF UNITS, and that was measured, not
       assumed. The first version kept two scratch arrays of unit references on
       the simulator; the worry was that writing references into a long-lived
       (promoted) array pays a generational write barrier where the fresh young
       arrays it replaced did not, and that it pins dead monsters against the
-      collector. Six counterbalanced rounds at `--reps=9` put the two variants
+      collector. Six counterbalanced rounds at \`--reps=9\` put the two variants
       within noise of each other on every case, so the barrier theory was
       WRONG — but the mask was kept anyway, because it holds no long-lived
       state at all and therefore needs no argument about re-entrancy.
-      `1 << 32` is `1`, not an overflow, so a roster wider than the mask falls
-      back to `_checkTriggersManyUnits()` — upstream's shape verbatim,
+      \`1 << 32\` is \`1\`, not an overflow, so a roster wider than the mask falls
+      back to \`_checkTriggersManyUnits()\` — upstream's shape verbatim,
       allocations and all. Nothing in the game fields a roster that wide, which
       makes that path one no simulation ever exercises; it is covered instead
-      by `api/tests/checkTriggers.test.mjs`, whose wide-roster case is built
+      by \`api/tests/checkTriggers.test.mjs\`, whose wide-roster case is built
       with player 0 DEAD and player 32 ALIVE specifically so that an aliased
       mask is observable. Both that test and the snapshot test were confirmed
       to FAIL against deliberately broken versions before being trusted.
-      Measured over four counterbalanced full-candle rounds at `--reps=5`:
+      Measured over four counterbalanced full-candle rounds at \`--reps=5\`:
       18 of 22 medians improved, none regressed consistently —
-      `starter-solo` 2.03 -> 1.92 (-5.3%), `floor-party` 4.81 -> 4.60 (-4.2%),
-      `mid-solo` 4.69 -> 4.56 (-2.9%), `melee-swarm` and `dungeon-circus`
-      smaller but won every round. `sim:check` 3/3.
+      \`starter-solo\` 2.03 -> 1.92 (-5.3%), \`floor-party\` 4.81 -> 4.60 (-4.2%),
+      \`mid-solo\` 4.69 -> 4.56 (-2.9%), \`melee-swarm\` and \`dungeon-circus\`
+      smaller but won every round. \`sim:check\` 3/3.
       HONEST NOTE ON WHERE THIS DID *NOT* PAY. The profile put the trigger
-      family at 16.6% of self time on `dungeon-den-600` and that case did not
+      family at 16.6% of self time on \`dungeon-den-600\` and that case did not
       move (+1.8% over four rounds, +0.6% over a separate six); neither did
-      `party3-sorcerer`, which the kernel study named as the case this should
+      \`party3-sorcerer\`, which the kernel study named as the case this should
       move. The allocation is evidently a small part of that 16.6%; the cost is
-      the trigger EVALUATION itself — `getDependencyValue` 6.1%,
-      `shouldTrigger` 4.0%. Anyone returning to this family should attack the
+      the trigger EVALUATION itself — \`getDependencyValue\` 6.1%,
+      \`shouldTrigger\` 4.0%. Anyone returning to this family should attack the
       evaluation, not the iteration, and should know that the iteration has
       already been done.
     TRIED AND DISCARDED alongside it, so nobody re-derives it: dispatching
-    `processEvent`'s 19-arm switch on the integer `event.typeId` (which every
+    \`processEvent\`'s 19-arm switch on the integer \`event.typeId\` (which every
     event already carries for the queue's scans) instead of the string
-    `event.type`, with the ids interned into module-level constants so the case
-    labels are plain reads. Correct, and `sim:check` 3/3. But a counterbalanced
-    four-round A/B at `--reps=9` put SIX of seven cases on both sides of zero —
-    `dungeon-den-600` +0.9%, `melee-solo` +1.2%, `melee-swarm` +0.8%,
-    `floor-solo` +2.6%, `healer-solo` -2.1%, `mid-solo` +0.5% — with only
-    `starter-solo` (-4.9%) consistent. The medians straddle zero, so there is
+    \`event.type\`, with the ids interned into module-level constants so the case
+    labels are plain reads. Correct, and \`sim:check\` 3/3. But a counterbalanced
+    four-round A/B at \`--reps=9\` put SIX of seven cases on both sides of zero —
+    \`dungeon-den-600\` +0.9%, \`melee-solo\` +1.2%, \`melee-swarm\` +0.8%,
+    \`floor-solo\` +2.6%, \`healer-solo\` -2.1%, \`mid-solo\` +0.5% — with only
+    \`starter-solo\` (-4.9%) consistent. The medians straddle zero, so there is
     nothing here to ship.
-    The reason is worth keeping: V8 interns the `type` strings and lowers a
+    The reason is worth keeping: V8 interns the \`type\` strings and lowers a
     string switch to POINTER comparisons, which are already integer compares.
-    The kernel study proposed this from a wasm `br_table` on a u8 tag
+    The kernel study proposed this from a wasm \`br_table\` on a u8 tag
     (a jump table LLVM can build and V8 cannot), and it flagged the ceiling as
-    small — `processEvent`'s own self time was 1.1% then and does not appear in
+    small — \`processEvent\`'s own self time was 1.1% then and does not appear in
     the top 25 of the current profile at all. The int is not cheaper than the
     interned pointer; only the jump table would have been, and that is not
     available to us. Do not re-propose without a measurement that clears noise.
