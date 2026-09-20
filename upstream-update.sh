@@ -508,6 +508,22 @@ upstream specifically changed the same surface area.
   indexing over data we already iterate in bulk. Every stage was measured on
   its own against \`api/bench/records/2026-09-20b-buffpath.json\` at
   \`--reps=9\` and gated on \`npm run sim:check\` 3/3 bit-identical.
+    - \`generated/buffTypes.js\` (NEW, and ours alone): the buff-type ordinal
+      table the dense buff-boost index below is keyed on — \`BUFF_TYPE\`
+      (hrid -> ordinal, null-prototype), \`BUFF_TYPE_NAMES\`,
+      \`BUFF_TYPE_COUNT\` and \`buffTypeOrdinal()\`, which THROWS on an hrid
+      it has never seen. It is produced by \`tools/genBuffTypes.mjs\` and
+      COMMITTED, so webpack and the node harness import the identical file and
+      a game-data update lands as a reviewable diff. It is derived, not typed,
+      because a list that is wrong by omission gives wrong combat numbers with
+      no error — the same failure that once dropped \`hpRegenPer10\` and
+      \`mpRegenPer10\` from a stat list and moved kills/hr by 2%. The JSON
+      maps are walked STRUCTURALLY (no character class to get wrong) and the
+      text scans use \`[A-Za-z0-9_]+\` with digits asserted, not eyeballed, in
+      \`api/tests/buffTypes.test.mjs\` — which also re-runs the generator and
+      compares the committed file BYTE FOR BYTE. Ordinals come from a sort, not
+      from discovery order. If upstream adds a buff type, regenerate; do not
+      hand-edit the generated file.
     - \`monster.js\` \`updateCombatDetails()\`: the base stat-block copy no
       longer runs \`Object.entries(gameMonster.combatDetails.combatStats)\`,
       which allocated an outer array plus one two-element array per stat, per
