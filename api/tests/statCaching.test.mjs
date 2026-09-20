@@ -20,7 +20,8 @@ const { default: Player, EQUIPMENT_COMBAT_STATS } = await import(SRC + 'player.j
 const { default: Equipment } = await import(SRC + 'equipment.js');
 const { default: CombatUnit } = await import(SRC + 'combatUnit.js');
 const { default: EventQueue } = await import(SRC + 'events/eventQueue.js');
-const { MONSTER_ZEROED_COMBAT_STATS } = await import(SRC + 'monster.js');
+const { default: Monster, MONSTER_ZEROED_COMBAT_STATS } = await import(SRC + 'monster.js');
+const dataProvider = await import(SRC + 'dataProvider.js');
 
 // A kit spanning every slot shape the cache has to handle: two-hand, off-hand,
 // charm (a slot the Player class does NOT predeclare), and a pouch.
@@ -327,6 +328,62 @@ test('the monster zero-fill stat list is complete and has no duplicates', () => 
   const fields = new CombatUnit().combatDetails.combatStats;
   const missing = MONSTER_ZEROED_COMBAT_STATS.filter((stat) => !(stat in fields));
   assert.deepStrictEqual(missing, UNDECLARED);
+});
+
+test('the monster base stat copy reproduces the game-data block exactly', () => {
+  // Guards the flat key/value walk that replaced Object.entries() in
+  // Monster.updateCombatDetails. The failure mode is a stat silently missing
+  // from the copy, which leaves the monster with whatever CombatUnit's
+  // initializer happened to hold — a wrong combat number with no error.
+  const hrid = Object.keys(dataProvider.combatMonsterDetailMap)[0];
+  const base = dataProvider.combatMonsterDetailMap[hrid].combatDetails.combatStats;
+
+  const monster = new Monster(hrid);
+  monster.updateCombatDetails();
+
+  // Stats the recompute deliberately scales or derives are compared for
+  // presence only; the rest must match value for value.
+  const SCALED = new Set(['armor', 'waterResistance', 'natureResistance', 'fireResistance',
+                          'attackInterval', 'combatStyleHrid']);
+  for (const key of Object.keys(base)) {
+    assert.ok(key in monster.combatDetails.combatStats,
+      `${key} was dropped from the monster stat copy`);
+    if (!SCALED.has(key)) {
+      assert.deepStrictEqual(monster.combatDetails.combatStats[key], base[key],
+        `${key} does not match the game-data block`);
+    }
+  }
+  // Two copies of the same monster must agree — the cache is shared.
+  const twin = new Monster(hrid);
+  twin.updateCombatDetails();
+  assert.deepStrictEqual(twin.combatDetails.combatStats, monster.combatDetails.combatStats);
+});
+
+test('overridden game data is not served from the stale stat copy', () => {
+  // The stat-block cache is keyed on the combatStats OBJECT, not the monster
+  // hrid, precisely so that setOverrides() — which installs fresh nested
+  // objects — cannot be answered out of a cache built from the previous game
+  // version. An hrid-keyed cache passes every other test in this file and
+  // fails only here.
+  const hrid = Object.keys(dataProvider.combatMonsterDetailMap)[0];
+  const before = new Monster(hrid);
+  before.updateCombatDetails();
+
+  const bumped = structuredClone(dataProvider.combatMonsterDetailMap);
+  bumped[hrid].combatDetails.combatStats.maxHitpoints =
+    (bumped[hrid].combatDetails.combatStats.maxHitpoints ?? 0) + 12345;
+  try {
+    dataProvider.setOverrides({ combatMonsterDetailMap: bumped });
+    const after = new Monster(hrid);
+    after.updateCombatDetails();
+    assert.equal(
+      after.combatDetails.combatStats.maxHitpoints,
+      before.combatDetails.combatStats.maxHitpoints + 12345,
+      'the stat copy came from a cache built before the override'
+    );
+  } finally {
+    dataProvider.resetOverrides();
+  }
 });
 
 // ---- event queue ------------------------------------------------------------

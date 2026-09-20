@@ -500,6 +500,31 @@ upstream specifically changed the same surface area.
   Guarded by \`api/tests/statCaching.test.mjs\` and the \`fixtures/sim/\`
   golden replays. The candle case \`selfbuff-solo\` in
   \`api/bench/builds.mjs\` exists to keep this path measurable.
+- **Dense-index round (performance, measured)** — a third round, aimed at the
+  three families a fresh CPU profile of the candle left on top: buff
+  aggregation (~16.5% of self time on \`dungeon-den-600\`), the monster stat
+  recompute, the event queue (~8.3%) and trigger evaluation (5.7%). The theme
+  throughout is replacing string- and closure-keyed lookups with dense integer
+  indexing over data we already iterate in bulk. Every stage was measured on
+  its own against \`api/bench/records/2026-09-20b-buffpath.json\` at
+  \`--reps=9\` and gated on \`npm run sim:check\` 3/3 bit-identical.
+    - \`monster.js\` \`updateCombatDetails()\`: the base stat-block copy no
+      longer runs \`Object.entries(gameMonster.combatDetails.combatStats)\`,
+      which allocated an outer array plus one two-element array per stat, per
+      monster, per encounter — and a simulated hour holds 200-800 encounters,
+      each resetting and so recomputing every monster in it. The profile put
+      that one loop at 5.7% of self time on \`melee-solo\`, 6.3% on
+      \`buffstack-solo\`, 4.2% on \`dungeon-den-600\`. It now walks cached
+      flat key and value arrays: same keys in \`Object.keys\` order, same
+      values, same write sequence, so no number can move. Candle:
+      \`melee-solo\` -15.8%, \`melee-swarm\` -15.2%, \`dungeon-fort-t2\`
+      -8.5%, \`tank-solo\` -7.4%, \`buffstack-solo\` -2.7%,
+      \`selfbuff-solo\` -2.3%, \`dungeon-den-600\` -2.0%; no case regressed.
+      The cache is keyed on the combatStats OBJECT (a \`WeakMap\`), NOT on the
+      monster hrid, because \`dataProvider.setOverrides()\` can replace the
+      whole monster map at runtime and installs fresh nested objects; an
+      hrid-keyed cache would then serve a previous game version's stats with no
+      error at all.
 - Any other local edits beneath \`${SCOPED_PATH}/\` — list them in the
   rebase report so we keep a running ledger.
 

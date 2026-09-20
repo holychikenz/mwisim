@@ -89,6 +89,50 @@ export const MONSTER_ZEROED_COMBAT_STATS = [
     "retaliation",
 ];
 
+// =============================================================================
+// MWIX adaptation (performance): the game-data stat-block copy in
+// updateCombatDetails(), flattened.
+//
+// Upstream copies a monster's base stat block with
+//
+//     for (const [key, value] of Object.entries(gameMonster.combatDetails.combatStats))
+//
+// which allocates an outer array plus one two-element array PER STAT, PER
+// MONSTER, PER ENCOUNTER — and a simulated hour holds 200-800 encounters, each
+// resetting (and so recomputing) every monster in it. A CPU profile put this
+// single loop at 5.7% of self time on melee-solo, 6.3% on buffstack-solo and
+// 4.2% on dungeon-den-600.
+//
+// The source block is static game data. We cache its key and value arrays the
+// first time we see it and thereafter walk two flat arrays with an index loop:
+// same keys, in Object.keys order (which is Object.entries order), same values,
+// written in the same sequence. It is a change of iteration mechanism only and
+// cannot move a number; sim:check stayed 3/3.
+//
+// Keyed by the combatStats OBJECT, not by monster hrid. dataProvider's
+// setOverrides() can replace the whole monster map at runtime (MWIX live data,
+// and api/lib/simulator.js passes clientData through it), and every override
+// installs fresh nested objects. An hrid-keyed cache would then serve a
+// previous game version's stats with no error at all; identity-keyed, a
+// replaced block is simply a cache miss. A WeakMap so an overridden block is
+// collectable.
+// =============================================================================
+const _statBlockCache = new WeakMap();
+
+function _flatStatBlock(combatStats) {
+    let flat = _statBlockCache.get(combatStats);
+    if (!flat) {
+        const keys = Object.keys(combatStats);
+        const values = new Array(keys.length);
+        for (let i = 0; i < keys.length; i++) {
+            values[i] = combatStats[keys[i]];
+        }
+        flat = { keys, values };
+        _statBlockCache.set(combatStats, flat);
+    }
+    return flat;
+}
+
 class Monster extends CombatUnit {
 
     difficultyTier = 0;
@@ -169,8 +213,13 @@ class Monster extends CombatUnit {
 
         this.combatDetails.combatStats.combatStyleHrid = gameMonster.combatDetails.combatStats.combatStyleHrids[0];
 
-        for (const [key, value] of Object.entries(gameMonster.combatDetails.combatStats)) {
-            this.combatDetails.combatStats[key] = value;
+        // Flat key/value walk over the cached stat block — see
+        // _flatStatBlock above. Identical keys, order and values.
+        const flat = _flatStatBlock(gameMonster.combatDetails.combatStats);
+        const flatKeys = flat.keys;
+        const flatValues = flat.values;
+        for (let i = 0; i < flatKeys.length; i++) {
+            this.combatDetails.combatStats[flatKeys[i]] = flatValues[i];
         }
 
         this.combatDetails.combatStats.armor *= labyrinthScaleFactor;
