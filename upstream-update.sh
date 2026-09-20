@@ -921,6 +921,52 @@ upstream specifically changed the same surface area.
     dispatched" is what a refresh-on-hit debuff and a long-interval tick look
     like in a fight that ends first — not a bug.
 
+- **Compiled stat-block copies (performance, measured)** — a fifth round, aimed
+  squarely at the per-UNIT term \`todo.md\` §1 identifies, and at the one
+  measurement that had never been taken: what a KEYED property access actually
+  costs in this engine.
+    The answer, on node 26.8.2: \`obj[nameString] = v\` costs about 21.5 ns as
+    soon as the loop touches more than one name. V8's keyed inline cache goes
+    megamorphic at the second distinct key and the cost is then FLAT per
+    access, whatever follows — measured at 1, 2, 4, 8, 16, 32 and 63 keys, the
+    per-key cost sits between 20.7 and 23.9 ns throughout. The same store
+    written as \`obj.stabAccuracy = v\` costs 0.35 ns. That is a factor of 61,
+    and it is not recoverable by a \`Float64Array\`: a typed-array copy of the
+    same block measured 13.9 ns against straight-line code's 21.6 ns, within
+    2x, so \`todo.md\` §6's rejection of flat typed state stands untouched and
+    does not need reopening.
+    The engine performs 844 458 such accesses per simulated dungeon hour, in
+    two loops — \`player.js\`'s 70-name equipment-total copy and
+    \`monster.js\`'s 63-name zero-fill — which is 18.2 ms of a 132 ms hour on
+    the \`geared-party\` fixture. A CPU profile of that fixture agrees:
+    \`Monster.updateCombatDetails\` is 8.3% of engine self time and
+    \`Player.updateCombatDetails\` 2.7%.
+    - \`tools/genStatSchema.mjs\` and \`generated/statSchema.js\` (NEW, and
+      ours alone): the two loops COMPILED to straight-line field code, plus
+      \`makeEquipmentTotals()\`, a literal so the totals record has one hidden
+      class instead of reaching dictionary mode through keyed stores. Generated
+      for the same reason \`generated/buffTypes.js\` is: 133 stat names retyped
+      by hand in a second place is exactly how this project once lost
+      \`hpRegenPer10\` and \`mpRegenPer10\` and moved kills/hr by 2%.
+      \`api/tests/statSchema.test.mjs\` re-runs the generator and compares the
+      committed file BYTE FOR BYTE, proves the digit class against a synthetic
+      digit-bearing name, and checks each generated routine DIFFERENTIALLY
+      against the keyed loop it replaces — the monster one over all 95 real
+      bestiary blocks, asserting identical keys in identical order.
+      The role lists are READ FROM THE ENGINE SOURCE, not re-derived from the
+      game data. Deriving them was tried first and is WRONG: five names in
+      \`EQUIPMENT_COMBAT_STATS\` (\`combatDropQuantity\`, \`elementalThorns\`,
+      \`physicalAmplify\`, \`physicalThorns\`, \`retaliation\`) are granted by
+      no item in \`itemDetailMap\` at all, and three numeric item stats
+      (\`attackInterval\`, \`foodSlots\`, \`drinkSlots\`) are deliberately
+      excluded because the engine sources them from the weapon and the pouch.
+      Those lists encode engine semantics, not data. Compiling them keeps the
+      generated code identical to the loop it replaces BY CONSTRUCTION;
+      deriving them would have silently changed behaviour. The completeness
+      question the data CAN answer is asked separately: a test asserts every
+      numeric stat any item grants is either summed or named, with its reason,
+      in \`DELIBERATELY_UNSUMMED\`.
+
 NOTE: the labyrinth "maze" player-buff mechanism (\`options.maze\`,
 \`MAZE_DEFAULTS\`, \`resolveMazeBonuses\`, \`mazeBonuses\`,
 \`Player.applyMazeBonuses\`) was REMOVED deliberately — it double-counted the
