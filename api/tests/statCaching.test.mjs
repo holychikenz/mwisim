@@ -361,17 +361,22 @@ test('the monster zero-fill stat list is complete and has no duplicates', () => 
       `${digitName} is missing — the list was scraped with a pattern that drops digits`
     );
   }
-  // Every name the list zero-fills should be a declared combatStats field, or
-  // the zero-fill is creating a property nothing ever reads. Two are NOT
-  // declared in CombatUnit's initializer — an upstream quirk, not ours:
-  // `tenacity` is nevertheless read in updateCombatDetails and `abilityHaste`
-  // by the ability cooldown path, so both are live stats that simply arrive by
-  // assignment. Pinned here so a THIRD one shows up as a failure rather than
-  // as a silently undefined stat.
-  const UNDECLARED = ['abilityHaste', 'tenacity'];
+  // Every name the list zero-fills must be a declared combatStats field, or the
+  // zero-fill is creating a property nothing ever reads.
+  //
+  // This assertion used to PIN two exceptions, `abilityHaste` and `tenacity`,
+  // as an upstream quirk we tolerated: both are live stats — `tenacity` is read
+  // in updateCombatDetails and `abilityHaste` by the ability cooldown path —
+  // that merely arrived by assignment rather than by declaration. Tolerating
+  // them was not free. A field that arrives by assignment is a HIDDEN CLASS
+  // TRANSITION on every unit's first recompute, and because monsters also
+  // acquire `combatStyleHrids` from their game-data block, players and monsters
+  // ended up with different shapes and every `combatStats.x` read in the engine
+  // was polymorphic across the roster. Both are now declared in CombatUnit's
+  // initializer, so the exception list is empty and stays empty.
   const fields = new CombatUnit().combatDetails.combatStats;
   const missing = MONSTER_ZEROED_COMBAT_STATS.filter((stat) => !(stat in fields));
-  assert.deepStrictEqual(missing, UNDECLARED);
+  assert.deepStrictEqual(missing, []);
 });
 
 test('the monster base stat copy reproduces the game-data block exactly', () => {
