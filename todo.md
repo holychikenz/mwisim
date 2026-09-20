@@ -1,8 +1,9 @@
 # Closing the performance gap
 
-**Revision 4, 2026-09-20.** Revision 3 reconciled the plan against what had
-shipped. This revision replaces its *framing*, which was wrong in a way that
-explains why the last stage paid nothing on the cases we care about.
+**Revision 5, 2026-09-20.** Revision 4 replaced the framing: our problem is
+per-UNIT cost, not per-encounter cost. Two stages were then shipped against
+that framing and it held — the per-unit term moved for the first time. This
+revision records the result and what is left.
 
 Revision 1's proposals (`Float64Array` stat blocks, event-object pooling) remain
 rejected with evidence in §6. Do not re-propose them.
@@ -15,13 +16,13 @@ Measured today, 22 cases, both engines interleaved. The reference figures live
 outside this repository with the harness that produces them (see
 `api/bench/README.md` for why).
 
-| | round 1 | now |
-|---|---|---|
-| cheapest case | 1.6× | **1.4×** |
-| solo, geared | 3.3–5.3× | 3.2–5.1× |
-| 3-player party | 4.1× | 3.8× |
-| 5-player dungeon | 5.5–7.1× | **5.2–6.7×** |
-| geometric mean | 3.85× | **3.70×** |
+| | round 1 | before today | now |
+|---|---|---|---|
+| cheapest case | 1.6× | 1.4× | **1.4×** |
+| solo, geared | 3.3–5.3× | 3.2–5.1× | **2.7–4.6×** |
+| 3-player party | 4.1× | 3.8× | **3.3×** |
+| 5-player dungeon | 5.5–7.1× | 5.2–6.7× | **4.9–6.3×** |
+| geometric mean | 3.85× | 3.70× | **3.30×** |
 
 That table has been the scoreboard since round 1 and it has been quietly
 misleading us. Convert it to cost per ENCOUNTER and hold the zone fixed while
@@ -36,11 +37,27 @@ Fit a line through the two points:
 
 ```
                 fixed cost/enc    marginal cost per extra unit
-  csim              12.6 µs                 20.2 µs
+  csim              12.7 µs                 20.2 µs
   reference          9.7 µs                  2.6 µs
                     ──────                  ──────
-  ratio              1.30×                   7.77×
+  ratio              1.31×                   7.70×
 ```
+
+**The framing was then tested, and it held.** Two stages aimed squarely at
+per-unit cost moved that second column for the first time in the project:
+
+```
+                fixed cost/enc    marginal cost per extra unit
+  csim              14.5 µs                 17.8 µs
+  reference          9.7 µs                  3.0 µs
+                    ──────                  ──────
+  ratio              1.50×                   5.86×     (was 7.70×)
+```
+
+Note the fixed column went the WRONG way (1.31× → 1.50×) while the total gap
+improved. That is the trade being made, and it is the right one: the fixed
+term is multiplied once per encounter and the marginal term five times over in
+a dungeon.
 
 **Our fixed per-encounter cost is within 30% of the reference. Our cost per
 additional unit is roughly eight times theirs.** The dungeons are not a
@@ -73,6 +90,12 @@ of roster size. The profile did not mislead us. We optimised the wrong term.
 | integer `typeId` + closure-free queue scans | small, consistent on deep queues |
 | synchronous `processEvent` | `floor-solo` −6.5%, `mid-solo` −4.9%; a wash on heavy cases |
 | allocation-free trigger fixpoint and ability scan | `starter-solo` −5.3%, `floor-party` −4.2%; **nothing on the dungeons** |
+| per-unit pending-action count (retires a heap scan) | **every dungeon −3.7% to −8.9%**, `mid-solo` −20.1%, 11 of 22 won every round |
+| batched multi-buff ability effects | `selfbuff-solo` −17.4%, `tank-solo` −9.8%, dungeons −4.3% to −7.7% |
+
+Cumulative for those two, four counterbalanced rounds at `--reps=5`: **18 of 22
+medians improved, 14 won every round, none lost every round.** Every dungeon
+moved, 6.4–9.4%.
 
 ## 3. What was dropped, and why that matters
 
@@ -109,6 +132,14 @@ benchmarking this worktree concurrently, and one of them had instrumentation
 live in `eventQueue.js` for part of the window. Every absolute millisecond
 figure from that window is contaminated. Counter deltas and `sim:check` results
 survive it; timings do not.
+
+**Comments cost performance.** V8's inlining budget is measured in SOURCE
+CHARACTERS, comments included. A note added inside three warm methods, plus
+four comment lines inside `addNextAttackEvent`, cost `starter-solo` +3.7% over
+six counterbalanced rounds — on a case that executed none of the changed code.
+Hoisting the identical text out of the function bodies took it to −1.3%. Put
+long explanations ABOVE the method, not inside it. This is also a warning
+about attributing a measured delta to the change you *meant* to make.
 
 The rest is unchanged and still binding:
 
@@ -163,24 +194,17 @@ that as the general finding rather than a coincidence.
 
 Two things still worth doing, with honest labels:
 
-- [ ] **Batch our multi-buff effects.** One line. This is us going BEYOND the
-      reference, not copying it — say so. Measured (counter deltas are exact;
-      the timing is from the contaminated window and needs re-measuring):
-      rebuilds −29.5% on `selfbuff-solo`, −6.4% on `dungeon-den-600`;
-      `sim:check` 3/3. It is per-CAST work, so §1's rule predicts it will pay
-      the buff-heavy solo cases and little on the dungeons.
-      **Flag:** the `allAllies` branch reads `source.combatDetails` INSIDE the
-      buff loop for the special-ability multiplier, so batching it would change
-      which snapshot later buffs see when the caster is also a target. Do the
-      `self` path only, unless someone proves no self-targeted `allAllies`
-      special ability buffs a level stat.
-- [ ] **Skip the recompute prologue when only buffs changed.** `Player`
-      re-copies 76 equipment stats per call and `Monster` re-derives its whole
-      flat block — values that cannot have changed, since equipment is immutable
-      for the run and monster game data is constant. **12.3% of dungeon self
-      time.** Per-UNIT work, so §1's rule says this one can move a dungeon.
-      **Flag:** the guild-trial path grows monster max HP on top on every
-      recompute, so it is not a pure copy there and must keep the full path.
+- [x] **Batch our multi-buff effects.** DONE, and it beat its own forecast.
+      Predicted to pay the buff-heavy solo cases and "little on the dungeons";
+      it paid `selfbuff-solo` −17.4% AND every dungeon −4.3% to −7.7%. The
+      `allAllies` branch is deliberately not batched — its special-ability
+      multiplier reads `source.combatDetails` inside the per-buff loop, so
+      batching changes later buffs' magnitudes when the caster buffs itself.
+      That stays open to anyone who first proves no self-targeted `allAllies`
+      special ability multiplies against a level stat.
+- [x] **Skip the recompute prologue when only buffs changed. REJECTED —
+      PROVEN UNSAFE, see §6.** This looked like the largest item on the board
+      (12.3% of dungeon self time, per-unit) and it is not available.
 
 ### 5c. The one real structural difference, and it is ours to fix
 
@@ -203,22 +227,38 @@ has an action pending" is delegated to a heap scan.
 The copyable thing is the principle, not a mechanism: **state that belongs to a
 unit lives on the unit, not in the event queue.**
 
-- [ ] Maintain the pending-action count as an invariant of `EventQueue`. The
-      surface is small: the heap is mutated in exactly four places —
-      `addEvent`, `getNextEvent`, `clear`, and `_removeCollected`, which every
-      cancellation funnels through.
+- [x] DONE. The count lives on the UNIT, not in a `Map` in the queue — a
+      `Map` was measured first and lost the cheap cases in every round, because
+      a 3.9-entry heap is cheaper to scan than two `Map` operations are to
+      perform. Every dungeon improved 3.7–8.9%; `mid-solo` −20.1%. The first
+      stage in this project to move every dungeon, and the first aimed at
+      per-unit cost. Covered by a differential test in
+      `api/tests/pendingAction.test.mjs` — 4 000 randomised mutations checked
+      against the scanning form after every one — which was mutation-verified
+      against four deliberate breakages before being trusted.
 
-### 5d. Pure waste, found while counting events
+### 5d. The "pure waste" that was not waste
 
-Neither is a structural finding; both are own-goals.
+All four items investigated. **Two were not bugs at all and one could not be
+measured.** Recorded so nobody "fixes" them again.
 
-- [ ] `enrageTick` is cleared and immediately re-added 530 times an hour and
-      **never once dispatched** — plus ~55 000 heap entries scanned for it.
-- [ ] `curseExpiration` creates 1 798 events an hour and dispatches **none**.
-- [ ] The buff-refresh paths scan the queue TWICE for the same predicate
-      (`getMatchingTypeAndSource` then `clearMatchingTypeAndSource`, always
-      back to back on the same key) — 25.0% of all scanning, halvable by having
-      the clear return what it removed.
+- [x] `enrageTick` cleared and re-added 530 times an hour, never dispatched —
+      **correct.** `ENRAGE_TICK_INTERVAL` is 60 s and a `dungeon-den-600`
+      encounter lasts under 7 s.
+- [x] `curseExpiration` created 1 798 times an hour, dispatched none —
+      **correct.** Curse is refreshed on every hit inside its 15 s window.
+      "Created and never dispatched" is what a refresh-on-hit debuff looks like
+      in a fight that ends first.
+- [x] The buff-refresh double scan — fused into one walk, correct and
+      `sim:check` 3/3, then **reverted on the noise rule**: two counterbalanced
+      measurements contradicted each other, a full candle giving
+      `dungeon-fort-t2` −1.0% and a focused six-round run giving +2.8% losing
+      all six rounds. See §6.
+- [x] `awaitCooldownEvent` — 0 created in five simulated hours, and its guard
+      `isOutOfMana` means "blinded and parked with an empty queue", not out of
+      mana. The three comments that said otherwise are corrected. **Not
+      deleted:** a zone with a `blindChance` ability does reach it, and no
+      fixture covers one.
 
 ## 6. Rejected, with evidence — do not re-propose
 
@@ -241,6 +281,28 @@ Neither is a structural finding; both are own-goals.
   invalidates `sim:check` and every recorded baseline by construction.
 - **Source-to-source rewriting.** This codebase indexes stats dynamically
   (`combatStats[style + "Accuracy"]`), so a transform cannot see every access.
+- **Skipping the `Player`/`Monster` recompute prologue when only buffs
+  changed.** The prologue looks like dead weight — a 76-stat copy from a cache
+  and a flat game-data block, both pure functions of data immutable for the run.
+  **It is not a redundant copy. It is the RESET that makes the shared suffix
+  correct.** `CombatUnit.updateCombatDetails` mutates `combatStats` IN PLACE
+  with `+=` throughout — amplifies, crit rate and damage, life steal, thorns,
+  threat, tenacity, drop rate, cast speed, the player's regen — adding each
+  buff's contribution ONTO the base, and `Monster` does
+  `armor *= labyrinthScaleFactor` after its copy. Skip the reset and every
+  recompute compounds the last one's boosts, at ~0.9 recomputes per event.
+  Tried: 2 of 3 fixtures drifted immediately. A safe variant would have to
+  restore only the fields the suffix clobbers, which means auditing every `+=`
+  in a 270-line method, where getting it wrong is a wrong combat number with no
+  error.
+- **Fusing the six buff-refresh `get` + `clear` pairs into one walk.** Correct,
+  strictly less work, `sim:check` 3/3, and the pair was 25.0% of all queue
+  scanning — but at this machine's noise floor, with two counterbalanced
+  measurements contradicting each other. Reverted rather than tuned. The
+  implementation is easy and the parity argument is sound (both scans walk
+  `heapArray` from 0, so the first match is the same object, and
+  collect-then-remove preserves the heap permutation); it needs a measurement
+  that clears noise, not a rewrite.
 - **An O(1) "does the queue contain type X" index, on the grounds that the
   reference has one.** *It does not.* The per-tag counter in its heap push is
   incremented and **never decremented** — none of its three removal or pop
