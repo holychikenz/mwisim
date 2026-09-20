@@ -16,6 +16,7 @@ class Consumable {
         this.manapointRestore = gameConsumable.consumableDetail.manapointRestore;
         this.recoveryDuration = gameConsumable.consumableDetail.recoveryDuration;
         this.catagoryHrid = gameConsumable.categoryHrid;
+        this.isFood = this.catagoryHrid.includes("food");
 
         this.buffs = [];
         if (gameConsumable.consumableDetail.buffs) {
@@ -55,7 +56,7 @@ class Consumable {
             return false;
         }
         let consumableHaste;
-        if (this.catagoryHrid.includes("food")) {
+        if (this.isFood) {
             consumableHaste = source.combatDetails.combatStats.foodHaste
         } else {
             consumableHaste = source.combatDetails.combatStats.drinkConcentration;

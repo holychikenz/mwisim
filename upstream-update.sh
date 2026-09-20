@@ -1014,6 +1014,67 @@ upstream specifically changed the same surface area.
       \`dungeon-pirate\` -13.2%, \`dungeon-den-200\` -13.2%, \`floor-solo\`
       -12.5%. \`sim:check\` 3/3 bit-identical.
 
+- **Trigger-evaluation constants (performance, measured)** — a sixth round,
+  aimed at the family the profile promoted once the stat copies were compiled:
+  \`trigger.js\` 11.8% of engine self time plus \`consumable.js\` 3.4%, with
+  \`getDependencyValue\` alone at 6.7%.
+    - \`trigger.js\` constructor: \`dependencyDetail\` (the
+      \`combatTriggerDependencyDetailMap\` entry) and \`buffUniqueHrid\` are
+      hoisted out of evaluation. Both were pure functions of fields fixed at
+      construction and both were recomputed on EVERY evaluation.
+      \`dependencyDetail\` deliberately stores the map ENTRY rather than its
+      \`isSingleTarget\` field, so an unknown \`dependencyHrid\` still throws
+      its \`TypeError\` from \`isActive()\` on the same evaluation as before
+      rather than becoming a construction-time failure —
+      \`api/lib/triggerSearch\` builds Trigger objects speculatively and must
+      not be brought down by one it never evaluates.
+    - \`generated/triggerIndex.js\` and \`tools/genTriggerIndex.mjs\` (NEW,
+      ours alone): \`BUFF_UNIQUE_BY_CONDITION\`, condition hrid -> buff-unique
+      hrid, null-prototype and sorted. THIS TABLE EXISTS BECAUSE OF A MEASURED
+      REGRESSION, which is the interesting part of the round. Hoisting the
+      concatenation alone paid -4.0% on the candle but cost \`floor-party\`
+      +1.2%, losing five of six counterbalanced rounds at \`--reps=9\`: that
+      case spawns many monsters into cheap fights, every spawn constructs its
+      abilities and therefore its triggers, and the hoist had merely MOVED the
+      \`lastIndexOf\` + \`slice\` + concatenation from evaluation to
+      construction. At ~2 400 constructions an hour, +0.045 ms/h is about 18 ns
+      each, which is what that expression costs. The table makes the
+      constructor one lookup and hands every trigger the SAME interned string
+      instead of a freshly allocated one. Re-measured, \`floor-party\` went
+      +1.2% -> +0.3% at 2/6 rounds, then -1.4% winning 6/6 in a second
+      six-round run: noise, not a regression.
+      Unlike \`buffTypeOrdinal\`, an unseen condition MUST NOT throw here — the
+      fallback recomputes the identical string, because the failure it would
+      otherwise cause is a speculative trigger crashing the optimiser, not a
+      silently dropped buff.
+    - \`trigger.js\` \`getDependencyValue\` prefix-buff branch: the
+      \`Object.keys(combatBuffs).filter(startsWith)\` allocated an array of
+      every active buff key on every evaluation and then took \`[0]\`. It is
+      now a \`for...in\` returning the first match — same visit order, same
+      first match, no allocation, and it stops early. THIS IS THE ONE HAZARD IN
+      THE ROUND and it has a test of its own: \`api/tests/triggerHoist.test.mjs\`
+      checks the new form against the retired one over nine shapes, including
+      several buffs sharing a prefix, reversed insertion order, re-insertion
+      after deletion, near misses and no match at all. A divergence here would
+      read a DIFFERENT buff and report a plausible wrong number with no error.
+      The no-match case returned \`combatBuffs[undefined]\` and now returns
+      \`undefined\`; identical unless a buff is literally keyed \`"undefined"\`,
+      which cannot happen since every key is an hrid beginning with \`/\`.
+    - \`consumable.js\`: \`catagoryHrid.includes("food")\` is decided once, in
+      the constructor, as \`isFood\`. It ran on every \`shouldTrigger\` —
+      before the cooldown poll, so on every food and drink slot of every living
+      unit on every event, including the overwhelming majority that then
+      returned false on cooldown.
+      Candle at \`--reps=5\`, four counterbalanced rounds vs the preceding
+      commit: 20 of 22 improved, 16 won every round, NONE lost every round.
+      Geometric mean -6.0%. \`dungeon-den-200\` -10.6%, \`dungeon-fort-t2\`
+      -10.3%, \`dungeon-circus\` -9.9%, \`dungeon-den-600\` -9.1%,
+      \`starter-solo\` -8.5%, \`dungeon-pirate\` -8.4%, \`tank-solo\` -8.4%.
+      The two cases showing a positive sign were both re-measured focused over
+      six rounds at \`--reps=9\` and both are noise: \`floor-party\` -1.4%
+      winning 6/6, \`floor-solo\` -0.2% at 3/6 with per-round swings from -9.2%
+      to +10.5% on a 0.83 ms/h case. \`sim:check\` 3/3 bit-identical.
+
 NOTE: the labyrinth "maze" player-buff mechanism (\`options.maze\`,
 \`MAZE_DEFAULTS\`, \`resolveMazeBonuses\`, \`mazeBonuses\`,
 \`Player.applyMazeBonuses\`) was REMOVED deliberately — it double-counted the

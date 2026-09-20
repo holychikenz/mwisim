@@ -1,11 +1,52 @@
 import { combatTriggerDependencyDetailMap } from "./dataProvider";
+import { BUFF_UNIQUE_BY_CONDITION } from "./generated/triggerIndex";
 
+// =============================================================================
+// MWIX adaptation (performance): two values hoisted into the constructor.
+//
+// A CPU profile of the geared-party dungeon put trigger evaluation at 15% of
+// engine self time, getDependencyValue alone at 6.7%, and both of the values
+// below were being recomputed on every single evaluation despite being pure
+// functions of fields that never change after construction:
+//
+//   dependencyDetail  a lookup into combatTriggerDependencyDetailMap, run once
+//                     per trigger per evaluation in isActive().
+//   buffUniqueHrid    "/buff_uniques" + conditionHrid.slice(lastIndexOf("/")),
+//                     a lastIndexOf plus a slice plus a concatenation, built
+//                     twice over in getDependencyValue's two buff groups.
+//
+// The hoist alone REGRESSED floor-party by 1.2%, losing five of six
+// counterbalanced rounds at --reps=9: that case spawns many monsters into cheap
+// fights, every spawn constructs its abilities and so its triggers, and the
+// hoist had merely moved the concatenation from evaluation to construction. The
+// hrid therefore comes from a build-time table (tools/genTriggerIndex.mjs),
+// which makes the constructor a single lookup and hands every trigger the SAME
+// interned string instead of a freshly allocated one. The fallback keeps a
+// condition the table has never seen working, computing the identical string,
+// because api/lib/triggerSearch builds Trigger objects speculatively and a
+// throw would turn a speculative trigger into a crash.
+//
+// dependencyDetail stores the map ENTRY rather than its isSingleTarget field so
+// that an unknown dependencyHrid still throws its TypeError from isActive(), at
+// the same site and on the same evaluation as before, rather than being turned
+// into a construction-time failure for a trigger that might never be evaluated.
+// api/lib/triggerSearch builds a great many Trigger objects speculatively.
+//
+// Safe against dataProvider.setOverrides() because that must be called before a
+// CombatSimulator is constructed, and every Trigger is built after — including
+// the ones inside `new Ability("blaze")` during a run, which read the same
+// already-installed maps.
+// =============================================================================
 class Trigger {
     constructor(dependencyHrid, conditionHrid, comparatorHrid, value = 0) {
         this.dependencyHrid = dependencyHrid;
         this.conditionHrid = conditionHrid;
         this.comparatorHrid = comparatorHrid;
         this.value = value;
+        this.dependencyDetail = combatTriggerDependencyDetailMap[dependencyHrid];
+        this.buffUniqueHrid =
+            BUFF_UNIQUE_BY_CONDITION[conditionHrid] ??
+            "/buff_uniques" + conditionHrid.slice(conditionHrid.lastIndexOf("/"));
     }
 
     static createFromDTO(dto) {
@@ -15,7 +56,7 @@ class Trigger {
     }
 
     isActive(source, target, friendlies, enemies, currentTime) {
-        if (combatTriggerDependencyDetailMap[this.dependencyHrid].isSingleTarget) {
+        if (this.dependencyDetail.isSingleTarget) {
             return this.isActiveSingleTarget(source, target, currentTime);
         } else {
             return this.isActiveMultiTarget(friendlies, enemies, currentTime);
@@ -115,9 +156,7 @@ class Trigger {
             case "/combat_trigger_conditions/maim":
             case "/combat_trigger_conditions/curse":
             case "/combat_trigger_conditions/weaken":
-                let buffHrid = "/buff_uniques";
-                buffHrid += this.conditionHrid.slice(this.conditionHrid.lastIndexOf("/"));
-                return source.combatBuffs[buffHrid];
+                return source.combatBuffs[this.buffUniqueHrid];
             case "/combat_trigger_conditions/critical_aura":
             case "/combat_trigger_conditions/critical_coffee":
             case "/combat_trigger_conditions/intelligence_coffee":
@@ -135,10 +174,13 @@ class Trigger {
             case "/combat_trigger_conditions/speed_aura":
             case "/combat_trigger_conditions/toughness":
             case "/combat_trigger_conditions/enrage":
-                let buffPrefix = "/buff_uniques";
-                buffPrefix += this.conditionHrid.slice(this.conditionHrid.lastIndexOf("/"));
-                let buffs = Object.keys(source.combatBuffs).filter(buff => buff.startsWith(buffPrefix));
-                return source.combatBuffs[buffs?.[0]];
+                let buffPrefix = this.buffUniqueHrid;
+                for (const buff in source.combatBuffs) {
+                    if (buff.startsWith(buffPrefix)) {
+                        return source.combatBuffs[buff];
+                    }
+                }
+                return undefined;
             case "/combat_trigger_conditions/current_hp":
                 return source.combatDetails.currentHitpoints;
             case "/combat_trigger_conditions/current_mp":
