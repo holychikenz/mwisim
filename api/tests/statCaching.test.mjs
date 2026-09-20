@@ -20,6 +20,7 @@ const { default: Player, EQUIPMENT_COMBAT_STATS } = await import(SRC + 'player.j
 const { default: Equipment } = await import(SRC + 'equipment.js');
 const { default: CombatUnit } = await import(SRC + 'combatUnit.js');
 const { default: EventQueue } = await import(SRC + 'events/eventQueue.js');
+const { MONSTER_ZEROED_COMBAT_STATS } = await import(SRC + 'monster.js');
 
 // A kit spanning every slot shape the cache has to handle: two-hand, off-hand,
 // charm (a slot the Player class does NOT predeclare), and a pouch.
@@ -238,6 +239,94 @@ test('a buff type nothing grants yields an empty, non-writable result', () => {
   assert.deepStrictEqual(boosts, []);
   // Shared and frozen: a caller pushing onto it would corrupt every unit.
   assert.throws(() => boosts.push({ ratioBoost: 1, flatBoost: 1 }));
+});
+
+// ---- the buff-apply path ----------------------------------------------------
+// removeExpiredBuffs() used to end with an UNCONDITIONAL updateCombatDetails()
+// — "for behavior parity with the old code" — and it is called once per combat
+// event, so almost every one of those recomputes was thrown away. Making it
+// conditional on something having actually expired is only safe if the
+// recompute is a pure function of (equipment, levels, buff set), i.e. if
+// running it twice is the same as running it once. These two tests pin that
+// down; sim:check pins down the whole-engine consequence.
+
+test('removeExpiredBuffs does not recompute when nothing has expired', () => {
+  const unit = new CombatUnit();
+  const a = {};
+  unit.addBuff(buff('/u/1', '/buff_types/armor', 0.1, 5), 0, a);
+
+  let recomputes = 0;
+  const real = unit.updateCombatDetails.bind(unit);
+  unit.updateCombatDetails = () => { recomputes++; return real(); };
+
+  // Long before the buff expires: no write to combatBuffs, so no recompute.
+  unit.removeExpiredBuffs(1e9);
+  assert.equal(recomputes, 0, 'recomputed although nothing expired');
+
+  // Past the expiry: the commit changes the effective view, so it must.
+  unit.removeExpiredBuffs(100e9);
+  assert.equal(recomputes, 1, 'failed to recompute when a buff expired');
+
+  // And, having already been dropped, a second sweep must not recompute again.
+  unit.removeExpiredBuffs(200e9);
+  assert.equal(recomputes, 1, 'recomputed a second time for the same expiry');
+});
+
+test('updateCombatDetails is idempotent, so a skipped recompute is a no-op', () => {
+  // The licence for skipping redundant recomputes. Every `+=` target in the
+  // method must be reset from equipment/game data at the top of the call,
+  // otherwise repeated calls would compound and the number of calls would be
+  // observable.
+  const player = gearedPlayer();
+  player.updateCombatDetails();
+  const once = JSON.parse(JSON.stringify(player.combatDetails));
+
+  player.updateCombatDetails();
+  player.updateCombatDetails();
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(player.combatDetails)), once,
+    'recomputing compounds — the call COUNT is observable, so skipping one is not safe'
+  );
+
+  // Same again with buffs applied, since the buff terms are the ones that
+  // accumulate onto combatStats.
+  player.addBuff(buff('/u/1', '/buff_types/armor', 0.1, 5), 0, {});
+  const withBuffOnce = JSON.parse(JSON.stringify(player.combatDetails));
+  player.updateCombatDetails();
+  player.updateCombatDetails();
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(player.combatDetails)), withBuffOnce,
+    'buff boosts compound across recomputes'
+  );
+});
+
+// ---- hoisted stat lists -----------------------------------------------------
+
+test('the monster zero-fill stat list is complete and has no duplicates', () => {
+  // The twin of 'the equipment stat list is complete and has no duplicates'.
+  // This list was moved verbatim out of Monster.updateCombatDetails; the
+  // failure it guards against is the same one that once silently dropped the
+  // two DIGIT-carrying names from EQUIPMENT_COMBAT_STATS, which would leave
+  // every monster whose game-data entry omits them with undefined regen.
+  assert.equal(new Set(MONSTER_ZEROED_COMBAT_STATS).size, MONSTER_ZEROED_COMBAT_STATS.length);
+  assert.equal(MONSTER_ZEROED_COMBAT_STATS.length, 63);
+  for (const digitName of ['hpRegenPer10', 'mpRegenPer10']) {
+    assert.ok(
+      MONSTER_ZEROED_COMBAT_STATS.includes(digitName),
+      `${digitName} is missing — the list was scraped with a pattern that drops digits`
+    );
+  }
+  // Every name the list zero-fills should be a declared combatStats field, or
+  // the zero-fill is creating a property nothing ever reads. Two are NOT
+  // declared in CombatUnit's initializer — an upstream quirk, not ours:
+  // `tenacity` is nevertheless read in updateCombatDetails and `abilityHaste`
+  // by the ability cooldown path, so both are live stats that simply arrive by
+  // assignment. Pinned here so a THIRD one shows up as a failure rather than
+  // as a silently undefined stat.
+  const UNDECLARED = ['abilityHaste', 'tenacity'];
+  const fields = new CombatUnit().combatDetails.combatStats;
+  const missing = MONSTER_ZEROED_COMBAT_STATS.filter((stat) => !(stat in fields));
+  assert.deepStrictEqual(missing, UNDECLARED);
 });
 
 // ---- event queue ------------------------------------------------------------

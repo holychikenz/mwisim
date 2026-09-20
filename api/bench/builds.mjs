@@ -277,6 +277,48 @@ export const BUILDS = {
     food: ENDGAME_FOOD,
     drinks: ["/items/ultra_melee_coffee", "/items/ultra_attack_coffee", "/items/critical_coffee"],
   },
+
+  // The recompute storm. `buffstack` is five AURAS — applied once and then
+  // permanent, so it stresses the per-event buff SCAN. This build is the other
+  // half of that story: five SELF-buffs carrying fourteen buffs between them,
+  // four of the five on a 30 s cooldown. Every cast rewrites the buff set and
+  // forces a full stat recompute, and every expiry forces another, so the cost
+  // lands on the APPLY path rather than the read path.
+  //
+  // It exists because a user reported that "abilities like elemental affinity"
+  // made simulations crawl, and a controlled sweep confirmed it: on an
+  // otherwise identical magic build, adding `elemental_affinity` alone took a
+  // simulated hour from 6.1 to 11.9 ms, and `toughness` (four buffs, 30 s) to
+  // 14.0 — the single most expensive ability in the game at the time. Nothing
+  // in the candle isolated that, so the sweep could not be replayed from the
+  // committed cases. Now it can.
+  //
+  // Not a build anybody would play — the abilities are drawn from three
+  // different combat styles on purpose, to maximise buffs per cast.
+  selfbuff: {
+    label: "self-buff churn (stress)",
+    equipment: [
+      ["/items/regal_sword_refined", 10],
+      ["/items/knights_aegis_refined", 10],
+      ["/items/acrobatic_hood_refined", 10],
+      ["/items/anchorbound_plate_body_refined", 10],
+      ["/items/anchorbound_plate_legs_refined", 10],
+      ["/items/pathbreaker_boots_refined", 10],
+      ["/items/dodocamel_gauntlets_refined", 10],
+      ["/items/sinister_cape_refined", 10],
+      ["/items/grandmaster_attack_charm", 10],
+      ...ENDGAME_ACCESSORIES,
+    ],
+    abilities: [
+      ["/abilities/toughness", 10],            // 4 buffs, 30 s
+      ["/abilities/elemental_affinity", 10],   // 3 buffs, 30 s
+      ["/abilities/precision", 10],            // 1 buff,  30 s
+      ["/abilities/berserk", 10],              // 1 buff,  30 s
+      ["/abilities/invincible", 10],           // 5 buffs, 90 s
+    ],
+    food: ENDGAME_FOOD,
+    drinks: ["/items/ultra_melee_coffee", "/items/ultra_attack_coffee", "/items/critical_coffee"],
+  },
 };
 
 // A realistic five-person dungeon group, in the order a party would be built.
@@ -314,6 +356,7 @@ export const CASES = [
   { id: "tank-solo",       party: "tank",        n: 1, level: 200, zone: "fly",                 tier: 0, hours: [2, 10] },
   { id: "healer-solo",     party: "healer",      n: 1, level: 200, zone: "fly",                 tier: 0, hours: [2, 10] },
   { id: "buffstack-solo",  party: "buffstack",   n: 1, level: 200, zone: "fly",                 tier: 0, hours: [2, 10] },
+  { id: "selfbuff-solo",   party: "selfbuff",    n: 1, level: 200, zone: "fly",                 tier: 0, hours: [2, 10] },
 
   // --- multi-spawn zones: deeper queue, several live monsters ---
   { id: "melee-swarm",     party: "melee",       n: 1, level: 200, zone: "aqua_planet",         tier: 0, hours: [2, 10] },

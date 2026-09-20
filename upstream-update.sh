@@ -439,6 +439,67 @@ upstream specifically changed the same surface area.
   Guarded by ours-only \`api/tests/statCaching.test.mjs\` and the
   \`fixtures/sim/\` golden replays (\`api/sim-parity.mjs\`). Run both after any
   rebase that touches these four files.
+- **Buff-apply path (performance, measured)** — a second round of
+  behaviour-preserving changes, aimed at the stat recompute that a buff
+  application triggers. A user reported that abilities like
+  \`elemental_affinity\` made simulations crawl; a controlled sweep confirmed
+  that adding one three-buff 30 s ability to an otherwise identical magic build
+  took a simulated hour from 6.1 to 11.9 ms. These took the new
+  \`selfbuff-solo\` candle case from 18.6 to 13.5 ms/sim-h (-27%),
+  \`tank-solo\` -28%, \`magic-solo\` -21%, \`dungeon-den-600\` -16%, with
+  output BIT-IDENTICAL (\`npm run sim:check\` 3/3). Upstream will show its
+  originals on the \`+\` side; keep ours.
+    - \`combatUnit.js\` \`removeExpiredBuffs()\`: the trailing
+      \`updateCombatDetails()\` is now CONDITIONAL on \`_commitInstances\`
+      having reported an actual change, replacing an unconditional recompute
+      that carried the comment "for behavior parity with the old code". The
+      method is called once per combat event from five sites in
+      \`combatSimulator.js\`, so nearly every one of those recomputes was
+      discarded. This is the single largest win of the four (about half of it).
+      It is only sound because \`updateCombatDetails()\` is IDEMPOTENT — every
+      \`+=\` target is reset from equipment or game data at the top of the call
+      — which is asserted directly in \`statCaching.test.mjs\`. If upstream
+      ever makes the recompute accumulate onto persistent state, the call COUNT
+      becomes observable and this must be reverted.
+    - \`combatUnit.js\` \`clearBuffs()\`: \`structuredClone(this.permanentBuffs)\`
+      is replaced by an explicit per-entry field copy. Every unit is
+      \`reset()\` — and so \`clearBuffs()\`-ed — at each of the 600+ encounters
+      in a simulated hour, and permanent-buff entries are five scalar fields
+      built by \`addPermanentBuff\`, so the structured-clone algorithm bought
+      nothing but cost ~2% of profiled self time. Worth ~9 percentage points on
+      the solo cases.
+    - \`combatUnit.js\` \`updateCombatDetails()\`: the inline
+      \`["stamina", ...]\` and \`["stab", "slash", "smash"]\` arrays are hoisted
+      to module-level \`LEVEL_STATS\` / \`ATTACK_STYLES\` tables holding the
+      CONCATENATED property keys, and the two \`.forEach\` closures become
+      plain loops. Upstream rebuilt the arrays and ~30 key strings on every
+      recompute; the profile put the styles closure at 3.9% of self time and the
+      levels closure at 2.0%. The evasion boosts are also fetched once instead
+      of once per style — the array returned is the shared read-only index
+      entry, so all three iterations already read the identical object. No
+      arithmetic is reordered, which is why parity holds.
+    - \`monster.js\`: the 63-name zero-fill array inside
+      \`updateCombatDetails()\` is hoisted to a module-level
+      \`export const MONSTER_ZEROED_COMBAT_STATS\`, exactly as
+      \`EQUIPMENT_COMBAT_STATS\` was in \`player.js\`. It was moved VERBATIM;
+      two of the names carry DIGITS (\`hpRegenPer10\`, \`mpRegenPer10\`) and
+      regenerating the list by pattern-matching would drop precisely those two.
+      Asserted in \`statCaching.test.mjs\`.
+  TRIED AND DISCARDED, so nobody re-derives it: caching the soonest buff expiry
+  time to give \`removeExpiredBuffs\` an O(1) early-out before it allocates an
+  \`Object.keys\` and scans. It is correct and it passed parity, but a
+  back-to-back A/B at \`--reps=9\` could not distinguish it from noise on any
+  case, so it was dropped rather than shipped for the added invalidation
+  surface. The scan it skips is already cheap once the recompute behind it is
+  gone.
+  Also note the user's original hypothesis was WRONG in an instructive way:
+  applying N buffs from one ability does NOT trigger N recomputes.
+  \`addBuffs\` already batches — it ORs the per-buff changed flags and
+  recomputes once. The cost was the redundant recomputes elsewhere, not the
+  apply loop. Do not "fix" the batching.
+  Guarded by \`api/tests/statCaching.test.mjs\` and the \`fixtures/sim/\`
+  golden replays. The candle case \`selfbuff-solo\` in
+  \`api/bench/builds.mjs\` exists to keep this path measurable.
 - Any other local edits beneath \`${SCOPED_PATH}/\` — list them in the
   rebase report so we keep a running ledger.
 

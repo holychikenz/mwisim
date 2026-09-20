@@ -3,6 +3,92 @@ import CombatUnit from "./combatUnit";
 import { combatMonsterDetailMap } from "./dataProvider";
 import Drops from "./drops";
 
+// =============================================================================
+// MWIX adaptation (performance): the monster zero-fill stat list, hoisted out
+// of updateCombatDetails().
+//
+// A monster's combatStats are copied from its game-data entry, which carries
+// only the stats that monster actually has. These are the names that must be
+// forced to 0 when the entry omits them. Upstream declares this array INLINE
+// inside updateCombatDetails, so a fresh 63-element array literal was
+// allocated and walked on every recompute — and every monster is reset, and so
+// recomputed, at each of the 600+ encounters in a simulated hour. A CPU
+// profile of magic-solo + buffstack-solo put this one forEach at 2.8% of self
+// time. Hoisting is pure bookkeeping — same names, same order, same writes —
+// so it cannot move a number, and sim:check stayed 3/3.
+//
+// The list below was moved VERBATIM: not retyped, not regenerated. Two of
+// these names carry DIGITS ("hpRegenPer10", "mpRegenPer10"); the scraping
+// mistake that once dropped exactly those two from EQUIPMENT_COMBAT_STATS (see
+// the header in player.js) would drop them here too and silently give every
+// monster zero regen. Asserted in api/tests/statCaching.test.mjs.
+// =============================================================================
+export const MONSTER_ZEROED_COMBAT_STATS = [
+    "stabAccuracy",
+    "slashAccuracy",
+    "smashAccuracy",
+    "rangedAccuracy",
+    "magicAccuracy",
+    "stabDamage",
+    "slashDamage",
+    "smashDamage",
+    "rangedDamage",
+    "magicDamage",
+    "defensiveDamage",
+    "taskDamage",
+    "physicalAmplify",
+    "waterAmplify",
+    "natureAmplify",
+    "fireAmplify",
+    "healingAmplify",
+    "stabEvasion",
+    "slashEvasion",
+    "smashEvasion",
+    "rangedEvasion",
+    "magicEvasion",
+    "armor",
+    "waterResistance",
+    "natureResistance",
+    "fireResistance",
+    "maxHitpoints",
+    "maxManapoints",
+    "lifeSteal",
+    "hpRegenPer10",
+    "mpRegenPer10",
+    "physicalThorns",
+    "elementalThorns",
+    "combatDropRate",
+    "combatRareFind",
+    "combatDropQuantity",
+    "combatExperience",
+    "criticalRate",
+    "criticalDamage",
+    "armorPenetration",
+    "waterPenetration",
+    "naturePenetration",
+    "firePenetration",
+    "abilityHaste",
+    "tenacity",
+    "manaLeech",
+    "castSpeed",
+    "threat",
+    "parry",
+    "mayhem",
+    "pierce",
+    "curse",
+    "fury",
+    "weaken",
+    "ripple",
+    "bloom",
+    "blaze",
+    "attackSpeed",
+    "foodHaste",
+    "drinkConcentration",
+    "autoAttackDamage",
+    "abilityDamage",
+    "retaliation",
+];
+
 class Monster extends CombatUnit {
 
     difficultyTier = 0;
@@ -92,75 +178,14 @@ class Monster extends CombatUnit {
         this.combatDetails.combatStats.natureResistance *= labyrinthScaleFactor;
         this.combatDetails.combatStats.fireResistance *= labyrinthScaleFactor;
 
-        [
-            "stabAccuracy",
-            "slashAccuracy",
-            "smashAccuracy",
-            "rangedAccuracy",
-            "magicAccuracy",
-            "stabDamage",
-            "slashDamage",
-            "smashDamage",
-            "rangedDamage",
-            "magicDamage",
-            "defensiveDamage",
-            "taskDamage",
-            "physicalAmplify",
-            "waterAmplify",
-            "natureAmplify",
-            "fireAmplify",
-            "healingAmplify",
-            "stabEvasion",
-            "slashEvasion",
-            "smashEvasion",
-            "rangedEvasion",
-            "magicEvasion",
-            "armor",
-            "waterResistance",
-            "natureResistance",
-            "fireResistance",
-            "maxHitpoints",
-            "maxManapoints",
-            "lifeSteal",
-            "hpRegenPer10",
-            "mpRegenPer10",
-            "physicalThorns",
-            "elementalThorns",
-            "combatDropRate",
-            "combatRareFind",
-            "combatDropQuantity",
-            "combatExperience",
-            "criticalRate",
-            "criticalDamage",
-            "armorPenetration",
-            "waterPenetration",
-            "naturePenetration",
-            "firePenetration",
-            "abilityHaste",
-            "tenacity",
-            "manaLeech",
-            "castSpeed",
-            "threat",
-            "parry",
-            "mayhem",
-            "pierce",
-            "curse",
-            "fury",
-            "weaken",
-            "ripple",
-            "bloom",
-            "blaze",
-            "attackSpeed",
-            "foodHaste",
-            "drinkConcentration",
-            "autoAttackDamage",
-            "abilityDamage",
-            "retaliation"
-        ].forEach((stat) => {
+        // Zero-fill the stats this monster's game-data entry omits. Hoisted
+        // list, plain loop — see MONSTER_ZEROED_COMBAT_STATS above.
+        for (let i = 0; i < MONSTER_ZEROED_COMBAT_STATS.length; i++) {
+            let stat = MONSTER_ZEROED_COMBAT_STATS[i];
             if (gameMonster.combatDetails.combatStats[stat] == null) {
                 this.combatDetails.combatStats[stat] = 0;
             }
-        });
+        }
 
         if (this.combatDetails.combatStats.attackInterval == 0) {
             this.combatDetails.combatStats.attackInterval = gameMonster.combatDetails.attackInterval;

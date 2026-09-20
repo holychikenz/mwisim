@@ -5,6 +5,38 @@ import { resolveMonsterStartCooldown } from "./simSettings";
 // pushed onto it would poison every unit in the simulation at once.
 const EMPTY_BUFF_BOOSTS = Object.freeze([]);
 
+// =============================================================================
+// MWIX adaptation (performance): the two per-stat key tables that
+// updateCombatDetails() used to rebuild on every call.
+//
+// Upstream writes both loops as an INLINE array literal driven by `.forEach`,
+// with the property names formed by string concatenation inside the body —
+// `this.combatDetails[stat + "Level"]`, `"/buff_types/" + stat + "_level"`,
+// `combatStats[style + "Accuracy"]`, and so on. That is one array allocation
+// plus ~30 string concatenations and two closure allocations EVERY recompute,
+// and updateCombatDetails is the hottest method in the engine (a CPU profile of
+// magic-solo + buffstack-solo attributed 3.9% of self time to the styles
+// closure alone and 2.0% to the levels closure).
+//
+// Precomputing the concatenated keys once changes nothing about WHAT is read or
+// written, or in WHAT ORDER — only when the strings are built. No arithmetic is
+// reordered, so the floating-point results are bit-identical; sim:check stayed
+// 3/3.
+// =============================================================================
+const LEVEL_STATS = ["stamina", "intelligence", "attack", "melee", "defense", "ranged", "magic"].map(
+    (stat) => ({ levelKey: stat + "Level", buffType: "/buff_types/" + stat + "_level" })
+);
+
+const ATTACK_STYLES = ["stab", "slash", "smash"].map((style) => ({
+    accuracyStat: style + "Accuracy",
+    damageStat: style + "Damage",
+    evasionStat: style + "Evasion",
+    accuracyRating: style + "AccuracyRating",
+    maxDamage: style + "MaxDamage",
+    evasionRating: style + "EvasionRating",
+}));
+
+
 class CombatUnit {
     isPlayer;
     isStunned = false;
@@ -197,14 +229,19 @@ class CombatUnit {
             }
         }
 
-        ["stamina", "intelligence", "attack", "melee", "defense", "ranged", "magic"].forEach((stat) => {
-            this.combatDetails[stat + "Level"] = this[stat + "Level"];
-            let boosts = this.getBuffBoosts("/buff_types/" + stat + "_level");
-            boosts.forEach((buff) => {
-                this.combatDetails[stat + "Level"] += (this[stat + "Level"] * buff.ratioBoost);
-                this.combatDetails[stat + "Level"] += buff.flatBoost;
-            });
-        });
+        // Precomputed keys, plain loops — see LEVEL_STATS at the top of the file.
+        // The base level is re-read from `this[levelKey]` inside the inner loop,
+        // exactly as upstream did: the running total lives on combatDetails and
+        // the ratio boost always applies to the UNBOOSTED base.
+        for (let i = 0; i < LEVEL_STATS.length; i++) {
+            let levelKey = LEVEL_STATS[i].levelKey;
+            this.combatDetails[levelKey] = this[levelKey];
+            let boosts = this.getBuffBoosts(LEVEL_STATS[i].buffType);
+            for (let j = 0; j < boosts.length; j++) {
+                this.combatDetails[levelKey] += (this[levelKey] * boosts[j].ratioBoost);
+                this.combatDetails[levelKey] += boosts[j].flatBoost;
+            }
+        }
 
         // MWIX adaptation (guild expansion, 7/13/2026): the Spirit shrine grants
         // /buff_types/max_hitpoints and /buff_types/max_manapoints — buff types
@@ -238,25 +275,30 @@ class CombatUnit {
         let accuracyRatioBoost = this.getBuffBoost("/buff_types/accuracy").ratioBoost;
         let damageRatioBoost = this.getBuffBoost("/buff_types/damage").ratioBoost;
 
-        ["stab", "slash", "smash"].forEach((style) => {
-            this.combatDetails[style + "AccuracyRating"] =
+        // Precomputed keys, plain loop — see ATTACK_STYLES at the top of the file.
+        // The evasion boosts are fetched ONCE rather than once per style: the
+        // array getBuffBoosts returns is the shared, read-only index entry, so
+        // all three iterations were already reading the identical object.
+        let styleEvasionBoosts = this.getBuffBoosts("/buff_types/evasion");
+        for (let i = 0; i < ATTACK_STYLES.length; i++) {
+            let style = ATTACK_STYLES[i];
+            this.combatDetails[style.accuracyRating] =
                 (10 + this.combatDetails.attackLevel) *
-                (1 + this.combatDetails.combatStats[style + "Accuracy"]) *
+                (1 + this.combatDetails.combatStats[style.accuracyStat]) *
                 (1 + accuracyRatioBoost) *
                 (1 + accuracyRatioBoostFromFury);
-            this.combatDetails[style + "MaxDamage"] =
+            this.combatDetails[style.maxDamage] =
                 (10 + this.combatDetails.meleeLevel) *
-                (1 + this.combatDetails.combatStats[style + "Damage"]) *
+                (1 + this.combatDetails.combatStats[style.damageStat]) *
                 (1 + damageRatioBoost) *
                 (1 + damageRatioBoostFromFury);
-            let baseEvasion = (10 + this.combatDetails.defenseLevel) * (1 + this.combatDetails.combatStats[style + "Evasion"]);
-            this.combatDetails[style + "EvasionRating"] = baseEvasion;
-            let evasionBoosts = this.getBuffBoosts("/buff_types/evasion");
-            for (const boost of evasionBoosts) {
-                this.combatDetails[style + "EvasionRating"] += boost.flatBoost;
-                this.combatDetails[style + "EvasionRating"] += baseEvasion * boost.ratioBoost;
+            let baseEvasion = (10 + this.combatDetails.defenseLevel) * (1 + this.combatDetails.combatStats[style.evasionStat]);
+            this.combatDetails[style.evasionRating] = baseEvasion;
+            for (let j = 0; j < styleEvasionBoosts.length; j++) {
+                this.combatDetails[style.evasionRating] += styleEvasionBoosts[j].flatBoost;
+                this.combatDetails[style.evasionRating] += baseEvasion * styleEvasionBoosts[j].ratioBoost;
             }
-        });
+        }
 
         this.combatDetails.defensiveMaxDamage = 
             (10 + this.combatDetails.defenseLevel) * 
@@ -625,6 +667,7 @@ class CombatUnit {
         // Iterate instance sources only. combatBuffs entries WITHOUT a backing
         // instance array are permanent buffs (keyed by typeHrid, no startTime) —
         // they must survive untouched.
+        let changed = false;
         for (const hrid of Object.keys(this.buffInstances)) {
             let arr = this.buffInstances[hrid];
             // Hot path: plain-loop scan first and SKIP the hrid entirely when
@@ -641,16 +684,30 @@ class CombatUnit {
                 continue;
             }
             let filtered = arr.filter((inst) => this._isActive(inst, currentTime));
-            this._commitInstances(hrid, filtered);
+            if (this._commitInstances(hrid, filtered)) {
+                changed = true;
+            }
         }
 
-        // Unconditional recompute for behavior parity with the old code.
-        this.updateCombatDetails();
+        if (changed) {
+            this.updateCombatDetails();
+        }
     }
 
     clearBuffs() {
         this.buffInstances = {};
-        this.combatBuffs = structuredClone(this.permanentBuffs);
+        let fresh = {};
+        for (const key in this.permanentBuffs) {
+            let buff = this.permanentBuffs[key];
+            fresh[key] = {
+                uniqueHrid: buff.uniqueHrid,
+                typeHrid: buff.typeHrid,
+                flatBoost: buff.flatBoost,
+                ratioBoost: buff.ratioBoost,
+                duration: buff.duration,
+            };
+        }
+        this.combatBuffs = fresh;
         this._invalidateBuffBoostIndex();
         this.updateCombatDetails();
     }
