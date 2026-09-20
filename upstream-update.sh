@@ -601,6 +601,54 @@ upstream specifically changed the same surface area.
       both to small wins. Interleaving rounds is NOT sufficient; the ORDER
       WITHIN a round must alternate, or a consistent-looking regression can be
       manufactured out of nothing but thermal drift.
+    - `combatSimulator.js`: `checkTriggers()` and `addNextAttackEvent()` no
+      longer allocate. Upstream runs `players.filter(alive).forEach(check)` and
+      the same for enemies — TWO arrays and FOUR closures per fixpoint pass,
+      and `checkTriggers()` runs after EVERY event — plus
+      `source.abilities.filter(notNull).forEach(...)` on every attack and
+      cooldown wake-up, for at most four slots.
+      THE SNAPSHOT IS PRESERVED, and this is the whole subtlety. `filter` runs
+      its predicate over every element BEFORE `forEach` invokes the first
+      callback, so membership is decided up front. A plain indexed loop with
+      the aliveness test in the body decides it lazily, and the two differ the
+      moment a unit's hitpoints cross zero mid-pass: the snapshot still visits
+      a unit that has since died — and `checkTriggersForUnit` THROWS on a dead
+      unit — and skips one that has since been revived. Nothing on today's path
+      does either (this method only eats and drinks), but that is not a
+      property the next reader can see. So membership is still computed first,
+      into a 32-bit liveness MASK. `addNextAttackEvent` has no such subtlety:
+      its predicate is null-ness, which cannot change mid-loop.
+      A MASK RATHER THAN A REUSED ARRAY OF UNITS, and that was measured, not
+      assumed. The first version kept two scratch arrays of unit references on
+      the simulator; the worry was that writing references into a long-lived
+      (promoted) array pays a generational write barrier where the fresh young
+      arrays it replaced did not, and that it pins dead monsters against the
+      collector. Six counterbalanced rounds at `--reps=9` put the two variants
+      within noise of each other on every case, so the barrier theory was
+      WRONG — but the mask was kept anyway, because it holds no long-lived
+      state at all and therefore needs no argument about re-entrancy.
+      `1 << 32` is `1`, not an overflow, so a roster wider than the mask falls
+      back to `_checkTriggersManyUnits()` — upstream's shape verbatim,
+      allocations and all. Nothing in the game fields a roster that wide, which
+      makes that path one no simulation ever exercises; it is covered instead
+      by `api/tests/checkTriggers.test.mjs`, whose wide-roster case is built
+      with player 0 DEAD and player 32 ALIVE specifically so that an aliased
+      mask is observable. Both that test and the snapshot test were confirmed
+      to FAIL against deliberately broken versions before being trusted.
+      Measured over four counterbalanced full-candle rounds at `--reps=5`:
+      18 of 22 medians improved, none regressed consistently —
+      `starter-solo` 2.03 -> 1.92 (-5.3%), `floor-party` 4.81 -> 4.60 (-4.2%),
+      `mid-solo` 4.69 -> 4.56 (-2.9%), `melee-swarm` and `dungeon-circus`
+      smaller but won every round. `sim:check` 3/3.
+      HONEST NOTE ON WHERE THIS DID *NOT* PAY. The profile put the trigger
+      family at 16.6% of self time on `dungeon-den-600` and that case did not
+      move (+1.8% over four rounds, +0.6% over a separate six); neither did
+      `party3-sorcerer`, which the kernel study named as the case this should
+      move. The allocation is evidently a small part of that 16.6%; the cost is
+      the trigger EVALUATION itself — `getDependencyValue` 6.1%,
+      `shouldTrigger` 4.0%. Anyone returning to this family should attack the
+      evaluation, not the iteration, and should know that the iteration has
+      already been done.
     TRIED AND DISCARDED alongside it, so nobody re-derives it: dispatching
     `processEvent`'s 19-arm switch on the integer `event.typeId` (which every
     event already carries for the queue's scans) instead of the string

@@ -1112,9 +1112,22 @@ class CombatSimulator extends EventTarget {
         let usedAbility = false;
         let skipNextAbility = false; 
 
-        source.abilities
-            .filter((ability) => ability != null)
-            .forEach((ability) => {
+        // MWIX adaptation (performance): indexed, not filter().forEach().
+        //
+        // Same family as checkTriggers() above — addNextAttackEvent runs on
+        // every attack and every cooldown wake-up, and upstream allocated an
+        // array plus two closures each time for at most four ability slots.
+        //
+        // Exactly equivalent here, with none of checkTriggers()'s snapshot
+        // subtlety: the predicate is NULL-ness, and an ability slot cannot
+        // become null or non-null part-way through the loop. The `!usedAbility
+        // && !skipNextAbility` guard is left in the body rather than turned
+        // into a `break`, because both flags already short-circuit every
+        // remaining iteration and a break would only change how it reads.
+        let abilities = source.abilities;
+        for (let i = 0; i < abilities.length; i++) {
+            let ability = abilities[i];
+            if (ability != null) {
                 if (!usedAbility && !skipNextAbility && ability.shouldTrigger(this.simulationTime, source, target, friendlies, enemies)) {
                     if (!this.canUseAbility(source, ability, true)) {
                         skipNextAbility = true;
@@ -1136,7 +1149,8 @@ class CombatSimulator extends EventTarget {
                         usedAbility = true;
                     }
                 }
-            });
+            }
+        }
 
         if (usedAbility) {
             source.isOutOfMana = false;
@@ -1362,7 +1376,84 @@ class CombatSimulator extends EventTarget {
         this.eventQueue.addEvent(enrageTickEvent);
     }
 
+    // MWIX adaptation (performance): the fixpoint loop no longer allocates.
+    //
+    // Upstream runs `players.filter(alive).forEach(check)` and the same for
+    // enemies — TWO arrays and FOUR closures per pass, and checkTriggers() runs
+    // after EVERY event, for as many passes as the fixpoint takes. A CPU
+    // profile of the candle put the trigger family at ~16.6% of self time on
+    // dungeon-den-600, the largest family never attacked.
+    //
+    // WHAT IS PRESERVED, AND WHY IT IS NOT A PLAIN `for` LOOP.
+    // `filter` decides membership for EVERY element before `forEach` invokes
+    // the first callback. An indexed loop with the aliveness test in the body
+    // decides it lazily, at visit time, and the two differ the moment a unit's
+    // hitpoints cross zero mid-pass: the snapshot still visits a unit that has
+    // since died (and checkTriggersForUnit THROWS on a dead unit), and skips
+    // one that has since been revived. Nothing on today's path does either —
+    // this method only eats and drinks — but "nothing does that today" is not
+    // a property the next person can see, and getting it wrong turns into a
+    // thrown error or a silently skipped trigger rather than a wrong number.
+    //
+    // So the snapshot semantics are kept exactly and only the allocation is
+    // removed: membership is still decided up front, into a 32-bit mask held
+    // in a local. A mask rather than a reused array of units, and this was
+    // measured, not assumed — see the ledger entry.
     checkTriggers() {
+        let triggeredSomething;
+
+        // The snapshot is a BITMASK of indices, not a list of units. Storing
+        // object references in a long-lived scratch array would put a
+        // generational write barrier on every entry — the fresh arrays this
+        // replaced were young and barrier-free — and would pin dead monsters
+        // against the collector. An integer does neither.
+        let players = this.players;
+        let enemies = this.enemies;
+        if (players.length > 32 || (enemies && enemies.length > 32)) {
+            return this._checkTriggersManyUnits();
+        }
+
+        do {
+            triggeredSomething = false;
+
+            let alive = 0;
+            for (let i = 0; i < players.length; i++) {
+                if (players[i].combatDetails.currentHitpoints > 0) {
+                    alive |= 1 << i;
+                }
+            }
+            for (let i = 0; i < players.length; i++) {
+                if (alive & (1 << i)) {
+                    if (this.checkTriggersForUnit(players[i], players, enemies)) {
+                        triggeredSomething = true;
+                    }
+                }
+            }
+
+            if (enemies) {
+                let aliveEnemies = 0;
+                for (let i = 0; i < enemies.length; i++) {
+                    if (enemies[i].combatDetails.currentHitpoints > 0) {
+                        aliveEnemies |= 1 << i;
+                    }
+                }
+                for (let i = 0; i < enemies.length; i++) {
+                    if (aliveEnemies & (1 << i)) {
+                        if (this.checkTriggersForUnit(enemies[i], enemies, players)) {
+                            triggeredSomething = true;
+                        }
+                    }
+                }
+            }
+        } while (triggeredSomething);
+    }
+
+    // Escape hatch for a roster wider than a 32-bit mask. No zone or dungeon
+    // fields one today — parties cap at 5 and encounters at a handful — but a
+    // silent wrong answer if one ever does is not acceptable, and `1 << 32` is
+    // `1`, not overflow. This is upstream's shape, verbatim, allocations and
+    // all: it is the correctness path, not the fast one.
+    _checkTriggersManyUnits() {
         let triggeredSomething;
 
         do {
