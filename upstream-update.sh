@@ -508,6 +508,36 @@ upstream specifically changed the same surface area.
   indexing over data we already iterate in bulk. Every stage was measured on
   its own against \`api/bench/records/2026-09-20b-buffpath.json\` at
   \`--reps=9\` and gated on \`npm run sim:check\` 3/3 bit-identical.
+    - \`combatUnit.js\` \`_buildBuffBoostIndex\` / \`getBuffBoost\`: the two
+      string-keyed \`Map\`s become dense arrays indexed by the generated
+      buff-type ordinal, and everything they hold is allocated ONCE per unit
+      and reused — pooled per-type boost arrays, pooled per-buff records, and
+      one sum object per ordinal overwritten in place, with a rebuild epoch
+      invalidating every memoised sum in a single store. A steady-state rebuild
+      allocates nothing. The profile put \`_buildBuffBoostIndex\` at 9.39% of
+      self time on \`dungeon-den-600\` and \`getBuffBoost\` at 3.28%, the
+      largest family in it. The ~35 boost queries \`updateCombatDetails\`
+      makes per recompute now use ordinals interned at module load, so the hot
+      path hashes no strings at all; \`getBuffBoost(type)\` /
+      \`getBuffBoosts(type)\` still take a STRING for callers outside the file
+      and intern at the boundary. Candle, stage in isolation:
+      \`melee-swarm\` -18.8% cumulative (-4.0 pts on this stage),
+      \`melee-solo\` -17.0%, \`dungeon-fort-t2\` -14.4% (-6.4 pts),
+      \`tank-solo\` -13.6% (-6.2 pts), \`selfbuff-solo\` -9.1% (-5.8 pts),
+      \`dungeon-den-600\` -7.6% (-2.9 pts), \`buffstack-solo\` -5.1%.
+      Bit-identical because nothing is reordered: still
+      \`Object.values(this.combatBuffs)\` (insertion-ordered, own properties
+      only — a \`for...in\` would let a polluted Object.prototype inject
+      phantom buffs), records appended per type in the same order, sums
+      accumulated in that order from 0, and upstream's \`?? 0\` coercion kept
+      verbatim. TWO THINGS TO KNOW IF YOU TOUCH THIS: an hrid outside the
+      generated table THROWS — it must, because indexing the dense arrays at
+      \`undefined\` would silently drop the buff and report a plausible wrong
+      number; and because the arrays and records are pooled, a caller may not
+      hold one across a buff change. Both were already shared and read-only by
+      contract, no engine path holds across a mutation (a buff change is what
+      triggers a recompute, not the other way round), and both properties are
+      pinned in \`api/tests/statCaching.test.mjs\`.
     - \`generated/buffTypes.js\` (NEW, and ours alone): the buff-type ordinal
       table the dense buff-boost index below is keyed on — \`BUFF_TYPE\`
       (hrid -> ordinal, null-prototype), \`BUFF_TYPE_NAMES\`,

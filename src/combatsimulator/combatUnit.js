@@ -1,4 +1,5 @@
 import { resolveMonsterStartCooldown } from "./simSettings";
+import { BUFF_TYPE_COUNT, buffTypeOrdinal } from "./generated/buffTypes";
 
 // MWIX adaptation (performance): the result for a buff type nothing grants.
 // Frozen because getBuffBoosts hands it to callers directly, and a caller that
@@ -24,8 +25,60 @@ const EMPTY_BUFF_BOOSTS = Object.freeze([]);
 // 3/3.
 // =============================================================================
 const LEVEL_STATS = ["stamina", "intelligence", "attack", "melee", "defense", "ranged", "magic"].map(
-    (stat) => ({ levelKey: stat + "Level", buffType: "/buff_types/" + stat + "_level" })
+    (stat) => ({
+        levelKey: stat + "Level",
+        buffType: "/buff_types/" + stat + "_level",
+        // Interned once at module load — see the ordinal block below.
+        buffTypeOrd: buffTypeOrdinal("/buff_types/" + stat + "_level"),
+    })
 );
+
+// =============================================================================
+// MWIX adaptation (performance): the buff-type ordinals this file queries.
+//
+// A CPU profile of the candle put buff aggregation at ~16.5% of self time on
+// dungeon-den-600 — _buildBuffBoostIndex at 9.39% and getBuffBoost at 3.28% —
+// and updateCombatDetails alone asks for ~35 boosts on every recompute. Each
+// ask was a string-keyed Map lookup. Interning the hrids once, at module load,
+// turns all of them into an array index.
+//
+// The names come from the GENERATED table (tools/genBuffTypes.mjs), and
+// buffTypeOrdinal THROWS on an hrid it has never seen, so a typo here is a
+// startup crash rather than a buff that silently contributes nothing.
+// =============================================================================
+const BT_ACCURACY = buffTypeOrdinal("/buff_types/accuracy");
+const BT_ARMOR = buffTypeOrdinal("/buff_types/armor");
+const BT_ATTACK_SPEED = buffTypeOrdinal("/buff_types/attack_speed");
+const BT_CAST_SPEED = buffTypeOrdinal("/buff_types/cast_speed");
+const BT_COMBAT_DROP_QUANTITY = buffTypeOrdinal("/buff_types/combat_drop_quantity");
+const BT_COMBAT_DROP_RATE = buffTypeOrdinal("/buff_types/combat_drop_rate");
+const BT_CRITICAL_DAMAGE = buffTypeOrdinal("/buff_types/critical_damage");
+const BT_CRITICAL_RATE = buffTypeOrdinal("/buff_types/critical_rate");
+const BT_DAMAGE = buffTypeOrdinal("/buff_types/damage");
+const BT_DAMAGE_TAKEN = buffTypeOrdinal("/buff_types/damage_taken");
+const BT_ELEMENTAL_THORNS = buffTypeOrdinal("/buff_types/elemental_thorns");
+const BT_EVASION = buffTypeOrdinal("/buff_types/evasion");
+const BT_FIRE_AMPLIFY = buffTypeOrdinal("/buff_types/fire_amplify");
+const BT_FIRE_RESISTANCE = buffTypeOrdinal("/buff_types/fire_resistance");
+const BT_FURY_ACCURACY = buffTypeOrdinal("/buff_types/fury_accuracy");
+const BT_FURY_DAMAGE = buffTypeOrdinal("/buff_types/fury_damage");
+const BT_HEALING_AMPLIFY = buffTypeOrdinal("/buff_types/healing_amplify");
+const BT_HP_REGEN = buffTypeOrdinal("/buff_types/hp_regen");
+const BT_LIFE_STEAL = buffTypeOrdinal("/buff_types/life_steal");
+const BT_MAX_HITPOINTS = buffTypeOrdinal("/buff_types/max_hitpoints");
+const BT_MAX_MANAPOINTS = buffTypeOrdinal("/buff_types/max_manapoints");
+const BT_MP_REGEN = buffTypeOrdinal("/buff_types/mp_regen");
+const BT_NATURE_AMPLIFY = buffTypeOrdinal("/buff_types/nature_amplify");
+const BT_NATURE_RESISTANCE = buffTypeOrdinal("/buff_types/nature_resistance");
+const BT_PHYSICAL_AMPLIFY = buffTypeOrdinal("/buff_types/physical_amplify");
+const BT_PHYSICAL_THORNS = buffTypeOrdinal("/buff_types/physical_thorns");
+const BT_RARE_FIND = buffTypeOrdinal("/buff_types/rare_find");
+const BT_RETALIATION = buffTypeOrdinal("/buff_types/retaliation");
+const BT_TENACITY = buffTypeOrdinal("/buff_types/tenacity");
+const BT_THREAT = buffTypeOrdinal("/buff_types/threat");
+const BT_WATER_AMPLIFY = buffTypeOrdinal("/buff_types/water_amplify");
+const BT_WATER_RESISTANCE = buffTypeOrdinal("/buff_types/water_resistance");
+const BT_WISDOM = buffTypeOrdinal("/buff_types/wisdom");
 
 const ATTACK_STYLES = ["stab", "slash", "smash"].map((style) => ({
     accuracyStat: style + "Accuracy",
@@ -198,12 +251,21 @@ class CombatUnit {
     // active instance) that all existing readers keep consuming UNCHANGED.
     buffInstances = {};
     permanentBuffs = {};
-    // MWIX adaptation (performance): a lazy typeHrid -> boosts index over
-    // `combatBuffs`, and a typeHrid -> summed-boost cache over that index.
-    // Both are null when stale; see _invalidateBuffBoostIndex /
-    // _buildBuffBoostIndex at the bottom of the buff section.
+    // MWIX adaptation (performance): a lazy ORDINAL -> boosts index over
+    // `combatBuffs`, and an ordinal -> summed-boost cache over that index. Both
+    // were string-keyed Maps; see _invalidateBuffBoostIndex /
+    // _buildBuffBoostIndex at the bottom of the buff section for why they are
+    // dense arrays now, and what is reused between rebuilds.
+    _buffBoostStale = true;
     _buffBoostIndex = null;
+    _buffBoostFilled = null;
     _buffBoostSums = null;
+    _buffBoostSumStamp = null;
+    _buffBoostEpoch = 0;
+    _boostArrayPool = null;
+    _boostArrayUsed = 0;
+    _boostRecordPool = null;
+    _boostRecordUsed = 0;
     // MWIX adaptation: zoneBuffs / extraBuffs are iterated with `.forEach`
     // in generatePermanentBuffs(). Upstream defaults them to `{}` because
     // worker.js reassigns them to arrays before each simulate(). For
@@ -236,7 +298,7 @@ class CombatUnit {
         for (let i = 0; i < LEVEL_STATS.length; i++) {
             let levelKey = LEVEL_STATS[i].levelKey;
             this.combatDetails[levelKey] = this[levelKey];
-            let boosts = this.getBuffBoosts(LEVEL_STATS[i].buffType);
+            let boosts = this._buffBoostsFor(LEVEL_STATS[i].buffTypeOrd);
             for (let j = 0; j < boosts.length; j++) {
                 this.combatDetails[levelKey] += (this[levelKey] * boosts[j].ratioBoost);
                 this.combatDetails[levelKey] += boosts[j].flatBoost;
@@ -250,8 +312,8 @@ class CombatUnit {
         // formula rather than mutating combatStats.maxHitpointsRatio: this method
         // re-runs on every buff add/remove (see addBuffs/removeBuffs), so a
         // `+=` onto persistent state would compound the bonus on each call.
-        let maxHitpointsBoost = this.getBuffBoost("/buff_types/max_hitpoints");
-        let maxManapointsBoost = this.getBuffBoost("/buff_types/max_manapoints");
+        let maxHitpointsBoost = this._buffBoostFor(BT_MAX_HITPOINTS);
+        let maxManapointsBoost = this._buffBoostFor(BT_MAX_MANAPOINTS);
 
         this.combatDetails.maxHitpoints = Math.floor(
             (10 * (10 + this.combatDetails.staminaLevel)
@@ -266,20 +328,20 @@ class CombatUnit {
             * (1 + this.combatDetails.combatStats.maxManapointsRatio + maxManapointsBoost.ratioBoost)
         );
 
-        let accuracyRatioBoostFromFury = this.getBuffBoost("/buff_types/fury_accuracy").ratioBoost;
-        let damageRatioBoostFromFury = this.getBuffBoost("/buff_types/fury_damage").ratioBoost;
+        let accuracyRatioBoostFromFury = this._buffBoostFor(BT_FURY_ACCURACY).ratioBoost;
+        let damageRatioBoostFromFury = this._buffBoostFor(BT_FURY_DAMAGE).ratioBoost;
         // if (accuracyRatioBoostFromFury > 0) {
         //     console.log("Fury Boost: " + accuracyRatioBoostFromFury);
         // }
 
-        let accuracyRatioBoost = this.getBuffBoost("/buff_types/accuracy").ratioBoost;
-        let damageRatioBoost = this.getBuffBoost("/buff_types/damage").ratioBoost;
+        let accuracyRatioBoost = this._buffBoostFor(BT_ACCURACY).ratioBoost;
+        let damageRatioBoost = this._buffBoostFor(BT_DAMAGE).ratioBoost;
 
         // Precomputed keys, plain loop — see ATTACK_STYLES at the top of the file.
         // The evasion boosts are fetched ONCE rather than once per style: the
         // array getBuffBoosts returns is the shared, read-only index entry, so
         // all three iterations were already reading the identical object.
-        let styleEvasionBoosts = this.getBuffBoosts("/buff_types/evasion");
+        let styleEvasionBoosts = this._buffBoostsFor(BT_EVASION);
         for (let i = 0; i < ATTACK_STYLES.length; i++) {
             let style = ATTACK_STYLES[i];
             this.combatDetails[style.accuracyRating] =
@@ -324,13 +386,13 @@ class CombatUnit {
 
         let baseRangedEvasion = (10 + this.combatDetails.defenseLevel) * (1 + this.combatDetails.combatStats.rangedEvasion);
         this.combatDetails.rangedEvasionRating = baseRangedEvasion;
-        let evasionBoosts = this.getBuffBoosts("/buff_types/evasion");
+        let evasionBoosts = this._buffBoostsFor(BT_EVASION);
         for (const boost of evasionBoosts) {
             this.combatDetails.rangedEvasionRating += boost.flatBoost;
             this.combatDetails.rangedEvasionRating += baseRangedEvasion * boost.ratioBoost;
         }
 
-        this.combatDetails.combatStats.damageTaken = this.getBuffBoost("/buff_types/damage_taken").flatBoost;
+        this.combatDetails.combatStats.damageTaken = this._buffBoostFor(BT_DAMAGE_TAKEN).flatBoost;
         // if (this.combatDetails.combatStats.damageTaken > 0) {
         //     console.log("Damage taken: " + this.combatDetails.combatStats.damageTaken);
         // }
@@ -353,17 +415,17 @@ class CombatUnit {
             this.combatDetails.magicEvasionRating += baseMagicEvasion * boost.ratioBoost;
         }
 
-        this.combatDetails.combatStats.physicalAmplify += this.getBuffBoost("/buff_types/physical_amplify").flatBoost;
-        this.combatDetails.combatStats.waterAmplify += this.getBuffBoost("/buff_types/water_amplify").flatBoost;
-        this.combatDetails.combatStats.natureAmplify += this.getBuffBoost("/buff_types/nature_amplify").flatBoost;
-        this.combatDetails.combatStats.fireAmplify += this.getBuffBoost("/buff_types/fire_amplify").flatBoost;
-        this.combatDetails.combatStats.healingAmplify += this.getBuffBoost("/buff_types/healing_amplify").flatBoost;
+        this.combatDetails.combatStats.physicalAmplify += this._buffBoostFor(BT_PHYSICAL_AMPLIFY).flatBoost;
+        this.combatDetails.combatStats.waterAmplify += this._buffBoostFor(BT_WATER_AMPLIFY).flatBoost;
+        this.combatDetails.combatStats.natureAmplify += this._buffBoostFor(BT_NATURE_AMPLIFY).flatBoost;
+        this.combatDetails.combatStats.fireAmplify += this._buffBoostFor(BT_FIRE_AMPLIFY).flatBoost;
+        this.combatDetails.combatStats.healingAmplify += this._buffBoostFor(BT_HEALING_AMPLIFY).flatBoost;
 
         this.combatDetails.combatStats.attackInterval /= (1 + (this.combatDetails.attackLevel / 2000));
 
         let baseAttackSpeed = this.combatDetails.combatStats.attackSpeed;
         this.combatDetails.combatStats.attackInterval /= (1 + baseAttackSpeed);
-        let attackIntervalBoosts = this.getBuffBoosts("/buff_types/attack_speed");
+        let attackIntervalBoosts = this._buffBoostsFor(BT_ATTACK_SPEED);
         let attackIntervalRatioBoost = attackIntervalBoosts
             .map((boost) => boost.ratioBoost)
             .reduce((prev, cur) => prev + cur, 0);
@@ -371,7 +433,7 @@ class CombatUnit {
 
         let baseArmor = 0.2 * this.combatDetails.defenseLevel + this.combatDetails.combatStats.armor;
         this.combatDetails.totalArmor = baseArmor;
-        let armorBoosts = this.getBuffBoosts("/buff_types/armor");
+        let armorBoosts = this._buffBoostsFor(BT_ARMOR);
         for (const boost of armorBoosts) {
             this.combatDetails.totalArmor += boost.flatBoost;
             this.combatDetails.totalArmor += baseArmor * boost.ratioBoost;
@@ -381,7 +443,7 @@ class CombatUnit {
             0.2 * this.combatDetails.defenseLevel +
             this.combatDetails.combatStats.waterResistance;
         this.combatDetails.totalWaterResistance = baseWaterResistance;
-        let waterResistanceBoosts = this.getBuffBoosts("/buff_types/water_resistance");
+        let waterResistanceBoosts = this._buffBoostsFor(BT_WATER_RESISTANCE);
         for (const boost of waterResistanceBoosts) {
             this.combatDetails.totalWaterResistance += boost.flatBoost;
             this.combatDetails.totalWaterResistance += baseWaterResistance * boost.ratioBoost;
@@ -391,7 +453,7 @@ class CombatUnit {
             0.2 * this.combatDetails.defenseLevel +
             this.combatDetails.combatStats.natureResistance;
         this.combatDetails.totalNatureResistance = baseNatureResistance;
-        let natureResistanceBoosts = this.getBuffBoosts("/buff_types/nature_resistance");
+        let natureResistanceBoosts = this._buffBoostsFor(BT_NATURE_RESISTANCE);
         for (const boost of natureResistanceBoosts) {
             this.combatDetails.totalNatureResistance += boost.flatBoost;
             this.combatDetails.totalNatureResistance += baseNatureResistance * boost.ratioBoost;
@@ -401,47 +463,43 @@ class CombatUnit {
             0.2 * this.combatDetails.defenseLevel +
             this.combatDetails.combatStats.fireResistance;
         this.combatDetails.totalFireResistance = baseFireResistance;
-        let fireResistanceBoosts = this.getBuffBoosts("/buff_types/fire_resistance");
+        let fireResistanceBoosts = this._buffBoostsFor(BT_FIRE_RESISTANCE);
         for (const boost of fireResistanceBoosts) {
             this.combatDetails.totalFireResistance += boost.flatBoost;
             this.combatDetails.totalFireResistance += baseFireResistance * boost.ratioBoost;
         }
 
-        let hpRegenBoosts = this.getBuffBoost("/buff_types/hp_regen");
+        let hpRegenBoosts = this._buffBoostFor(BT_HP_REGEN);
         this.combatDetails.combatStats.hpRegenPer10 += this.combatDetails.combatStats.hpRegenPer10 * hpRegenBoosts.ratioBoost;
         this.combatDetails.combatStats.hpRegenPer10 += hpRegenBoosts.flatBoost;
 
-        let mpRegenBoosts = this.getBuffBoost("/buff_types/mp_regen");
+        let mpRegenBoosts = this._buffBoostFor(BT_MP_REGEN);
         this.combatDetails.combatStats.mpRegenPer10 += this.combatDetails.combatStats.mpRegenPer10 * mpRegenBoosts.ratioBoost;
         this.combatDetails.combatStats.mpRegenPer10 += mpRegenBoosts.flatBoost;
 
-        this.combatDetails.combatStats.lifeSteal += this.getBuffBoost("/buff_types/life_steal").flatBoost;
-        this.combatDetails.combatStats.physicalThorns += this.getBuffBoost(
-            "/buff_types/physical_thorns"
-        ).flatBoost;
-        this.combatDetails.combatStats.elementalThorns += this.getBuffBoost(
-            "/buff_types/elemental_thorns"
-        ).flatBoost;
-        this.combatDetails.combatStats.combatExperience += this.getBuffBoost("/buff_types/wisdom").flatBoost;
-        this.combatDetails.combatStats.criticalRate += this.getBuffBoost("/buff_types/critical_rate").flatBoost;
-        this.combatDetails.combatStats.criticalDamage += this.getBuffBoost("/buff_types/critical_damage").flatBoost;
+        this.combatDetails.combatStats.lifeSteal += this._buffBoostFor(BT_LIFE_STEAL).flatBoost;
+        this.combatDetails.combatStats.physicalThorns += this._buffBoostFor(BT_PHYSICAL_THORNS).flatBoost;
+        this.combatDetails.combatStats.elementalThorns += this._buffBoostFor(BT_ELEMENTAL_THORNS).flatBoost;
+        this.combatDetails.combatStats.combatExperience += this._buffBoostFor(BT_WISDOM).flatBoost;
+        this.combatDetails.combatStats.criticalRate += this._buffBoostFor(BT_CRITICAL_RATE).flatBoost;
+        this.combatDetails.combatStats.criticalDamage += this._buffBoostFor(BT_CRITICAL_DAMAGE).flatBoost;
 
-        this.combatDetails.combatStats.castSpeed += this.getBuffBoost("/buff_types/cast_speed").flatBoost;
+        this.combatDetails.combatStats.castSpeed += this._buffBoostFor(BT_CAST_SPEED).flatBoost;
         this.combatDetails.combatStats.castSpeed += this.combatDetails["attackLevel"] / 2000;
 
-        let combatDropRateBoosts = this.getBuffBoost("/buff_types/combat_drop_rate");
+        let combatDropRateBoosts = this._buffBoostFor(BT_COMBAT_DROP_RATE);
         this.combatDetails.combatStats.combatDropRate += (1 + this.combatDetails.combatStats.combatDropRate) * combatDropRateBoosts.ratioBoost;
         this.combatDetails.combatStats.combatDropRate += combatDropRateBoosts.flatBoost;
-        let combatRareFindBoosts = this.getBuffBoost("/buff_types/rare_find");
+        let combatRareFindBoosts = this._buffBoostFor(BT_RARE_FIND);
         this.combatDetails.combatStats.combatRareFind += (1 + this.combatDetails.combatStats.combatRareFind) * combatRareFindBoosts.ratioBoost;
         this.combatDetails.combatStats.combatRareFind += combatRareFindBoosts.flatBoost;
-        let combatDropQuantityBoosts = this.getBuffBoost("/buff_types/combat_drop_quantity");
+        let combatDropQuantityBoosts = this._buffBoostFor(BT_COMBAT_DROP_QUANTITY);
         this.combatDetails.combatStats.combatDropQuantity += (1 + this.combatDetails.combatStats.combatDropQuantity) * combatDropQuantityBoosts.ratioBoost;
         this.combatDetails.combatStats.combatDropQuantity += combatDropQuantityBoosts.flatBoost;
 
         let baseThreat = 100 + this.combatDetails.combatStats.threat;
         this.combatDetails.totalThreat = baseThreat;
-        let threatBoosts = this.getBuffBoost("/buff_types/threat");
+        let threatBoosts = this._buffBoostFor(BT_THREAT);
         if (threatBoosts.ratioBoost !== 0) {
             this.combatDetails.combatStats.threat += baseThreat * threatBoosts.ratioBoost;
         } else {
@@ -449,8 +507,8 @@ class CombatUnit {
         }
         this.combatDetails.combatStats.threat += threatBoosts.flatBoost;
 
-        this.combatDetails.combatStats.retaliation += this.getBuffBoost("/buff_types/retaliation").flatBoost;
-        this.combatDetails.combatStats.tenacity += this.getBuffBoost("/buff_types/tenacity").flatBoost;
+        this.combatDetails.combatStats.retaliation += this._buffBoostFor(BT_RETALIATION).flatBoost;
+        this.combatDetails.combatStats.tenacity += this._buffBoostFor(BT_TENACITY).flatBoost;
     }
 
     // ---- MWIX adaptation (7/15/2026 patch parity): per-source buff instance
@@ -729,74 +787,172 @@ class CombatUnit {
     // O(#combatBuffs) (a dozen or so entries), about the cost of one of the
     // 359 394 queries per simulated hour it saves.
     _invalidateBuffBoostIndex() {
-        this._buffBoostIndex = null;
-        this._buffBoostSums = null;
+        this._buffBoostStale = true;
     }
 
-    // Build (or return) typeHrid -> [{ratioBoost, flatBoost}, ...].
+    // MWIX adaptation (performance): dense integer indexing, allocated once.
     //
-    // Still `Object.values`, deliberately: it is own-properties-only and
-    // insertion-ordered, so the boosts arrive in exactly the order the old
-    // code produced them and the floating-point sums downstream come out
-    // bit-identical. (A `for...in` would also walk inherited enumerables — a
-    // polluted Object.prototype would inject phantom buffs. It allocates one
-    // array, but only on a rebuild, not on the 359 394 queries per hour.)
-    _buildBuffBoostIndex() {
-        let index = new Map();
-        for (const buff of Object.values(this.combatBuffs)) {
-            let boosts = index.get(buff.typeHrid);
-            if (boosts === undefined) {
-                boosts = [];
-                index.set(buff.typeHrid, boosts);
-            }
-            boosts.push({ ratioBoost: buff.ratioBoost, flatBoost: buff.flatBoost });
+    // WHAT CHANGED. Both structures were string-keyed `Map`s, rebuilt from
+    // scratch on every write to `combatBuffs`: a `new Map`, an array per
+    // distinct buff type, one `{ratioBoost, flatBoost}` record per buff, and
+    // then a second `Map` plus one freshly allocated sum object per type
+    // queried. A CPU profile of the candle put _buildBuffBoostIndex at 9.39% of
+    // self time on dungeon-den-600 and getBuffBoost at 3.28% — ~16.5% of the
+    // run between them, the largest family in the profile.
+    //
+    // They are now flat arrays indexed by the generated buff-type ordinal
+    // (src/combatsimulator/generated/buffTypes.js), and everything they hold is
+    // allocated ONCE per unit and reused: the per-type boost arrays and the
+    // per-buff records come from pools, and each ordinal owns a single sum
+    // object that is overwritten in place. A steady-state rebuild allocates
+    // nothing at all.
+    //
+    // WHY IT IS BIT-IDENTICAL. The iteration order is untouched — still
+    // `Object.values(this.combatBuffs)`, still insertion-ordered (see the note
+    // on the old implementation, which stands: `for...in` would also walk
+    // inherited enumerables, so a polluted Object.prototype would inject
+    // phantom buffs). Within a type, records are appended in the same order as
+    // before, and the summation loop adds them in that same order starting from
+    // 0. No `+=` is reordered, and float addition's non-associativity therefore
+    // never gets a chance to show.
+    //
+    // THE HAZARD, AND WHY IT IS CONTAINED. Because the arrays and records are
+    // reused, a caller that held a boosts array or a sum object ACROSS a buff
+    // change would now observe the new values rather than a stale snapshot.
+    // That is already forbidden — both were documented shared and read-only
+    // before this change — and no engine path does it: every caller reads the
+    // result out within the same `updateCombatDetails`, and nothing mutates
+    // `combatBuffs` during a recompute (the dependency runs the other way; a
+    // buff change is what TRIGGERS a recompute). Pinned in
+    // api/tests/statCaching.test.mjs.
+    //
+    // Staleness is a separate boolean rather than a null index, so that
+    // invalidation — which happens on every buff add, remove and expiry —
+    // costs one store and keeps the pools alive.
+    _allocBuffBoostState() {
+        this._buffBoostIndex = new Array(BUFF_TYPE_COUNT);
+        this._buffBoostFilled = [];
+        this._buffBoostSums = new Array(BUFF_TYPE_COUNT);
+        for (let i = 0; i < BUFF_TYPE_COUNT; i++) {
+            this._buffBoostSums[i] = { ratioBoost: 0, flatBoost: 0 };
         }
-        this._buffBoostIndex = index;
-        this._buffBoostSums = new Map();
+        // Stamp 0 means "never computed"; the epoch starts at 1 (see below).
+        this._buffBoostSumStamp = new Int32Array(BUFF_TYPE_COUNT);
+        this._buffBoostEpoch = 0;
+        this._boostArrayPool = [];
+        this._boostRecordPool = [];
+    }
+
+    _buildBuffBoostIndex() {
+        if (this._buffBoostIndex === null) {
+            this._allocBuffBoostState();
+        }
+        let index = this._buffBoostIndex;
+        let filled = this._buffBoostFilled;
+        // Clear only the slots the LAST build touched — a dozen or so, not all
+        // BUFF_TYPE_COUNT of them.
+        for (let i = 0; i < filled.length; i++) {
+            index[filled[i]] = undefined;
+        }
+        filled.length = 0;
+        this._boostArrayUsed = 0;
+        this._boostRecordUsed = 0;
+
+        // Bumping the epoch invalidates every memoised sum in one store. The
+        // wrap guard exists only so the Int32Array stamps can never collide
+        // with a live epoch; at simulation rates it is unreachable in practice.
+        this._buffBoostEpoch++;
+        if (this._buffBoostEpoch >= 0x7ffffffe) {
+            this._buffBoostEpoch = 1;
+            this._buffBoostSumStamp.fill(0);
+        }
+
+        let arrayPool = this._boostArrayPool;
+        let recordPool = this._boostRecordPool;
+        for (const buff of Object.values(this.combatBuffs)) {
+            let ordinal = buffTypeOrdinal(buff.typeHrid);
+            let boosts = index[ordinal];
+            if (boosts === undefined) {
+                if (this._boostArrayUsed < arrayPool.length) {
+                    boosts = arrayPool[this._boostArrayUsed];
+                    boosts.length = 0;
+                } else {
+                    boosts = [];
+                    arrayPool.push(boosts);
+                }
+                this._boostArrayUsed++;
+                index[ordinal] = boosts;
+                filled.push(ordinal);
+            }
+            let record;
+            if (this._boostRecordUsed < recordPool.length) {
+                record = recordPool[this._boostRecordUsed];
+            } else {
+                record = { ratioBoost: 0, flatBoost: 0 };
+                recordPool.push(record);
+            }
+            this._boostRecordUsed++;
+            record.ratioBoost = buff.ratioBoost;
+            record.flatBoost = buff.flatBoost;
+            boosts.push(record);
+        }
+
+        this._buffBoostStale = false;
         return index;
     }
 
-    // MWIX adaptation (performance): an index lookup, not a scan.
-    //
-    // Upstream ran Object.values(this.combatBuffs).filter(...) here on every
-    // query — 359 394 queries per simulated hour of chimerical_den T0 / L600 /
-    // 5 geared players, 28 per event processed, each allocating two arrays.
-    // This method held 16.2% of self time, the single largest entry in the
-    // profile.
+    // The ordinal-taking forms. Everything inside this file calls these with a
+    // constant interned at module load, so the hot path never hashes a string.
+    _buffBoostsFor(ordinal) {
+        if (this._buffBoostStale) {
+            this._buildBuffBoostIndex();
+        }
+        return this._buffBoostIndex[ordinal] ?? EMPTY_BUFF_BOOSTS;
+    }
+
+    _buffBoostFor(ordinal) {
+        if (this._buffBoostStale) {
+            this._buildBuffBoostIndex();
+        }
+        let boost = this._buffBoostSums[ordinal];
+        if (this._buffBoostSumStamp[ordinal] === this._buffBoostEpoch) {
+            return boost;
+        }
+
+        let boosts = this._buffBoostIndex[ordinal];
+        let ratioBoost = 0;
+        let flatBoost = 0;
+        if (boosts !== undefined) {
+            // The `?? 0` is upstream's coercion, kept exactly: a null entry
+            // must contribute zero, not NaN.
+            for (let i = 0; i < boosts.length; i++) {
+                ratioBoost += boosts[i]?.ratioBoost ?? 0;
+                flatBoost += boosts[i]?.flatBoost ?? 0;
+            }
+        }
+        boost.ratioBoost = ratioBoost;
+        boost.flatBoost = flatBoost;
+        this._buffBoostSumStamp[ordinal] = this._buffBoostEpoch;
+        return boost;
+    }
+
+    // The string-taking public forms, kept for callers outside this file (the
+    // API layer and the tests). They intern at the boundary and then share the
+    // ordinal path above; an unknown hrid THROWS inside buffTypeOrdinal rather
+    // than indexing at `undefined` and silently vanishing.
     //
     // THE RETURNED ARRAY IS SHARED AND MUST BE TREATED AS READ-ONLY. Every
     // caller in the engine only reads .ratioBoost / .flatBoost off it; if you
     // need to mutate, copy first.
     getBuffBoosts(type) {
-        let index = this._buffBoostIndex ?? this._buildBuffBoostIndex();
-        return index.get(type) ?? EMPTY_BUFF_BOOSTS;
+        return this._buffBoostsFor(buffTypeOrdinal(type));
     }
 
     // As above, and the SUM is cached per type too — updateCombatDetails alone
-    // makes ~30 getBuffBoost calls, and it re-runs on every buff add/remove.
+    // makes ~35 boost queries, and it re-runs on every buff add/remove.
     // The returned object is shared: read-only, same contract as getBuffBoosts.
     getBuffBoost(type) {
-        if (this._buffBoostIndex === null) {
-            this._buildBuffBoostIndex();
-        }
-        let boost = this._buffBoostSums.get(type);
-        if (boost !== undefined) {
-            return boost;
-        }
-
-        let boosts = this.getBuffBoosts(type);
-        boost = {
-            ratioBoost: 0,
-            flatBoost: 0,
-        };
-
-        for (let i = 0; i < boosts.length; i++) {
-            boost.ratioBoost += boosts[i]?.ratioBoost ?? 0;
-            boost.flatBoost += boosts[i]?.flatBoost ?? 0;
-        }
-
-        this._buffBoostSums.set(type, boost);
-        return boost;
+        return this._buffBoostFor(buffTypeOrdinal(type));
     }
 
     reset(currentTime = 0) {

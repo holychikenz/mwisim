@@ -190,8 +190,12 @@ const buff = (unique, type, ratio, flat, duration = 10e9) => ({
   uniqueHrid: unique, typeHrid: type, ratioBoost: ratio, flatBoost: flat, duration,
 });
 
+// The last entry is a REAL buff type that nothing in these tests grants — the
+// index must answer "no boosts" for it. It used to be a made-up hrid; since the
+// boost index is keyed by a generated ordinal, an hrid outside that table now
+// throws by design (see the test below), which is the whole point.
 const TYPES = ['/buff_types/armor', '/buff_types/damage', '/buff_types/evasion',
-  '/buff_types/attack_speed', '/buff_types/nothing_grants_this'];
+  '/buff_types/attack_speed', '/buff_types/wisdom'];
 
 function assertIndexAgrees(unit, note) {
   for (const type of TYPES) {
@@ -236,10 +240,49 @@ test('the buff index tracks every write path to combatBuffs', () => {
 
 test('a buff type nothing grants yields an empty, non-writable result', () => {
   const unit = new CombatUnit();
-  const boosts = unit.getBuffBoosts('/buff_types/nothing_grants_this');
+  const boosts = unit.getBuffBoosts('/buff_types/wisdom');
   assert.deepStrictEqual(boosts, []);
   // Shared and frozen: a caller pushing onto it would corrupt every unit.
   assert.throws(() => boosts.push({ ratioBoost: 1, flatBoost: 1 }));
+});
+
+test('a buff type outside the ordinal table throws rather than vanishing', () => {
+  // The one real hazard of keying the index by ordinal: an hrid the generated
+  // table never saw would index the dense arrays at `undefined`, contribute
+  // nothing, and leave the simulation reporting a plausible but WRONG number
+  // with no error. It must be loud.
+  const unit = new CombatUnit();
+  assert.throws(() => unit.getBuffBoosts('/buff_types/nothing_grants_this'), /Unknown buff type/);
+  assert.throws(() => unit.getBuffBoost('/buff_types/nothing_grants_this'), /Unknown buff type/);
+  unit.addPermanentBuff({
+    uniqueHrid: '/u/bogus', typeHrid: '/buff_types/nothing_grants_this',
+    ratioBoost: 1, flatBoost: 1, duration: 0,
+  });
+  assert.throws(() => unit.clearBuffs(), /Unknown buff type/,
+    'a buff carrying an unknown type must fail the rebuild, not be dropped from it');
+});
+
+test('the boost index is reused between rebuilds without leaking stale entries', () => {
+  // The arrays and records handed out by the index are pooled and overwritten
+  // in place. That is only safe if a rebuild cannot leave a previous build's
+  // entry visible under a type that no longer has one.
+  const unit = new CombatUnit();
+  const src = {};
+  unit.addBuff(buff('/u/a', '/buff_types/armor', 0.1, 5), 0, src);
+  unit.addBuff(buff('/u/b', '/buff_types/evasion', 0.2, 6), 0, src);
+  assert.equal(unit.getBuffBoosts('/buff_types/armor').length, 1);
+
+  unit.removeBuff(buff('/u/a', '/buff_types/armor', 0.1, 5), src);
+  assert.deepStrictEqual(unit.getBuffBoosts('/buff_types/armor'), [],
+    'a type that lost its last buff still reports the old entry');
+  assert.deepStrictEqual(unit.getBuffBoost('/buff_types/armor'), { ratioBoost: 0, flatBoost: 0 },
+    'the memoised sum survived a rebuild that should have invalidated it');
+  // The surviving type is untouched by the pool reshuffle.
+  assert.deepStrictEqual(unit.getBuffBoost('/buff_types/evasion'), { ratioBoost: 0.2, flatBoost: 6 });
+
+  // And a re-add refills correctly from the same pool.
+  unit.addBuff(buff('/u/c', '/buff_types/armor', 0.5, 9), 0, src);
+  assert.deepStrictEqual(unit.getBuffBoost('/buff_types/armor'), { ratioBoost: 0.5, flatBoost: 9 });
 });
 
 // ---- the buff-apply path ----------------------------------------------------
