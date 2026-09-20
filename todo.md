@@ -45,6 +45,7 @@ smaller than that needs a paired measurement, not two recordings compared.
 | buff boost index keyed by ordinal | dungeons −7.6% to −10.8% overall |
 | integer `typeId` + closure-free queue scans | small, consistent on deep queues |
 | synchronous `processEvent` | `floor-solo` −6.5%, `mid-solo` −4.9%; a wash on heavy cases |
+| allocation-free trigger fixpoint and ability scan | `starter-solo` −5.3%, `floor-party` −4.2%; **nothing on the dungeons** |
 
 ## 3. What was dropped, and why that matters
 
@@ -105,25 +106,39 @@ duplicate frames:
 | result accounting | 3.4% | never looked at |
 | GC | 1.2% | — |
 
-### 5a. Trigger evaluation — the one large family never touched
+### 5a. Trigger evaluation — half attacked, and the half that paid was the small one
 
-`getDependencyValue` 6.1%, `shouldTrigger` (`consumable.js:53`) 4.0%,
-`isActiveSingleTarget` 2.3%, `checkTriggersForUnit` 2.7%.
+**Done, and the result is more instructive than the gain.** `checkTriggers()`
+and `addNextAttackEvent()` no longer allocate: the `filter().forEach()` pairs
+are gone, membership decided up front into a 32-bit mask so the snapshot
+semantics survive exactly. 18 of 22 candle medians improved.
 
-`checkTriggers()` (`combatSimulator.js:1350`) allocates **two arrays and four
-closures per fixpoint pass, per event**, via `filter().forEach()`. The same
-shape recurs at eight other hot sites (`:595`, `:639`, `:1603`, `:1676`,
-`:1685`, `:1766`, `:2010`, `:2021`).
+**But `dungeon-den-600` did not move, and nor did `party3-sorcerer`** — the
+case the kernel study specifically predicted. The win is confined to the cheap
+cases: `starter-solo` −5.3%, `floor-party` −4.2%, `mid-solo` −2.9%.
 
-- [ ] Indexed `for` loops with an inline aliveness test. `filter` preserves
-      order, so a `for` with an `if` is the same sequence — bit-identical.
-- [ ] **Trap:** `getTarget(enemies)` must stay INSIDE the per-unit loop. A
-      trigger firing mid-pass can kill the current target; hoisting it changes
-      behaviour, not just speed.
-- [ ] Candle: `party3-sorcerer`, then `floor-party`, `dungeon-den-600`
-- [ ] Note that the earlier trigger stage failed on magnitude, not on
-      correctness. This one attacks allocation rather than string work, which
-      is a different mechanism — but budget for it also being noise.
+The lesson for whoever picks this up: **the allocation was a small part of that
+16.6%.** The cost is the evaluation itself —
+
+| | share |
+|---|---|
+| `getDependencyValue` (`trigger.js:85`) | 6.1% |
+| `shouldTrigger` (`consumable.js:53`) | 4.0% |
+| `checkTriggersForUnit` | 2.7% |
+| `isActiveSingleTarget` (`trigger.js:25`) | 2.3% |
+
+- [ ] Attack the **evaluation**, not the iteration. The iteration is done.
+- [ ] Note that an earlier attempt on `getDependencyValue`'s string work was
+      dropped as noise. Two attempts on this family have now produced a win
+      only on cases nobody runs for real work. A third should start by
+      establishing what `shouldTrigger` actually spends its time on, rather
+      than by assuming — the profile has been a poor guide to this family
+      twice.
+- [ ] The eight remaining `filter()` sites (`:595`, `:639`, `:1603`, `:1676`,
+      `:1685`, `:1766`, `:2010`, `:2021`) were deliberately LEFT. They filter
+      target lists where mid-loop death is real, so their snapshots are
+      load-bearing in a way `checkTriggers`'s was not — and on this evidence
+      the gain would not repay the risk.
 
 ### 5b. The heap's N removals — 8.2% and completely unmoved
 
