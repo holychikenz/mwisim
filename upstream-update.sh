@@ -538,6 +538,16 @@ upstream specifically changed the same surface area.
       contract, no engine path holds across a mutation (a buff change is what
       triggers a recompute, not the other way round), and both properties are
       pinned in \`api/tests/statCaching.test.mjs\`.
+      ONE THING MEASURED THE HARD WAY: the per-ordinal sum objects are created
+      ON FIRST USE, not all \`BUFF_TYPE_COUNT\` of them when the state is
+      allocated. Every unit allocates this state, including the several hundred
+      monsters a simulated hour constructs, and minting 67 objects per unit up
+      front cost more than the dense index saved on the cheapest candle case —
+      \`starter-solo\` went 2.2 -> 2.8 ms/sim-h, a 23% REGRESSION, while every
+      other case improved. It reproduced only in a full-candle run, not with
+      that case measured alone, which is why the whole candle is worth running
+      before believing a stage. Lazy creation put it back to 2.2 with the
+      dungeon wins intact. Do not "simplify" it back to an eager loop.
     - \`events/eventTypeIds.js\` (NEW), \`events/combatEvent.js\`,
       \`events/eventQueue.js\`, \`combatSimulator.js\`: every combat event
       now carries an integer \`typeId\` beside its string \`type\`, and the

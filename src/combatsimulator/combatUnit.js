@@ -832,10 +832,12 @@ class CombatUnit {
     _allocBuffBoostState() {
         this._buffBoostIndex = new Array(BUFF_TYPE_COUNT);
         this._buffBoostFilled = [];
+        // Sum objects are created on first use, NOT all BUFF_TYPE_COUNT of
+        // them up front. Every unit allocates this state — including the
+        // several hundred monsters a simulated hour constructs — and eagerly
+        // minting 67 objects per unit cost more than it saved on the cheapest
+        // candle case (starter-solo 2.2 -> 2.8 ms/sim-h). Measured, not guessed.
         this._buffBoostSums = new Array(BUFF_TYPE_COUNT);
-        for (let i = 0; i < BUFF_TYPE_COUNT; i++) {
-            this._buffBoostSums[i] = { ratioBoost: 0, flatBoost: 0 };
-        }
         // Stamp 0 means "never computed"; the epoch starts at 1 (see below).
         this._buffBoostSumStamp = new Int32Array(BUFF_TYPE_COUNT);
         this._buffBoostEpoch = 0;
@@ -915,7 +917,10 @@ class CombatUnit {
             this._buildBuffBoostIndex();
         }
         let boost = this._buffBoostSums[ordinal];
-        if (this._buffBoostSumStamp[ordinal] === this._buffBoostEpoch) {
+        if (boost === undefined) {
+            boost = { ratioBoost: 0, flatBoost: 0 };
+            this._buffBoostSums[ordinal] = boost;
+        } else if (this._buffBoostSumStamp[ordinal] === this._buffBoostEpoch) {
             return boost;
         }
 
