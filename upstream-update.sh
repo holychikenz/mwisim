@@ -981,6 +981,38 @@ upstream specifically changed the same surface area.
       literal out of the source — not out of a constructed unit, where the
       very writes under test have already hidden the defect — and fails if any
       stat either role list writes is left undeclared.
+    - \`player.js\` \`updateCombatDetails()\`: the 70-name equipment-total copy
+      is now \`copyEquipmentTotals()\` from \`generated/statSchema.js\` —
+      straight-line field assignments, same names, same order, same values.
+      \`_computeEquipmentStatTotals()\` builds its record with
+      \`makeEquipmentTotals()\` (a literal) rather than \`{}\` grown by keyed
+      stores, so the source object has one declared hidden class instead of
+      reaching dictionary mode; measured, a dictionary-mode source costs the
+      copy 983 ns where a fast-mode one costs 22 ns.
+    - \`monster.js\` \`updateCombatDetails()\`: the 63-name zero-fill is now
+      \`applyMonsterZeroMask()\` against a presence mask cached per game-data
+      block in the SAME identity-keyed \`WeakMap\` as the flat key/value
+      arrays. Compiling the loop ALONE was tried first and is only a third of
+      the win: monster stat blocks carry only the stats that monster has, so
+      the bestiary presents ~95 distinct shapes and a read of
+      \`gameStats.armor\` is megamorphic however it is written. Measured over
+      all 95 real blocks: keyed loop 3844 ns, compiled named loads 2306 ns,
+      cached mask 43.6 ns. The megamorphic reads now happen ONCE per distinct
+      block. Identity-keyed for the reason the flat block already is:
+      \`setOverrides()\` installs fresh nested objects, so an overridden block
+      is a cache MISS, where an hrid-keyed cache would serve a previous game
+      version's presence set with no error.
+      \`MONSTER_ZEROED_COMBAT_STATS\` and \`EQUIPMENT_COMBAT_STATS\` remain
+      exported and are now the GENERATOR's input as well as the tests'
+      reference; do not delete them.
+      Candle at \`--reps=5\`, four counterbalanced rounds (ABBA), vs the
+      immediately preceding commit: ALL 22 CASES IMPROVED AND ALL 22 WON EVERY
+      ROUND. Geometric mean -16.8%. \`ranged-solo\` -22.1%, \`selfbuff-solo\`
+      -20.9%, \`buffstack-solo\` -19.5%, \`mid-solo\` -19.2%, \`melee-swarm\`
+      -19.1%, \`starter-solo\` -19.1%, \`dungeon-circus\` -14.8%,
+      \`dungeon-fort-t2\` -14.2%, \`dungeon-den-600\` -14.2%,
+      \`dungeon-pirate\` -13.2%, \`dungeon-den-200\` -13.2%, \`floor-solo\`
+      -12.5%. \`sim:check\` 3/3 bit-identical.
 
 NOTE: the labyrinth "maze" player-buff mechanism (\`options.maze\`,
 \`MAZE_DEFAULTS\`, \`resolveMazeBonuses\`, \`mazeBonuses\`,

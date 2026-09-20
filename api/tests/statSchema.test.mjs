@@ -26,6 +26,9 @@ import {
     copyEquipmentTotals,
     makeEquipmentTotals,
     zeroMissingMonsterStats,
+    makeMonsterZeroMask,
+    buildMonsterZeroMask,
+    applyMonsterZeroMask,
 } from "../../src/combatsimulator/generated/statSchema.js";
 import { EQUIPMENT_COMBAT_STATS } from "../../src/combatsimulator/player.js";
 import { MONSTER_ZEROED_COMBAT_STATS } from "../../src/combatsimulator/monster.js";
@@ -209,4 +212,64 @@ test("the combatStats literal is the superset it is assumed to be", () => {
     for (const stat of ["abilityHaste", "tenacity", "hpRegenPer10", "mpRegenPer10"]) {
         assert.ok(declared.has(stat), stat + " is not declared in the combatStats literal");
     }
+});
+
+// ---- 5. the presence mask the engine actually uses ---------------------------
+
+test("the cached mask agrees with the direct form on EVERY real monster block", () => {
+    const monsters = readJson("combatMonsterDetailMap.json");
+    let checked = 0;
+    for (const hrid of Object.keys(monsters)) {
+        const gameStats = monsters[hrid].combatDetails?.combatStats;
+        if (!gameStats) continue;
+
+        const direct = {};
+        zeroMissingMonsterStats(direct, gameStats);
+        const masked = {};
+        applyMonsterZeroMask(masked, buildMonsterZeroMask(gameStats));
+
+        assert.deepStrictEqual(Object.keys(masked), Object.keys(direct), hrid);
+        assert.deepStrictEqual(masked, direct, hrid);
+        checked++;
+    }
+    assert.ok(checked > 90, "checked only " + checked + " monster blocks");
+});
+
+test("makeMonsterZeroMask declares exactly the zero-fill names, all false", () => {
+    const mask = makeMonsterZeroMask();
+    assert.deepStrictEqual(Object.keys(mask), [...MONSTER_ZEROED_COMBAT_STATS]);
+    assert.deepStrictEqual([...new Set(Object.values(mask))], [false]);
+});
+
+test("a mask distinguishes present, absent and explicitly null", () => {
+    const mask = buildMonsterZeroMask({ armor: 5, tenacity: 0, lifeSteal: null });
+    assert.strictEqual(mask.armor, false, "a present stat must not be zeroed");
+    assert.strictEqual(mask.tenacity, false, "a declared 0 is present, not absent");
+    assert.strictEqual(mask.lifeSteal, true, "an explicit null counts as absent");
+    assert.strictEqual(mask.stabAccuracy, true, "an omitted stat counts as absent");
+});
+
+test("two blocks with different presence get different masks", () => {
+    const a = buildMonsterZeroMask({ armor: 1 });
+    const b = buildMonsterZeroMask({ lifeSteal: 1 });
+    assert.notStrictEqual(a.armor, b.armor);
+    assert.notStrictEqual(a.lifeSteal, b.lifeSteal);
+});
+
+// The mask is cached in monster.js against the game-data object's IDENTITY, in
+// the same WeakMap as the flat key/value arrays. This asserts the property that
+// makes that safe: dataProvider.setOverrides() installs fresh nested objects, so
+// an overridden block is a cache MISS rather than a stale hit. An hrid-keyed
+// cache would serve a previous game version's presence set with no error at all.
+test("monster.js keys the mask cache on the stat-block object, not the hrid", () => {
+    const src = fs.readFileSync(path.join(ROOT, "src/combatsimulator/monster.js"), "utf8");
+    assert.ok(src.includes("new WeakMap()"), "the stat-block cache must be a WeakMap");
+    assert.ok(
+        /_statBlockCache\.set\(combatStats,/.test(src),
+        "the cache must be keyed on the combatStats object, not on a monster hrid"
+    );
+    assert.ok(
+        /zeroMask: buildMonsterZeroMask\(combatStats\)/.test(src),
+        "the mask must be built inside the identity-keyed cache entry"
+    );
 });

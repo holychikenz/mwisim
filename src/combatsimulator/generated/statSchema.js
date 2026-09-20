@@ -179,9 +179,14 @@ export function makeEquipmentTotals() {
 
 /**
  * Force to 0 every stat the monster's game-data block does not declare.
- * Replaces the 63-iteration keyed loop in Monster.updateCombatDetails. The
- * `== null` test is upstream's, kept verbatim: it treats an explicit null as
- * absent, which a `!== undefined` test would not.
+ * The direct form of the 63-iteration keyed loop in
+ * Monster.updateCombatDetails. The `== null` test is upstream's, kept
+ * verbatim: it treats an explicit null as absent, which `!== undefined`
+ * would not.
+ *
+ * The engine does NOT call this on the hot path — see the mask trio below,
+ * which is 53x faster again. It is kept because it is the readable
+ * statement of the contract, and the tests check the mask against it.
  */
 export function zeroMissingMonsterStats(combatStats, gameStats) {
     if (gameStats.stabAccuracy == null) combatStats.stabAccuracy = 0;
@@ -247,4 +252,230 @@ export function zeroMissingMonsterStats(combatStats, gameStats) {
     if (gameStats.autoAttackDamage == null) combatStats.autoAttackDamage = 0;
     if (gameStats.abilityDamage == null) combatStats.abilityDamage = 0;
     if (gameStats.retaliation == null) combatStats.retaliation = 0;
+}
+
+/**
+ * A per-block presence mask: true where the game-data block leaves the stat
+ * absent and the recompute must therefore write 0.
+ *
+ * WHY THIS EXISTS, rather than reading the game data directly. Monster stat
+ * blocks carry only the stats that monster actually has, so the bestiary
+ * presents about 95 distinct object shapes. A read of `gameStats.armor` is
+ * therefore megamorphic however it is written, and compiling the loop alone
+ * recovers only a third of its cost. Measured over all 95 real blocks:
+ * keyed loop 3844 ns, compiled named loads 2306 ns, mask 43.6 ns. The
+ * megamorphic reads happen ONCE per distinct block, at build-of-mask time;
+ * the recompute then reads a mask of one fixed shape.
+ *
+ * The mask MUST be cached against the game-data object's IDENTITY, never
+ * against the monster hrid: dataProvider.setOverrides() can replace the whole
+ * monster map at runtime and installs fresh nested objects, and an
+ * hrid-keyed cache would then serve a previous game version's presence set
+ * with no error at all.
+ */
+export function makeMonsterZeroMask() {
+    return {
+        stabAccuracy: false,
+        slashAccuracy: false,
+        smashAccuracy: false,
+        rangedAccuracy: false,
+        magicAccuracy: false,
+        stabDamage: false,
+        slashDamage: false,
+        smashDamage: false,
+        rangedDamage: false,
+        magicDamage: false,
+        defensiveDamage: false,
+        taskDamage: false,
+        physicalAmplify: false,
+        waterAmplify: false,
+        natureAmplify: false,
+        fireAmplify: false,
+        healingAmplify: false,
+        stabEvasion: false,
+        slashEvasion: false,
+        smashEvasion: false,
+        rangedEvasion: false,
+        magicEvasion: false,
+        armor: false,
+        waterResistance: false,
+        natureResistance: false,
+        fireResistance: false,
+        maxHitpoints: false,
+        maxManapoints: false,
+        lifeSteal: false,
+        hpRegenPer10: false,
+        mpRegenPer10: false,
+        physicalThorns: false,
+        elementalThorns: false,
+        combatDropRate: false,
+        combatRareFind: false,
+        combatDropQuantity: false,
+        combatExperience: false,
+        criticalRate: false,
+        criticalDamage: false,
+        armorPenetration: false,
+        waterPenetration: false,
+        naturePenetration: false,
+        firePenetration: false,
+        abilityHaste: false,
+        tenacity: false,
+        manaLeech: false,
+        castSpeed: false,
+        threat: false,
+        parry: false,
+        mayhem: false,
+        pierce: false,
+        curse: false,
+        fury: false,
+        weaken: false,
+        ripple: false,
+        bloom: false,
+        blaze: false,
+        attackSpeed: false,
+        foodHaste: false,
+        drinkConcentration: false,
+        autoAttackDamage: false,
+        abilityDamage: false,
+        retaliation: false,
+    };
+}
+
+/** Build the mask for one game-data stat block. Once per block, not per recompute. */
+export function buildMonsterZeroMask(gameStats) {
+    const mask = makeMonsterZeroMask();
+    mask.stabAccuracy = gameStats.stabAccuracy == null;
+    mask.slashAccuracy = gameStats.slashAccuracy == null;
+    mask.smashAccuracy = gameStats.smashAccuracy == null;
+    mask.rangedAccuracy = gameStats.rangedAccuracy == null;
+    mask.magicAccuracy = gameStats.magicAccuracy == null;
+    mask.stabDamage = gameStats.stabDamage == null;
+    mask.slashDamage = gameStats.slashDamage == null;
+    mask.smashDamage = gameStats.smashDamage == null;
+    mask.rangedDamage = gameStats.rangedDamage == null;
+    mask.magicDamage = gameStats.magicDamage == null;
+    mask.defensiveDamage = gameStats.defensiveDamage == null;
+    mask.taskDamage = gameStats.taskDamage == null;
+    mask.physicalAmplify = gameStats.physicalAmplify == null;
+    mask.waterAmplify = gameStats.waterAmplify == null;
+    mask.natureAmplify = gameStats.natureAmplify == null;
+    mask.fireAmplify = gameStats.fireAmplify == null;
+    mask.healingAmplify = gameStats.healingAmplify == null;
+    mask.stabEvasion = gameStats.stabEvasion == null;
+    mask.slashEvasion = gameStats.slashEvasion == null;
+    mask.smashEvasion = gameStats.smashEvasion == null;
+    mask.rangedEvasion = gameStats.rangedEvasion == null;
+    mask.magicEvasion = gameStats.magicEvasion == null;
+    mask.armor = gameStats.armor == null;
+    mask.waterResistance = gameStats.waterResistance == null;
+    mask.natureResistance = gameStats.natureResistance == null;
+    mask.fireResistance = gameStats.fireResistance == null;
+    mask.maxHitpoints = gameStats.maxHitpoints == null;
+    mask.maxManapoints = gameStats.maxManapoints == null;
+    mask.lifeSteal = gameStats.lifeSteal == null;
+    mask.hpRegenPer10 = gameStats.hpRegenPer10 == null;
+    mask.mpRegenPer10 = gameStats.mpRegenPer10 == null;
+    mask.physicalThorns = gameStats.physicalThorns == null;
+    mask.elementalThorns = gameStats.elementalThorns == null;
+    mask.combatDropRate = gameStats.combatDropRate == null;
+    mask.combatRareFind = gameStats.combatRareFind == null;
+    mask.combatDropQuantity = gameStats.combatDropQuantity == null;
+    mask.combatExperience = gameStats.combatExperience == null;
+    mask.criticalRate = gameStats.criticalRate == null;
+    mask.criticalDamage = gameStats.criticalDamage == null;
+    mask.armorPenetration = gameStats.armorPenetration == null;
+    mask.waterPenetration = gameStats.waterPenetration == null;
+    mask.naturePenetration = gameStats.naturePenetration == null;
+    mask.firePenetration = gameStats.firePenetration == null;
+    mask.abilityHaste = gameStats.abilityHaste == null;
+    mask.tenacity = gameStats.tenacity == null;
+    mask.manaLeech = gameStats.manaLeech == null;
+    mask.castSpeed = gameStats.castSpeed == null;
+    mask.threat = gameStats.threat == null;
+    mask.parry = gameStats.parry == null;
+    mask.mayhem = gameStats.mayhem == null;
+    mask.pierce = gameStats.pierce == null;
+    mask.curse = gameStats.curse == null;
+    mask.fury = gameStats.fury == null;
+    mask.weaken = gameStats.weaken == null;
+    mask.ripple = gameStats.ripple == null;
+    mask.bloom = gameStats.bloom == null;
+    mask.blaze = gameStats.blaze == null;
+    mask.attackSpeed = gameStats.attackSpeed == null;
+    mask.foodHaste = gameStats.foodHaste == null;
+    mask.drinkConcentration = gameStats.drinkConcentration == null;
+    mask.autoAttackDamage = gameStats.autoAttackDamage == null;
+    mask.abilityDamage = gameStats.abilityDamage == null;
+    mask.retaliation = gameStats.retaliation == null;
+    return mask;
+}
+
+/**
+ * Apply a prebuilt mask. Same names, same order, same written value as the
+ * keyed loop this replaces, so no number can move.
+ */
+export function applyMonsterZeroMask(combatStats, mask) {
+    if (mask.stabAccuracy) combatStats.stabAccuracy = 0;
+    if (mask.slashAccuracy) combatStats.slashAccuracy = 0;
+    if (mask.smashAccuracy) combatStats.smashAccuracy = 0;
+    if (mask.rangedAccuracy) combatStats.rangedAccuracy = 0;
+    if (mask.magicAccuracy) combatStats.magicAccuracy = 0;
+    if (mask.stabDamage) combatStats.stabDamage = 0;
+    if (mask.slashDamage) combatStats.slashDamage = 0;
+    if (mask.smashDamage) combatStats.smashDamage = 0;
+    if (mask.rangedDamage) combatStats.rangedDamage = 0;
+    if (mask.magicDamage) combatStats.magicDamage = 0;
+    if (mask.defensiveDamage) combatStats.defensiveDamage = 0;
+    if (mask.taskDamage) combatStats.taskDamage = 0;
+    if (mask.physicalAmplify) combatStats.physicalAmplify = 0;
+    if (mask.waterAmplify) combatStats.waterAmplify = 0;
+    if (mask.natureAmplify) combatStats.natureAmplify = 0;
+    if (mask.fireAmplify) combatStats.fireAmplify = 0;
+    if (mask.healingAmplify) combatStats.healingAmplify = 0;
+    if (mask.stabEvasion) combatStats.stabEvasion = 0;
+    if (mask.slashEvasion) combatStats.slashEvasion = 0;
+    if (mask.smashEvasion) combatStats.smashEvasion = 0;
+    if (mask.rangedEvasion) combatStats.rangedEvasion = 0;
+    if (mask.magicEvasion) combatStats.magicEvasion = 0;
+    if (mask.armor) combatStats.armor = 0;
+    if (mask.waterResistance) combatStats.waterResistance = 0;
+    if (mask.natureResistance) combatStats.natureResistance = 0;
+    if (mask.fireResistance) combatStats.fireResistance = 0;
+    if (mask.maxHitpoints) combatStats.maxHitpoints = 0;
+    if (mask.maxManapoints) combatStats.maxManapoints = 0;
+    if (mask.lifeSteal) combatStats.lifeSteal = 0;
+    if (mask.hpRegenPer10) combatStats.hpRegenPer10 = 0;
+    if (mask.mpRegenPer10) combatStats.mpRegenPer10 = 0;
+    if (mask.physicalThorns) combatStats.physicalThorns = 0;
+    if (mask.elementalThorns) combatStats.elementalThorns = 0;
+    if (mask.combatDropRate) combatStats.combatDropRate = 0;
+    if (mask.combatRareFind) combatStats.combatRareFind = 0;
+    if (mask.combatDropQuantity) combatStats.combatDropQuantity = 0;
+    if (mask.combatExperience) combatStats.combatExperience = 0;
+    if (mask.criticalRate) combatStats.criticalRate = 0;
+    if (mask.criticalDamage) combatStats.criticalDamage = 0;
+    if (mask.armorPenetration) combatStats.armorPenetration = 0;
+    if (mask.waterPenetration) combatStats.waterPenetration = 0;
+    if (mask.naturePenetration) combatStats.naturePenetration = 0;
+    if (mask.firePenetration) combatStats.firePenetration = 0;
+    if (mask.abilityHaste) combatStats.abilityHaste = 0;
+    if (mask.tenacity) combatStats.tenacity = 0;
+    if (mask.manaLeech) combatStats.manaLeech = 0;
+    if (mask.castSpeed) combatStats.castSpeed = 0;
+    if (mask.threat) combatStats.threat = 0;
+    if (mask.parry) combatStats.parry = 0;
+    if (mask.mayhem) combatStats.mayhem = 0;
+    if (mask.pierce) combatStats.pierce = 0;
+    if (mask.curse) combatStats.curse = 0;
+    if (mask.fury) combatStats.fury = 0;
+    if (mask.weaken) combatStats.weaken = 0;
+    if (mask.ripple) combatStats.ripple = 0;
+    if (mask.bloom) combatStats.bloom = 0;
+    if (mask.blaze) combatStats.blaze = 0;
+    if (mask.attackSpeed) combatStats.attackSpeed = 0;
+    if (mask.foodHaste) combatStats.foodHaste = 0;
+    if (mask.drinkConcentration) combatStats.drinkConcentration = 0;
+    if (mask.autoAttackDamage) combatStats.autoAttackDamage = 0;
+    if (mask.abilityDamage) combatStats.abilityDamage = 0;
+    if (mask.retaliation) combatStats.retaliation = 0;
 }

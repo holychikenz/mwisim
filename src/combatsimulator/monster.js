@@ -2,6 +2,7 @@ import Ability from "./ability";
 import CombatUnit from "./combatUnit";
 import { combatMonsterDetailMap } from "./dataProvider";
 import Drops from "./drops";
+import { applyMonsterZeroMask, buildMonsterZeroMask } from "./generated/statSchema";
 
 // =============================================================================
 // MWIX adaptation (performance): the monster zero-fill stat list, hoisted out
@@ -127,7 +128,7 @@ function _flatStatBlock(combatStats) {
         for (let i = 0; i < keys.length; i++) {
             values[i] = combatStats[keys[i]];
         }
-        flat = { keys, values };
+        flat = { keys, values, zeroMask: buildMonsterZeroMask(combatStats) };
         _statBlockCache.set(combatStats, flat);
     }
     return flat;
@@ -227,14 +228,7 @@ class Monster extends CombatUnit {
         this.combatDetails.combatStats.natureResistance *= labyrinthScaleFactor;
         this.combatDetails.combatStats.fireResistance *= labyrinthScaleFactor;
 
-        // Zero-fill the stats this monster's game-data entry omits. Hoisted
-        // list, plain loop — see MONSTER_ZEROED_COMBAT_STATS above.
-        for (let i = 0; i < MONSTER_ZEROED_COMBAT_STATS.length; i++) {
-            let stat = MONSTER_ZEROED_COMBAT_STATS[i];
-            if (gameMonster.combatDetails.combatStats[stat] == null) {
-                this.combatDetails.combatStats[stat] = 0;
-            }
-        }
+        applyMonsterZeroMask(this.combatDetails.combatStats, flat.zeroMask);
 
         if (this.combatDetails.combatStats.attackInterval == 0) {
             this.combatDetails.combatStats.attackInterval = gameMonster.combatDetails.attackInterval;

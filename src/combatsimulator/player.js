@@ -4,6 +4,7 @@ import Consumable from "./consumable";
 import Equipment from "./equipment";
 import HouseRoom from "./houseRoom";
 import Achievement from "./achievement";
+import { copyEquipmentTotals, makeEquipmentTotals } from "./generated/statSchema";
 
 // =============================================================================
 // MWIX adaptation (performance): the equipment stat list, hoisted out of
@@ -198,11 +199,7 @@ class Player extends CombatUnit {
         if (totals === undefined || this._equipmentChanged()) {
             totals = this._equipmentStatTotals = this._computeEquipmentStatTotals();
         }
-        let combatStats = this.combatDetails.combatStats;
-        for (let i = 0; i < EQUIPMENT_COMBAT_STATS.length; i++) {
-            let stat = EQUIPMENT_COMBAT_STATS[i];
-            combatStats[stat] = totals[stat];
-        }
+        copyEquipmentTotals(this.combatDetails.combatStats, totals);
 
         if (this.equipment["/equipment_types/pouch"]) {
             this.combatDetails.combatStats.foodSlots =
@@ -223,7 +220,7 @@ class Player extends CombatUnit {
     _computeEquipmentStatTotals() {
         let worn = Object.values(this.equipment).filter((equipment) => equipment != null);
 
-        let totals = {};
+        let totals = makeEquipmentTotals();
         for (let i = 0; i < EQUIPMENT_COMBAT_STATS.length; i++) {
             let stat = EQUIPMENT_COMBAT_STATS[i];
             let sum = 0;
