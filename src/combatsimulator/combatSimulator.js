@@ -1175,6 +1175,8 @@ class CombatSimulator extends EventTarget {
             }*/
             this.eventQueue.addEvent(autoAttackEvent);
         } else {
+            // Misnamed: means "parked with an empty queue". See the note
+            // above processRegenTickEvent.
             source.isOutOfMana = true;
         }
     }
@@ -1201,7 +1203,7 @@ class CombatSimulator extends EventTarget {
             this.simResult.addManapointsGained(event.source, event.consumable.hrid, manapointsAdded);
             // console.log("Added manapoints:", manapointsAdded);
 
-            // when oom check ability trigger
+            // See the isOutOfMana note above processRegenTickEvent.
             if (event.source.isOutOfMana) {
                 let awaitCooldownEvent = new AwaitCooldownEvent(
                     this.simulationTime,
@@ -1262,6 +1264,33 @@ class CombatSimulator extends EventTarget {
         this.checkEncounterEnd();
     }
 
+    // =========================================================================
+    // MWIX note: `isOutOfMana` does NOT mean out of mana.
+    //
+    // Its ONLY writer (in addNextAttackEvent) sets it when a BLINDED unit
+    // failed to queue an ability and therefore scheduled nothing at all — it
+    // means "parked with an empty queue". The real out-of-mana accounting is
+    // canUseAbility -> simResult.addRanOutOfManaCount, which is unrelated.
+    //
+    // The three awaitCooldownEvent sites guarded by it exist to wake such a
+    // unit when mana arrives, because Ability.shouldTrigger gates on stun and
+    // silence but NOT on blind — so a blinded unit can still cast. They build
+    // the event at this.simulationTime, i.e. with no delay at all: despite the
+    // name it awaits nothing, it is a deferred call of addNextAttackEvent.
+    //
+    // Measured over five simulated hours each of chimerical_den T0 L600 ×5,
+    // buffstack-solo and floor-solo: that event is created ZERO times, because
+    // no blind lands in those zones. It is not dead code — a zone with a
+    // blindChance ability reaches it — but it is not a hot path either, and it
+    // is left exactly as it is on purpose: removing it would change behaviour
+    // in blind zones, and no fixture covers one.
+    //
+    // This note lives BETWEEN methods rather than inside them deliberately.
+    // V8's inlining budget is measured in source characters, comments
+    // included; three copies of it inside these bodies cost `starter-solo`
+    // 3.7% in a counterbalanced measurement, and hoisting it out here took
+    // that case back to -1.3%.
+    // =========================================================================
     processRegenTickEvent(event) {
         let units = [...this.players];
 
@@ -1291,7 +1320,7 @@ class CombatSimulator extends EventTarget {
             this.simResult.addManapointsGained(unit, "regen", manapointsAdded);
             // console.log("Added manapoints:", manapointsAdded);
 
-            // when oom check ability trigger
+            // See the isOutOfMana note above processRegenTickEvent.
             if (unit.isOutOfMana) {
                 let awaitCooldownEvent = new AwaitCooldownEvent(
                     this.simulationTime,
@@ -1550,7 +1579,7 @@ class CombatSimulator extends EventTarget {
                 this.simResult.addManapointsGained(source, consumable.hrid, manapointsAdded);
                 // console.log("Added manapoints:", manapointsAdded);
 
-                // when oom check ability trigger
+                // See the isOutOfMana note above processRegenTickEvent.
                 if (source.isOutOfMana) {
                     let awaitCooldownEvent = new AwaitCooldownEvent(
                         this.simulationTime,

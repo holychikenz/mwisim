@@ -871,6 +871,56 @@ upstream specifically changed the same surface area.
     which means auditing every \`+=\` in a 270-line method, and getting it
     wrong is a wrong combat number with no error.
 
+- **The \`isOutOfMana\` note, and two negative results (no code behaviour
+  changed)** — \`combatSimulator.js\` only. The flag is MISNAMED and three
+  comments were actively wrong about it, so the note above
+  \`processRegenTickEvent\` now records what it means: its only writer sets it
+  when a BLINDED unit failed to queue an ability and therefore scheduled
+  nothing, i.e. "parked with an empty queue". Real out-of-mana accounting is
+  \`canUseAbility\` -> \`addRanOutOfManaCount\`, unrelated. The three
+  \`awaitCooldownEvent\` sites it guards build the event at
+  \`this.simulationTime\` — no delay at all, so despite the name it awaits
+  nothing and is a deferred \`addNextAttackEvent\`. Instrumented over five
+  simulated hours each of \`dungeon-den-600\`, \`buffstack-solo\` and
+  \`floor-solo\`: created ZERO times, because no blind lands in those zones.
+  DELIBERATELY NOT DELETED — a zone with a \`blindChance\` ability does reach
+  it, and removing it would change behaviour there with no fixture to catch it.
+    A REAL AND SLIGHTLY ABSURD FINDING, which is why the note sits BETWEEN
+    methods and not inside them: V8's inlining budget is measured in SOURCE
+    CHARACTERS, comments included. Three copies of that note inside
+    \`processConsumableTickEvent\`, \`processRegenTickEvent\` and
+    \`tryUseConsumable\`, plus four comment lines inside \`addNextAttackEvent\`,
+    cost \`starter-solo\` +3.7% over six counterbalanced rounds at
+    \`--reps=9\` — a regression that survived re-measurement at the same sign
+    and magnitude as the full-candle run, on a case that executes none of the
+    changed code. Hoisting the identical text out of the function bodies took
+    it to -1.3%. If you are about to add a long comment inside a hot method,
+    put it above the method instead.
+    TRIED AND DISCARDED, on the noise rule: fusing the six buff-refresh
+    \`getMatchingTypeAndSource\` + \`clearMatchingTypeAndSource\` pairs (curse,
+    fury, weaken, twice each) into one \`takeMatchingTypeAndSource\` walk that
+    removes every match and returns the first. Correct, strictly less work, and
+    \`sim:check\` 3/3 — the pair was 25.0% of every heap entry the queue
+    touched on \`dungeon-den-600\`, and the fused form ran 15 485 times per
+    simulated hour there. But the effect is at this machine's noise floor and
+    TWO measurements contradicted each other: a four-round counterbalanced full
+    candle at \`--reps=5\` gave 18 of 22 improved with \`dungeon-fort-t2\`
+    -1.0%, while a six-round counterbalanced run at \`--reps=9\` over only the
+    five cases that execute it gave \`dungeon-fort-t2\` +2.8% losing ALL SIX
+    rounds and \`dungeon-circus\` +2.4%. Reverted rather than tuned, per the
+    rule. Anyone re-proposing it needs a measurement that clears noise; the
+    implementation is straightforward and the parity argument is sound (both
+    scans walk \`heapArray\` from 0, so the first match is the same object, and
+    collect-then-remove keeps the heap permutation).
+    ALSO INVESTIGATED AND FOUND NOT TO BE WASTE, so nobody "fixes" it: the
+    \`enrageTick\` event is cleared and re-added once per encounter (530 times
+    an hour) and NEVER dispatched, and \`curseExpiration\` is created 1 798
+    times an hour and dispatched none. Both are correct. \`ENRAGE_TICK_INTERVAL\`
+    is 60 s while a \`dungeon-den-600\` encounter lasts under 7 s, and curse is
+    refreshed on every hit inside its 15 s window. "Created and never
+    dispatched" is what a refresh-on-hit debuff and a long-interval tick look
+    like in a fight that ends first — not a bug.
+
 NOTE: the labyrinth "maze" player-buff mechanism (\`options.maze\`,
 \`MAZE_DEFAULTS\`, \`resolveMazeBonuses\`, \`mazeBonuses\`,
 \`Player.applyMazeBonuses\`) was REMOVED deliberately — it double-counted the
