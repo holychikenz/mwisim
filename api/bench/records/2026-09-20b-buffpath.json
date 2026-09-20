@@ -1,0 +1,760 @@
+{
+  "recordedAt": "2026-09-20T10:06:28.668Z",
+  "node": "v26.8.2",
+  "platform": "darwin/arm64",
+  "reps": 7,
+  "engines": [
+    "csim",
+    "metz"
+  ],
+  "results": {
+    "floor-solo": {
+      "csim": {
+        "msPerSimHour": 1.0534218749999997,
+        "encPerHour": 138.7,
+        "points": [
+          {
+            "ms": 3.925208000000012,
+            "encounters": 273,
+            "hours": 2
+          },
+          {
+            "ms": 12.35258300000001,
+            "encounters": 1387,
+            "hours": 10
+          }
+        ]
+      },
+      "metz": {
+        "msPerSimHour": 0.6624271249999936,
+        "encPerHour": 139.9,
+        "points": [
+          {
+            "ms": 1.8722920000000158,
+            "encounters": 280,
+            "hours": 2
+          },
+          {
+            "ms": 7.171708999999964,
+            "encounters": 1399,
+            "hours": 10
+          }
+        ]
+      }
+    },
+    "floor-party": {
+      "csim": {
+        "msPerSimHour": 5.096432374999999,
+        "encPerHour": 197.2,
+        "points": [
+          {
+            "ms": 11.020958000000007,
+            "encounters": 400,
+            "hours": 2
+          },
+          {
+            "ms": 51.792417,
+            "encounters": 1972,
+            "hours": 10
+          }
+        ]
+      },
+      "metz": {
+        "msPerSimHour": 3.1534582499999857,
+        "encPerHour": 208.1,
+        "points": [
+          {
+            "ms": 6.491375000000062,
+            "encounters": 417,
+            "hours": 2
+          },
+          {
+            "ms": 31.719040999999947,
+            "encounters": 2081,
+            "hours": 10
+          }
+        ]
+      }
+    },
+    "starter-solo": {
+      "csim": {
+        "msPerSimHour": 2.209078125000019,
+        "encPerHour": 257.4,
+        "points": [
+          {
+            "ms": 5.591499999999996,
+            "encounters": 528,
+            "hours": 2
+          },
+          {
+            "ms": 23.26412500000015,
+            "encounters": 2574,
+            "hours": 10
+          }
+        ]
+      },
+      "metz": {
+        "msPerSimHour": 0.9705364999999802,
+        "encPerHour": 254.6,
+        "points": [
+          {
+            "ms": 2.1380000000001473,
+            "encounters": 509,
+            "hours": 2
+          },
+          {
+            "ms": 9.902291999999989,
+            "encounters": 2546,
+            "hours": 10
+          }
+        ]
+      }
+    },
+    "mid-solo": {
+      "csim": {
+        "msPerSimHour": 4.356291624999983,
+        "encPerHour": 30.6,
+        "points": [
+          {
+            "ms": 10.492333000000144,
+            "encounters": 69,
+            "hours": 2
+          },
+          {
+            "ms": 45.34266600000001,
+            "encounters": 306,
+            "hours": 10
+          }
+        ]
+      },
+      "metz": {
+        "msPerSimHour": 1.5236404999999706,
+        "encPerHour": 31.7,
+        "points": [
+          {
+            "ms": 3.1289590000001226,
+            "encounters": 63,
+            "hours": 2
+          },
+          {
+            "ms": 15.318082999999888,
+            "encounters": 317,
+            "hours": 10
+          }
+        ]
+      }
+    },
+    "melee-solo": {
+      "csim": {
+        "msPerSimHour": 9.818479124999953,
+        "encPerHour": 790.8,
+        "points": [
+          {
+            "ms": 21.935500000000047,
+            "encounters": 1585,
+            "hours": 2
+          },
+          {
+            "ms": 100.48333299999967,
+            "encounters": 7908,
+            "hours": 10
+          }
+        ]
+      },
+      "metz": {
+        "msPerSimHour": 2.6439792499999726,
+        "encPerHour": 811.6,
+        "points": [
+          {
+            "ms": 5.467791000000034,
+            "encounters": 1620,
+            "hours": 2
+          },
+          {
+            "ms": 26.619624999999814,
+            "encounters": 8116,
+            "hours": 10
+          }
+        ]
+      }
+    },
+    "ranged-solo": {
+      "csim": {
+        "msPerSimHour": 11.229713500000003,
+        "encPerHour": 875.6,
+        "points": [
+          {
+            "ms": 23.94762499999979,
+            "encounters": 1750,
+            "hours": 2
+          },
+          {
+            "ms": 113.78533299999981,
+            "encounters": 8756,
+            "hours": 10
+          }
+        ]
+      },
+      "metz": {
+        "msPerSimHour": 2.7413907500000505,
+        "encPerHour": 895.5,
+        "points": [
+          {
+            "ms": 5.721207999999933,
+            "encounters": 1786,
+            "hours": 2
+          },
+          {
+            "ms": 27.652334000000337,
+            "encounters": 8955,
+            "hours": 10
+          }
+        ]
+      }
+    },
+    "magic-solo": {
+      "csim": {
+        "msPerSimHour": 11.637583250000034,
+        "encPerHour": 747.5,
+        "points": [
+          {
+            "ms": 24.478417000000263,
+            "encounters": 1497,
+            "hours": 2
+          },
+          {
+            "ms": 117.57908300000054,
+            "encounters": 7475,
+            "hours": 10
+          }
+        ]
+      },
+      "metz": {
+        "msPerSimHour": 2.8902812500000437,
+        "encPerHour": 768.2,
+        "points": [
+          {
+            "ms": 5.903999999999542,
+            "encounters": 1536,
+            "hours": 2
+          },
+          {
+            "ms": 29.02624999999989,
+            "encounters": 7682,
+            "hours": 10
+          }
+        ]
+      }
+    },
+    "tank-solo": {
+      "csim": {
+        "msPerSimHour": 11.241849000000002,
+        "encPerHour": 594,
+        "points": [
+          {
+            "ms": 22.736292000000503,
+            "encounters": 1189,
+            "hours": 2
+          },
+          {
+            "ms": 112.67108400000052,
+            "encounters": 5940,
+            "hours": 10
+          }
+        ]
+      },
+      "metz": {
+        "msPerSimHour": 2.235098999999991,
+        "encPerHour": 590.9,
+        "points": [
+          {
+            "ms": 4.831000000000131,
+            "encounters": 1182,
+            "hours": 2
+          },
+          {
+            "ms": 22.71179200000006,
+            "encounters": 5909,
+            "hours": 10
+          }
+        ]
+      }
+    },
+    "healer-solo": {
+      "csim": {
+        "msPerSimHour": 5.915765625000063,
+        "encPerHour": 605.7,
+        "points": [
+          {
+            "ms": 13.065042000000176,
+            "encounters": 1208,
+            "hours": 2
+          },
+          {
+            "ms": 60.39116700000068,
+            "encounters": 6057,
+            "hours": 10
+          }
+        ]
+      },
+      "metz": {
+        "msPerSimHour": 1.7942448749998903,
+        "encPerHour": 602.6,
+        "points": [
+          {
+            "ms": 3.724375000000691,
+            "encounters": 1209,
+            "hours": 2
+          },
+          {
+            "ms": 18.078333999999813,
+            "encounters": 6026,
+            "hours": 10
+          }
+        ]
+      }
+    },
+    "buffstack-solo": {
+      "csim": {
+        "msPerSimHour": 10.024338499999885,
+        "encPerHour": 700.6,
+        "points": [
+          {
+            "ms": 20.64100000000053,
+            "encounters": 1405,
+            "hours": 2
+          },
+          {
+            "ms": 100.83570799999961,
+            "encounters": 7006,
+            "hours": 10
+          }
+        ]
+      },
+      "metz": {
+        "msPerSimHour": 1.8912187500000073,
+        "encPerHour": 676.9,
+        "points": [
+          {
+            "ms": 4.016583000000537,
+            "encounters": 1356,
+            "hours": 2
+          },
+          {
+            "ms": 19.146333000000595,
+            "encounters": 6769,
+            "hours": 10
+          }
+        ]
+      }
+    },
+    "selfbuff-solo": {
+      "csim": {
+        "msPerSimHour": 13.795703125000273,
+        "encPerHour": 659.7,
+        "points": [
+          {
+            "ms": 27.49162499999875,
+            "encounters": 1322,
+            "hours": 2
+          },
+          {
+            "ms": 137.85725000000093,
+            "encounters": 6597,
+            "hours": 10
+          }
+        ]
+      },
+      "metz": {
+        "msPerSimHour": 2.585400875000005,
+        "encPerHour": 656,
+        "points": [
+          {
+            "ms": 5.362333999999464,
+            "encounters": 1312,
+            "hours": 2
+          },
+          {
+            "ms": 26.045540999999503,
+            "encounters": 6560,
+            "hours": 10
+          }
+        ]
+      }
+    },
+    "melee-swarm": {
+      "csim": {
+        "msPerSimHour": 13.99844274999964,
+        "encPerHour": 394.3,
+        "points": [
+          {
+            "ms": 29.312541000001147,
+            "encounters": 779,
+            "hours": 2
+          },
+          {
+            "ms": 141.30008299999827,
+            "encounters": 3943,
+            "hours": 10
+          }
+        ]
+      },
+      "metz": {
+        "msPerSimHour": 4.962937499999953,
+        "encPerHour": 396.1,
+        "points": [
+          {
+            "ms": 10.006916999998793,
+            "encounters": 792,
+            "hours": 2
+          },
+          {
+            "ms": 49.710416999998415,
+            "encounters": 3961,
+            "hours": 10
+          }
+        ]
+      }
+    },
+    "melee-abyss": {
+      "csim": {
+        "msPerSimHour": 11.083807250000064,
+        "encPerHour": 171.5,
+        "points": [
+          {
+            "ms": 25.668374999999287,
+            "encounters": 341,
+            "hours": 2
+          },
+          {
+            "ms": 114.3388329999998,
+            "encounters": 1715,
+            "hours": 10
+          }
+        ]
+      },
+      "metz": {
+        "msPerSimHour": 3.50764587499998,
+        "encPerHour": 170.5,
+        "points": [
+          {
+            "ms": 7.1053329999995185,
+            "encounters": 339,
+            "hours": 2
+          },
+          {
+            "ms": 35.16649999999936,
+            "encounters": 1705,
+            "hours": 10
+          }
+        ]
+      }
+    },
+    "magic-abyss-t3": {
+      "csim": {
+        "msPerSimHour": 13.999468750000005,
+        "encPerHour": 199.9,
+        "points": [
+          {
+            "ms": 28.616125000000466,
+            "encounters": 395,
+            "hours": 2
+          },
+          {
+            "ms": 140.6118750000005,
+            "encounters": 1999,
+            "hours": 10
+          }
+        ]
+      },
+      "metz": {
+        "msPerSimHour": 4.400843750000149,
+        "encPerHour": 200.5,
+        "points": [
+          {
+            "ms": 9.122208999999202,
+            "encounters": 399,
+            "hours": 2
+          },
+          {
+            "ms": 44.328959000000395,
+            "encounters": 2005,
+            "hours": 10
+          }
+        ]
+      }
+    },
+    "party2-eyes": {
+      "csim": {
+        "msPerSimHour": 21.261489500000152,
+        "encPerHour": 441,
+        "points": [
+          {
+            "ms": 21.6929999999993,
+            "encounters": 438,
+            "hours": 1
+          },
+          {
+            "ms": 106.73895799999991,
+            "encounters": 2205,
+            "hours": 5
+          }
+        ]
+      },
+      "metz": {
+        "msPerSimHour": 6.296687750000274,
+        "encPerHour": 463.4,
+        "points": [
+          {
+            "ms": 6.585707999998704,
+            "encounters": 466,
+            "hours": 1
+          },
+          {
+            "ms": 31.7724589999998,
+            "encounters": 2317,
+            "hours": 5
+          }
+        ]
+      }
+    },
+    "party3-swarm": {
+      "csim": {
+        "msPerSimHour": 42.13740600000028,
+        "encPerHour": 529.8,
+        "points": [
+          {
+            "ms": 44.615334000000075,
+            "encounters": 524,
+            "hours": 1
+          },
+          {
+            "ms": 213.1649580000012,
+            "encounters": 2649,
+            "hours": 5
+          }
+        ]
+      },
+      "metz": {
+        "msPerSimHour": 10.247708500000044,
+        "encPerHour": 571.4,
+        "points": [
+          {
+            "ms": 10.779041000001598,
+            "encounters": 574,
+            "hours": 1
+          },
+          {
+            "ms": 51.769875000001775,
+            "encounters": 2857,
+            "hours": 5
+          }
+        ]
+      }
+    },
+    "party3-sorcerer": {
+      "csim": {
+        "msPerSimHour": 47.92609375000029,
+        "encPerHour": 550.2,
+        "points": [
+          {
+            "ms": 49.20499999999811,
+            "encounters": 553,
+            "hours": 1
+          },
+          {
+            "ms": 240.90937499999927,
+            "encounters": 2751,
+            "hours": 5
+          }
+        ]
+      },
+      "metz": {
+        "msPerSimHour": 11.75464600000032,
+        "encPerHour": 591,
+        "points": [
+          {
+            "ms": 12.082582999999431,
+            "encounters": 592,
+            "hours": 1
+          },
+          {
+            "ms": 59.101167000000714,
+            "encounters": 2955,
+            "hours": 5
+          }
+        ]
+      }
+    },
+    "dungeon-den-200": {
+      "csim": {
+        "msPerSimHour": 112.36415624999972,
+        "encPerHour": 219.8,
+        "points": [
+          {
+            "ms": 119.21033299999908,
+            "encounters": 229,
+            "hours": 1
+          },
+          {
+            "ms": 568.666957999998,
+            "encounters": 1099,
+            "hours": 5
+          }
+        ]
+      },
+      "metz": {
+        "msPerSimHour": 16.037489500000447,
+        "encPerHour": 229,
+        "points": [
+          {
+            "ms": 16.671417000001384,
+            "encounters": 233,
+            "hours": 1
+          },
+          {
+            "ms": 80.82137500000317,
+            "encounters": 1145,
+            "hours": 5
+          }
+        ]
+      }
+    },
+    "dungeon-den-600": {
+      "csim": {
+        "msPerSimHour": 112.20301049999944,
+        "encPerHour": 530,
+        "points": [
+          {
+            "ms": 114.4208749999998,
+            "encounters": 539,
+            "hours": 1
+          },
+          {
+            "ms": 563.2329169999975,
+            "encounters": 2650,
+            "hours": 5
+          }
+        ]
+      },
+      "metz": {
+        "msPerSimHour": 20.378354249999575,
+        "encPerHour": 561,
+        "points": [
+          {
+            "ms": 20.66425000000163,
+            "encounters": 568,
+            "hours": 1
+          },
+          {
+            "ms": 102.17766699999993,
+            "encounters": 2805,
+            "hours": 5
+          }
+        ]
+      }
+    },
+    "dungeon-circus": {
+      "csim": {
+        "msPerSimHour": 116.54553149999992,
+        "encPerHour": 447.2,
+        "points": [
+          {
+            "ms": 119.61879100000078,
+            "encounters": 445,
+            "hours": 1
+          },
+          {
+            "ms": 585.8009170000005,
+            "encounters": 2236,
+            "hours": 5
+          }
+        ]
+      },
+      "metz": {
+        "msPerSimHour": 20.251374999999825,
+        "encPerHour": 470,
+        "points": [
+          {
+            "ms": 20.252291999997396,
+            "encounters": 474,
+            "hours": 1
+          },
+          {
+            "ms": 101.2577919999967,
+            "encounters": 2350,
+            "hours": 5
+          }
+        ]
+      }
+    },
+    "dungeon-fort-t2": {
+      "csim": {
+        "msPerSimHour": 130.18647924999823,
+        "encPerHour": 264.4,
+        "points": [
+          {
+            "ms": 131.27200000000448,
+            "encounters": 269,
+            "hours": 1
+          },
+          {
+            "ms": 652.0179169999974,
+            "encounters": 1322,
+            "hours": 5
+          }
+        ]
+      },
+      "metz": {
+        "msPerSimHour": 18.26825000000099,
+        "encPerHour": 272,
+        "points": [
+          {
+            "ms": 18.91454199999862,
+            "encounters": 280,
+            "hours": 1
+          },
+          {
+            "ms": 91.98754200000258,
+            "encounters": 1360,
+            "hours": 5
+          }
+        ]
+      }
+    },
+    "dungeon-pirate": {
+      "csim": {
+        "msPerSimHour": 118.65053099999932,
+        "encPerHour": 366,
+        "points": [
+          {
+            "ms": 123.45554200000333,
+            "encounters": 371,
+            "hours": 1
+          },
+          {
+            "ms": 598.0576660000006,
+            "encounters": 1830,
+            "hours": 5
+          }
+        ]
+      },
+      "metz": {
+        "msPerSimHour": 19.40266674999839,
+        "encPerHour": 385.2,
+        "points": [
+          {
+            "ms": 19.880125000003318,
+            "encounters": 386,
+            "hours": 1
+          },
+          {
+            "ms": 97.49079199999687,
+            "encounters": 1926,
+            "hours": 5
+          }
+        ]
+      }
+    }
+  }
+}
