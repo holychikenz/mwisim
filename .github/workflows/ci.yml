@@ -1,0 +1,89 @@
+# =============================================================================
+# ci — the gates that used to exist only on somebody's laptop
+#
+# BUDGET: < 3 min wall. Measured locally, the simulation is ~15 s of it
+# (npm test ~3 s, sim:check ~2 s, eval:check ~12 s); the rest is checkout and
+# `npm ci`. That is why this is ONE job rather than a matrix: three jobs would
+# each pay the install cost to save nothing.
+#
+# If the eval corpus ever exceeds ~60 s, split it: keep `npm test` and
+# `sim:check` in a fast job that gates the PR, and move `eval:check` to a
+# second job (or to `--tier=strict --seeds=4` on PRs and the full corpus on
+# push to main). Do not just let the wall clock grow — a gate nobody waits for
+# is a gate nobody reads.
+#
+# working-directory: api is MANDATORY, not tidiness. api/register-loader.js
+# calls register('./loader.js', pathToFileURL('./')), so the loader's base URL
+# is resolved against the CURRENT WORKING DIRECTORY. Every npm script here
+# fails to resolve the engine's bare imports if run from the repo root.
+#
+# NODE VERSION IS PINNED TO THE RECORDING MAJOR (26). fixtures/eval hashes were
+# recorded on node v26.8.2 / darwin-arm64, and each fixture carries the node
+# version and platform it was recorded on; eval:check warns loudly on a
+# mismatch. Math.random is overridden, so that source of divergence is
+# neutralised — but float formatting and structuredClone behaviour across
+# engine versions are not something to take on faith. If the strict tier turns
+# out to differ on linux-x64, DO NOT re-record: demote the strict tier to
+# platform-pinned and let the statistical tier carry CI. The contingency is
+# written out in api/eval/README.md under "Cross-platform".
+#
+# fetch-depth: 0 because eval:backrun needs history. It is not run here, but a
+# shallow clone makes it impossible to run by hand on a CI checkout, and full
+# history for this repository costs a second or two.
+# =============================================================================
+
+name: ci
+
+on:
+  push:
+  pull_request:
+
+defaults:
+  run:
+    working-directory: api
+
+jobs:
+  check:
+    name: tests, parity and the eval corpus
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '26'
+          cache: npm
+          cache-dependency-path: api/package-lock.json
+
+      - name: install
+        run: npm ci
+
+      # Unit tests, including the five guards on the eval harness itself
+      # (api/tests/evalHarness.test.mjs). The first of those asserts that
+      # api/eval/engine.mjs still calls the engine exactly as
+      # api/lib/simulator.js does — without it the corpus could be recorded
+      # through a harness that had quietly stopped simulating the product.
+      - name: npm test
+        run: npm test
+
+      # Bit-identical replay of the three deep-tree fixtures. Deliberately
+      # BEFORE eval:check: it is the cheaper and older gate, and if the
+      # determinism kit is broken this fails first and says so more plainly.
+      - name: sim:check — bit-identical SimResult replay
+        run: npm run sim:check
+
+      # The evaluation corpus: 29 cases × 16 seeds, both tiers.
+      - name: eval:check — strict and statistical tiers
+        run: npm run eval:check
+
+      # Simulator-vs-game parity, ratcheted at the 125 drifts that predate this
+      # workflow. The count is still computed and printed in full; --max-drift
+      # only decides the exit code, so a NEW drift still fails the build.
+      # Lower this number as drifts are fixed. Raising it to accommodate a new
+      # one is the same act as re-recording a fixture to make a change pass.
+      - name: lab:check — sim-vs-game parity (ratcheted at 125)
+        run: npm run lab:check -- --max-drift=125

@@ -106,7 +106,7 @@ function printTable(rows) {
 
 // ---- commands --------------------------------------------------------------
 
-function cmdCheck(target) {
+function cmdCheck(target, maxDrift) {
   const files = listFixtures(target);
   if (files.length === 0) {
     console.log(`No fixtures found in ${target || FIX_DIR}.`);
@@ -173,6 +173,24 @@ function cmdCheck(target) {
     console.log(`Note: ${baselineCount} fixture(s) still hold sim-baseline expectations — ` +
       `paste real game numbers and set "source":"game" to make them true parity checks.`);
   }
+  // --max-drift=N — a RATCHET, not a mute. The count is still computed, still
+  // printed in full above, and still reported here; N only decides the exit
+  // code. It exists so CI can gate on "no NEW sim-vs-game drift" while the 125
+  // pre-existing ones are worked through, instead of the choice being between
+  // a permanently red pipeline and no parity check at all.
+  //
+  // Lower N as drifts are fixed. Raising it to accommodate a new drift is the
+  // same act as re-recording a fixture to make a failing change pass.
+  if (maxDrift !== null) {
+    if (totalDrift <= maxDrift) {
+      console.log(`Within the --max-drift=${maxDrift} ratchet (${totalDrift} ≤ ${maxDrift}).` +
+        (totalDrift < maxDrift ? `  ${maxDrift - totalDrift} fewer than allowed — lower the ratchet.` : ''));
+      process.exit(0);
+    }
+    console.log(`ABOVE the --max-drift=${maxDrift} ratchet: ${totalDrift} drift(s).`);
+    process.exit(1);
+  }
+
   process.exit(totalDrift > 0 ? 1 : 0);
 }
 
@@ -215,15 +233,23 @@ function cmdRecord(args) {
 
 const [cmd, ...rest] = process.argv.slice(2);
 switch (cmd) {
-  case 'check':
-    cmdCheck(rest[0]);
+  case 'check': {
+    const maxArg = rest.find((a) => a.startsWith('--max-drift='));
+    const maxDrift = maxArg === undefined ? null : Number(maxArg.slice('--max-drift='.length));
+    if (maxDrift !== null && !(Number.isInteger(maxDrift) && maxDrift >= 0)) {
+      console.error(`lab:check: --max-drift must be a non-negative integer (got "${maxArg}")`);
+      process.exit(2);
+    }
+    cmdCheck(rest.find((a) => !a.startsWith('--')), maxDrift);
     break;
+  }
   case 'record':
     cmdRecord(rest);
     break;
   default:
     console.log('Usage:');
     console.log('  npm run lab:check                    # diff fixtures vs simulator');
+    console.log('  npm run lab:check -- --max-drift=N   # exit 0 while drift count <= N (a ratchet)');
     console.log('  npm run lab:record -- /monsters/<name> <roomLevel> [label]');
     process.exit(cmd ? 2 : 0);
 }
