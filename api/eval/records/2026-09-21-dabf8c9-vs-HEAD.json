@@ -1,0 +1,252 @@
+{
+  "recordedAt": "2026-09-21T07:59:37.232Z",
+  "head": "279cc1aa148a6ee2fa860507b34ed99e839324e8",
+  "node": "v26.8.2",
+  "platform": "darwin/arm64",
+  "seeds": 16,
+  "kinds": [
+    "zone"
+  ],
+  "caveats": [
+    "Bit-identity is of the CANONICAL SimResult tree, with wipeEvents[*].timestamp redacted (src/combatsimulator/simResult.js:197).",
+    "Under a seeded global Math.random (mulberry32), on the MAIN-THREAD branch only — a worker realm does not see the override.",
+    "heap-js held at 2.7.1 for both engines: the loader resolves it from the current node_modules whichever engine is loaded.",
+    "Game data asserted byte-identical across the span before running; the comparison is refused otherwise.",
+    "A Tier A match is strong evidence of behaviour preservation. A Tier A mismatch proves only that RNG consumption order or the result tree changed — Tier B agreement is then weaker evidence and is labelled as such."
+  ],
+  "reports": [
+    {
+      "ref": "dabf8c9",
+      "subject": "fix(roster): a broken roster link now says so, and \"(own)\" stops lying",
+      "strictMatched": 352,
+      "strictTotal": 352,
+      "statsPassed": 22,
+      "statsTotal": 22,
+      "worstAbsDeltaPct": 0,
+      "verdict": "behaviour preserved (Tier A)",
+      "wallSeconds": 98.4,
+      "cases": [
+        {
+          "id": "buffstack-solo",
+          "metric": "encounters",
+          "strict": "16/16",
+          "meanRecorded": 699.9375,
+          "meanOld": 699.9375,
+          "deltaPct": 0,
+          "band": 3.1184932259025353,
+          "statsPass": true
+        },
+        {
+          "id": "dungeon-circus",
+          "metric": "encounters",
+          "strict": "16/16",
+          "meanRecorded": 451.5,
+          "meanOld": 451.5,
+          "deltaPct": 0,
+          "band": 6.673330003329173,
+          "statsPass": true
+        },
+        {
+          "id": "dungeon-den-200",
+          "metric": "encounters",
+          "strict": "16/16",
+          "meanRecorded": 229.1875,
+          "meanOld": 229.1875,
+          "deltaPct": 0,
+          "band": 2.3219962675824153,
+          "statsPass": true
+        },
+        {
+          "id": "dungeon-den-600",
+          "metric": "encounters",
+          "strict": "16/16",
+          "meanRecorded": 534.4375,
+          "meanOld": 534.4375,
+          "deltaPct": 0,
+          "band": 3.3052987762076826,
+          "statsPass": true
+        },
+        {
+          "id": "dungeon-fort-t2",
+          "metric": "encounters",
+          "strict": "16/16",
+          "meanRecorded": 265.0625,
+          "meanOld": 265.0625,
+          "deltaPct": 0,
+          "band": 4.515713306518325,
+          "statsPass": true
+        },
+        {
+          "id": "dungeon-pirate",
+          "metric": "encounters",
+          "strict": "16/16",
+          "meanRecorded": 369.25,
+          "meanOld": 369.25,
+          "deltaPct": 0,
+          "band": 3.915780041490244,
+          "statsPass": true
+        },
+        {
+          "id": "floor-party",
+          "metric": "encounters",
+          "strict": "16/16",
+          "meanRecorded": 196.4375,
+          "meanOld": 196.4375,
+          "deltaPct": 0,
+          "band": 5.340880077290634,
+          "statsPass": true
+        },
+        {
+          "id": "floor-solo",
+          "metric": "encounters",
+          "strict": "16/16",
+          "meanRecorded": 137.4375,
+          "meanOld": 137.4375,
+          "deltaPct": 0,
+          "band": 4.675289652345974,
+          "statsPass": true
+        },
+        {
+          "id": "healer-solo",
+          "metric": "encounters",
+          "strict": "16/16",
+          "meanRecorded": 605.125,
+          "meanOld": 605.125,
+          "deltaPct": 0,
+          "band": 3.610170817749949,
+          "statsPass": true
+        },
+        {
+          "id": "magic-abyss-t3",
+          "metric": "encounters",
+          "strict": "16/16",
+          "meanRecorded": 199.8125,
+          "meanOld": 199.8125,
+          "deltaPct": 0,
+          "band": 3.355343996274202,
+          "statsPass": true
+        },
+        {
+          "id": "magic-solo",
+          "metric": "encounters",
+          "strict": "16/16",
+          "meanRecorded": 747.9375,
+          "meanOld": 747.9375,
+          "deltaPct": 0,
+          "band": 1.86984375,
+          "statsPass": true
+        },
+        {
+          "id": "melee-abyss",
+          "metric": "encounters",
+          "strict": "16/16",
+          "meanRecorded": 169.9375,
+          "meanOld": 169.9375,
+          "deltaPct": 0,
+          "band": 2.8032718978603084,
+          "statsPass": true
+        },
+        {
+          "id": "melee-solo",
+          "metric": "encounters",
+          "strict": "16/16",
+          "meanRecorded": 792.75,
+          "meanOld": 792.75,
+          "deltaPct": 0,
+          "band": 3.0331501776206204,
+          "statsPass": true
+        },
+        {
+          "id": "melee-swarm",
+          "metric": "encounters",
+          "strict": "16/16",
+          "meanRecorded": 394.0625,
+          "meanOld": 394.0625,
+          "deltaPct": 0,
+          "band": 6.859907676735405,
+          "statsPass": true
+        },
+        {
+          "id": "mid-solo",
+          "metric": "encounters",
+          "strict": "16/16",
+          "meanRecorded": 31.9375,
+          "meanOld": 31.9375,
+          "deltaPct": 0,
+          "band": 3.4046536779335823,
+          "statsPass": true
+        },
+        {
+          "id": "party2-eyes",
+          "metric": "encounters",
+          "strict": "16/16",
+          "meanRecorded": 440,
+          "meanOld": 440,
+          "deltaPct": 0,
+          "band": 4.618802153517007,
+          "statsPass": true
+        },
+        {
+          "id": "party3-sorcerer",
+          "metric": "encounters",
+          "strict": "16/16",
+          "meanRecorded": 549,
+          "meanOld": 549,
+          "deltaPct": 0,
+          "band": 4.760952285695234,
+          "statsPass": true
+        },
+        {
+          "id": "party3-swarm",
+          "metric": "encounters",
+          "strict": "16/16",
+          "meanRecorded": 529,
+          "meanOld": 529,
+          "deltaPct": 0,
+          "band": 7.192588778272628,
+          "statsPass": true
+        },
+        {
+          "id": "ranged-solo",
+          "metric": "encounters",
+          "strict": "16/16",
+          "meanRecorded": 876.5625,
+          "meanOld": 876.5625,
+          "deltaPct": 0,
+          "band": 2.19140625,
+          "statsPass": true
+        },
+        {
+          "id": "selfbuff-solo",
+          "metric": "encounters",
+          "strict": "16/16",
+          "meanRecorded": 660.5,
+          "meanOld": 660.5,
+          "deltaPct": 0,
+          "band": 2.732520204255893,
+          "statsPass": true
+        },
+        {
+          "id": "starter-solo",
+          "metric": "encounters",
+          "strict": "16/16",
+          "meanRecorded": 259.4375,
+          "meanOld": 259.4375,
+          "deltaPct": 0,
+          "band": 6.908328307195599,
+          "statsPass": true
+        },
+        {
+          "id": "tank-solo",
+          "metric": "encounters",
+          "strict": "16/16",
+          "meanRecorded": 593.125,
+          "meanOld": 593.125,
+          "deltaPct": 0,
+          "band": 1.4828125,
+          "statsPass": true
+        }
+      ]
+    }
+  ]
+}

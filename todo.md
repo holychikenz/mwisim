@@ -449,3 +449,67 @@ Every departure in `src/combatsimulator/` must be listed in the
 commit and one ledger entry per stage, in the house voice: the measurement that
 justifies it and the argument for why it is safe — **including negative
 results**, so nobody re-derives a discarded idea.
+
+## 9. The back-run verdict: 34 commits, 464 hashes, no behaviour change
+
+**2026-09-21.** Every stage in §2 passed `sim:check` 3/3 at the time it landed.
+That is three scenarios at one seed each, and it was never the claim anybody
+actually wanted, which is: *across the whole span, did any of this change what
+the engine computes?* `api/eval/` now answers that question, and the answer for
+`dabf8c9..HEAD` is **no**.
+
+**Method.** `api/eval/backrun.mjs` extracts `<ref>:src/combatsimulator` with
+`git archive` into a scratch directory and loads it through the CURRENT
+`api/eval/engine.mjs` — one harness, two engines, so no part of the difference
+can be harness drift. Both engines are run at the same 16 seeds per case, seeds
+derived from the case id, under a seeded global `Math.random`. Before anything
+runs, `git diff --quiet <ref> HEAD -- src/combatsimulator/data` must be empty
+or the tool refuses: a different monster is a different fight, and no amount of
+hash agreement would then say anything about the engine.
+
+**Result.**
+
+| scope | Tier A (bit-identical) | Tier B (ensemble mean) | worst \|Δ\| |
+|---|---|---|---|
+| 22 zone cases × 16 seeds | **352 / 352** | 22 / 22 | 0.00 % |
+| + 4 labyrinth + 3 guild-trial cases | **464 / 464** | 29 / 29 | 0.00 % |
+
+Not "within tolerance" — *identical*. The same random draws consumed in the
+same order producing the same result tree, on every case in the catalogue.
+
+**Speedup, on the same 352 runs through the same code path:** 98.4 s at
+`dabf8c9`, 9.2 s at `HEAD` — **10.7×**. That is total corpus wall clock and
+therefore includes per-run DTO construction and `Player.createFromDTO`, which
+are fixed costs the candle's marginal ms/simulated-hour deliberately cancels.
+It is the honest figure for "how long does the suite take", not a replacement
+for §2's per-stage numbers.
+
+**What this does and does not prove.**
+
+- A cross-version hash MATCH is very strong evidence of behaviour preservation.
+- A hash MISMATCH would prove only that RNG consumption order or the result
+  tree changed — **not** that there is a bug. Hoisting an allocation can
+  reorder two independent draws without touching either distribution. On a
+  mismatch the verdict escalates to Tier B, and agreement there is *consistent
+  with* behaviour preservation, which is a weaker claim and is labelled as one.
+
+**Caveats, all of which would falsify or narrow the claim:**
+
+- Bit-identity is of the **canonical `SimResult` tree**, with
+  `wipeEvents[*].timestamp` redacted. `src/combatsimulator/simResult.js:197`
+  stamps each wipe with `new Date().toISOString()`; a wipe-heavy case hashes
+  differently on two runs at the *same* seed until that is scrubbed. Anything
+  the engine computes and does not put in `SimResult` is not covered.
+- Under a **seeded global `Math.random`**, on the **main-thread branch only**.
+  The override does not reach a worker realm, so this says nothing directly
+  about `runSimulationWithWorker`.
+- **`heap-js` held at 2.7.1 for both engines.** `bb4d767` re-pinned it from
+  `^2.2.0`; the loader resolves it from the current `node_modules` whichever
+  engine is loaded. That is the correct control — it isolates engine source —
+  but it means the verdict says nothing about the dependency bump itself.
+- Recorded on **node v26.8.2 / darwin-arm64**. Cross-platform reproduction of
+  the hashes is **unverified**; see "Cross-platform" in `api/eval/README.md`.
+
+Record: `api/eval/records/2026-09-21-dabf8c9-vs-HEAD.json`.
+Re-run: `cd api && npm run eval:backrun -- --against=dabf8c9` (~100 s).
+Per-commit: `--all-perf` (the 13 `perf(...)` commits) or `--bisect` (all 34).
