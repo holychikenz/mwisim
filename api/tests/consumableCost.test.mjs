@@ -236,8 +236,34 @@ test('an unpriceable run reports itself unknown rather than free', () => {
   assert.deepEqual(summary.unpriced, ['/items/mystery_snack']);
 });
 
-test('a run that consumed nothing is unknown, not free', () => {
+test('a run that consumed nothing is free, not unknown', () => {
+  // ATE NOTHING IS NOT THE SAME AS CANNOT PRICE IT. A build that never had to
+  // eat owes no production time, so its effective rate IS its raw rate — a
+  // fact, not a guess. This test asserted the opposite until f0aeebc
+  // ("fix(results): 'ate nothing' is not 'cannot price it'"), which changed
+  // summariseConsumableCost and the two call sites but not this file; it has
+  // been failing ever since. The measured consequence recorded in that commit:
+  // every zone a build survived without eating showed "—" in the effective
+  // columns and sank below zones that eat constantly in the effective sort,
+  // handing the best-value highlight to a costlier zone.
+  //
+  // `nothingConsumed` is the flag callers phrase the difference with —
+  // SimulationResults.jsx and AllZonesResults.jsx both branch on it INSIDE a
+  // `consumableCost.known` test, so a `known: false` here would make that
+  // wording unreachable.
   const summary = summariseConsumableCost({ consumablesUsed: {}, hours: 2, pricing: ironPricing() });
-  assert.equal(summary.known, false);
+  assert.equal(summary.known, true);
+  assert.equal(summary.nothingConsumed, true);
+  assert.equal(summary.secondsPerHour, 0);
   assert.equal(summary.unitsPerHour, 0);
+
+  // The genuine unknown — things WERE consumed and none could be priced —
+  // is the case above, and still reads false. The two must not collapse.
+  const genuinelyUnknown = summariseConsumableCost({
+    consumablesUsed: { player1: { '/items/mystery_snack': 12 } },
+    hours: 2,
+    pricing: ironPricing(),
+  });
+  assert.equal(genuinelyUnknown.known, false);
+  assert.equal(genuinelyUnknown.nothingConsumed, false);
 });
