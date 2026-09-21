@@ -1,14 +1,28 @@
 # Closing the performance gap
 
-**Revision 6, 2026-09-20.** Revision 5 recorded that the problem is per-UNIT
-cost. This revision records the round that acted on it hardest, and the
-measurement that made it possible — one that should have been taken in round
-one and was not.
+**Revision 7, 2026-09-21.** Revision 6 recorded the round that acted hardest on
+per-UNIT cost. This revision records three more stages, each one aimed at the
+largest item a fresh profile left on the board, and the first round in which
+every one of the three beat its own forecast.
 
-**Five stages shipped, compounding to -23.3% on the candle's geometric mean**
-(-16.8%, then -6.0%, then -1.9%, each over four counterbalanced rounds). The
-first of them improved all 22 cases and won every round on all 22, which no
-earlier stage had come close to.
+**Three stages shipped, compounding to -17.9% on the candle's geometric mean**
+over four counterbalanced rounds against `1492a74` — buff mirror -6.1%, heap
+removal -8.7%, condition ordinal -4.2%. **Every dungeon fell by about a third**:
+`dungeon-den-600` 73.4 -> 50.9 ms/sim-h (-30.6%), `dungeon-den-200` and
+`dungeon-circus` -31.9%, `dungeon-fort-t2` -31.3%, `dungeon-pirate` -29.8%.
+21 of 22 cases improved and won every round in the cumulative run; the 22nd,
+`floor-solo`, came back -4.9% at 5/6 on a focused six-round re-measurement, so
+all 22 improved.
+
+Nothing was dropped this round, which has not happened before and is worth
+naming rather than celebrating: three for three is a small sample, and the
+selection was unusually well informed — every stage was pointed at a number a
+profile had already measured rather than at a structure that looked wasteful.
+
+*Note on absolute figures.* The ms/sim-h numbers in this revision were taken on
+a faster machine than revision 6's and are NOT comparable with them. Only the
+percentages are. Revision 6's `dungeon-den-600` at 94.5 ms/sim-h and this
+revision's 73.4 for the same commit are the same engine, measured twice.
 
 Revision 1's proposals (`Float64Array` stat blocks, event-object pooling) remain
 rejected with evidence in §6 — but the `Float64Array` entry now has a NUMBER
@@ -173,6 +187,9 @@ of roster size. The profile did not mislead us. We optimised the wrong term.
 | **compiled stat-block copies** (generated) | **all 22 cases, all winning every round; geometric mean −16.8%** |
 | trigger constants hoisted + generated condition index | 20 of 22, geometric mean −6.0%; `dungeon-den-200` −10.6% |
 | normalised monster stat blocks (generated) | 20 of 22, none lost every round, geometric mean −1.9% |
+| insertion-ordered buff mirror | 19 of 22, geometric mean −6.1%; dungeons −9.4% to −14.7% |
+| linear-scan heap removal | 21 of 22, geometric mean −8.7%; dungeons −13.5% to −16.0% |
+| condition-kind ordinal (generated) | 21 of 22, geometric mean −4.2%; dungeons −4.9% to −9.7% |
 
 Cumulative for those two, four counterbalanced rounds at `--reps=5`: **18 of 22
 medians improved, 14 won every round, none lost every round.** Every dungeon
@@ -196,6 +213,21 @@ them in full.
 A stage that cannot be separated from noise costs review effort and
 upstream-merge friction forever in exchange for nothing. Dropping it is the
 result, not a failure to find one.
+
+**Revision 7 dropped nothing, and one of its three stages was expected to be a
+drop.** The condition-kind ordinal was sized at "about 3%" in §6a and flagged as
+close enough to the noise floor that reverting it would be the legitimate
+outcome. It measured -4.2% on the geometric mean, 21 of 22 cases improved, none
+lost every round — well clear. Recorded because the §6a estimate was the honest
+one at the time and was simply low, and because "expected to be noise" is not a
+reason to skip the measurement.
+
+That result also does NOT overturn the `processEvent` integer-dispatch drop
+above, and the difference is worth keeping. That switch had 19 arms over strings
+V8 interns and lowers to pointer compares, which are already integer compares.
+`getDependencyValue` had 55 labels in source order, so a condition late in the
+list was tested against dozens of pointers per evaluation, where nine dense
+small integers are a table V8 can build. **Chain length, not the compare.**
 
 ## 4. How to measure, or you will ship an artefact
 
@@ -400,35 +432,75 @@ measured.** Recorded so nobody "fixes" them again.
   it reads a (pointer, length) pair, allocates, and copies an hrid. Recorded
   because this claim was made, believed, and only caught on re-verification.
 
-## 6a. What is left, with sizes measured rather than guessed
+## 6a. The board this round was aimed at — and it is now stale in its turn
 
-A CPU profile of `geared-party` over one simulated hour, engine self time only,
-after this round. Engine self time fell 331 ms -> 242 ms across it.
+Revision 6's table here was taken BEFORE `81ba84e`, `db84ac7` and `a776281`
+landed, and by revision 7 it had the families in the wrong order: it put the
+heap largest at 16% and buff machinery at ~10%. Measured at `1492a74`
+(`dungeon-den-600`, engine and heap self time only, 9 reps) it was the other way
+round. The corrected board, which is what this round was aimed at:
 
-| family | share | indexable? |
+| family | share at `1492a74` | what was done |
 |---|---|---|
-| heap operations (`Heap.remove` alone ~9%) | **16%** | **no** — this is queue design, not representation |
-| trigger evaluation (`getDependencyValue` ~8%) | 12–17% | partly: a 50-case string switch remains |
-| buff machinery (`_buildBuffBoostIndex`, `_buffBoostFor`, `_makeBuffInstance`) | ~10% | partly |
-| result recording (`addAttack` ~4%) | ~7% | yes, but it changes the output shape |
-| stat recompute (all three levels) | ~8% | mostly done |
+| buff machinery, of which `_buildBuffBoostIndex` alone **14.2%** | **22.9%** | stage 1 — the mirror |
+| heap-js, of which `Heap.remove` 5.7% and `__read`/`__spreadArray` 4.5% | **13.0%** | stage 2 — the linear scan |
+| trigger evaluation, `getDependencyValue` alone **8.2%** | — | stage 3 — the condition ordinal |
 
-Two things follow.
+Two things that table taught, worth more than its numbers:
 
-**The largest single item left is not an indexing problem.** `heap-js` is 16% of
-engine self time and `Heap.remove` alone is 9% — it does a BFS from the root
-with `queue.shift()` and a spread per visited node. No amount of build-time
-indexing touches it. §5c's principle is the relevant one: state that belongs to
-a unit lives on the unit, not in the event queue.
+**A profile ages faster than the thing it describes.** Revision 6's ordering was
+not wrong when it was taken; three stages landed on top of it and inverted it.
+Anyone quoting a share here should re-take the profile first — which is the same
+warning §1's ratio table carries, now earned twice.
 
-**The next indexing stage was deliberately NOT taken, and here is why.**
-`getDependencyValue`'s remaining cost is a 50-case string switch, and a
-generated condition-kind ordinal would reduce it to about nine integer arms —
-worth perhaps 3%. It was left because testing it honestly means mechanically
-extracting the existing switch's grouping to compare against, the failure mode
-is reading a DIFFERENT buff and reporting a plausible wrong number with no
-error, and it permanently diverges a readable upstream switch. Worth doing;
-worth doing carefully, with the differential harness built first.
+**Look at what the cost IS, not only where it sits.** `_buildBuffBoostIndex` was
+the largest item on the board and the index itself was already optimal — pooled,
+ordinal-keyed, allocation-free. The cost was the dictionary-mode object it read.
+A profile names a function; it does not name the reason.
+
+**And this table is now stale as well.** All three families were moved
+substantially, so the shares no longer describe HEAD and the next round's first
+job is a fresh profile, not a stage chosen from this list. Nothing is written
+here about what is now largest, because nothing has been measured about it.
+
+The one entry that carries forward unchanged is result recording (`addAttack`,
+~7% at revision 6): indexable, but it changes the output shape, which makes it a
+behaviour-change argument rather than a performance one.
+
+## 6b. What revision 7 did, in one line each
+
+- **The insertion-ordered buff mirror.** `_commitInstances` deletes keys from
+  `combatBuffs`, which puts the object permanently into V8's dictionary mode
+  (219 of 500 units on `dungeon-den-600`), and the boost-index rebuild paid
+  602 ns per `Object.values` where an array walk costs 8 ns. `combatBuffs` is
+  unchanged; a mirror of its values, maintained by its two writers, is what the
+  rebuild walks. The whole risk is order — the rebuild sums with `+=` and float
+  addition is not associative — so the mirror reproduces JS key order exactly
+  (re-assign writes in place; delete-then-re-insert moves to the end) and
+  `api/tests/buffMirror.test.mjs` holds it to that over 4 000 randomised
+  mutations against the object itself as oracle.
+
+- **Linear-scan heap removal.** heap-js's `remove` re-finds, with a pruned BFS
+  over `queue.shift()` and four allocations per visited node, an object the
+  queue already collected and is holding. Since it compares by identity, exactly
+  one index matches and a linear scan finds the same one. The MUTATION is
+  upstream's byte for byte, because it is what fixes the heap permutation and
+  hence the tie-break order among equal-`time` events.
+  `api/tests/heapRemove.test.mjs` compares the whole backing array BY POSITION,
+  which is the only comparison that would have caught the single-compaction
+  failure in §3.
+
+- **The condition-kind ordinal.** §6a's deferred stage, now taken: 55 conditions
+  into nine integer arms, the grouping extracted MECHANICALLY from the switch it
+  replaces rather than re-derived, generated into `generated/triggerKinds.js` by
+  `tools/genTriggerKinds.mjs`, and checked against the retired switch — kept
+  verbatim in the test as the oracle — over every condition and nine source
+  shapes. An unknown condition still throws, still from `getDependencyValue`,
+  still at evaluation, because `api/lib/triggerSearch` builds Triggers
+  speculatively.
+
+All three: `sim:check` 3/3 bit-identical and `eval:check` Tier A 464/464, Tier B
+29/29, at every stage. Each shipped as one commit with one ledger entry, per §8.
 
 ## 7. Not in scope
 
@@ -509,6 +581,15 @@ for §2's per-stage numbers.
   but it means the verdict says nothing about the dependency bump itself.
 - Recorded on **node v26.8.2 / darwin-arm64**. Cross-platform reproduction of
   the hashes is **unverified**; see "Cross-platform" in `api/eval/README.md`.
+
+**Revision 7 has not extended this verdict, and says so rather than implying
+it.** Each of the three stages passed `eval:check` — the same 29 cases x 16
+seeds, Tier A 464/464 and Tier B 29/29 — against the recorded corpus, which is a
+strictly stronger gate than the `sim:check` 3/3 the older stages had, and it
+means no stage in this round changed what the engine computes. What has NOT been
+re-run is `backrun.mjs` against `dabf8c9`, so the recorded verdict below still
+names the older HEAD. Re-running it is cheap (~100 s) and would restate the span
+claim over 37 commits; until someone does, quote the record for what it is.
 
 Record: `api/eval/records/2026-09-21-dabf8c9-vs-HEAD.json`.
 Re-run: `cd api && npm run eval:backrun -- --against=dabf8c9` (~100 s).
