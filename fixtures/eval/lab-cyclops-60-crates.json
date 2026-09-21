@@ -1,0 +1,59 @@
+{
+  "id": "lab-cyclops-60-crates",
+  "kind": "labyrinth",
+  "metric": "labyAttemptCount",
+  "evalHours": 1,
+  "case": {
+    "id": "lab-cyclops-60-crates",
+    "kind": "labyrinth",
+    "build": "melee",
+    "n": 1,
+    "level": 200,
+    "monster": "/monsters/cyclops",
+    "roomLevel": 60,
+    "crates": [
+      "/items/expert_food_crate",
+      "/items/expert_coffee_crate",
+      "/items/expert_tea_crate"
+    ],
+    "metric": "labyAttemptCount"
+  },
+  "recordedAt": "2026-09-21T07:54:38.151Z",
+  "node": "v26.8.2",
+  "platform": "darwin/arm64",
+  "seeds": 16,
+  "headlineFirstSeed": {
+    "encounters": 62,
+    "elapsedTime": null,
+    "dungeonsCompleted": 0,
+    "deathCount": 1,
+    "experienceKeys": 1
+  },
+  "stats": {
+    "mean": 61.6875,
+    "sd": 1.4930394055974097,
+    "standardErrorOfDifference": 0.5278691441383303,
+    "bandStatistical": 2.111476576553321,
+    "bandFloor": 0.15421875000000002,
+    "band": 2.111476576553321,
+    "boundBy": "statistical"
+  },
+  "runs": [
+    {"seed":3278065332,"sha256":"7e1235fb8e6655af04b4d6d91358f658bf8fa0324d682c202fcc279921ecea78","value":63,"deaths":65,"dungeons":0},
+    {"seed":3278073251,"sha256":"e4fb95a25313b09db81909974326261ab57c31d108bd06b60a47db34bfab801f","value":62,"deaths":61,"dungeons":0},
+    {"seed":3278081170,"sha256":"41381e38ea04b716e07b1bfe1b24f63f98c6cd0b7c8e3ade276977148876b752","value":65,"deaths":64,"dungeons":0},
+    {"seed":3278089089,"sha256":"8accfff948adf2470dc77ac84a088239b271c0373afa71f1ac4cc9b267ba9c6c","value":62,"deaths":62,"dungeons":0},
+    {"seed":3278097008,"sha256":"0efe2f6363184906a93025dd553efcf2bd5fd0cd5cb5ccf72a2ea484ada7fa6e","value":61,"deaths":60,"dungeons":0},
+    {"seed":3278104927,"sha256":"238b96adc57e01d91dd9ef988ddb3247ddfb9089ca9cc066203e11226ad93fae","value":59,"deaths":59,"dungeons":0},
+    {"seed":3278112846,"sha256":"52cb7e3fec0af905801c60585e6185bb285e5a446945eec4af045da86f807b05","value":62,"deaths":61,"dungeons":0},
+    {"seed":3278120765,"sha256":"a0475045f704ffd459a262c6180a2941d840cbbc6a034d3e7fa12db7516a6c7f","value":61,"deaths":61,"dungeons":0},
+    {"seed":3278128684,"sha256":"bff65cb50fb8ac97cb712d8361d302e60b12d1ccb7401ef5f6895f8f160c9e4f","value":61,"deaths":61,"dungeons":0},
+    {"seed":3278136603,"sha256":"20867aa2d03e98d8c4f3372d33aa3472529f4f8ba525399a2499b933b5b24c90","value":63,"deaths":62,"dungeons":0},
+    {"seed":3278144522,"sha256":"71c6c83a6818a8b1daf24e00d1fd00a9131e385a49f650bbc18e863d840e169f","value":62,"deaths":63,"dungeons":0},
+    {"seed":3278152441,"sha256":"f41db55211c93b1e29c9092fb56f5172977bed6236612a7cfbe135979fd57a2b","value":62,"deaths":65,"dungeons":0},
+    {"seed":3278160360,"sha256":"ee664d109749aa09569c57876a183a2bdc1e665ec9ff98adf9b7b60b7a7cb3f1","value":63,"deaths":63,"dungeons":0},
+    {"seed":3278168279,"sha256":"7012fb6f939f8c717b4e692ac38319e387f5b20d021cd878fd823bb79f7c26c8","value":61,"deaths":62,"dungeons":0},
+    {"seed":3278176198,"sha256":"bab1f0e1460267b071882a9059e865ad399c71d5d1f5bdb381fcfe4953f6b57f","value":59,"deaths":58,"dungeons":0},
+    {"seed":3278184117,"sha256":"f3a95067ebd1e012177a3a27a7e6116ef923e62d77c919e53e48eaf8b5e845f2","value":61,"deaths":62,"dungeons":0}
+  ]
+}

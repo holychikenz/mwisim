@@ -63,6 +63,23 @@ is divided into encounters.
   output across an engine change. The candle proves nothing about correctness
   beyond the coarse `enc/h` control. Run both.
 
+## `enc/h` is now asserted as well as watched
+
+The `enc/h` column above is still the candle's control, and still a single
+unseeded sample — read it as "are these two engines simulating the same game?"
+and nothing more. But the same quantity is now **pinned as a first-class
+asserted number** by the evaluation suite: `fixtures/eval` records the mean and
+sample sd of encounters per simulated hour over 16 seeds for every case in
+`CASES`, and `npm run eval:check` fails if a case's mean moves outside a band
+computed from that sd. So a divergence the candle's single sample would have
+shrugged off now reddens a gate. See `api/eval/README.md`.
+
+The eval suite imports `CASES` and `BUILDS` from `builds.mjs` **unchanged** —
+there is one catalogue, not two, so the benchmark and the corpus can never fork
+on what a build is. The rule at the top of this section is therefore twice as
+binding: editing an existing case now invalidates a recorded corpus as well as
+every prior reading.
+
 ## The cases
 
 Not a cross product — each case loads a different part of the engine, so a
