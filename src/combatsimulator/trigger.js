@@ -1,5 +1,90 @@
 import { combatTriggerDependencyDetailMap } from "./dataProvider";
 import { BUFF_UNIQUE_BY_CONDITION } from "./generated/triggerIndex";
+import {
+    TRIGGER_CONDITION_KIND,
+    KIND_UNKNOWN,
+    KIND_EXACT_BUFF,
+    KIND_PREFIX_BUFF,
+    KIND_CURRENT_HP,
+    KIND_CURRENT_MP,
+    KIND_MISSING_HP,
+    KIND_MISSING_MP,
+    KIND_STUN_STATUS,
+    KIND_BLIND_STATUS,
+    KIND_SILENCE_STATUS,
+} from "./generated/triggerKinds";
+
+// MWIX adaptation (performance): the grouping of getDependencyValue's switch,
+// as lists. Extracted MECHANICALLY from the string switch these replace — see
+// the note above getDependencyValue — and read by tools/genTriggerKinds.mjs,
+// which compiles them into generated/triggerKinds.js. They encode ENGINE
+// SEMANTICS, not game data: which condition reads its buff by exact hrid and
+// which by prefix is a property of this method, not of the bestiary, and
+// deriving it from the data would silently change behaviour. Do not delete
+// them — they are the generator's input and the tests' reference.
+export const EXACT_BUFF_CONDITIONS = [
+    "/combat_trigger_conditions/berserk",
+    "/combat_trigger_conditions/frenzy",
+    "/combat_trigger_conditions/precision",
+    "/combat_trigger_conditions/vampirism",
+    "/combat_trigger_conditions/attack_coffee",
+    "/combat_trigger_conditions/defense_coffee",
+    "/combat_trigger_conditions/lucky_coffee",
+    "/combat_trigger_conditions/magic_coffee",
+    "/combat_trigger_conditions/melee_coffee",
+    "/combat_trigger_conditions/ranged_coffee",
+    "/combat_trigger_conditions/swiftness_coffee",
+    "/combat_trigger_conditions/wisdom_coffee",
+    "/combat_trigger_conditions/ice_spear",
+    "/combat_trigger_conditions/puncture",
+    "/combat_trigger_conditions/frost_surge",
+    "/combat_trigger_conditions/elusiveness",
+    "/combat_trigger_conditions/channeling_coffee",
+    "/combat_trigger_conditions/fierce_aura",
+    "/combat_trigger_conditions/invincible_armor",
+    "/combat_trigger_conditions/invincible_fire_resistance",
+    "/combat_trigger_conditions/invincible_nature_resistance",
+    "/combat_trigger_conditions/invincible_water_resistance",
+    "/combat_trigger_conditions/provoke",
+    "/combat_trigger_conditions/taunt",
+    "/combat_trigger_conditions/crippling_slash",
+    "/combat_trigger_conditions/mana_spring",
+    "/combat_trigger_conditions/retribution",
+    "/combat_trigger_conditions/fracturing_impact",
+    "/combat_trigger_conditions/maim",
+    "/combat_trigger_conditions/curse",
+    "/combat_trigger_conditions/weaken",
+];
+
+export const PREFIX_BUFF_CONDITIONS = [
+    "/combat_trigger_conditions/critical_aura",
+    "/combat_trigger_conditions/critical_coffee",
+    "/combat_trigger_conditions/intelligence_coffee",
+    "/combat_trigger_conditions/stamina_coffee",
+    "/combat_trigger_conditions/elemental_affinity",
+    "/combat_trigger_conditions/fury",
+    "/combat_trigger_conditions/guardian_aura",
+    "/combat_trigger_conditions/insanity",
+    "/combat_trigger_conditions/spike_shell",
+    "/combat_trigger_conditions/toxic_pollen",
+    "/combat_trigger_conditions/invincible",
+    "/combat_trigger_conditions/mystic_aura",
+    "/combat_trigger_conditions/pestilent_shot",
+    "/combat_trigger_conditions/smoke_burst",
+    "/combat_trigger_conditions/speed_aura",
+    "/combat_trigger_conditions/toughness",
+    "/combat_trigger_conditions/enrage",
+];
+
+export const SCALAR_CONDITION_KINDS = {
+    "/combat_trigger_conditions/current_hp": "CURRENT_HP",
+    "/combat_trigger_conditions/current_mp": "CURRENT_MP",
+    "/combat_trigger_conditions/missing_hp": "MISSING_HP",
+    "/combat_trigger_conditions/missing_mp": "MISSING_MP",
+    "/combat_trigger_conditions/stun_status": "STUN_STATUS",
+    "/combat_trigger_conditions/blind_status": "BLIND_STATUS",
+    "/combat_trigger_conditions/silence_status": "SILENCE_STATUS",
+};
 
 // =============================================================================
 // MWIX adaptation (performance): two values hoisted into the constructor.
@@ -47,6 +132,7 @@ class Trigger {
         this.buffUniqueHrid =
             BUFF_UNIQUE_BY_CONDITION[conditionHrid] ??
             "/buff_uniques" + conditionHrid.slice(conditionHrid.lastIndexOf("/"));
+        this.conditionKind = TRIGGER_CONDITION_KIND[conditionHrid] ?? KIND_UNKNOWN;
     }
 
     static createFromDTO(dto) {
@@ -123,57 +209,41 @@ class Trigger {
         return this.compareValue(dependencyValue);
     }
 
+    // =========================================================================
+    // MWIX adaptation (performance): a condition-KIND ordinal, interned at
+    // construction, in place of a ~50-case string switch.
+    //
+    // getDependencyValue held 8.2% of engine self time and ran after every
+    // event, for every trigger of every ability of every living unit. Its 55
+    // handled conditions fall into only NINE distinct arms — which is what
+    // makes the switch worth collapsing rather than reordering.
+    //
+    // WHERE THE GROUPING CAME FROM. It was extracted MECHANICALLY from the
+    // string switch this replaces, by parsing its case labels and grouping them
+    // by the arm they fall through to, and the lists at the top of this file
+    // are that extraction's output. It was NOT re-derived by hand, and it is
+    // NOT derived from the game data: which conditions read their buff by exact
+    // hrid and which by prefix is engine semantics, and the failure mode of
+    // getting it wrong is reading a DIFFERENT buff and reporting a plausible
+    // wrong number with no error at all. tools/genTriggerKinds.mjs compiles the
+    // lists into generated/triggerKinds.js; api/tests/triggerKinds.test.mjs
+    // re-runs the generator byte for byte and checks this method against the
+    // retired string switch, kept there verbatim as the oracle, over every
+    // condition in the table.
+    //
+    // AN UNKNOWN CONDITION STILL THROWS, AND STILL FROM HERE. KIND_UNKNOWN is 0
+    // and falls to the `default:` arm below, so the error is the same error, at
+    // the same site, on the same evaluation. Interning it into a throw at
+    // CONSTRUCTION would break api/lib/triggerSearch, which builds Trigger
+    // objects speculatively — the same argument that made BUFF_UNIQUE_BY_CONDITION
+    // fall back rather than throw. Three conditions rely on this: the
+    // multi-target ones are resolved in isActiveMultiTarget and never arrive.
+    // =========================================================================
     getDependencyValue(source, currentTime) {
-        switch (this.conditionHrid) {
-            case "/combat_trigger_conditions/berserk":
-            case "/combat_trigger_conditions/frenzy":
-            case "/combat_trigger_conditions/precision":
-            case "/combat_trigger_conditions/vampirism":
-            case "/combat_trigger_conditions/attack_coffee":
-            case "/combat_trigger_conditions/defense_coffee":
-            case "/combat_trigger_conditions/lucky_coffee":
-            case "/combat_trigger_conditions/magic_coffee":
-            case "/combat_trigger_conditions/melee_coffee":
-            case "/combat_trigger_conditions/ranged_coffee":
-            case "/combat_trigger_conditions/swiftness_coffee":
-            case "/combat_trigger_conditions/wisdom_coffee":
-            case "/combat_trigger_conditions/ice_spear":
-            case "/combat_trigger_conditions/puncture":
-            case "/combat_trigger_conditions/frost_surge":
-            case "/combat_trigger_conditions/elusiveness":
-            case "/combat_trigger_conditions/channeling_coffee":
-            case "/combat_trigger_conditions/fierce_aura":
-            case "/combat_trigger_conditions/invincible_armor":
-            case "/combat_trigger_conditions/invincible_fire_resistance":
-            case "/combat_trigger_conditions/invincible_nature_resistance":
-            case "/combat_trigger_conditions/invincible_water_resistance":
-            case "/combat_trigger_conditions/provoke":
-            case "/combat_trigger_conditions/taunt":
-            case "/combat_trigger_conditions/crippling_slash":
-            case "/combat_trigger_conditions/mana_spring":
-            case "/combat_trigger_conditions/retribution":
-            case "/combat_trigger_conditions/fracturing_impact":
-            case "/combat_trigger_conditions/maim":
-            case "/combat_trigger_conditions/curse":
-            case "/combat_trigger_conditions/weaken":
+        switch (this.conditionKind) {
+            case KIND_EXACT_BUFF:
                 return source.combatBuffs[this.buffUniqueHrid];
-            case "/combat_trigger_conditions/critical_aura":
-            case "/combat_trigger_conditions/critical_coffee":
-            case "/combat_trigger_conditions/intelligence_coffee":
-            case "/combat_trigger_conditions/stamina_coffee":
-            case "/combat_trigger_conditions/elemental_affinity":
-            case "/combat_trigger_conditions/fury":
-            case "/combat_trigger_conditions/guardian_aura":
-            case "/combat_trigger_conditions/insanity":
-            case "/combat_trigger_conditions/spike_shell":
-            case "/combat_trigger_conditions/toxic_pollen":
-            case "/combat_trigger_conditions/invincible":
-            case "/combat_trigger_conditions/mystic_aura":
-            case "/combat_trigger_conditions/pestilent_shot":
-            case "/combat_trigger_conditions/smoke_burst":
-            case "/combat_trigger_conditions/speed_aura":
-            case "/combat_trigger_conditions/toughness":
-            case "/combat_trigger_conditions/enrage":
+            case KIND_PREFIX_BUFF:
                 let buffPrefix = this.buffUniqueHrid;
                 for (const buff in source.combatBuffs) {
                     if (buff.startsWith(buffPrefix)) {
@@ -181,21 +251,21 @@ class Trigger {
                     }
                 }
                 return undefined;
-            case "/combat_trigger_conditions/current_hp":
+            case KIND_CURRENT_HP:
                 return source.combatDetails.currentHitpoints;
-            case "/combat_trigger_conditions/current_mp":
+            case KIND_CURRENT_MP:
                 return source.combatDetails.currentManapoints;
-            case "/combat_trigger_conditions/missing_hp":
+            case KIND_MISSING_HP:
                 return source.combatDetails.maxHitpoints - source.combatDetails.currentHitpoints;
-            case "/combat_trigger_conditions/missing_mp":
+            case KIND_MISSING_MP:
                 return source.combatDetails.maxManapoints - source.combatDetails.currentManapoints;
-            case "/combat_trigger_conditions/stun_status":
+            case KIND_STUN_STATUS:
                 // Replicate the game's behaviour of "stun status active" triggers activating
                 // immediately after the stun has worn off
                 return source.isStunned || source.stunExpireTime == currentTime;
-            case "/combat_trigger_conditions/blind_status":
+            case KIND_BLIND_STATUS:
                 return source.isBlinded || source.blindExpireTime == currentTime;
-            case "/combat_trigger_conditions/silence_status":
+            case KIND_SILENCE_STATUS:
                 return source.isSilenced || source.silenceExpireTime == currentTime;
             default:
                 throw new Error("Unknown conditionHrid in trigger: " + this.conditionHrid);

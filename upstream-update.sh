@@ -1253,6 +1253,79 @@ upstream specifically changed the same surface area.
       shift, filter, closure, spread and read. The candle decided it; the
       argument would not have.
 
+- **Condition-kind ordinal in \`getDependencyValue\` (performance, measured)** —
+  a tenth round, and the stage \`todo.md\` §6a sized at "about 3%" and
+  deliberately deferred. \`getDependencyValue\` was 8.2% of engine self time and
+  its remaining cost was a ~50-case string switch. §6a's three stated reasons
+  for deferring were that testing it honestly means mechanically extracting the
+  existing switch's grouping, that the failure mode is reading a DIFFERENT buff
+  and reporting a plausible wrong number with no error, and that it permanently
+  diverges a readable upstream switch — "worth doing; worth doing carefully,
+  with the differential harness built first". The harness shipped in
+  \`e1aec2b\`, so the blocker expired; the caution was honoured rather than
+  dropped.
+    - \`src/combatsimulator/trigger.js\`: the constructor interns
+      \`conditionKind\` from the generated table and \`getDependencyValue\`
+      switches on it. The 55 handled conditions fall into only NINE distinct
+      arms, so a ~50-label string chain becomes nine integer compares.
+      THE GROUPING WAS EXTRACTED MECHANICALLY, not retyped: a parse of the
+      retired switch's case labels, grouped by the arm each falls through to.
+      Its output is \`EXACT_BUFF_CONDITIONS\`, \`PREFIX_BUFF_CONDITIONS\` and
+      \`SCALAR_CONDITION_KINDS\` at the top of the file. Those lists stay in the
+      engine and are the GENERATOR's input as well as the tests' reference —
+      exactly the arrangement \`genStatSchema.mjs\`'s role lists have, and for
+      the same reason: which condition reads its buff by exact hrid and which by
+      prefix is ENGINE SEMANTICS, and deriving it from the game data would
+      silently change behaviour. Do not delete them.
+    - \`tools/genTriggerKinds.mjs\` and \`generated/triggerKinds.js\` (NEW, ours
+      alone): \`KIND_*\` ordinals and \`TRIGGER_CONDITION_KIND\`, null-prototype
+      and frozen. Following \`genTriggerIndex.mjs\`, the three choices are made
+      consciously: the grouping is read from the engine source rather than the
+      data (above); ordinals come from a SORT of the kind names and entries are
+      sorted by hrid, so the file is a pure function of its input and a change
+      is a reviewable diff rather than a silent renumbering; and an unseen
+      condition maps to \`KIND_UNKNOWN = 0\` and does NOT throw at construction.
+      That last one differs from \`buffTypeOrdinal\` deliberately. 0 routes to
+      \`getDependencyValue\`'s \`default:\` arm, which throws the same error at
+      the same site on the same evaluation, so nothing became quieter; throwing
+      at construction would break \`api/lib/triggerSearch\`, which builds
+      Trigger objects speculatively. It is also load-bearing for three REAL
+      conditions — \`lowest_hp_percentage\`, \`number_of_active_units\` and
+      \`number_of_dead_units\` are resolved in \`isActiveMultiTarget\` and never
+      reach \`getDependencyValue\`, so they are legitimately unknown here.
+      COVERED BY \`api/tests/triggerKinds.test.mjs\` (NEW). The central case is
+      differential in the shape \`triggerHoist.test.mjs\` established: the
+      RETIRED STRING SWITCH is kept in the test verbatim and the shipped method
+      is checked against it over all 55 conditions x nine source shapes x three
+      clock values — the shapes deliberately including a buff key that is the
+      condition's own hrid with a suffix, one that is a truncation of it, and an
+      empty map, because those are exactly where an exact lookup and a prefix
+      scan part company. The generator is byte-compared by re-running it, as the
+      other three are. Four mutants were confirmed to fail it first: a condition
+      moved from the exact group to the prefix group WITH the table regenerated,
+      a \`missing_mp\` arm reading hitpoints, a dropped \`KIND_UNKNOWN\`
+      fallback, and a \`stun_status\` arm losing its expire-time clause.
+      Candle at \`--reps=5\`, four counterbalanced rounds (ABBA): 21 of 22
+      improved, 12 won every round, NONE lost every round. Geometric mean
+      -4.2%, comfortably clear of the noise floor and above §6a's 3% estimate.
+      \`dungeon-den-200\` 53.8 -> 48.6 (-9.7%), \`dungeon-fort-t2\`
+      59.2 -> 53.4 (-9.7%), \`dungeon-circus\` -7.6%, \`dungeon-pirate\` -7.5%,
+      \`party3-sorcerer\` -6.9%, \`party3-swarm\` -5.7%, \`ranged-solo\` -5.0%,
+      \`dungeon-den-600\` 55.1 -> 52.4 (-4.9%), \`mid-solo\` and
+      \`party2-eyes\` -4.2%. The one case with a positive sign,
+      \`floor-party\` +0.7% at 2/4, was re-measured focused over six
+      counterbalanced rounds at \`--reps=9\` and is noise: +0.1% at 4/6.
+      \`sim:check\` 3/3 bit-identical; \`eval:check\` Tier A 464/464, Tier B
+      29/29.
+      WHY THIS IS NOT THE \`processEvent\` INTEGER-DISPATCH RESULT AGAIN. That
+      one was discarded as noise because V8 interns \`event.type\` and lowers a
+      19-arm string switch to pointer comparisons, which are already integer
+      compares. The difference here is the CHAIN LENGTH, not the compare: 55
+      labels in source order means an hrid late in the list is tested against
+      dozens of pointers per evaluation, where nine dense small integers are a
+      table V8 can build. The size of the win is consistent with that reading
+      and with nothing else in the round having changed.
+
 NOTE: the labyrinth "maze" player-buff mechanism (\`options.maze\`,
 \`MAZE_DEFAULTS\`, \`resolveMazeBonuses\`, \`mazeBonuses\`,
 \`Player.applyMazeBonuses\`) was REMOVED deliberately — it double-counted the
