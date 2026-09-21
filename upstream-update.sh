@@ -1184,6 +1184,75 @@ upstream specifically changed the same surface area.
       \`starter-solo\` +0.6% at 2/6. \`sim:check\` 3/3 bit-identical;
       \`eval:check\` Tier A 464/464, Tier B 29/29.
 
+- **Linear-scan heap removal (performance, measured)** — a ninth round, aimed
+  at the family the profile left on top once the buff source was fixed:
+  \`Heap.remove\` at 5.7% of engine self time and heap-js's TypeScript ES5
+  downlevel helpers \`__read\` / \`__spreadArray\` at a further 4.5%. Those
+  helpers cannot be avoided by choosing a different build — heap-js 2.7.1 ships
+  ES5 only (\`main\` dist/heap-js.umd.js, \`module\` dist/heap-js.es5.js) — only
+  by not calling through that API.
+    - \`events/eventQueue.js\`: \`_removeCollected\` no longer calls
+      \`this.minHeap.remove(event)\`. heap-js's \`remove\`
+      (dist/heap-js.es5.js:1946) answers it with a pruned BFS driven by
+      \`queue.shift()\` — O(n) per shift on a JS array — allocating a children
+      array via \`getChildrenIndexOf\`, a filter closure, an \`__read\` and an
+      \`__spreadArray\` per visited node, then \`push.apply\`, all to RE-FIND an
+      object \`clearMatching\` already collected and is holding. The new
+      \`_removeFromHeap\` finds the index with a linear identity scan.
+      WHY THE SCAN FINDS THE SAME INDEX. \`_removeCollected\` passed no
+      \`callbackFn\`, so heap-js used \`Heap.defaultIsEqual\`, which is
+      \`(a, b) => a === b\` (heap-js.es5.js:1480) — identity, not deep equality.
+      Events are unique object instances, so exactly ONE index satisfies it, and
+      the pruning and the level-order traversal are irrelevant once the match is
+      unique: any search that visits every entry finds the identical index.
+      THE MUTATION IS UPSTREAM'S, BYTE FOR BYTE, and that is the load-bearing
+      part: \`idx === 0\` -> \`pop()\`, \`idx === heapArray.length - 1\` ->
+      \`heapArray.pop()\`, otherwise
+      \`heapArray.splice(idx, 1, heapArray.pop())\` then \`_sortNodeUp(idx)\`
+      then \`_sortNodeDown(idx)\`. That sequence fixes the heap PERMUTATION and
+      therefore the tie-break order among equal-\`time\` events; the
+      single-compaction variant discarded in the third round failed the parity
+      gate for exactly this reason ("the array one compaction produces is not
+      the array N successive removals produce"). Only the SEARCH changed. The
+      \`o === undefined -> pop()\` arm is deliberately not reproduced: the one
+      caller passes a collected event.
+      The constructor assertion beside the \`heapArray\` one now also checks
+      that \`_sortNodeUp\` and \`_sortNodeDown\` are functions, so a dependency
+      bump fails loudly at the first EventQueue rather than producing wrong
+      numbers quietly.
+      COVERED BY \`api/tests/heapRemove.test.mjs\` (NEW), which is differential
+      against the retired call and compares the whole backing array BY
+      POSITION, not as a set — 4 000 removals from randomised heaps with
+      deliberately duplicated \`time\` keys, 200 trials of N successive removals
+      (the shape \`clearMatching\` actually produces), and the drain order after
+      a removal. Three mutants were confirmed to fail it: a plain splice instead
+      of swap-with-last, a dropped \`_sortNodeUp\`, and the last-element arm
+      taking the splice path. A fourth — routing \`idx === 0\` through the
+      splice path — SURVIVED, and that is correct rather than a gap:
+      \`Heap.pop()\` is \`heapArray[0] = heapArray.pop(); _sortNodeDown(0)\`,
+      which is the splice path with a no-op \`_sortNodeUp(0)\`. Recorded so the
+      next reader does not chase it.
+      Candle at \`--reps=5\`, four counterbalanced rounds (ABBA): 21 of 22
+      improved, 18 won every round, NONE lost every round. Geometric mean
+      -8.7%, comfortably ahead of the 4-6% this was forecast at.
+      \`dungeon-fort-t2\` 70.8 -> 59.5 (-16.0%), \`dungeon-circus\` -15.7%,
+      \`dungeon-den-200\` 63.7 -> 54.2 (-14.9%), \`dungeon-den-600\`
+      65.4 -> 55.7 (-14.9%), \`dungeon-pirate\` -13.5%, \`melee-solo\` -10.5%,
+      \`party3-sorcerer\` -10.2%, \`party3-swarm\` -10.0%, \`buffstack-solo\`
+      -9.7%, \`party2-eyes\` -9.6%. The one case with a positive sign,
+      \`floor-solo\` +3.8% at 2/4, was re-measured focused over six
+      counterbalanced rounds at \`--reps=9\` and is noise: -0.2% at 3/6, on a
+      0.84 ms/h case. \`starter-solo\` and \`mid-solo\`, both 2/4 straddles in
+      the full run, came back -3.5% at 5/6 and -1.4% at 5/6 in the same focused
+      run. \`sim:check\` 3/3 bit-identical; \`eval:check\` Tier A 464/464, Tier B
+      29/29.
+      THE CAVEAT THAT WAS CARRIED INTO THE MEASUREMENT, recorded because it was
+      not a proof beforehand: a linear scan visits \`idx + 1\` entries where the
+      pruned BFS visits some subset of \`[0..idx]\` plus siblings, so the scan
+      can visit MORE nodes. Each visit is a pointer compare against the BFS's
+      shift, filter, closure, spread and read. The candle decided it; the
+      argument would not have.
+
 NOTE: the labyrinth "maze" player-buff mechanism (\`options.maze\`,
 \`MAZE_DEFAULTS\`, \`resolveMazeBonuses\`, \`mazeBonuses\`,
 \`Player.applyMazeBonuses\`) was REMOVED deliberately — it double-counted the

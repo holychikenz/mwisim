@@ -1,0 +1,25 @@
+case            |    A ms/h |    B ms/h |    delta | B wins
+----------------|-----------|-----------|----------|-------
+floor-solo      |      0.76 |      0.78 | +3.8%      | 2/4
+floor-party     |      3.75 |      3.68 | -1.9%      | 3/4
+starter-solo    |      1.47 |      1.43 | -2.6%      | 2/4
+mid-solo        |      2.91 |      2.80 | -3.8%      | 2/4
+melee-solo      |      6.92 |      6.20 | -10.5%     | 4/4
+ranged-solo     |      7.59 |      6.93 | -8.7%      | 4/4
+magic-solo      |      7.61 |      6.93 | -8.9%      | 4/4
+tank-solo       |      6.52 |      5.99 | -8.2%      | 4/4
+healer-solo     |      4.40 |      4.18 | -5.1%      | 4/4
+buffstack-solo  |      6.86 |      6.19 | -9.7%      | 4/4
+selfbuff-solo   |      7.26 |      6.64 | -8.6%      | 4/4
+melee-swarm     |      9.47 |      8.78 | -7.4%      | 4/4
+melee-abyss     |      7.22 |      6.91 | -4.2%      | 4/4
+magic-abyss-t3  |      9.01 |      8.34 | -7.5%      | 4/4
+party2-eyes     |     14.30 |     12.94 | -9.6%      | 4/4
+party3-swarm    |     25.84 |     23.26 | -10.0%     | 4/4
+party3-sorcerer |     29.33 |     26.35 | -10.2%     | 4/4
+dungeon-den-200 |     63.70 |     54.22 | -14.9%     | 4/4
+dungeon-den-600 |     65.40 |     55.66 | -14.9%     | 4/4
+dungeon-circus  |     66.35 |     55.96 | -15.7%     | 4/4
+dungeon-fort-t2 |     70.81 |     59.45 | -16.0%     | 4/4
+dungeon-pirate  |     67.77 |     58.63 | -13.5%     | 4/4
+geometric mean: -8.67%

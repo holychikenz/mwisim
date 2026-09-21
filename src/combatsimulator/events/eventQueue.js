@@ -55,6 +55,17 @@ class EventQueue {
                     "Pin heap-js back to 2.7.1, or port these methods to the new API."
             );
         }
+        if (
+            typeof this.minHeap._sortNodeUp !== "function" ||
+            typeof this.minHeap._sortNodeDown !== "function"
+        ) {
+            throw new Error(
+                "heap-js no longer exposes `_sortNodeUp`/`_sortNodeDown`; EventQueue's " +
+                    "_removeFromHeap performs Heap.remove's re-heapify itself and the " +
+                    "removal order fixes the tie-break order among equal-time events. " +
+                    "Pin heap-js back to 2.7.1, or port _removeFromHeap to the new API."
+            );
+        }
     }
 
     // =========================================================================
@@ -285,14 +296,84 @@ class EventQueue {
         return null;
     }
 
+    // =========================================================================
+    // MWIX adaptation (performance): find the event by a linear scan, then
+    // perform Heap.remove's mutation verbatim.
+    //
+    // heap-js 2.7.1's `remove` (dist/heap-js.es5.js:1946) re-FINDS an object the
+    // queue is already holding, and it does so expensively: a pruned BFS driven
+    // by `queue.shift()` — O(n) per shift on a JS array — allocating a children
+    // array via `getChildrenIndexOf`, a filter closure, `__read(children)` and
+    // `__spreadArray(...)` per visited node, then `push.apply`. Those ES5
+    // downlevel helpers are unavoidable through the API: 2.7.1 ships only ES5
+    // bundles (`main` is dist/heap-js.umd.js, `module` is dist/heap-js.es5.js).
+    // In the profile `Heap.remove` was 5.7% of engine self time and `__read` /
+    // `__spreadArray` a further 4.5%.
+    //
+    // WHY THE SCAN FINDS THE SAME INDEX. `_removeCollected` calls remove with NO
+    // callbackFn, so heap-js uses `Heap.defaultIsEqual`, which is
+    // `(a, b) => a === b` (heap-js.es5.js:1480) — identity, not deep equality.
+    // Events are unique object instances, so exactly ONE index in heapArray
+    // satisfies it. The pruning and the level order are therefore irrelevant:
+    // any search that visits every entry finds the identical index the BFS
+    // finds, and an absent object yields false either way.
+    //
+    // THE MUTATION IS BYTE-FOR-BYTE UPSTREAM'S, and that is not cosmetic. It is
+    // what fixes the heap permutation and hence the tie-break order among
+    // equal-`time` events; todo.md §3 records a single-compaction variant that
+    // failed the parity gate precisely because "the array one compaction
+    // produces is not the array N successive removals produce". Only the SEARCH
+    // changed. `_sortNodeUp`/`_sortNodeDown` are asserted in the constructor
+    // beside `heapArray`, so a dependency bump fails loudly at the first
+    // EventQueue rather than producing wrong numbers.
+    //
+    // The `o === undefined -> pop()` arm of upstream's remove is deliberately
+    // NOT reproduced: the only caller passes a collected event, never undefined.
+    //
+    // HONEST CAVEAT. A linear scan visits idx + 1 entries where the pruned BFS
+    // visits some subset of [0..idx] plus siblings, so it can visit MORE nodes.
+    // Each visit is a pointer compare against the BFS's shift, filter, closure,
+    // spread and read; the candle, counterbalanced, is what decided it.
+    // =========================================================================
+    _removeFromHeap(event) {
+        let heap = this.minHeap;
+        let heapArray = heap.heapArray;
+        let len = heapArray.length;
+        if (len === 0) {
+            return false;
+        }
+
+        let idx = -1;
+        for (let i = 0; i < len; i++) {
+            if (heapArray[i] === event) {
+                idx = i;
+                break;
+            }
+        }
+        if (idx === -1) {
+            return false;
+        }
+
+        if (idx === 0) {
+            heap.pop();
+        } else if (idx === len - 1) {
+            heapArray.pop();
+        } else {
+            heapArray.splice(idx, 1, heapArray.pop());
+            heap._sortNodeUp(idx);
+            heap._sortNodeDown(idx);
+        }
+        return true;
+    }
+
     _removeCollected(matches) {
         if (matches === null) {
             return false;
         }
         for (let i = 0; i < matches.length; i++) {
-            // heap-js compares with `===`, so a true return means THIS object
-            // left the heap — which is what makes the decrement exact.
-            if (this.minHeap.remove(matches[i])) {
+            // The match is by identity, so a true return means THIS object left
+            // the heap — which is what makes the decrement exact.
+            if (this._removeFromHeap(matches[i])) {
                 this._trackRemoved(matches[i]);
             }
         }
