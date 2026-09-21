@@ -20,7 +20,12 @@ const players = [];
 for (let i = 0; i < playersData.length; i++) {
   const currentPlayer = Player.createFromDTO(structuredClone(playersData[i]));
   currentPlayer.zoneBuffs = zone.buffs;
-  currentPlayer.extraBuffs = extraBuffs;
+  // The per-player tail (shrines + seals, resolved by the UI onto each DTO) is
+  // concatenated onto the shared list, as in api/lib/simulator.js runSimulation.
+  // `workerData.extraBuffs` stays a SINGLE shared array on purpose — the
+  // per-player part already travels inside playersData, so nothing about
+  // workerData's shape needs to change.
+  currentPlayer.extraBuffs = extraBuffs.concat(playersData[i].extraBuffs || []);
   players.push(currentPlayer);
 }
 

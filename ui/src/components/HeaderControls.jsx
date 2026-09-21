@@ -7,7 +7,6 @@ import {
   Popover,
   Stack,
   Switch,
-  Checkbox,
   Text,
   Indicator,
   SegmentedControl,
@@ -39,17 +38,6 @@ const BUFF_LEVEL_OPTIONS = [
     value: String(l),
     label: `Level ${l}`
   }))
-];
-
-// Personal seal buffs understood by the worker (extra.personalBuffs).
-const SEAL_OPTIONS = [
-  { value: '/items/seal_of_attack_speed', label: 'Attack Speed (+15%)' },
-  { value: '/items/seal_of_cast_speed', label: 'Cast Speed (+15%)' },
-  { value: '/items/seal_of_combat_drop', label: 'Combat Drop (+15%)' },
-  { value: '/items/seal_of_critical_rate', label: 'Critical Rate (+10%)' },
-  { value: '/items/seal_of_damage', label: 'Damage (+8%)' },
-  { value: '/items/seal_of_rare_find', label: 'Rare Find (+60%)' },
-  { value: '/items/seal_of_wisdom', label: 'Wisdom (+20%)' }
 ];
 
 // Labyrinth supply crates (same trios as the old UI's LabyrinthSupplyItems).
@@ -139,11 +127,13 @@ export function HeaderControls({
       .map(m => ({ value: m.hrid, label: m.name }));
   }, [monsters]);
 
+  // Community buffs and MooPass only. Seals used to be counted here; they are
+  // now a per-character control in PlayerConfig's "Houses, Achievements &
+  // Buffs" panel, and this header knows nothing about them.
   const activeBuffCount =
     (extraOptions.comExp > 0 ? 1 : 0) +
     (extraOptions.comDrop > 0 ? 1 : 0) +
-    (extraOptions.mooPass ? 1 : 0) +
-    (extraOptions.personalBuffs?.length || 0);
+    (extraOptions.mooPass ? 1 : 0);
 
   const crateCount = CRATE_CATEGORIES.filter(c => labConfig.crates[c.key]).length;
   const upgradeCount = LAB_UPGRADE_FIELDS.filter(f => labConfig.upgrades[f.key] > 0).length;
@@ -181,9 +171,12 @@ export function HeaderControls({
   const setBuildingLevel = (hrid, level) =>
     setCfg({ guildBuildingLevels: { ...guildBuildingLevels, [hrid]: level } });
 
-  // Shrine level knobs. Rendered in BOTH the trial-options popover and the
-  // ordinary Buffs popover: shrine buffs are permanent character buffs that
-  // apply to every fight, so the levels are shared state, not trial-only.
+  // Shrine level knobs — the TRIAL FALLBACK, and nothing else. They used to be
+  // rendered in the ordinary Buffs popover as well, on the assumption that one
+  // set of levels described the whole party; it does not, since each member
+  // buys their own (utils/guildBuffs.js resolveUnitShrineBuffs). Every character
+  // now carries their own levels in PlayerConfig, and these knobs survive only
+  // as the party-wide default for trial builds that carry none of their own.
   const shrineInputs = GUILD_COMBAT_BUFFS.map(b => (
     <NumberInput
       key={b.hrid}
@@ -497,18 +490,20 @@ export function HeaderControls({
         />
       )}
 
-      {/* Buffs (community buffs / seals / MooPass) do NOT apply inside guild
-          trials — the trial worker sends a neutral extra — so the button is
-          hidden in trial mode to avoid implying otherwise. Guild SHRINE buffs
-          are the exception: they are permanent character buffs that apply to
-          every fight, so they appear here for zone/lab runs and again in the
-          trial-options popover, backed by the same shared levels. */}
+      {/* Community buffs and MooPass do NOT apply inside guild trials — the
+          trial worker sends a neutral extra — so the button is hidden in trial
+          mode to avoid implying otherwise. What remains in here is genuinely
+          server- or account-wide: the two community buff ladders are the same
+          for everyone logged in, and a MooPass is an account subscription.
+          Seals and guild shrines used to be here too and are not any more:
+          both are per-CHARACTER and now live in each player's "Houses,
+          Achievements & Buffs" panel. */}
       {simMode !== 'guildTrial' && (
       <Popover width={280} position="bottom-end" shadow="md">
         <Popover.Target>
           <Indicator
-            disabled={activeBuffCount + activeShrineCount === 0}
-            label={activeBuffCount + activeShrineCount}
+            disabled={activeBuffCount === 0}
+            label={activeBuffCount}
             size={16}
           >
             <Button variant="default" size="sm">
@@ -552,30 +547,6 @@ export function HeaderControls({
                 onExtraChange({ ...extraOptions, mooPass: e.currentTarget.checked })
               }
             />
-            <Text size="sm" fw={600} mt={4}>
-              Personal seals
-            </Text>
-            <Checkbox.Group
-              value={extraOptions.personalBuffs || []}
-              onChange={(values) =>
-                onExtraChange({ ...extraOptions, personalBuffs: values })
-              }
-            >
-              <Stack gap={4}>
-                {SEAL_OPTIONS.map(seal => (
-                  <Checkbox
-                    key={seal.value}
-                    value={seal.value}
-                    label={seal.label}
-                    size="xs"
-                  />
-                ))}
-              </Stack>
-            </Checkbox.Group>
-            <Text size="sm" fw={600} mt={4}>
-              Guild shrines (0 = off)
-            </Text>
-            {shrineInputs}
           </Stack>
         </Popover.Dropdown>
       </Popover>

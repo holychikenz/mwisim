@@ -47,10 +47,9 @@ import { CharacterImport } from './components/CharacterImport';
 import { TextInput } from '@mantine/core';
 import { toPlayerDTO } from './utils/playerDTO';
 import { loadExperimental, saveExperimental } from './utils/experimental';
+import { resolvePlayerExtraBuffs } from './utils/playerBuffs';
 import {
-  resolveGuildBuffs,
   resolveGuildBuildingBuffs,
-  resolveUnitShrineBuffs,
   GUILD_COMBAT_BUFFS,
   MAX_GUILD_BUFF_LEVEL
 } from './utils/guildBuffs';
@@ -139,6 +138,15 @@ const createDefaultPlayer = (id) => ({
   abilities: [null, null, null, null, null],
   houseRooms: {},
   achievements: {},
+  // { [guildBuffHrid]: level } — the character's OWN shrine levels, same key and
+  // same shape as a trial master build's (utils/guildBuffs.js), so there is no
+  // third spelling of this thing anywhere. Absent or 0 means off.
+  guildShrines: {},
+  // Seal item hrids (shared/personalBuffs.js). A seal is equipped by one
+  // character, so it belongs here rather than in the header's extraOptions.
+  personalBuffs: [],
+  // { [abilityHrid]: { level, triggers } } — see PlayerConfig's applyAbilities.
+  abilityMemory: {},
   debuffOnLevelGap: 0
 });
 
@@ -149,6 +157,64 @@ const createInitialPlayers = () => ({
   4: createDefaultPlayer(4),
   5: createDefaultPlayer(5)
 });
+
+/**
+ * One-time, additive backfill of the three per-player fields introduced when
+ * shrines and seals stopped being party-wide.
+ *
+ * The shrine seeding is the part that matters. Until now a single knob set in
+ * the trial header (`trialConfig.guildBuffLevels`, persisted in the guild-trial
+ * blob) stood for every player at once. A user who had dialled their shrines in
+ * there and then reloaded into this build would find every character carrying
+ * none — a silent, invisible nerf to every number the app prints. So each
+ * restored player WITHOUT a `guildShrines` key inherits a copy of those knobs.
+ *
+ * A player that already HAS the key is left strictly alone, including when it is
+ * `{}`: that spelling means "captured, owns none" (utils/guildBuffs.js
+ * `ownsShrines`) and overwriting it would resurrect the very party-wide
+ * assumption this change removes. Running the helper twice is therefore a no-op.
+ *
+ * Seals need no migration at all: `extraOptions` was never persisted, so a
+ * reload has always lost them and nothing is being taken away.
+ *
+ * WHAT THIS DOES NOT COVER, stated plainly because the seeding seams are
+ * scattered and a reader should not have to infer the gaps:
+ *
+ *   - THE AUTO-SAVED SESSION is the only thing that passes through here. It is
+ *     the common case and the one that would otherwise bite every existing user
+ *     on first load, which is why it is the seam that got the migration.
+ *   - A SAVED LOADOUT (LoadoutManager) restored from before this branch has no
+ *     `guildShrines`, and handleLoad replaces the player wholesale, so it loads
+ *     with none. Not seeded: a loadout is an explicit act of recall, and
+ *     quietly mixing in whatever the trial header currently holds would be a
+ *     different kind of lie.
+ *   - AN IMPORTED SET (utils/importSet.js) from before this branch carries no
+ *     `guildShrines` either, and exportFormatToPlayer deliberately leaves the
+ *     key ABSENT rather than defaulting it — absence is what lets a trial build
+ *     defer to the party-wide knobs. On the zone path absence resolves to no
+ *     shrines, which is the honest answer for a foreign build.
+ *   - THE MWIX BRIDGE does seed, in App's bridge effect, but on its own terms:
+ *     a payload that states shrines wins outright, and only a payload silent
+ *     about them falls back to the stored knobs.
+ *
+ * In all three uncovered cases the shrines are one panel away and visible;
+ * the session restore is the only one where the loss would have been silent.
+ */
+function migratePlayers(saved) {
+  if (!saved || typeof saved !== 'object') return createInitialPlayers();
+  const partyShrines = loadGuildTrialState().trialConfig?.guildBuffLevels || {};
+  const migrated = {};
+  for (const [id, player] of Object.entries(saved)) {
+    if (!player || typeof player !== 'object') continue;
+    migrated[id] = {
+      ...player,
+      guildShrines: player.guildShrines || { ...partyShrines },
+      personalBuffs: player.personalBuffs || [],
+      abilityMemory: player.abilityMemory || {}
+    };
+  }
+  return Object.keys(migrated).length ? migrated : createInitialPlayers();
+}
 
 function App() {
   const { data: gameData } = useGameData();
@@ -186,7 +252,7 @@ function App() {
   const savedSession = useMemo(() => loadSession(), []);
 
   const [players, setPlayers] = useState(
-    () => savedSession?.players || createInitialPlayers()
+    () => (savedSession?.players ? migratePlayers(savedSession.players) : createInitialPlayers())
   );
   const [navbarWidth, setNavbarWidth] = useState(loadNavbarWidth);
   const [activeTab, setActiveTab] = useState(1);
@@ -231,11 +297,13 @@ function App() {
   const [duration, setDuration] = useState(
     () => (typeof savedSession?.duration === 'number' ? savedSession.duration : 100)
   );
+  // Genuinely account- or server-wide only. Seals used to live here and are now
+  // a per-character field on each player (see createDefaultPlayer), because a
+  // seal is an item ONE character equips.
   const [extraOptions, setExtraOptions] = useState({
     comExp: 0,
     comDrop: 0,
-    mooPass: false,
-    personalBuffs: []
+    mooPass: false
   });
   // Experimental engine knobs. Their own localStorage key, deliberately NOT
   // part of the session blob or an exported build — a bench setting must not
@@ -284,6 +352,51 @@ function App() {
     try {
       const importSet = payload.importSet || payload;
       const player = exportFormatToPlayer(importSet, 1);
+      const ctx = payload.mwixContext;
+
+      // Guild shrines: the character's own purchased shrine levels, keyed by
+      // guild-buff hrid. They are a PER-MEMBER purchase, so they are folded
+      // onto the player being imported — that is where the zone, labyrinth,
+      // sweep and optimiser paths now read them from.
+      //
+      // They are ALSO still written to the shared `trialConfig.guildBuffLevels`
+      // knobs. Those knobs are no longer what the zone path reads; they survive
+      // as the party-wide fallback for trial builds that carry no shrines of
+      // their own (utils/guildBuffs.js resolveUnitShrineBuffs), and keeping the
+      // write means a bridged character still populates a sensible default for
+      // a trial roster assembled afterwards.
+      //
+      // The payload REPLACES the stored levels rather than merging into them:
+      // it is the authoritative statement of what this character owns, and a
+      // character with no shrines must not silently inherit whatever the last
+      // session had dialled in. An absent `guildShrines` key (an older MWIX
+      // build) leaves the knobs alone — only a present object replaces them; see
+      // the else branch for what the imported player gets instead. Unknown keys
+      // are dropped by iterating our own definition list, so a future skilling
+      // shrine leaking into the payload cannot reach either.
+      const shrineLevels = ctx?.guildShrines;
+      const shrineBits = [];
+      if (shrineLevels && typeof shrineLevels === 'object') {
+        const levels = {};
+        for (const def of GUILD_COMBAT_BUFFS) {
+          const raw = Math.floor(Number(shrineLevels[def.hrid]) || 0);
+          const level = Math.max(0, Math.min(MAX_GUILD_BUFF_LEVEL, raw));
+          if (level <= 0) continue;
+          levels[def.hrid] = level;
+          shrineBits.push(`${def.name} ${level}`);
+        }
+        player.guildShrines = levels;
+        setTrialConfig(prev => ({ ...prev, guildBuffLevels: levels }));
+      } else {
+        // No shrine object in the payload: an older MWIX build, which says
+        // nothing about shrines rather than saying the character owns none.
+        // Seed the imported player from the stored party-wide knobs, for the
+        // same reason migratePlayers does — before this change those knobs WERE
+        // this character's shrines, and a bridge import that silently zeroed
+        // them would quietly understate every number the app then prints.
+        player.guildShrines = { ...(loadGuildTrialState().trialConfig?.guildBuffLevels || {}) };
+      }
+
       setPlayers(prev => ({ ...prev, 1: player }));
       setSelectedPlayers([1]);
       setActiveTab(1);
@@ -297,7 +410,6 @@ function App() {
       // Labyrinth context: the worker understands extra.mwixLabUpgrades and
       // extra.mwixMaze (the lab-shop combat upgrades apply only when the
       // maze toggle is on — see csim/src/worker.js).
-      const ctx = payload.mwixContext;
       const labUpgrades = ctx?.labUpgrades || null;
       const maze = ctx?.maze || null;
       if (labUpgrades) {
@@ -312,32 +424,6 @@ function App() {
         }));
       }
       setMazeContext(!!maze?.enabled);
-
-      // Guild shrines: the character's own purchased shrine levels, keyed by
-      // guild-buff hrid. They are permanent character buffs — every fight gets
-      // them — so they land in the SHARED `trialConfig.guildBuffLevels` knobs
-      // that the zone, labyrinth and trial paths all read.
-      //
-      // The payload REPLACES the stored levels rather than merging into them:
-      // it is the authoritative statement of what this character owns, and a
-      // character with no shrines must not silently inherit whatever the last
-      // session had dialled in. An absent `guildShrines` key (an older MWIX
-      // build) is left alone — only a present object triggers the replacement.
-      // Unknown keys are dropped by iterating our own definition list, so a
-      // future skilling shrine leaking into the payload cannot reach the knobs.
-      const shrineLevels = ctx?.guildShrines;
-      const shrineBits = [];
-      if (shrineLevels && typeof shrineLevels === 'object') {
-        const levels = {};
-        for (const def of GUILD_COMBAT_BUFFS) {
-          const raw = Math.floor(Number(shrineLevels[def.hrid]) || 0);
-          const level = Math.max(0, Math.min(MAX_GUILD_BUFF_LEVEL, raw));
-          if (level <= 0) continue;
-          levels[def.hrid] = level;
-          shrineBits.push(`${def.name} ${level}`);
-        }
-        setTrialConfig(prev => ({ ...prev, guildBuffLevels: levels }));
-      }
 
       const bits = [];
       if (payload.loadout?.name) bits.push(payload.loadout.name);
@@ -476,8 +562,16 @@ function App() {
     return buildId;
   }, []);
 
+  // A blank TRIAL build drops `guildShrines` rather than carrying the zone
+  // slot's `{}`. The two spellings are not the same question here: `{}` means
+  // "owns none" to resolveUnitShrineBuffs, whereas an absent key defers to the
+  // trial header's party-wide knobs — which is the right default for a seat
+  // nobody has said anything about yet. The zone-slot default stays `{}`,
+  // since on that path there is no fallback to defer to.
   const addBlankBuild = useCallback(() => {
-    addBuildFromPlayer(createDefaultPlayer('build'), 'New build');
+    const build = createDefaultPlayer('build');
+    delete build.guildShrines;
+    addBuildFromPlayer(build, 'New build');
   }, [addBuildFromPlayer]);
 
   const addBuildFromSlot = useCallback((slotId) => {
@@ -711,7 +805,14 @@ function App() {
         // is unchanged.
         playerDTOs.push({
           ...toPlayerDTO(build, { hrid, stripConsumables: true }),
-          extraBuffs: resolveUnitShrineBuffs(build, trialConfig.guildBuffLevels)
+          // `includeSeals: false` because the game grants no seals inside a
+          // trial — same reason the neutral `extra` below zeroes the community
+          // buffs. `partyShrineLevels` is the trial's own fallback and is passed
+          // ONLY here; every other path resolves shrines strictly per player.
+          extraBuffs: resolvePlayerExtraBuffs(build, {
+            partyShrineLevels: trialConfig.guildBuffLevels,
+            includeSeals: false
+          })
         });
       }
     }
@@ -791,9 +892,15 @@ function App() {
     // stripping (api/lib/target.js), and it needs to SEE the food and drink
     // triggers in order to list them back with "stripped on labyrinth entry"
     // beside them — a user who set those thresholds is owed the explanation.
-    const playerDTOs = selectedPlayers.map(playerId =>
-      toPlayerDTO(players[playerId], { hrid: `player${playerId}` })
-    );
+    const playerDTOs = selectedPlayers.map(playerId => ({
+      ...toPlayerDTO(players[playerId], { hrid: `player${playerId}` }),
+      // Shrines and seals ride on the UNIT, exactly as the trial path has done
+      // since 2026-09-18. The API concatenates this tail onto its shared buff
+      // list in api/lib/triggerSearch/poolWorker.js and bounds.js, and the
+      // candidate DTOs are deep clones of these (triggerSearch/params.js
+      // applyValues), so every candidate is scored on the real character.
+      extraBuffs: resolvePlayerExtraBuffs(players[playerId])
+    }));
     return {
       players: playerDTOs,
       ...toTargetPayload(optTarget, { zone, difficultyTier, labConfig }),
@@ -810,16 +917,19 @@ function App() {
         // deliberate "free at the margin", not a missing value.
         itemCostOverrides: pricing.itemCostOverrides
       }),
-      // NOTE: the API's buildExtraBuffs honours mooPass / comExp / comDrop only.
-      // extra.personalBuffs (seals) and the mwix lab keys are understood by the
-      // BROWSER worker (src/worker.js) and not by the API path, so a build using
-      // seals is optimised without them — the panel warns about it.
+      // The API's buildExtraBuffs honours mooPass / comExp / comDrop, which is
+      // now the whole of `extra` worth sending: seals moved onto the player DTOs
+      // above, and the mwix lab keys are a browser-worker concern.
       extra: {
         comExp: extraOptions.comExp,
         comDrop: extraOptions.comDrop,
         mooPass: extraOptions.mooPass
       },
-      guildBuffs: resolveGuildBuffs(trialConfig.guildBuffLevels),
+      // Empty, and deliberately still sent: this field is the PARTY-WIDE buff
+      // list, and shrines are no longer party-wide. The server composes
+      // buildExtraBuffs(extra).concat(guildBuffs), so omitting it would work
+      // too — sending [] says the emptiness is meant.
+      guildBuffs: [],
       // Objective is left to the server: it picks the time-denominated one when the
       // consumable costs above are present, and raw throughput when they are not.
       stages: toStages(triggerOptConfig),
@@ -834,7 +944,6 @@ function App() {
     zone,
     difficultyTier,
     extraOptions,
-    trialConfig,
     triggerOptConfig,
     // usePrices returns a fresh object literal each render, so depend on the stable
     // values inside it rather than the wrapper — otherwise the preview refetches on
@@ -896,9 +1005,13 @@ function App() {
 
   const equipOptPayload = useMemo(() => {
     if (simMode !== 'equipOpt') return null;
-    const playerDTOs = selectedPlayers.map(playerId =>
-      toPlayerDTO(players[playerId], { hrid: `player${playerId}` })
-    );
+    // Same per-unit buffs as the trigger optimiser: the scan's candidate DTOs
+    // are structuredClones of these (equipmentScan/candidates.js
+    // applyEnhancement), so `extraBuffs` survives into every probe.
+    const playerDTOs = selectedPlayers.map(playerId => ({
+      ...toPlayerDTO(players[playerId], { hrid: `player${playerId}` }),
+      extraBuffs: resolvePlayerExtraBuffs(players[playerId])
+    }));
     return {
       players: playerDTOs,
       ...toTargetPayload(optTarget, { zone, difficultyTier, labConfig }),
@@ -912,15 +1025,15 @@ function App() {
         expenseMode: pricing.expenseMode,
         itemCostOverrides: pricing.itemCostOverrides
       }),
-      // As with the trigger optimiser: the API's buildExtraBuffs honours
-      // mooPass / comExp / comDrop only, so seals are not applied and the panel
-      // says so.
+      // As with the trigger optimiser: what is left in `extra` is the genuinely
+      // account-wide part, and `guildBuffs` is empty because shrines travel per
+      // unit now.
       extra: {
         comExp: extraOptions.comExp,
         comDrop: extraOptions.comDrop,
         mooPass: extraOptions.mooPass
       },
-      guildBuffs: resolveGuildBuffs(trialConfig.guildBuffLevels),
+      guildBuffs: [],
       scan: toScan(equipOptConfig),
       workers: equipOptConfig.workers || undefined
     };
@@ -933,7 +1046,6 @@ function App() {
     zone,
     difficultyTier,
     extraOptions,
-    trialConfig,
     equipOptConfig,
     pricing.prices,
     pricing.unit,
@@ -1049,13 +1161,15 @@ function App() {
     if (combos.length === 0) return;
 
     // Exactly the party, buffs and shrines a single Run would send — the sweep
-    // is the same simulation done many times, not a different one.
-    const playerDTOs = selectedPlayers.map(playerId =>
-      toPlayerDTO(players[playerId], {
+    // is the same simulation done many times, not a different one. That
+    // includes each player's own shrines and seals, which ride on the DTO.
+    const playerDTOs = selectedPlayers.map(playerId => ({
+      ...toPlayerDTO(players[playerId], {
         hrid: `player${playerId}`,
         stripConsumables: mazeContext
-      })
-    );
+      }),
+      extraBuffs: resolvePlayerExtraBuffs(players[playerId])
+    }));
 
     runAllZones({
       players: playerDTOs,
@@ -1069,7 +1183,9 @@ function App() {
         mwixLabUpgrades: labConfig.upgrades,
         mwixMaze: { enabled: mazeContext }
       },
-      guildBuffs: resolveGuildBuffs(trialConfig.guildBuffLevels)
+      // Party-wide shrines are gone; each DTO carries its own. See the single
+      // Run below for the full account.
+      guildBuffs: []
     });
     setAllZonesOpen(false);
     setAllZonesView(true);
@@ -1084,7 +1200,6 @@ function App() {
     extraOptions,
     experimental,
     labConfig,
-    trialConfig,
     runAllZones
   ]);
 
@@ -1115,9 +1230,10 @@ function App() {
 
     // Build player DTOs for all selected players (shared transform — see
     // utils/playerDTO.js — so zone/lab and trials never drift apart).
-    const playerDTOs = selectedPlayers.map(playerId =>
-      toPlayerDTO(players[playerId], { hrid: `player${playerId}`, stripConsumables })
-    );
+    const playerDTOs = selectedPlayers.map(playerId => ({
+      ...toPlayerDTO(players[playerId], { hrid: `player${playerId}`, stripConsumables }),
+      extraBuffs: resolvePlayerExtraBuffs(players[playerId])
+    }));
     const extra = {
       ...extraOptions,
       experimental,
@@ -1139,13 +1255,17 @@ function App() {
         : null,
       simulationTimeLimit: duration * ONE_HOUR,
       extra,
-      // Guild shrine buffs are permanent character buffs and apply to every
-      // fight, not just trials (the game exposes them via
-      // guildActionTypeBuffsMap["/action_types/combat"]). Levels are shared
-      // with trial mode, so a shrine set once is reflected in both.
-      guildBuffs: resolveGuildBuffs(trialConfig.guildBuffLevels)
+      // Shrine buffs are still permanent character buffs that apply to every
+      // fight (the game exposes them via
+      // guildActionTypeBuffsMap["/action_types/combat"]) — but they are bought
+      // per MEMBER, so they are no longer a party-wide list. Each player's own
+      // shrines, and their own seals, ride on their DTO as `extraBuffs`, which
+      // src/worker.js concatenates onto this list. This field now carries
+      // nothing on the zone/labyrinth path, and is kept explicit so that a
+      // reader does not have to wonder whether it was forgotten.
+      guildBuffs: []
     });
-  }, [players, selectedPlayers, simMode, zone, difficultyTier, labConfig, mazeContext, duration, extraOptions, experimental, trialConfig, runSimulation, handleStartTrial, handleStartTriggerOpt, handleStartEquipOpt]);
+  }, [players, selectedPlayers, simMode, zone, difficultyTier, labConfig, mazeContext, duration, extraOptions, experimental, runSimulation, handleStartTrial, handleStartTriggerOpt, handleStartEquipOpt]);
 
   // The header, progress bar and results pane read from whichever engine the
   // current mode uses. Both optimisers go through an API hook; every other mode
@@ -1293,6 +1413,7 @@ function App() {
                       onPlayerChange={handleBuildChange}
                       playerId={roster.findIndex(e => e.id === selectedEntryId) + 1}
                       hideConsumables
+                      hideSeals
                     />
                   </>
                 ) : (
@@ -1320,7 +1441,6 @@ function App() {
                       loading={triggerOpt.loading}
                       onRun={handleStartTriggerOpt}
                       onCancel={cancelTriggerOpt}
-                      sealCount={extraOptions.personalBuffs?.length || 0}
                       pricing={pricing}
                       consumableCostRows={consumableCostRows}
                     />
@@ -1344,7 +1464,6 @@ function App() {
                       loading={equipOpt.loading}
                       onRun={handleStartEquipOpt}
                       onCancel={cancelEquipOpt}
-                      sealCount={extraOptions.personalBuffs?.length || 0}
                       pricing={pricing}
                       consumableCostRows={consumableCostRows}
                     />

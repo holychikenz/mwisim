@@ -8,11 +8,16 @@ import { summariseZoneRun } from '../utils/allZones.js';
 // until the queue drains. The same nested-worker pattern as upstream's
 // multiWorker.js, which this deliberately does NOT reuse:
 //
-//   guild buffs   multiWorker's `start_simulation_all_zones` forwards players,
-//                 zone, extra and the time limit — but not `guildBuffs`. Every
-//                 other path in this UI ships the character's shrine levels
-//                 (App.jsx → resolveGuildBuffs), and a sweep that silently
-//                 dropped them would rank zones for a character nobody has.
+//   payload shape multiWorker's `start_simulation_all_zones` forwards players,
+//                 zone, extra and the time limit — but not `guildBuffs`, and it
+//                 reshapes what it forwards. That mattered when shrines rode in
+//                 `guildBuffs`; it still matters now they do not, because each
+//                 player's shrines and seals ride on their DTO as `extraBuffs`
+//                 (App.jsx → resolvePlayerExtraBuffs) and this pool forwards
+//                 `data.players` verbatim to the shard. A sweep that reshaped
+//                 or dropped them would rank zones for a character nobody has.
+//                 `guildBuffs` is still forwarded, and is now always [] from
+//                 this UI — see App.handleRunAllZones.
 //   streaming     it collects every result and posts one array at the end. A
 //                 seventy-eight-combination sweep is minutes long; rows are
 //                 posted here as each finishes, so the table fills as it goes.

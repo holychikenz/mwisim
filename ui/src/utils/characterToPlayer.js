@@ -98,8 +98,28 @@ export function characterToPlayer(char, gameData, playerId) {
     abilities: [null, null, null, null, null],
     houseRooms: {},
     achievements: {},
+    // The character API carries no guild or seal information, so these start
+    // empty and the user fills them in. They are present rather than absent on
+    // purpose: an absent `guildShrines` means "defer to the party-wide knobs"
+    // to resolveUnitShrineBuffs (utils/guildBuffs.js), and an imported
+    // character deferring to someone else's shrines would be a lie.
+    guildShrines: {},
+    personalBuffs: [],
+    abilityMemory: {},
     debuffOnLevelGap: 0
   };
+
+  // Ability memory, seeded from every ability the character has actually
+  // trained — not merely the five the loadout slots. The character API hands us
+  // the whole list and we would otherwise discard all but five, so a freshly
+  // imported character would forget its own levels the first time a slot was
+  // swapped. Triggers start empty and are filled in below for the slotted five,
+  // which is all the game tells us about.
+  for (const ability of char.characterAbilities || []) {
+    const hrid = ability?.abilityHrid;
+    if (!hrid || !knownAbility(hrid)) continue;
+    player.abilityMemory[hrid] = { level: Number(ability.level) || 1, triggers: [] };
+  }
   for (const [field, hrid] of Object.entries(LEVEL_MAP)) {
     player[field] = lvl(hrid);
   }
@@ -175,6 +195,7 @@ export function characterToPlayer(char, gameData, playerId) {
         triggers = Array.isArray(def) ? def : [];
       }
       player.abilities[i] = { hrid: h, level, triggers };
+      player.abilityMemory[h] = { level, triggers };
     });
   }
 

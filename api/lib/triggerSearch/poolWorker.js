@@ -55,7 +55,11 @@ function buildRun({ playersData, zoneConfig, labyrinthConfig, extraBuffs }) {
   for (let i = 0; i < playersData.length; i += 1) {
     const player = Player.createFromDTO(structuredClone(playersData[i]));
     player.zoneBuffs = zone?.buffs || labyrinth?.buffs || [];
-    player.extraBuffs = extraBuffs;
+    // Per-player tail after the shared list — the candidate DTOs are deep
+    // clones of the baseline (triggerSearch/params.js applyValues), so each one
+    // still carries its own shrines and seals. Without this concat the search
+    // would tune thresholds against an unbuffed character.
+    player.extraBuffs = extraBuffs.concat(playersData[i].extraBuffs || []);
     players.push(player);
   }
 

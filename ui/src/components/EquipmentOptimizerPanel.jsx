@@ -109,7 +109,6 @@ export function EquipmentOptimizerPanel({
   loading,
   onRun,
   onCancel,
-  sealCount = 0,
   pricing,
   consumableCostRows = [],
 }) {
@@ -181,16 +180,6 @@ export function EquipmentOptimizerPanel({
         Each slot is probed at +{config.step} — a single level is beneath the simulation noise — and
         the result divided back down.
       </Text>
-
-      {sealCount > 0 && (
-        <Alert color="yellow" variant="light" title="Seals will not be applied">
-          <Text size="xs">
-            You have {sealCount} personal seal{sealCount === 1 ? '' : 's'} enabled. Those are honoured
-            by the browser worker but not by the API path this scan uses, so gains are measured
-            against a build without them.
-          </Text>
-        </Alert>
-      )}
 
       {/* A labyrinth has no food bill to count — the game confiscates every
           consumable at the door — so the whole pricing apparatus is inert there

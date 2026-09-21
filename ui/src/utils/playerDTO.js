@@ -26,7 +26,7 @@ export function toPlayerDTO(player, { hrid, stripConsumables = false } = {}) {
       { hrid: value.itemHrid, enhancementLevel: value.enhancementLevel || 0 },
     ]);
 
-  return {
+  const dto = {
     ...player,
     hrid: hrid ?? player.hrid,
     equipment: Object.fromEntries(equipmentEntries),
@@ -44,4 +44,15 @@ export function toPlayerDTO(player, { hrid, stripConsumables = false } = {}) {
       a?.hrid ? { hrid: a.hrid, level: a.level || 1, triggers: a.triggers || [] } : null
     ),
   };
+
+  // `abilityMemory` is UI-only bookkeeping — the level and triggers each ability
+  // last had for this player, so that re-slotting one restores them
+  // (PlayerConfig.applyAbilities). The engine has never heard of it, and the
+  // spread above would otherwise carry a character's ENTIRE trained-ability list
+  // into every DTO, including the ones POSTed to the API on each optimiser
+  // preview — which re-fires 350ms after every keystroke. Dropped here rather
+  // than at the five call sites, so that no future one can forget to.
+  delete dto.abilityMemory;
+
+  return dto;
 }

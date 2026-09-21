@@ -12,7 +12,10 @@
 // finished objects straight to CombatUnit.addPermanentBuff, which consumes the
 // finished `ratioBoost` / `flatBoost` values directly (it never constructs a
 // levelled Buff). So the UI must fold the shrine level into finished values
-// before shipping them in guildBuffs[]:
+// before shipping them — nowadays on each player's DTO as `extraBuffs`, since
+// shrines are a per-member purchase (see resolveUnitShrineBuffs below and
+// utils/playerBuffs.js); the party-wide `guildBuffs[]` array survives for guild
+// BUILDINGS, which genuinely are guild-wide:
 //
 //   finalRatio = ratioBoost + (level - 1) * ratioBoostLevelBonus
 //   finalFlat  = flatBoost  + (level - 1) * flatBoostLevelBonus
@@ -127,8 +130,9 @@ export const GUILD_COMBAT_BUFFS = [
 // -----------------------------------------------------------------------------
 // Lifted from guildBuildingDetailMap. Unlike shrines, guild building buffs do
 // NOT apply to ordinary combat: they take effect inside guild trials only.
-// Keep them out of the zone/labyrinth path (see App.jsx — the normal
-// runSimulation call ships shrine buffs alone).
+// Keep them out of the zone/labyrinth path: App's runSimulation call now ships
+// an EMPTY `guildBuffs` array, because shrines travel per player on the DTO and
+// buildings have no business outside a trial.
 //
 // Only the COMBAT-relevant buildings are listed. The other 12 buff-bearing
 // buildings raise skilling levels (brewing, milking, cooking, …) which the

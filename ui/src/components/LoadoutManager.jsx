@@ -44,7 +44,22 @@ export function LoadoutManager({ player, onLoadPlayer, playerId }) {
           drinks: player.drinks,
           abilities: player.abilities,
           houseRooms: player.houseRooms || {},
-          achievements: player.achievements || {}
+          achievements: player.achievements || {},
+          // A loadout is a whole character, so it carries the character's own
+          // shrines and seals as well as their gear. Without these three a
+          // saved-then-loaded build came back stripped of its buffs, which is
+          // the one thing a loadout manager must not do.
+          //
+          // `guildShrines` is spread in only when the player HAS it, never
+          // defaulted to `{}`: that spelling means "owns none" to
+          // utils/guildBuffs.js `ownsShrines`, whereas an absent key defers to
+          // the trial's party-wide knobs, and loadouts feed guild-trial builds
+          // via App's addBuildFromLoadout. Today this panel is only ever handed
+          // a zone slot, which always has the key — so the guard is currently
+          // unreachable, and kept so that it stays true if that changes.
+          ...(player.guildShrines ? { guildShrines: player.guildShrines } : {}),
+          personalBuffs: player.personalBuffs || [],
+          abilityMemory: player.abilityMemory || {}
         }
       }
     };

@@ -259,7 +259,10 @@ export function derivePlayerBounds(playerDTOs, { zoneBuffs = [], extraBuffs = []
     try {
       const player = Player.createFromDTO(structuredClone(dto));
       player.zoneBuffs = zoneBuffs;
-      player.extraBuffs = extraBuffs;
+      // Same composition the simulation itself will use (poolWorker.js), so the
+      // ceilings a threshold is expressed against are the ceilings the build
+      // actually has. Shrines and seals ride on the DTO, per player.
+      player.extraBuffs = extraBuffs.concat(dto.extraBuffs || []);
       player.generatePermanentBuffs();
       player.reset();
       return {

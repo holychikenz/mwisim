@@ -5,6 +5,7 @@ import Labyrinth from "./combatsimulator/labyrinth";
 import GuildTrial from "./combatsimulator/guildTrial";
 import { extractTrialSummary } from "./combatsimulator/guildTrialStats";
 import { applySimSettingsFromExtra } from "./combatsimulator/simSettings";
+import { resolveSealBuffs } from "../shared/personalBuffs.js";
 
 // Build the community / pass / personal-seal buffs shared by every sim mode.
 // (Labyrinth shop upgrades are appended separately by the labyrinth path only;
@@ -47,84 +48,15 @@ function buildCommunityBuffs(extra = {}) {
             "duration": 0
         });
     }
+    // Seals are a per-CHARACTER item, so the new Vite UI resolves them per
+    // player and folds them into each DTO's own `extraBuffs`; it sends
+    // `extra.personalBuffs` empty. This branch therefore exists for the LEGACY
+    // webpack UI (src/main.js), which has only one party-wide seal control and
+    // no per-player state to hang them off. Both read the same definitions
+    // (shared/personalBuffs.js), so the two UIs cannot disagree about what a
+    // seal is worth.
     if (extra.personalBuffs) {
-        const personalBuffs = {
-            "/items/seal_of_attack_speed": {
-                "uniqueHrid": "/buff_uniques/personal_attack_speed",
-                "typeHrid": "/buff_types/attack_speed",
-                "ratioBoost": 0.15,
-                "ratioBoostLevelBonus": 0,
-                "flatBoost": 0,
-                "flatBoostLevelBonus": 0,
-                "startTime": "0001-01-01T00:00:00Z",
-                "duration": 0
-            },
-            "/items/seal_of_cast_speed": {
-                "uniqueHrid": "/buff_uniques/personal_cast_speed",
-                "typeHrid": "/buff_types/cast_speed",
-                "ratioBoost": 0,
-                "ratioBoostLevelBonus": 0,
-                "flatBoost": 0.15,
-                "flatBoostLevelBonus": 0,
-                "startTime": "0001-01-01T00:00:00Z",
-                "duration": 0
-            },
-            "/items/seal_of_combat_drop": {
-                "uniqueHrid": "/buff_uniques/personal_combat_drop",
-                "typeHrid": "/buff_types/combat_drop_quantity",
-                "ratioBoost": 0,
-                "ratioBoostLevelBonus": 0,
-                "flatBoost": 0.15,
-                "flatBoostLevelBonus": 0,
-                "startTime": "0001-01-01T00:00:00Z",
-                "duration": 0
-            },
-            "/items/seal_of_critical_rate": {
-                "uniqueHrid": "/buff_uniques/personal_critical_rate",
-                "typeHrid": "/buff_types/critical_rate",
-                "ratioBoost": 0,
-                "ratioBoostLevelBonus": 0,
-                "flatBoost": 0.1,
-                "flatBoostLevelBonus": 0,
-                "startTime": "0001-01-01T00:00:00Z",
-                "duration": 0
-            },
-            "/items/seal_of_damage": {
-                "uniqueHrid": "/buff_uniques/personal_damage",
-                "typeHrid": "/buff_types/damage",
-                "ratioBoost": 0.08,
-                "ratioBoostLevelBonus": 0,
-                "flatBoost": 0,
-                "flatBoostLevelBonus": 0,
-                "startTime": "0001-01-01T00:00:00Z",
-                "duration": 0
-            },
-            "/items/seal_of_rare_find": {
-                "uniqueHrid": "/buff_uniques/personal_rare_find",
-                "typeHrid": "/buff_types/rare_find",
-                "ratioBoost": 0,
-                "ratioBoostLevelBonus": 0,
-                "flatBoost": 0.6,
-                "flatBoostLevelBonus": 0,
-                "startTime": "0001-01-01T00:00:00Z",
-                "duration": 0
-            },
-            "/items/seal_of_wisdom": {
-                "uniqueHrid": "/buff_uniques/personal_wisdom",
-                "typeHrid": "/buff_types/wisdom",
-                "ratioBoost": 0,
-                "ratioBoostLevelBonus": 0,
-                "flatBoost": 0.2,
-                "flatBoostLevelBonus": 0,
-                "startTime": "0001-01-01T00:00:00Z",
-                "duration": 0
-            }
-        };
-        for (let buff of extra.personalBuffs) {
-            if (personalBuffs[buff]) {
-                extraBuffs.push(personalBuffs[buff]);
-            }
-        }
+        extraBuffs = extraBuffs.concat(resolveSealBuffs(extra.personalBuffs));
     }
     return extraBuffs;
 }
@@ -172,8 +104,17 @@ onmessage = async function (event) {
             // MWIX adaptation (guild expansion, 7/13/2026): guild SHRINE buffs are
             // permanent character buffs — the server exposes them in
             // `guildActionTypeBuffsMap["/action_types/combat"]`, which applies to
-            // every fight, not just guild trials. They arrive here pre-resolved
-            // (level already folded in) from ui/src/utils/guildBuffs.js.
+            // every fight, not just guild trials.
+            //
+            // WHERE THEY ARRIVE FROM has since changed. Shrines are bought per
+            // MEMBER, so the Vite UI resolves them (and seals) per player and
+            // hangs them off each DTO; from that UI `event.data.guildBuffs` is
+            // always empty and the real work happens in the concat below. The
+            // array is still read because the LEGACY webpack UI (src/main.js)
+            // has only party-wide knobs and still fills it. Either way the
+            // objects arrive pre-resolved, level already folded in, from
+            // ui/src/utils/guildBuffs.js.
+            //
             // NOTE: guild BUILDING buffs are deliberately NOT included on this
             // path — those apply to guild trials only (see "start_guild_trial").
             let extraBuffs = buildCommunityBuffs(event.data.extra || {});
@@ -193,7 +134,14 @@ onmessage = async function (event) {
             for (let i = 0; i < playersData.length; i++) {
                 let currentPlayer = Player.createFromDTO(structuredClone(playersData[i]));
                 currentPlayer.zoneBuffs = zone?.buffs || labyrinth?.buffs || [];
-                currentPlayer.extraBuffs = extraBuffs;
+                // Party-wide buffs first, this unit's own tail after. Shrines
+                // are bought per member and seals are equipped per character,
+                // so both are properties of the UNIT: the UI resolves them per
+                // player and hangs them off the DTO, exactly as the trial path
+                // has done since 2026-09-18. `Player.createFromDTO` ignores the
+                // field, so it reaches this line only via the DTO object
+                // itself; a DTO without it yields the old behaviour exactly.
+                currentPlayer.extraBuffs = extraBuffs.concat(playersData[i].extraBuffs || []);
                 players.push(currentPlayer);
             }
             let simulationTimeLimit = event.data.simulationTimeLimit;
@@ -256,12 +204,17 @@ onmessage = async function (event) {
                         // without `extraBuffs` yields the old behaviour exactly;
                         // `Player.createFromDTO` ignores the field, so it reaches
                         // this line only via the DTO object itself.
-                        // NOTE: api/lib/simulator.js:189 deliberately still
-                        // OVERWRITES extraBuffs on the headless path. SCLIRoster's
-                        // trialRequest.js folds shrines in around that overwrite
-                        // and pins the line by test
-                        // (optimizer/test/trial-request.test.js:356-369).
-                        // Unlocking the API is a separate two-repo change.
+                        // NOTE: runGuildTrialSimulation in api/lib/simulator.js
+                        // deliberately still OVERWRITES extraBuffs on the
+                        // headless TRIAL path. SCLIRoster's trialRequest.js
+                        // folds shrines in around that overwrite and pins the
+                        // line by test (optimizer/test/trial-request.test.js:
+                        // 356-369), so changing it would double-apply shrines
+                        // for that caller. Unlocking it is a separate two-repo
+                        // change. The headless ZONE path (runSimulation) and the
+                        // two optimisers DO now concat the per-player tail, as
+                        // this line and start_simulation above do — nothing in
+                        // SCLIRoster goes through those.
                         p.extraBuffs = trialExtraBuffs.concat(playersData[i].extraBuffs || []);
                         players.push(p);
                     }

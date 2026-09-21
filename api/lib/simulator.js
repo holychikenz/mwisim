@@ -130,7 +130,14 @@ export async function runSimulation({ players: playersData, zone: zoneConfig, si
   for (let i = 0; i < playersData.length; i++) {
     const currentPlayer = Player.createFromDTO(structuredClone(playersData[i]));
     currentPlayer.zoneBuffs = zone.buffs;
-    currentPlayer.extraBuffs = extraBuffs;
+    // Shared buffs first, this unit's own tail after. Shrines are bought per
+    // guild member and seals are equipped per character, so the UI resolves
+    // both per player and hangs them off the DTO — the same concat src/worker.js
+    // does in its `start_simulation` and `start_guild_trial` cases (named rather
+    // than cited by line, so this reference cannot rot). A DTO without
+    // `extraBuffs` yields the old behaviour exactly; Player.createFromDTO
+    // ignores the field, so it reaches this line only via the DTO itself.
+    currentPlayer.extraBuffs = extraBuffs.concat(playersData[i].extraBuffs || []);
     players.push(currentPlayer);
   }
 
@@ -186,6 +193,15 @@ export async function runGuildTrialSimulation({
     for (let i = 0; i < playersData.length; i++) {
       const p = Player.createFromDTO(structuredClone(playersData[i]));
       p.zoneBuffs = []; // no labyrinth crates in trials
+      // DELIBERATELY an overwrite, not a concat — the one path in this file
+      // that is not being brought into line with src/worker.js:265. SCLIRoster's
+      // trialRequest.js folds each member's shrines into `guildBuffs` around
+      // this overwrite and pins the behaviour by test
+      // (optimizer/test/trial-request.test.js:356-369); concatenating a DTO's
+      // own `extraBuffs` here as well would double-apply every shrine for that
+      // caller. Unlocking it is a two-repo change and nothing in csim depends
+      // on it: the browser trial path (src/worker.js) already concatenates, and
+      // the headless zone/optimiser paths above now do too.
       p.extraBuffs = trialExtraBuffs;
       players.push(p);
     }

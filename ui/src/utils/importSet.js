@@ -78,7 +78,19 @@ export function playerToExportFormat(player, zone, difficultyTier, duration) {
     difficultyTier: difficultyTier,
     simulationTime: duration,
     houseRooms: player.houseRooms || {},
-    achievements: player.achievements || {}
+    achievements: player.achievements || {},
+    // Per-character fields, carried at the same trust level as houseRooms and
+    // achievements above — written back verbatim, validated nowhere. They are
+    // additive keys, so a set exported here still loads in the old webpack UI
+    // and an older set still loads here (the reader defaults them).
+    //
+    // `abilityMemory` travels too, even though only five abilities are slotted:
+    // it is what makes swapping an ability back restore the level and triggers
+    // it had, and a set that dropped it would quietly forget everything the
+    // moment it made a round trip through the clipboard.
+    guildShrines: player.guildShrines || {},
+    personalBuffs: player.personalBuffs || [],
+    abilityMemory: player.abilityMemory || {}
   };
 }
 
@@ -101,8 +113,25 @@ export function exportFormatToPlayer(data, playerId) {
     abilities: [null, null, null, null, null],
     houseRooms: data.houseRooms || {},
     achievements: data.achievements || {},
+    personalBuffs: data.personalBuffs || [],
+    abilityMemory: data.abilityMemory || {},
     debuffOnLevelGap: 0
   };
+
+  // `guildShrines` is spread in ONLY when the set actually carried it, because
+  // for this one field ABSENT and `{}` are different answers. utils/guildBuffs.js
+  // `ownsShrines` reads `{}` as "we captured this member's shrines and they own
+  // none" and no key at all as "defer to the party-wide knobs"; manufacturing
+  // `{}` here would make the fallback unreachable, so a pre-branch set imported
+  // into a guild-trial roster would simulate that seat with zero shrines while
+  // the trial header's levels sat there being ignored.
+  //
+  // `personalBuffs` and `abilityMemory` above are NOT treated this way, and
+  // deliberately: nothing falls back for either, so an absent key and an empty
+  // one mean the same thing and a default costs nothing.
+  if (data.guildShrines && typeof data.guildShrines === 'object') {
+    player.guildShrines = data.guildShrines;
+  }
 
   // Parse equipment
   if (data.player?.equipment && Array.isArray(data.player.equipment)) {

@@ -156,7 +156,6 @@ export function TriggerOptimizerPanel({
   loading,
   onRun,
   onCancel,
-  sealCount = 0,
   pricing,
   consumableCostRows = [],
 }) {
@@ -232,16 +231,6 @@ export function TriggerOptimizerPanel({
 
   return (
     <Stack gap="xs">
-      {sealCount > 0 && (
-        <Alert color="yellow" variant="light" title="Seals will not be applied">
-          <Text size="xs">
-            You have {sealCount} personal seal{sealCount === 1 ? '' : 's'} enabled. Those are honoured by the
-            browser worker but not by the API path this optimiser uses, so thresholds will be tuned against a
-            build without them. Values that depend on your real damage or attack speed may be a little off.
-          </Text>
-        </Alert>
-      )}
-
       {/* A labyrinth run needs saying out loud, because two of this panel's
           usual assumptions stop holding at once: the objective is no longer a
           throughput, and every food and drink threshold below is inert. The
