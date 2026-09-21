@@ -255,12 +255,19 @@ test('a buff type outside the ordinal table throws rather than vanishing', () =>
   const unit = new CombatUnit();
   assert.throws(() => unit.getBuffBoosts('/buff_types/nothing_grants_this'), /Unknown buff type/);
   assert.throws(() => unit.getBuffBoost('/buff_types/nothing_grants_this'), /Unknown buff type/);
-  unit.addPermanentBuff({
+  // The ordinal is now interned when the buff is CONSTRUCTED rather than when
+  // the index is rebuilt, so the same failure lands one step earlier — at
+  // addPermanentBuff and at addBuff rather than at clearBuffs. Both are setup,
+  // both are loud, and neither can drop the buff silently, which is the whole
+  // property. Asserted at both entry points so a future move is visible.
+  assert.throws(() => unit.addPermanentBuff({
     uniqueHrid: '/u/bogus', typeHrid: '/buff_types/nothing_grants_this',
     ratioBoost: 1, flatBoost: 1, duration: 0,
-  });
-  assert.throws(() => unit.clearBuffs(), /Unknown buff type/,
-    'a buff carrying an unknown type must fail the rebuild, not be dropped from it');
+  }), /Unknown buff type/, 'a buff carrying an unknown type must fail loudly, not be dropped');
+  assert.throws(() => unit.addBuff({
+    uniqueHrid: '/u/bogus', typeHrid: '/buff_types/nothing_grants_this',
+    ratioBoost: 1, flatBoost: 1, duration: 10,
+  }, 0, {}), /Unknown buff type/);
 });
 
 test('the boost index is reused between rebuilds without leaking stale entries', () => {

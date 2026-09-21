@@ -253,6 +253,10 @@ class CombatUnit {
         },
     };
     combatBuffs = {};
+    // MWIX adaptation (performance): an insertion-ordered mirror of
+    // `combatBuffs`'s VALUES, maintained by the same two writers. See the note
+    // above _mirrorReplace for why the source, not the index, was the cost.
+    _combatBuffList = [];
     // MWIX adaptation (7/15/2026 patch parity): in a party a weaker source's
     // aura/debuff no longer replaces a stronger one — the strongest ACTIVE source
     // of a buff takes effect, and when it expires the next strongest takes over.
@@ -538,6 +542,10 @@ class CombatUnit {
         instance.startTime = startTime; // keep startTime for shape parity with upstream buff objects
         instance.expireTime = startTime + buff.duration; // NaN when startTime === undefined
         instance.sourceKey = sourceKey;
+        // Declared on EVERY buff instance, here and in clearBuffs/addPermanentBuff,
+        // so the boost-index rebuild reads a field instead of hashing an hrid and
+        // so all of them share one hidden class. Still throws on an unknown hrid.
+        instance.typeOrdinal = buffTypeOrdinal(buff.typeHrid);
         return instance;
     }
 
@@ -598,11 +606,19 @@ class CombatUnit {
         if (arr.length === 0) {
             delete this.buffInstances[hrid];
             delete this.combatBuffs[hrid];
+            if (prev !== undefined) {
+                this._mirrorRemove(prev);
+            }
             return prev !== undefined;
         }
         this.buffInstances[hrid] = arr;
         let effective = this._effectiveInstance(arr);
         this.combatBuffs[hrid] = effective;
+        if (prev === undefined) {
+            this._combatBuffList.push(effective);
+        } else {
+            this._mirrorReplace(prev, effective);
+        }
         return this._effectChanged(prev, effective);
     }
 
@@ -706,7 +722,8 @@ class CombatUnit {
                 typeHrid: buff.typeHrid,
                 flatBoost: buff.flatBoost,
                 ratioBoost: buff.ratioBoost,
-                duration: buff.duration
+                duration: buff.duration,
+                typeOrdinal: buffTypeOrdinal(buff.typeHrid)
             };
         }
     }
@@ -770,17 +787,22 @@ class CombatUnit {
     clearBuffs() {
         this.buffInstances = {};
         let fresh = {};
+        let list = [];
         for (const key in this.permanentBuffs) {
             let buff = this.permanentBuffs[key];
-            fresh[key] = {
+            let entry = {
                 uniqueHrid: buff.uniqueHrid,
                 typeHrid: buff.typeHrid,
                 flatBoost: buff.flatBoost,
                 ratioBoost: buff.ratioBoost,
                 duration: buff.duration,
+                typeOrdinal: buff.typeOrdinal,
             };
+            fresh[key] = entry;
+            list.push(entry);
         }
         this.combatBuffs = fresh;
+        this._combatBuffList = list;
         this._invalidateBuffBoostIndex();
         this.updateCombatDetails();
     }
@@ -793,6 +815,65 @@ class CombatUnit {
         this.isBlinded = false;
         this.blindExpireTime = null;
         this.combatDetails.combatStats.damageTaken = 0;
+    }
+
+    // =========================================================================
+    // MWIX adaptation (performance): the insertion-ordered mirror of
+    // `combatBuffs`, and why it exists.
+    //
+    // _commitInstances does `delete this.combatBuffs[hrid]` on every buff
+    // expiry, which puts the object permanently into V8's DICTIONARY mode —
+    // sampled on dungeon-den-600, 219 of 500 units are in it. The boost index
+    // rebuilt from that object is already ordinal-keyed, pooled and
+    // allocation-free; what it could not make cheap was its SOURCE. Measured on
+    // node v26.8.2: Object.values of a fast-mode object 83.0 ns, of a
+    // dictionary-mode one 602.1 ns, an indexed walk of a plain array 8.0 ns.
+    // dungeon-den-600 rebuilds 10 158 times per simulated hour over 105 017
+    // buffs.
+    //
+    // THE ORDER IS LOAD-BEARING, and reproducing it exactly is the whole of the
+    // risk. _buildBuffBoostIndex sums each type's boosts with `+=` in iteration
+    // order, and float addition is not associative, so a mirror that visits the
+    // same buffs in a different order is a plausible WRONG combat number with no
+    // error. JS object key order has two behaviours this must match:
+    //   - assigning to an EXISTING key leaves its position unchanged, so a
+    //     re-commit REPLACES the value in place (_mirrorReplace);
+    //   - a delete followed by a later re-insert moves the key to the END, so a
+    //     removal splices out and a fresh key pushes (_mirrorRemove, push).
+    // A mirror that pushed on every write, or spliced-and-pushed on re-assign,
+    // would reproduce neither. api/tests/buffMirror.test.mjs drives 4 000
+    // randomised add / re-assign / delete / re-add mutations against the object
+    // itself and asserts Object.values() and the mirror agree element for
+    // element after every one — the differential pattern pendingAction.test.mjs
+    // established, and it was checked against four deliberate breakages first.
+    //
+    // Both helpers find the entry by IDENTITY, which is sound because every
+    // value stored in combatBuffs is a distinct object minted for that key
+    // (_makeBuffInstance per (uniqueHrid, source), or clearBuffs's per-key
+    // literal). A miss cannot happen while the two writers are the only ones,
+    // so it THROWS rather than repairing itself: a silently divergent mirror is
+    // exactly the failure this file cannot afford.
+    // =========================================================================
+    _mirrorReplace(prev, next) {
+        let list = this._combatBuffList;
+        for (let i = 0; i < list.length; i++) {
+            if (list[i] === prev) {
+                list[i] = next;
+                return;
+            }
+        }
+        throw new Error("combatBuffs mirror out of sync: replaced entry not found");
+    }
+
+    _mirrorRemove(prev) {
+        let list = this._combatBuffList;
+        for (let i = 0; i < list.length; i++) {
+            if (list[i] === prev) {
+                list.splice(i, 1);
+                return;
+            }
+        }
+        throw new Error("combatBuffs mirror out of sync: removed entry not found");
     }
 
     // MWIX adaptation (performance): mark the boost index stale. Called from
@@ -822,14 +903,16 @@ class CombatUnit {
     // object that is overwritten in place. A steady-state rebuild allocates
     // nothing at all.
     //
-    // WHY IT IS BIT-IDENTICAL. The iteration order is untouched — still
-    // `Object.values(this.combatBuffs)`, still insertion-ordered (see the note
-    // on the old implementation, which stands: `for...in` would also walk
-    // inherited enumerables, so a polluted Object.prototype would inject
-    // phantom buffs). Within a type, records are appended in the same order as
-    // before, and the summation loop adds them in that same order starting from
-    // 0. No `+=` is reordered, and float addition's non-associativity therefore
-    // never gets a chance to show.
+    // WHY IT IS BIT-IDENTICAL. The iteration order is untouched. It was
+    // `Object.values(this.combatBuffs)` and is now the insertion-ordered mirror
+    // `_combatBuffList`, which reproduces that sequence exactly — see the note
+    // above _mirrorReplace, and the differential test that holds it to it.
+    // (`for...in` over combatBuffs was never an option either way: it walks
+    // inherited enumerables, so a polluted Object.prototype would inject phantom
+    // buffs.) Within a type, records are appended in the same order as before,
+    // and the summation loop adds them in that same order starting from 0. No
+    // `+=` is reordered, and float addition's non-associativity therefore never
+    // gets a chance to show.
     //
     // THE HAZARD, AND WHY IT IS CONTAINED. Because the arrays and records are
     // reused, a caller that held a boosts array or a sum object ACROSS a buff
@@ -886,8 +969,10 @@ class CombatUnit {
 
         let arrayPool = this._boostArrayPool;
         let recordPool = this._boostRecordPool;
-        for (const buff of Object.values(this.combatBuffs)) {
-            let ordinal = buffTypeOrdinal(buff.typeHrid);
+        let buffs = this._combatBuffList;
+        for (let b = 0; b < buffs.length; b++) {
+            let buff = buffs[b];
+            let ordinal = buff.typeOrdinal;
             let boosts = index[ordinal];
             if (boosts === undefined) {
                 if (this._boostArrayUsed < arrayPool.length) {

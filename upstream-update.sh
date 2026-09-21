@@ -1118,6 +1118,72 @@ upstream specifically changed the same surface area.
       \`--reps=9\` turned both into wins: \`dungeon-den-200\` -1.7% at 6/6,
       \`dungeon-fort-t2\` -1.1% at 5/6. \`sim:check\` 3/3 bit-identical.
 
+- **Insertion-ordered buff mirror (performance, measured)** — an eighth round.
+  A CPU profile at the preceding commit put \`_buildBuffBoostIndex\` at 14.2%
+  of engine self time on \`dungeon-den-600\`, the largest single item on the
+  board. The index itself was already ordinal-keyed, pooled and allocation-free
+  in steady state; the cost was its SOURCE. \`_commitInstances\` does
+  \`delete this.combatBuffs[hrid]\` on every buff expiry, which puts the object
+  permanently into V8's DICTIONARY mode — sampled on \`dungeon-den-600\`, 219 of
+  500 units are in it. Measured on node v26.8.2: \`Object.values\` of a
+  fast-mode object 83.0 ns, of a dictionary-mode one 602.1 ns, an indexed walk
+  of a plain array 8.0 ns; twelve \`Map.get\` ordinal lookups 42.2 ns against
+  6.9 ns for twelve cached field reads. \`dungeon-den-600\` rebuilds 10 158
+  times per simulated hour over 105 017 buffs.
+    - \`combatUnit.js\`: \`_combatBuffList\` mirrors \`combatBuffs\`'s VALUES in
+      insertion order, and \`_buildBuffBoostIndex\` walks it instead of
+      \`Object.values(this.combatBuffs)\`. \`combatBuffs\` itself is untouched —
+      \`trigger.js\`, \`api/lib\`, \`ui/src\` and the tests keep consuming it
+      unchanged. Every buff instance also carries an interned \`typeOrdinal\`,
+      so the rebuild hashes no hrid at all.
+      THE ORDER IS THE WHOLE OF THE RISK, and it is the reason this was not
+      done sooner. The rebuild sums each type's boosts with \`+=\` in iteration
+      order and float addition is not associative, so a mirror in a different
+      order is a plausible WRONG combat number with no error. JS object key
+      order has two behaviours a naive mirror gets wrong: assigning to an
+      EXISTING key leaves its position unchanged (so a re-commit writes in
+      place), and a delete followed by a re-insert moves the key to the END (so
+      a removal splices out and a fresh key pushes). A mirror that pushed on
+      every write, or that spliced and re-pushed on re-assign, reproduces
+      neither. Both helpers find the entry by IDENTITY, which is sound because
+      every value in \`combatBuffs\` is a distinct object minted for that key,
+      and a miss THROWS rather than repairing itself.
+      \`combatBuffs\` is written in exactly two places and a fresh grep
+      confirms it: \`_commitInstances\` entry-by-entry (both branches) and
+      \`clearBuffs\` wholesale. The mirror is maintained in both. Keys are hrids
+      beginning with \`/\`, never integer-like, so JS's integer-keys-first rule
+      never applies — confirmed by a test, not assumed.
+      THE ORDINAL IS DECLARED AT EVERY CONSTRUCTION SITE — \`_makeBuffInstance\`
+      (\`{...buff}\`), \`addPermanentBuff\` and \`clearBuffs\`'s per-key literal
+      — for the reason \`39f15ee\` exists: a field written by some paths and
+      not others costs more in shape churn than the lookup it saves.
+      \`buffTypeOrdinal\` still THROWS on an unknown hrid; the throw simply
+      lands one step earlier, at buff construction rather than at index
+      rebuild. Both are setup, both are loud, and neither can drop a buff
+      silently, which is the property that matters.
+      COVERED BY \`api/tests/buffMirror.test.mjs\` (NEW), whose central case is
+      DIFFERENTIAL in the shape \`pendingAction.test.mjs\` established: 4 000
+      randomised add / re-assign / delete / re-add / clear mutations from a
+      seeded LCG, asserting after EVERY one that the mirror equals
+      \`Object.values(combatBuffs)\` element for element — the object itself
+      being the oracle, since it is what the retired form read. Four mutants
+      were confirmed to fail it before it was trusted: splice-and-push on
+      re-assign, unconditional push, a dropped \`_mirrorRemove\`, and a
+      \`clearBuffs\` that leaves the mirror alone.
+      Candle at \`--reps=5\`, four counterbalanced rounds (ABBA): 19 of 22
+      improved, 16 won every round, NONE lost every round. Geometric mean
+      -6.1%. \`dungeon-den-200\` 73.3 -> 62.5 (-14.7%), \`dungeon-circus\`
+      -13.9%, \`dungeon-fort-t2\` -13.3%, \`dungeon-den-600\` 73.5 -> 65.5
+      (-10.9%), \`dungeon-pirate\` -9.4%, \`party3-sorcerer\` -9.2%,
+      \`selfbuff-solo\` -8.5%, \`party3-swarm\` -7.9%, \`melee-solo\` -6.9%,
+      \`buffstack-solo\` -6.7%, \`magic-solo\` and \`tank-solo\` -6.3%. The
+      three cases showing a positive sign (\`starter-solo\` +1.9%,
+      \`floor-party\` +1.3%, \`floor-solo\` +0.4%) were re-measured focused over
+      six counterbalanced rounds at \`--reps=9\` and are all noise:
+      \`floor-solo\` -0.7% at 2/6, \`floor-party\` -1.2% at 3/6,
+      \`starter-solo\` +0.6% at 2/6. \`sim:check\` 3/3 bit-identical;
+      \`eval:check\` Tier A 464/464, Tier B 29/29.
+
 NOTE: the labyrinth "maze" player-buff mechanism (\`options.maze\`,
 \`MAZE_DEFAULTS\`, \`resolveMazeBonuses\`, \`mazeBonuses\`,
 \`Player.applyMazeBonuses\`) was REMOVED deliberately — it double-counted the
