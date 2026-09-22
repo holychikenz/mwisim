@@ -31,12 +31,12 @@ Last audited: 2026-08-17 (all-zones sweep).
 | **Restoration & mana details** | Consumables tab: health/mana restored per source, mana used, hitpoints spent |
 | **Download results JSON** | Button on the Results header |
 | Import / export | Same JSON format as the webpack UI (solo + group auto-detect) |
-| Loadout save/load | localStorage (`csim_loadouts`) |
-| Auto-save of session state | localStorage (`csim_player_data`). **Fixed 2026-08-17**: the save effect was declared above the restore effect, so every mount wrote blank defaults over the stored session and the restore read back the emptiness it had just written — the session had never once survived a reload. Now read in App's state initialisers (`utils/session.js`), the pattern every other persisted slice already used |
+| Character & loadout save/load | localStorage (`csim_characters`, `schemaVersion: 2`). A CHARACTER owns its levels, ability training levels, house rooms, achievements, shrines and seals; each of its named LOADOUTS owns only equipment, ability slots (+ordering and triggers) and consumables. One merge function, `resolvePlayer(character, loadout)` in `utils/characterStore.js`, is the only way the two become the flat player the engine sees — so a loadout has nowhere to keep a second copy of a level. The old flat loadout store is retired and left on disk untouched as its own backup |
+| Auto-save of session state | localStorage (`csim_player_data`). **Fixed 2026-08-17**: the save effect was declared above the restore effect, so every mount wrote blank defaults over the stored session and the restore read back the emptiness it had just written — the session had never once survived a reload. Now read in App's state initialisers (`utils/session.js`), the pattern every other persisted slice already used. Bumped to `schemaVersion: 2` alongside `csim_guild_trial`: each of the five slots now holds a `{characterId, loadoutName}` REFERENCE rather than an embedded player. An older, unversioned blob is copied to `csim_player_data.v1` and the app starts fresh rather than guessing (`utils/characterStore.js` `loadVersioned`) |
 | Results: encounters, exp/hr, drops, consumables, damage breakdown | Tabbed dashboard |
 | In-browser simulation | **Better than parity** — engine runs in a worker, zero server |
 | Character import | **Not in webpack UI** — one-click load from cow/webapp |
-| MWIX "Open in csim" bridge | `#mwiLabBridge=json:` payloads (loadout + lab context) |
+| MWIX "Open in csim" bridge | `#mwiLabBridge=json:` payloads (loadout + lab context). Wire format UNCHANGED — the payload carries no character grouping to begin with, so it is adapted on arrival into a character plus one loadout rather than breaking the sender in `tampermonkey/src/kernel/sim-launch.js` |
 
 ## Remaining gaps
 
@@ -48,7 +48,8 @@ Last audited: 2026-08-17 (all-zones sweep).
    `extra.enableHpMpVisualization` + `timeSeriesData` progress events;
    needs a chart component.
 3. **Equipment sets** (`equipmentSetsModal`) — superseded in practice by
-   LoadoutManager + character import; revisit if missed.
+   per-character loadouts + character import: one import now brings in every
+   combat loadout the character owns, not just the active one. Revisit if missed.
 4. **Dungeon start-wave override** (`startWaveInput`) — present in the old
    markup; no engine wiring found in current main.js.
 5. **Wipe-events log** (`WipeEventsModal`) — per-death diagnostics.
@@ -58,8 +59,13 @@ Last audited: 2026-08-17 (all-zones sweep).
 
 ## Compatibility guarantees to preserve
 
-- **Import/export format**: loadout strings remain interchangeable with the
-  webpack UI and upstream users (`utils/importSet.js`).
+- **Import/export format**: the exported set is still the webpack UI's format
+  (`utils/importSet.js`, unchanged) and still round-trips a SINGLE merged
+  loadout in both directions, so pastes to and from upstream users keep working.
+  What it does NOT carry is the character→loadouts grouping added in
+  schemaVersion 2: an exported set is one character's one loadout, and an
+  imported set lands as a new character with one loadout. The grouping survives
+  only in `csim_characters` and in a fresh character import.
 - **Worker message protocol**: `start_simulation` / `simulation_progress` /
   `simulation_result` / `simulation_error`, with `zone`, `labyrinth`
   (`{labyrinthHrid, roomLevel, crates}`) and `extra`

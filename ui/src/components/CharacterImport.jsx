@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Button, Group, Select, Text } from '@mantine/core';
 import { useGameData } from '../hooks/useGameData';
-import { characterToPlayer } from '../utils/characterToPlayer';
+import { characterToCharacter } from '../utils/characterToStore';
 
 // =============================================================================
 // CharacterImport — "Load my character": one click from the cow/webapp
@@ -20,7 +20,7 @@ import { IRON_API_BASE } from '../hooks/usePrices';
 
 const COW_BASE = IRON_API_BASE;
 
-export function CharacterImport({ activeTab, onLoadPlayer, targetLabel }) {
+export function CharacterImport({ activeTab, onLoadCharacter, targetLabel }) {
   const target = targetLabel || `P${activeTab}`;
   const { data: gameData } = useGameData();
   const [characters, setCharacters] = useState(null); // null = unknown/offline
@@ -59,26 +59,29 @@ export function CharacterImport({ activeTab, onLoadPlayer, targetLabel }) {
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      const { player, skipped, loadoutName } = characterToPlayer(
+      // EVERY combat loadout the character owns comes across, not just the
+      // active one — the two-level model has somewhere to put them all. The
+      // slot is bound to whichever one the game is actually running.
+      const { character, defaultLoadoutName, skipped } = characterToCharacter(
         data.characterData,
         gameData,
-        activeTab
+        selected
       );
-      // 2nd arg (meta) is ignored by the zone/lab caller; the trial roster
-      // caller uses it to name the freshly-created master build.
-      onLoadPlayer(player, { name: selected, loadoutName });
+      onLoadCharacter(character, defaultLoadoutName);
 
       const skippedCount = Object.values(skipped).reduce((n, arr) => n + arr.length, 0);
       const suffix = skippedCount > 0 ? ` (${skippedCount} unknown item(s) skipped)` : '';
+      const names = Object.keys(character.loadouts);
       showMessage(
-        `Loaded ${selected}${loadoutName ? ` — ${loadoutName}` : ''} into ${target}${suffix}`
+        `Loaded ${selected} — ${names.length} loadout${names.length === 1 ? '' : 's'} ` +
+        `(${names.join(', ')}) → ${target}${suffix}`
       );
     } catch (e) {
       showMessage(`Failed to load character: ${e.message}`, true);
     } finally {
       setLoading(false);
     }
-  }, [selected, gameData, activeTab, onLoadPlayer, showMessage, target]);
+  }, [selected, gameData, onLoadCharacter, showMessage, target]);
 
   if (characters === null) {
     // cow/webapp unreachable — stay quiet but offer a retry.

@@ -8,6 +8,7 @@ import {
   Badge,
   Tabs,
   Checkbox,
+  Select,
   ScrollArea,
   Alert,
   Center,
@@ -55,14 +56,26 @@ import {
 } from './utils/guildBuffs';
 import {
   makeId,
-  deepClone,
-  uniqueBuildName,
   loadGuildTrialState,
   saveGuildTrialState,
   normalizeRoster,
+  refKey,
   rosterSize,
   clampCount
 } from './utils/roster';
+import {
+  createCharacter,
+  deleteLoadout,
+  loadCharacters,
+  makeCharacterId,
+  renameLoadout,
+  resolveRef,
+  saveCharacters,
+  setLoadout,
+  splitPlayer,
+  uniqueLoadoutName,
+  upsertCharacter
+} from './utils/characterStore';
 import { buildConsumableCosts, describeConsumableCosts } from './utils/consumableCosts';
 import {
   loadTriggerOptState,
@@ -123,98 +136,28 @@ function saveNavbarWidth(w) {
   }
 }
 
-const createDefaultPlayer = (id) => ({
-  hrid: `player${id}`,
-  staminaLevel: 1,
-  intelligenceLevel: 1,
-  attackLevel: 1,
-  meleeLevel: 1,
-  defenseLevel: 1,
-  rangedLevel: 1,
-  magicLevel: 1,
-  equipment: {},
-  food: [null, null, null],
-  drinks: [null, null, null],
-  abilities: [null, null, null, null, null],
-  houseRooms: {},
-  achievements: {},
-  // { [guildBuffHrid]: level } — the character's OWN shrine levels, same key and
-  // same shape as a trial master build's (utils/guildBuffs.js), so there is no
-  // third spelling of this thing anywhere. Absent or 0 means off.
-  guildShrines: {},
-  // Seal item hrids (shared/personalBuffs.js). A seal is equipped by one
-  // character, so it belongs here rather than in the header's extraOptions.
-  personalBuffs: [],
-  // { [abilityHrid]: { level, triggers } } — see PlayerConfig's applyAbilities.
-  abilityMemory: {},
-  debuffOnLevelGap: 0
-});
+const PARTY_SLOTS = [1, 2, 3, 4, 5];
 
-const createInitialPlayers = () => ({
-  1: createDefaultPlayer(1),
-  2: createDefaultPlayer(2),
-  3: createDefaultPlayer(3),
-  4: createDefaultPlayer(4),
-  5: createDefaultPlayer(5)
-});
+/** Five empty slots. A slot holds a `{characterId, loadoutName}` REFERENCE. */
+const createInitialParty = () => ({ 1: null, 2: null, 3: null, 4: null, 5: null });
 
-/**
- * One-time, additive backfill of the three per-player fields introduced when
- * shrines and seals stopped being party-wide.
- *
- * The shrine seeding is the part that matters. Until now a single knob set in
- * the trial header (`trialConfig.guildBuffLevels`, persisted in the guild-trial
- * blob) stood for every player at once. A user who had dialled their shrines in
- * there and then reloaded into this build would find every character carrying
- * none — a silent, invisible nerf to every number the app prints. So each
- * restored player WITHOUT a `guildShrines` key inherits a copy of those knobs.
- *
- * A player that already HAS the key is left strictly alone, including when it is
- * `{}`: that spelling means "captured, owns none" (utils/guildBuffs.js
- * `ownsShrines`) and overwriting it would resurrect the very party-wide
- * assumption this change removes. Running the helper twice is therefore a no-op.
- *
- * Seals need no migration at all: `extraOptions` was never persisted, so a
- * reload has always lost them and nothing is being taken away.
- *
- * WHAT THIS DOES NOT COVER, stated plainly because the seeding seams are
- * scattered and a reader should not have to infer the gaps:
- *
- *   - THE AUTO-SAVED SESSION is the only thing that passes through here. It is
- *     the common case and the one that would otherwise bite every existing user
- *     on first load, which is why it is the seam that got the migration.
- *   - A SAVED LOADOUT (LoadoutManager) restored from before this branch has no
- *     `guildShrines`, and handleLoad replaces the player wholesale, so it loads
- *     with none. Not seeded: a loadout is an explicit act of recall, and
- *     quietly mixing in whatever the trial header currently holds would be a
- *     different kind of lie.
- *   - AN IMPORTED SET (utils/importSet.js) from before this branch carries no
- *     `guildShrines` either, and exportFormatToPlayer deliberately leaves the
- *     key ABSENT rather than defaulting it — absence is what lets a trial build
- *     defer to the party-wide knobs. On the zone path absence resolves to no
- *     shrines, which is the honest answer for a foreign build.
- *   - THE MWIX BRIDGE does seed, in App's bridge effect, but on its own terms:
- *     a payload that states shrines wins outright, and only a payload silent
- *     about them falls back to the stored knobs.
- *
- * In all three uncovered cases the shrines are one panel away and visible;
- * the session restore is the only one where the loss would have been silent.
- */
-function migratePlayers(saved) {
-  if (!saved || typeof saved !== 'object') return createInitialPlayers();
-  const partyShrines = loadGuildTrialState().trialConfig?.guildBuffLevels || {};
-  const migrated = {};
-  for (const [id, player] of Object.entries(saved)) {
-    if (!player || typeof player !== 'object') continue;
-    migrated[id] = {
-      ...player,
-      guildShrines: player.guildShrines || { ...partyShrines },
-      personalBuffs: player.personalBuffs || [],
-      abilityMemory: player.abilityMemory || {}
-    };
+/** Coerce a restored party blob into exactly the five slots. */
+function normalizeParty(saved) {
+  const party = createInitialParty();
+  if (!saved || typeof saved !== 'object') return party;
+  for (const id of PARTY_SLOTS) {
+    const ref = saved[id];
+    if (ref?.characterId && ref?.loadoutName) {
+      party[id] = { characterId: ref.characterId, loadoutName: ref.loadoutName };
+    }
   }
-  return Object.keys(migrated).length ? migrated : createInitialPlayers();
+  return party;
 }
+
+const VERSION_NOTICE =
+  'Saved data from an older version was set aside (csim_player_data.v1, ' +
+  'csim_guild_trial.v1) and your old flat loadouts are untouched in csim_loadouts. ' +
+  'Starting fresh — import a character to begin.';
 
 function App() {
   const { data: gameData } = useGameData();
@@ -249,11 +192,16 @@ function App() {
   // The auto-saved session, read ONCE at initialisation — see utils/session.js
   // for why this is not an effect (it was, and the save above it erased the
   // session on every mount before the restore could read it).
-  const savedSession = useMemo(() => loadSession(), []);
+  const session = useMemo(() => loadSession(), []);
+  const savedSession = session.data;
 
-  const [players, setPlayers] = useState(
-    () => (savedSession?.players ? migratePlayers(savedSession.players) : createInitialPlayers())
-  );
+  // THE ONE STORE. A character owns its levels, houses, achievements, shrines,
+  // seals and ability training levels; each of its named loadouts owns only
+  // gear, ability slots and consumables. See utils/characterStore.js.
+  const [characters, setCharacters] = useState(loadCharacters);
+  // Five slots, each a {characterId, loadoutName} REFERENCE — so two slots can
+  // be the same character in different gear with no copy of anything.
+  const [party, setParty] = useState(() => normalizeParty(savedSession.party));
   const [navbarWidth, setNavbarWidth] = useState(loadNavbarWidth);
   const [activeTab, setActiveTab] = useState(1);
   const [selectedPlayers, setSelectedPlayers] = useState(
@@ -263,13 +211,14 @@ function App() {
   );
   const [simMode, setSimMode] = useState('zone');
 
-  // Guild-trial state (separate from the fixed 5-slot zone/lab `players`).
-  // masterBuilds: { [id]: { id, name, ...playerFields } }  — named editable builds
-  // roster:       [ { id, buildId, count } ]               — ONE counted row per build
-  const [masterBuilds, setMasterBuilds] = useState(() => loadGuildTrialState().masterBuilds);
-  const [roster, setRoster] = useState(() => loadGuildTrialState().roster);
-  const [selectedEntryId, setSelectedEntryId] = useState(() => loadGuildTrialState().selectedEntryId);
-  const [trialConfig, setTrialConfig] = useState(() => loadGuildTrialState().trialConfig);
+  // Guild-trial state. Read ONCE (it used to be read four times over) — rows
+  // are REFERENCES into the same character store the zone slots use, so a trial
+  // seat and a party slot can be the same character and cannot disagree.
+  // roster: [ { id, characterId, loadoutName, count } ] — ONE counted row per pair.
+  const trialState = useMemo(() => loadGuildTrialState(), []);
+  const [roster, setRoster] = useState(() => trialState.data.roster);
+  const [selectedEntryId, setSelectedEntryId] = useState(() => trialState.data.selectedEntryId);
+  const [trialConfig, setTrialConfig] = useState(() => trialState.data.trialConfig);
   // A planet, not a solo monster: '/actions/combat/fly' is a spawn inside Smelly
   // Planet rather than a destination, and solo actions are no longer selectable
   // (utils/zones.js). A restored or imported solo hrid — and any tier past the
@@ -317,7 +266,13 @@ function App() {
   // Set when an MWIX bridge payload carries labyrinth context (maze on) —
   // zone sims then still apply the lab-shop upgrades, like the old UI.
   const [mazeContext, setMazeContext] = useState(false);
-  const [bridgeMessage, setBridgeMessage] = useState(null);
+  // One honest notice when a pre-v2 blob was set aside rather than guessed at.
+  // It rides the EXISTING alert; no new UI plumbing for a once-per-user message.
+  const [bridgeMessage, setBridgeMessage] = useState(
+    session.status === 'incompatible' || trialState.status === 'incompatible'
+      ? VERSION_NOTICE
+      : null
+  );
 
   // -- All Zones sweep -------------------------------------------------------
   // Its own engine (a worker pool, hooks/useAllZones.js) rather than a sim mode:
@@ -391,13 +346,26 @@ function App() {
         // No shrine object in the payload: an older MWIX build, which says
         // nothing about shrines rather than saying the character owns none.
         // Seed the imported player from the stored party-wide knobs, for the
-        // same reason migratePlayers does — before this change those knobs WERE
-        // this character's shrines, and a bridge import that silently zeroed
-        // them would quietly understate every number the app then prints.
-        player.guildShrines = { ...(loadGuildTrialState().trialConfig?.guildBuffLevels || {}) };
+        // same reason the old session migration did — before that change those
+        // knobs WERE this character's shrines, and a bridge import that silently
+        // zeroed them would quietly understate every number the app then prints.
+        player.guildShrines = { ...(loadGuildTrialState().data.trialConfig?.guildBuffLevels || {}) };
       }
 
-      setPlayers(prev => ({ ...prev, 1: player }));
+      // ADAPTED ON ARRIVAL. The payload is a flat loadout and carries no
+      // character grouping to begin with, so there is nothing richer upstream
+      // to carry and no reason to break tampermonkey/src/kernel/sim-launch.js:
+      // it becomes a character with a single loadout named `bridge`.
+      const characterName = payload.loadout?.name || 'MWIX import';
+      const characterId = makeCharacterId(`mwix ${characterName}`);
+      const split = splitPlayer(player);
+      setCharacters(prev => upsertCharacter(prev, {
+        ...split.character,
+        id: characterId,
+        name: characterName,
+        loadouts: { bridge: split.loadout }
+      }));
+      setParty(prev => ({ ...prev, 1: { characterId, loadoutName: 'bridge' } }));
       setSelectedPlayers([1]);
       setActiveTab(1);
       if (importSet.zone) setZone(importSet.zone);
@@ -491,10 +459,81 @@ function App() {
     });
   }, [allZonesSelection, allZonesHours, allZonesWorkers]);
 
-  const handlePlayerChange = useCallback((playerId, updatedPlayer) => {
-    setPlayers(prev => ({
+  useEffect(() => {
+    saveCharacters(characters);
+  }, [characters]);
+
+  // The five slots as flat players, manufactured on demand. This is THE view
+  // every DTO site, panel and optimiser payload reads; nothing downstream knows
+  // the model is two-level. A dangling reference resolves to null.
+  const resolvedParty = useMemo(
+    () => Object.fromEntries(PARTY_SLOTS.map(id => [id, resolveRef(characters, party[id])])),
+    [characters, party]
+  );
+
+  /**
+   * Write a flat player edit back through the split. The character half lands
+   * on the character and the loadout half on the loadout, so editing P1's
+   * attack level is OBSERVED BY P2 with no copy step when both wear the same
+   * character — and a level has nowhere to be written twice.
+   *
+   * One handler for both modes: a party slot and a trial row are the same kind
+   * of reference, so they cannot drift apart.
+   */
+  const applyPlayerEdit = useCallback((ref, updated) => {
+    if (!ref?.characterId || !ref?.loadoutName) return;
+    const { character, loadout } = splitPlayer(updated);
+    setCharacters(prev => {
+      const existing = prev.characters?.[ref.characterId];
+      if (!existing) return prev;
+      const merged = upsertCharacter(prev, { ...existing, ...character });
+      return setLoadout(merged, ref.characterId, ref.loadoutName, loadout);
+    });
+  }, []);
+
+  const handleResolvedPlayerChange = useCallback(
+    (slotId, updated) => applyPlayerEdit(party[slotId], updated),
+    [party, applyPlayerEdit]
+  );
+
+  // The selection, filtered down to slots that actually resolve. An unbound or
+  // dangling slot is a NEW failure mode (the old copy-everything model could
+  // not produce one), and the answer is simply that it contributes no DTO.
+  const selectedParty = useMemo(
+    () => selectedPlayers.filter(id => resolvedParty[id]),
+    [selectedPlayers, resolvedParty]
+  );
+
+  /** Bind a slot to a (character, loadout) pair. No copying, ever. */
+  const bindSlot = useCallback((slotId, ref) => {
+    setParty(prev => ({ ...prev, [slotId]: ref }));
+  }, []);
+
+  /** A freshly-imported flat player becomes its own character, adapted on arrival. */
+  const importedSeq = useRef(0);
+  const handleImportPlayer = useCallback((slotId, flat) => {
+    importedSeq.current += 1;
+    const name = importedSeq.current === 1 ? 'Imported' : `Imported ${importedSeq.current}`;
+    const id = makeId('char');
+    const { character, loadout } = splitPlayer(flat);
+    setCharacters(prev => upsertCharacter(prev, {
+      ...character,
+      id,
+      name,
+      loadouts: { default: loadout }
+    }));
+    setParty(prev => ({ ...prev, [slotId]: { characterId: id, loadoutName: 'default' } }));
+  }, []);
+
+  /** A full character import: every combat loadout it owns, in one write. */
+  const handleImportCharacter = useCallback((slotId, character, defaultLoadoutName) => {
+    setCharacters(prev => upsertCharacter(prev, character));
+    setParty(prev => ({
       ...prev,
-      [playerId]: updatedPlayer
+      [slotId]: {
+        characterId: character.id,
+        loadoutName: defaultLoadoutName || Object.keys(character.loadouts)[0]
+      }
     }));
   }, []);
 
@@ -533,11 +572,19 @@ function App() {
 
   // -- Guild-trial persistence (mirrors ImportExport's localStorage pattern) --
   useEffect(() => {
-    saveGuildTrialState({ masterBuilds, roster, selectedEntryId, trialConfig });
-  }, [masterBuilds, roster, selectedEntryId, trialConfig]);
+    saveGuildTrialState({ roster, selectedEntryId, trialConfig });
+  }, [roster, selectedEntryId, trialConfig]);
 
   const selectedEntry = roster.find(e => e.id === selectedEntryId) || null;
-  const selectedBuild = selectedEntry ? masterBuilds[selectedEntry.buildId] || null : null;
+  const selectedCharacter = selectedEntry
+    ? characters.characters?.[selectedEntry.characterId] || null
+    : null;
+  // The selected seat as a flat player — the same manufactured view the zone
+  // slots get, so PlayerConfig is handed one shape and edits it one way.
+  const selectedTrialPlayer = useMemo(
+    () => resolveRef(characters, selectedEntry),
+    [characters, selectedEntry]
+  );
   // Participants = SUM of row counts (each participant adds +1% monster HP),
   // unless explicitly overridden in trial options.
   const participantCount = trialConfig.participantCount ?? rosterSize(roster);
@@ -546,64 +593,63 @@ function App() {
 
   // -- Guild-trial roster operations ----------------------------------------
 
-  // Create a master build from a player-shaped object and (optionally) a
-  // linked roster row (count 1). Returns the new build id.
-  const addBuildFromPlayer = useCallback((playerObj, name, { withEntry = true } = {}) => {
-    const buildId = makeId('mb');
-    setMasterBuilds(prev => ({
-      ...prev,
-      [buildId]: { ...deepClone(playerObj), id: buildId, name: uniqueBuildName(name, prev) }
-    }));
-    if (withEntry) {
-      const entryId = makeId('re');
-      setRoster(prev => [...prev, { id: entryId, buildId, count: 1 }]);
-      setSelectedEntryId(entryId);
+  /** Add (or select) a row for a (character, loadout) reference. */
+  const addRowFromRef = useCallback((ref) => {
+    if (!ref?.characterId || !ref?.loadoutName) return;
+    const key = refKey(ref);
+    const existing = roster.find(e => refKey(e) === key);
+    if (existing) {
+      setSelectedEntryId(existing.id);
+      return;
     }
-    return buildId;
-  }, []);
+    const entryId = makeId('re');
+    setRoster(prev => [
+      ...prev,
+      { id: entryId, characterId: ref.characterId, loadoutName: ref.loadoutName, count: 1 }
+    ]);
+    setSelectedEntryId(entryId);
+  }, [roster]);
 
-  // A blank TRIAL build drops `guildShrines` rather than carrying the zone
+  // A blank TRIAL character drops `guildShrines` rather than carrying the zone
   // slot's `{}`. The two spellings are not the same question here: `{}` means
   // "owns none" to resolveUnitShrineBuffs, whereas an absent key defers to the
   // trial header's party-wide knobs — which is the right default for a seat
   // nobody has said anything about yet. The zone-slot default stays `{}`,
-  // since on that path there is no fallback to defer to.
+  // since on that path there is no fallback to defer to. The key is now never
+  // SET rather than set and deleted, which is the same fact said once.
   const addBlankBuild = useCallback(() => {
-    const build = createDefaultPlayer('build');
-    delete build.guildShrines;
-    addBuildFromPlayer(build, 'New build');
-  }, [addBuildFromPlayer]);
+    const id = makeId('char');
+    const character = { ...createCharacter({ name: 'New build', id, ownsShrines: false }), id };
+    setCharacters(prev => upsertCharacter(prev, character));
+    addRowFromRef({ characterId: id, loadoutName: 'default' });
+  }, [addRowFromRef]);
 
+  // A zone/lab slot joins the trial as a REFERENCE, not a deep clone: the seat
+  // and the slot are now the same character wearing the same loadout, and
+  // editing either is editing both.
   const addBuildFromSlot = useCallback((slotId) => {
-    const src = players[slotId];
-    if (!src) return;
-    addBuildFromPlayer(src, `P${slotId} build`);
-  }, [players, addBuildFromPlayer]);
+    addRowFromRef(party[slotId]);
+  }, [party, addRowFromRef]);
 
-  // Saved zone/lab loadout (LoadoutManager store) → new master build + row.
-  // The stored player object is already in the UI-internal shape; hrid is
-  // stamped at DTO time, so only debuffOnLevelGap needs a default.
-  const addBuildFromLoadout = useCallback((loadout) => {
-    if (!loadout?.player) return;
-    addBuildFromPlayer(
-      { debuffOnLevelGap: 0, ...loadout.player },
-      loadout.name || 'Loadout build'
-    );
-  }, [addBuildFromPlayer]);
-
-  // Add N participants of an EXISTING master build. Counted model: if the
-  // build already has a row, its count grows; otherwise one new row appears.
-  const addEntriesForBuild = useCallback((buildId, count = 1) => {
-    if (!buildId) return;
+  // Add N participants of an EXISTING (character, loadout) pair. Counted model:
+  // if the pair already has a row, its count grows; otherwise one row appears.
+  const addEntriesForRef = useCallback((ref, count = 1) => {
+    if (!ref?.characterId || !ref?.loadoutName) return;
+    const key = refKey(ref);
     const n = Math.max(1, Math.round(Number(count) || 1));
     setRoster(prev => {
-      const existing = prev.find(e => e.buildId === buildId);
+      const existing = prev.find(e => refKey(e) === key);
       if (existing) {
         return prev.map(e =>
-          e.buildId === buildId ? { ...e, count: clampCount((e.count ?? 1) + n) } : e
+          refKey(e) === key ? { ...e, count: clampCount((e.count ?? 1) + n) } : e
         );
       }
-      return [...prev, { id: makeId('re'), buildId, count: clampCount(n) }];
+      return [...prev, {
+        id: makeId('re'),
+        characterId: ref.characterId,
+        loadoutName: ref.loadoutName,
+        count: clampCount(n)
+      }];
     });
   }, []);
 
@@ -622,20 +668,21 @@ function App() {
     ));
   }, []);
 
-  // Save-as-new: detach ONE unit into its own build.
+  // Save-as-new: DETACH ONE UNIT INTO A NEW LOADOUT ON THE SAME CHARACTER.
+  // It copies the gear, the ability slots and the consumables — and, being a
+  // loadout, is structurally unable to copy a level. Two seats that differ only
+  // in gear can no longer end up disagreeing about who their character is.
   //   count > 1 → decrement the source row, add a NEW count-1 row (right after
-  //               it) linked to a deep copy of the build, and select it.
-  //   count = 1 → relink the row in place to the copy (as before).
+  //               it) pointing at the copy, and select it.
+  //   count = 1 → repoint the row in place at the copy.
   const handleSaveAsNew = useCallback((entryId) => {
     const entry = roster.find(e => e.id === entryId);
     if (!entry) return;
-    const src = masterBuilds[entry.buildId];
-    if (!src) return;
-    const newBuildId = makeId('mb');
-    setMasterBuilds(prev => ({
-      ...prev,
-      [newBuildId]: { ...deepClone(src), id: newBuildId, name: uniqueBuildName(src.name, prev) }
-    }));
+    const character = characters.characters?.[entry.characterId];
+    const source = character?.loadouts?.[entry.loadoutName];
+    if (!source) return;
+    const newName = uniqueLoadoutName(entry.loadoutName, character.loadouts);
+    setCharacters(prev => setLoadout(prev, entry.characterId, newName, source));
     const count = clampCount(entry.count ?? 1);
     if (count > 1) {
       const newEntryId = makeId('re');
@@ -645,31 +692,32 @@ function App() {
         const next = prev.map(e =>
           e.id === entryId ? { ...e, count: count - 1 } : e
         );
-        next.splice(idx + 1, 0, { id: newEntryId, buildId: newBuildId, count: 1 });
+        next.splice(idx + 1, 0, {
+          id: newEntryId,
+          characterId: entry.characterId,
+          loadoutName: newName,
+          count: 1
+        });
         return next;
       });
       setSelectedEntryId(newEntryId);
     } else {
-      setRoster(prev => prev.map(e => (e.id === entryId ? { ...e, buildId: newBuildId } : e)));
+      setRoster(prev => prev.map(e => (e.id === entryId ? { ...e, loadoutName: newName } : e)));
     }
-  }, [roster, masterBuilds]);
+  }, [roster, characters]);
 
-  // Permanently delete a MASTER BUILD (not just a roster row). Unlike
-  // handleDeleteEntry — which keeps the build as a re-addable orphan — this
-  // removes the build from the store AND drops every roster row linked to it,
-  // mending the selection if the selected row was one of them.
-  const handleDeleteBuild = useCallback((buildId) => {
-    if (!buildId) return;
-    const nextRoster = roster.filter(e => e.buildId !== buildId);
-    setMasterBuilds(prev => {
-      const next = { ...prev };
-      delete next[buildId];
-      return next;
-    });
+  // Permanently delete a LOADOUT (not just a roster row). Unlike
+  // handleDeleteEntry — which keeps the loadout as a re-addable orphan — this
+  // removes it from the character AND drops every roster row pointing at it,
+  // mending the selection if the selected row was one of them. The CHARACTER
+  // survives: its levels are not this loadout's to take away.
+  const handleDeleteLoadout = useCallback((ref) => {
+    if (!ref?.characterId || !ref?.loadoutName) return;
+    const key = refKey(ref);
+    const nextRoster = roster.filter(e => refKey(e) !== key);
+    setCharacters(prev => deleteLoadout(prev, ref.characterId, ref.loadoutName));
     setRoster(nextRoster);
-    // If the currently-selected row linked to this build, it no longer exists —
-    // fall back to the first remaining row (or nothing on an empty roster).
-    if (selectedEntry && selectedEntry.buildId === buildId) {
+    if (selectedEntry && refKey(selectedEntry) === key) {
       setSelectedEntryId(nextRoster[0]?.id ?? null);
     }
   }, [roster, selectedEntry]);
@@ -689,35 +737,84 @@ function App() {
     }
   }, [roster, selectedEntryId]);
 
-  // PlayerConfig edits the selected entry's master build; changes propagate to
-  // every roster entry linked to that build.
-  const handleBuildChange = useCallback((updated) => {
-    if (!selectedBuild) return;
-    setMasterBuilds(prev => ({
-      ...prev,
-      [selectedBuild.id]: { ...updated, id: selectedBuild.id, name: selectedBuild.name }
-    }));
-  }, [selectedBuild]);
+  // PlayerConfig edits the selected entry; the character half propagates to
+  // every seat and party slot wearing that character, the loadout half to every
+  // roster row pointing at that loadout.
+  // ONE handler for both modes — a trial seat is the same kind of reference a
+  // party slot is, so the edit path cannot fork.
+  const handleBuildChange = useCallback(
+    (updated) => applyPlayerEdit(selectedEntry, updated),
+    [selectedEntry, applyPlayerEdit]
+  );
 
-  const handleRenameBuild = useCallback((name) => {
-    if (!selectedBuild) return;
-    setMasterBuilds(prev => ({
-      ...prev,
-      [selectedBuild.id]: { ...prev[selectedBuild.id], name }
-    }));
-  }, [selectedBuild]);
+  // Renaming a seat renames the LOADOUT it wears (the character's own name is
+  // edited beside it), rewriting every row that pointed at the old name.
+  const handleRenameLoadout = useCallback((name) => {
+    if (!selectedEntry || !name?.trim()) return;
+    const from = selectedEntry.loadoutName;
+    const characterId = selectedEntry.characterId;
+    const result = renameLoadout(characters, characterId, from, name.trim());
+    if (result.name === from) return;
+    setCharacters(result.store);
+    setRoster(rows => rows.map(e =>
+      e.characterId === characterId && e.loadoutName === from
+        ? { ...e, loadoutName: result.name }
+        : e
+    ));
+  }, [selectedEntry, characters]);
 
+  const handleRenameCharacter = useCallback((name) => {
+    if (!selectedCharacter || !name) return;
+    setCharacters(prev => upsertCharacter(prev, { ...selectedCharacter, name }));
+  }, [selectedCharacter]);
+
+  // WIRE FORMAT UNCHANGED, adapted on arrival. The {masterBuilds, roster}
+  // payload is a two-repo protocol (utils/rosterBridge.js) and carries no
+  // character grouping to begin with, so each master build becomes a character
+  // of its own with a single loadout named `default`.
   const handleImportRoster = useCallback((data) => {
-    // Accepts BOTH roster formats: legacy [{id, buildId}] rows become count 1
-    // and rows sharing a buildId collapse into one counted row.
-    const roster = normalizeRoster(Array.isArray(data.roster) ? data.roster : []);
-    setMasterBuilds(data.masterBuilds || {});
-    setRoster(roster);
-    setSelectedEntryId(roster[0]?.id ?? null);
+    const builds = data.masterBuilds || {};
+    setCharacters(prev => {
+      let next = prev;
+      for (const [buildId, build] of Object.entries(builds)) {
+        if (!build || typeof build !== 'object') continue;
+        const { character, loadout } = splitPlayer(build);
+        next = upsertCharacter(next, {
+          ...character,
+          id: buildId,
+          name: build.name || buildId,
+          loadouts: { default: loadout }
+        });
+      }
+      return next;
+    });
+    const rows = normalizeRoster(
+      (Array.isArray(data.roster) ? data.roster : []).map(r => ({
+        id: r.id,
+        characterId: r.characterId || r.buildId,
+        loadoutName: r.loadoutName || 'default',
+        count: r.count
+      }))
+    );
+    setRoster(rows);
+    setSelectedEntryId(rows[0]?.id ?? null);
     if (data.trialConfig) {
       setTrialConfig(prev => ({ ...prev, ...data.trialConfig }));
     }
   }, []);
+
+  /** A single build pasted into the trial panel: one character, one loadout. */
+  const handleImportBuild = useCallback((flat, name) => {
+    const id = makeId('char');
+    const { character, loadout } = splitPlayer(flat);
+    setCharacters(prev => upsertCharacter(prev, {
+      ...character,
+      id,
+      name: name || 'Imported build',
+      loadouts: { default: loadout }
+    }));
+    addRowFromRef({ characterId: id, loadoutName: 'default' });
+  }, [addRowFromRef]);
 
   // SCLIRoster roster link: the dashboard's "open in csim" is a plain <a> at
   // `#rosterBridge=gz:<base64url>` carrying the whole trial roster. Decoding
@@ -786,17 +883,24 @@ function App() {
     // Counted rows expand into `count` DTOs each, with UNIQUE hrids
     // (player1..playerN) so per-unit trial death stats don't collide. Trials
     // disable consumables, so strip food/drinks (the engine ignores them too).
-    // hridToBuild records which build each unit came from so the results view
-    // can group per-hrid stats (avgPlayerDps etc.) back into builds.
+    // hridToLoadout records which (character, loadout) each unit came from so
+    // the results view can group per-hrid stats (avgPlayerDps etc.) back.
     const playerDTOs = [];
-    const hridToBuild = {};
+    const hridToLoadout = {};
     for (const entry of roster) {
-      const build = masterBuilds[entry.buildId];
+      // Resolved per row, as it must be: this is the ONE DTO site the shared
+      // resolvedParty memo cannot serve. A dangling reference is skipped.
+      const build = resolveRef(characters, entry);
       if (!build) continue;
+      const label = `${characters.characters[entry.characterId]?.name || entry.characterId} — ${entry.loadoutName}`;
       const n = clampCount(entry.count ?? 1);
       for (let i = 0; i < n; i++) {
         const hrid = `player${playerDTOs.length + 1}`;
-        hridToBuild[hrid] = { buildId: build.id, buildName: build.name };
+        hridToLoadout[hrid] = {
+          characterId: entry.characterId,
+          loadoutName: entry.loadoutName,
+          label
+        };
         // Shrines ride on the UNIT, not on the party. The guild buys the
         // ceiling, the member buys the level (the game's own wording, quoted at
         // sim/engine.js:attachShrineBuffs in SCLIRoster), so two seats in the
@@ -867,11 +971,11 @@ function App() {
         // Captured at run time so the results view can flag debugging runs
         // even after the knob is changed back.
         enemyScale,
-        // Unit-hrid → { buildId, buildName } for the DPS-by-build grouping.
-        hridToBuild
+        // Unit-hrid → { characterId, loadoutName, label } for the DPS grouping.
+        hridToLoadout
       }
     });
-  }, [roster, masterBuilds, trialConfig, gameData, runGuildTrial, experimental]);
+  }, [roster, characters, trialConfig, gameData, runGuildTrial, experimental]);
 
   // ---------------------------------------------------------------------------
   // Trigger optimiser
@@ -892,14 +996,14 @@ function App() {
     // stripping (api/lib/target.js), and it needs to SEE the food and drink
     // triggers in order to list them back with "stripped on labyrinth entry"
     // beside them — a user who set those thresholds is owed the explanation.
-    const playerDTOs = selectedPlayers.map(playerId => ({
-      ...toPlayerDTO(players[playerId], { hrid: `player${playerId}` }),
+    const playerDTOs = selectedParty.map(playerId => ({
+      ...toPlayerDTO(resolvedParty[playerId], { hrid: `player${playerId}` }),
       // Shrines and seals ride on the UNIT, exactly as the trial path has done
       // since 2026-09-18. The API concatenates this tail onto its shared buff
       // list in api/lib/triggerSearch/poolWorker.js and bounds.js, and the
       // candidate DTOs are deep clones of these (triggerSearch/params.js
       // applyValues), so every candidate is scored on the real character.
-      extraBuffs: resolvePlayerExtraBuffs(players[playerId])
+      extraBuffs: resolvePlayerExtraBuffs(resolvedParty[playerId])
     }));
     return {
       players: playerDTOs,
@@ -939,8 +1043,8 @@ function App() {
     simMode,
     optTarget,
     labConfig,
-    players,
-    selectedPlayers,
+    resolvedParty,
+    selectedParty,
     zone,
     difficultyTier,
     extraOptions,
@@ -1008,9 +1112,9 @@ function App() {
     // Same per-unit buffs as the trigger optimiser: the scan's candidate DTOs
     // are structuredClones of these (equipmentScan/candidates.js
     // applyEnhancement), so `extraBuffs` survives into every probe.
-    const playerDTOs = selectedPlayers.map(playerId => ({
-      ...toPlayerDTO(players[playerId], { hrid: `player${playerId}` }),
-      extraBuffs: resolvePlayerExtraBuffs(players[playerId])
+    const playerDTOs = selectedParty.map(playerId => ({
+      ...toPlayerDTO(resolvedParty[playerId], { hrid: `player${playerId}` }),
+      extraBuffs: resolvePlayerExtraBuffs(resolvedParty[playerId])
     }));
     return {
       players: playerDTOs,
@@ -1041,8 +1145,8 @@ function App() {
     simMode,
     optTarget,
     labConfig,
-    players,
-    selectedPlayers,
+    resolvedParty,
+    selectedParty,
     zone,
     difficultyTier,
     extraOptions,
@@ -1119,10 +1223,10 @@ function App() {
   // memos each return null outside their own mode, so the Costs tab — which is not
   // a simulation mode at all — needs its own view of the party.
   const selectedPlayerDTOs = useMemo(
-    () => selectedPlayers.map(playerId =>
-      toPlayerDTO(players[playerId], { hrid: `player${playerId}` })
+    () => selectedParty.map(playerId =>
+      toPlayerDTO(resolvedParty[playerId], { hrid: `player${playerId}` })
     ),
-    [players, selectedPlayers]
+    [resolvedParty, selectedParty]
   );
 
   // -- All Zones sweep -------------------------------------------------------
@@ -1159,16 +1263,17 @@ function App() {
           order.get(a.zoneHrid) - order.get(b.zoneHrid) || a.difficultyTier - b.difficultyTier
       );
     if (combos.length === 0) return;
+    if (selectedParty.length === 0) return;
 
     // Exactly the party, buffs and shrines a single Run would send — the sweep
     // is the same simulation done many times, not a different one. That
     // includes each player's own shrines and seals, which ride on the DTO.
-    const playerDTOs = selectedPlayers.map(playerId => ({
-      ...toPlayerDTO(players[playerId], {
+    const playerDTOs = selectedParty.map(playerId => ({
+      ...toPlayerDTO(resolvedParty[playerId], {
         hrid: `player${playerId}`,
         stripConsumables: mazeContext
       }),
-      extraBuffs: resolvePlayerExtraBuffs(players[playerId])
+      extraBuffs: resolvePlayerExtraBuffs(resolvedParty[playerId])
     }));
 
     runAllZones({
@@ -1194,8 +1299,8 @@ function App() {
     allZonesSelection,
     allZonesHours,
     allZonesWorkers,
-    players,
-    selectedPlayers,
+    resolvedParty,
+    selectedParty,
     mazeContext,
     extraOptions,
     experimental,
@@ -1219,6 +1324,8 @@ function App() {
       handleStartEquipOpt();
       return;
     }
+    // Every selected slot is empty or dangling: there is nothing to simulate.
+    if (selectedParty.length === 0) return;
     const isLab = simMode === 'labyrinth';
     // The game STRIPS every consumable (food, drinks, teas) on labyrinth
     // entry — the player walks in with gear and abilities only; the supply
@@ -1230,9 +1337,9 @@ function App() {
 
     // Build player DTOs for all selected players (shared transform — see
     // utils/playerDTO.js — so zone/lab and trials never drift apart).
-    const playerDTOs = selectedPlayers.map(playerId => ({
-      ...toPlayerDTO(players[playerId], { hrid: `player${playerId}`, stripConsumables }),
-      extraBuffs: resolvePlayerExtraBuffs(players[playerId])
+    const playerDTOs = selectedParty.map(playerId => ({
+      ...toPlayerDTO(resolvedParty[playerId], { hrid: `player${playerId}`, stripConsumables }),
+      extraBuffs: resolvePlayerExtraBuffs(resolvedParty[playerId])
     }));
     const extra = {
       ...extraOptions,
@@ -1265,7 +1372,26 @@ function App() {
       // reader does not have to wonder whether it was forgotten.
       guildBuffs: []
     });
-  }, [players, selectedPlayers, simMode, zone, difficultyTier, labConfig, mazeContext, duration, extraOptions, experimental, runSimulation, handleStartTrial, handleStartTriggerOpt, handleStartEquipOpt]);
+  }, [resolvedParty, selectedParty, simMode, zone, difficultyTier, labConfig, mazeContext, duration, extraOptions, experimental, runSimulation, handleStartTrial, handleStartTriggerOpt, handleStartEquipOpt]);
+
+  // Pickers for the slot binder, and the label the party checkboxes wear.
+  const characterOptions = useMemo(
+    () => Object.values(characters.characters || {})
+      .map(c => ({ value: c.id, label: c.name || c.id }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+    [characters]
+  );
+  const activeLoadoutOptions = useMemo(() => {
+    const id = party[activeTab]?.characterId;
+    return Object.keys(characters.characters?.[id]?.loadouts || {});
+  }, [characters, party, activeTab]);
+  const slotLabel = useCallback((id) => {
+    const ref = party[id];
+    if (!ref) return 'empty';
+    const character = characters.characters?.[ref.characterId];
+    if (!character) return 'missing';
+    return `${character.name || character.id}/${ref.loadoutName}`;
+  }, [characters, party]);
 
   // The header, progress bar and results pane read from whichever engine the
   // current mode uses. Both optimisers go through an API hook; every other mode
@@ -1373,43 +1499,59 @@ function App() {
             {simMode === 'guildTrial' ? (
               <>
                 <GuildTrialPanel
-                  masterBuilds={masterBuilds}
+                  characters={characters}
                   roster={roster}
                   selectedEntryId={selectedEntryId}
                   participantCount={participantCount}
                   items={gameData?.items}
-                  players={players}
+                  party={party}
                   trialConfig={trialConfig}
                   onSelectEntry={setSelectedEntryId}
                   onDuplicate={handleDuplicate}
                   onSetCount={handleSetCount}
                   onSaveAsNew={handleSaveAsNew}
                   onDelete={handleDeleteEntry}
-                  onDeleteBuild={handleDeleteBuild}
-                  onAddEntryFromBuild={addEntriesForBuild}
+                  onDeleteLoadout={handleDeleteLoadout}
+                  onAddEntryFromRef={addEntriesForRef}
                   onAddBuildFromSlot={addBuildFromSlot}
-                  onAddBuildFromLoadout={addBuildFromLoadout}
+                  onAddRowFromRef={addRowFromRef}
                   onAddBlankBuild={addBlankBuild}
                   onImportRoster={handleImportRoster}
-                  onImportBuild={(player, name) => addBuildFromPlayer(player, name || 'Imported build')}
+                  onImportBuild={handleImportBuild}
                 />
 
                 <Divider />
 
-                {selectedBuild ? (
+                {selectedTrialPlayer ? (
                   <>
                     <TextInput
-                      label="Build name"
-                      value={selectedBuild.name}
-                      onChange={(e) => handleRenameBuild(e.currentTarget.value)}
+                      label="Character name"
+                      value={selectedCharacter?.name || ''}
+                      onChange={(e) => handleRenameCharacter(e.currentTarget.value)}
+                      size="xs"
+                    />
+                    {/* Uncontrolled and committed on blur/Enter, unlike the
+                        character name: a loadout's name is also its KEY in the
+                        store, so renaming on every keystroke would rewrite the
+                        key (and every roster row pointing at it) four times to
+                        type "tank". `key` resets the field when the selection
+                        moves. */}
+                    <TextInput
+                      key={selectedEntryId}
+                      label="Loadout name"
+                      defaultValue={selectedEntry?.loadoutName || ''}
+                      onBlur={(e) => handleRenameLoadout(e.currentTarget.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
                       size="xs"
                     />
                     <Text size="xs" c="dimmed">
-                      Editing this build updates every roster entry linked to it.
+                      Levels, houses, shrines and seals belong to the CHARACTER and
+                      are shared by every seat and party slot wearing it; only gear,
+                      abilities and consumables belong to this loadout.
                     </Text>
                     <PlayerConfig
                       gameData={gameData}
-                      player={selectedBuild}
+                      player={selectedTrialPlayer}
                       onPlayerChange={handleBuildChange}
                       playerId={roster.findIndex(e => e.id === selectedEntryId) + 1}
                       hideConsumables
@@ -1418,7 +1560,7 @@ function App() {
                   </>
                 ) : (
                   <Text size="sm" c="dimmed">
-                    Select a roster entry to edit its master build.
+                    Select a roster entry to edit its character and loadout.
                   </Text>
                 )}
               </>
@@ -1480,11 +1622,11 @@ function App() {
                     onChange={handleSelectedPlayersChange}
                   >
                     <Group gap="sm">
-                      {[1, 2, 3, 4, 5].map(id => (
+                      {PARTY_SLOTS.map(id => (
                         <Checkbox
                           key={id}
                           value={String(id)}
-                          label={`P${id}`}
+                          label={`P${id} — ${slotLabel(id)}`}
                           size="xs"
                         />
                       ))}
@@ -1502,7 +1644,7 @@ function App() {
                   radius="md"
                 >
                   <Tabs.List grow>
-                    {[1, 2, 3, 4, 5].map(id => (
+                    {PARTY_SLOTS.map(id => (
                       <Tabs.Tab key={id} value={String(id)}>
                         P{id}
                       </Tabs.Tab>
@@ -1510,14 +1652,53 @@ function App() {
                   </Tabs.List>
                 </Tabs>
 
+                {/* The slot binder: pick a CHARACTER, then one of ITS loadouts.
+                    Two slots may name the same character — that is the point:
+                    they then share one set of levels, with no copy step. */}
+                <Group gap={6} grow>
+                  <Select
+                    label={`P${activeTab} character`}
+                    data={characterOptions}
+                    value={party[activeTab]?.characterId ?? null}
+                    onChange={(characterId) => {
+                      if (!characterId) return bindSlot(activeTab, null);
+                      const names = Object.keys(
+                        characters.characters[characterId]?.loadouts || {}
+                      );
+                      bindSlot(activeTab, { characterId, loadoutName: names[0] || 'default' });
+                    }}
+                    placeholder={characterOptions.length ? 'Character…' : 'Import a character first'}
+                    disabled={characterOptions.length === 0}
+                    clearable
+                    size="xs"
+                    comboboxProps={{ withinPortal: false }}
+                  />
+                  <Select
+                    label="Loadout"
+                    data={activeLoadoutOptions}
+                    value={party[activeTab]?.loadoutName ?? null}
+                    onChange={(loadoutName) => {
+                      const characterId = party[activeTab]?.characterId;
+                      if (!characterId || !loadoutName) return;
+                      bindSlot(activeTab, { characterId, loadoutName });
+                    }}
+                    placeholder="Loadout…"
+                    disabled={activeLoadoutOptions.length === 0}
+                    size="xs"
+                    comboboxProps={{ withinPortal: false }}
+                  />
+                </Group>
+
                 <CharacterImport
                   activeTab={activeTab}
-                  onLoadPlayer={(loadedPlayer) => handlePlayerChange(activeTab, loadedPlayer)}
+                  onLoadCharacter={(character, defaultLoadoutName) =>
+                    handleImportCharacter(activeTab, character, defaultLoadoutName)}
                 />
 
                 <ImportExport
-                  players={players}
-                  setPlayers={setPlayers}
+                  resolvedParty={resolvedParty}
+                  party={party}
+                  onImportPlayer={handleImportPlayer}
                   selectedPlayers={selectedPlayers}
                   activeTab={activeTab}
                   zone={zone}
@@ -1531,19 +1712,31 @@ function App() {
                 />
 
                 <LoadoutManager
-                  player={players[activeTab]}
-                  onLoadPlayer={(loadedPlayer) => handlePlayerChange(activeTab, loadedPlayer)}
-                  playerId={activeTab}
+                  characters={characters}
+                  setCharacters={setCharacters}
+                  slotRef={party[activeTab]}
+                  slotId={activeTab}
+                  setParty={setParty}
+                  player={resolvedParty[activeTab]}
                 />
 
                 <Divider />
 
-                <PlayerConfig
-                  gameData={gameData}
-                  player={players[activeTab]}
-                  onPlayerChange={(updatedPlayer) => handlePlayerChange(activeTab, updatedPlayer)}
-                  playerId={activeTab}
-                />
+                {resolvedParty[activeTab] ? (
+                  <PlayerConfig
+                    gameData={gameData}
+                    player={resolvedParty[activeTab]}
+                    onPlayerChange={(updatedPlayer) =>
+                      handleResolvedPlayerChange(activeTab, updatedPlayer)}
+                    playerId={activeTab}
+                  />
+                ) : (
+                  <Text size="sm" c="dimmed">
+                    P{activeTab} is empty. Bind a character and loadout above, or
+                    import one — levels, houses, shrines and seals then belong to
+                    that character and are shared by every slot wearing it.
+                  </Text>
+                )}
               </>
             )}
           </Stack>

@@ -1,29 +1,31 @@
 // =============================================================================
 // roster — pure state helpers for the guild-trial roster model.
 // -----------------------------------------------------------------------------
-// The trial mode uses a two-level model, distinct from the fixed 5-slot
-// zone/lab `players` state:
+// Since schemaVersion 2 the trial roster holds REFERENCES into the shared
+// character store (utils/characterStore.js) rather than copies of whole flat
+// players. `masterBuilds` is gone: a "build" was always a character wearing a
+// loadout, and keeping a private copy of one is exactly how a level forked.
 //
-//   masterBuilds : { [buildId]: { id, name, ...playerFields } }
-//       A named, editable character build. Editing one propagates to every
-//       roster row that links to it.
-//   roster       : [ { id, buildId, count } ]
-//       ONE row per build in the trial, with a participant COUNT (>= 1).
+//   roster : [ { id, characterId, loadoutName, count } ]
+//       ONE row per (character, loadout) pair, with a participant COUNT (>= 1).
 //       "20 clones" is a single row with count 20, not 20 rows. Invariant:
-//       at most one row per buildId — normalizeRoster enforces it on load /
+//       at most one row per pair — normalizeRoster enforces it on load /
 //       import, and every add-affordance increments an existing row instead
 //       of appending a duplicate.
 //
-// Deleting a row does NOT delete its master build — the build becomes an
-// orphan that can be re-added from the "existing build" picker.
+// Deleting a row does NOT delete the loadout it points at — it stays on the
+// character and can be re-added from the picker.
 // =============================================================================
 
-const STORAGE_KEY = 'csim_guild_trial';
+import { loadVersioned, resolveRef } from './characterStore.js';
 
-// LoadoutManager's persistence key (ui/src/components/LoadoutManager.jsx).
-// Loadouts are saved as { [name]: { savedAt, player: { ...playerFields } } }
-// in the UI-internal player shape — directly usable as a master build.
-const LOADOUTS_KEY = 'csim_loadouts';
+const STORAGE_KEY = 'csim_guild_trial';
+export const TRIAL_SCHEMA_VERSION = 2;
+
+/** The composite identity of a roster row: which character, wearing what. */
+export function refKey(ref) {
+  return `${ref?.characterId || ''}\u0000${ref?.loadoutName || ''}`;
+}
 
 export const MAX_ROW_COUNT = 99;
 
@@ -74,59 +76,52 @@ export function rosterSize(roster) {
 
 /**
  * Normalise a roster to the counted model:
- *   - legacy rows without `count` become count 1;
- *   - rows sharing a buildId are merged into one row (first-occurrence order,
- *     counts summed) — lossless, since linked clones are identical by
- *     construction.
- * Accepts both the legacy `[{id, buildId}]` and counted formats, so it also
- * serves as the import/migration path.
+ *   - rows without `count` become count 1;
+ *   - rows sharing a (characterId, loadoutName) pair merge into one row
+ *     (first-occurrence order, counts summed) — lossless, since two rows
+ *     pointing at the same pair are identical by construction.
  */
 export function normalizeRoster(roster) {
-  const byBuild = new Map(); // buildId -> merged row (insertion-ordered)
+  const byRef = new Map(); // refKey -> merged row (insertion-ordered)
   for (const entry of roster || []) {
-    if (!entry || !entry.buildId) continue;
+    if (!entry || !entry.characterId || !entry.loadoutName) continue;
     const count = clampCount(entry.count ?? 1);
-    const existing = byBuild.get(entry.buildId);
+    const key = refKey(entry);
+    const existing = byRef.get(key);
     if (existing) {
       existing.count = Math.min(MAX_ROW_COUNT, existing.count + count);
     } else {
-      byBuild.set(entry.buildId, {
+      byRef.set(key, {
         id: entry.id || makeId('re'),
-        buildId: entry.buildId,
+        characterId: entry.characterId,
+        loadoutName: entry.loadoutName,
         count,
       });
     }
   }
-  return [...byBuild.values()];
-}
-
-/** Ensure `base` is unique among existing build names, appending " copy"/N. */
-export function uniqueBuildName(base, masterBuilds) {
-  const names = new Set(Object.values(masterBuilds || {}).map(b => b.name));
-  if (!names.has(base)) return base;
-  let candidate = `${base} copy`;
-  let n = 2;
-  while (names.has(candidate)) {
-    candidate = `${base} copy ${n}`;
-    n += 1;
-  }
-  return candidate;
+  return [...byRef.values()];
 }
 
 /**
- * Annotate roster rows with their linked build. One row per build; the row's
- * display name IS the build name (always current, so renames flow through).
+ * Annotate roster rows with the RESOLVED player their reference names. The row
+ * carries no copy of anything: `build` is manufactured on the spot by
+ * resolvePlayer, so a level edited anywhere is seen here with no sync step. A
+ * dangling reference (character or loadout deleted) resolves to null and the
+ * row renders as unknown rather than disappearing.
  */
-export function listRosterEntries(roster, masterBuilds) {
+export function listRosterEntries(roster, characters) {
   return (roster || []).map(entry => {
-    const build = masterBuilds?.[entry.buildId] || null;
-    const buildName = build?.name || 'Unknown build';
+    const build = resolveRef(characters, entry);
+    const character = characters?.characters?.[entry.characterId] || null;
+    const displayName = character
+      ? `${character.name || character.id} — ${entry.loadoutName}`
+      : 'Unknown build';
     return {
       ...entry,
       count: clampCount(entry.count ?? 1),
       build,
-      buildName,
-      displayName: buildName,
+      buildName: displayName,
+      displayName,
     };
   });
 }
@@ -160,55 +155,40 @@ export function buildSummary(build, items) {
 }
 
 /**
- * Saved zone/lab loadouts (LoadoutManager's localStorage store), as
- * [{ name, savedAt, player }] sorted by name. The stored player object is in
- * the UI-internal shape and deep-copies directly into a master build.
+ * The stored trial state, plus how the read went. A pre-v2 blob embedded whole
+ * master builds, which the reference model cannot express, so the version gate
+ * sets it aside at `csim_guild_trial.v1` and we start empty rather than guess.
+ * @returns {{data: object, status: 'empty'|'ok'|'incompatible'}}
  */
-export function loadSavedLoadouts() {
-  try {
-    const map = JSON.parse(localStorage.getItem(LOADOUTS_KEY)) || {};
-    return Object.entries(map)
-      .filter(([, v]) => v && typeof v === 'object' && v.player)
-      .map(([name, v]) => ({ name, savedAt: v.savedAt, player: v.player }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  } catch {
-    return [];
-  }
-}
-
 export function loadGuildTrialState() {
   const fallback = {
-    masterBuilds: {},
+    schemaVersion: TRIAL_SCHEMA_VERSION,
     roster: [],
     selectedEntryId: null,
     trialConfig: { ...DEFAULT_TRIAL_CONFIG },
   };
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return fallback;
-    const data = JSON.parse(raw);
-    // normalizeRoster also migrates legacy pre-count rosters (many single
-    // rows sharing a buildId collapse into one counted row).
-    const roster = normalizeRoster(Array.isArray(data.roster) ? data.roster : []);
-    const selectedEntryId =
-      data.selectedEntryId != null && roster.some(e => e.id === data.selectedEntryId)
-        ? data.selectedEntryId
-        : (roster[0]?.id ?? null);
-    return {
-      masterBuilds: data.masterBuilds && typeof data.masterBuilds === 'object' ? data.masterBuilds : {},
+  const { data, status } = loadVersioned(STORAGE_KEY, TRIAL_SCHEMA_VERSION, fallback);
+  const roster = normalizeRoster(Array.isArray(data.roster) ? data.roster : []);
+  const selectedEntryId =
+    data.selectedEntryId != null && roster.some(e => e.id === data.selectedEntryId)
+      ? data.selectedEntryId
+      : (roster[0]?.id ?? null);
+  return {
+    data: {
       roster,
       selectedEntryId,
       trialConfig: { ...DEFAULT_TRIAL_CONFIG, ...(data.trialConfig || {}) },
-    };
-  } catch (e) {
-    console.error('Failed to load guild-trial state:', e);
-    return fallback;
-  }
+    },
+    status,
+  };
 }
 
 export function saveGuildTrialState(state) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    localStorage.setItem(
+      STORAGE_KEY,
+      JSON.stringify({ ...state, schemaVersion: TRIAL_SCHEMA_VERSION })
+    );
   } catch (e) {
     console.error('Failed to save guild-trial state:', e);
   }

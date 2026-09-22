@@ -15,7 +15,8 @@ import {
   Textarea,
   Tooltip
 } from '@mantine/core';
-import { listRosterEntries, buildSummary, loadSavedLoadouts, MAX_ROW_COUNT } from '../utils/roster';
+import { listRosterEntries, buildSummary, refKey, MAX_ROW_COUNT } from '../utils/roster';
+import { listLoadoutRefs } from '../utils/characterStore';
 import { exportFormatToPlayer } from '../utils/importSet';
 import { describeShrines, ownsShrines } from '../utils/guildBuffs';
 
@@ -31,37 +32,39 @@ function isGroupFormat(data) {
 // GuildTrialPanel — the trial-mode navbar view: a compact, scrollable roster
 // of COUNTED rows (one row per build, "BuildName ×20"), each with an inline
 // ×N count input plus Duplicate / Save-as-new / Delete, a "Duplicate ×N"
-// stamp, affordances to seed builds (from P1–P5, a saved zone/lab loadout,
-// blank, or an existing/orphaned build), and roster JSON import/export.
+// stamp, affordances to seed seats (from P1–P5, any stored character's
+// loadout, blank, or an existing one), and roster JSON import/export.
 //
-// A row LINKS to a master build; clicking it selects the row so the editor
-// (rendered by App with the existing PlayerConfig) edits the linked build.
-// Editing a build applies to all ×N participants of its row.
+// A row REFERENCES a (character, loadout) pair; clicking it selects the row so
+// the editor (rendered by App with the existing PlayerConfig) edits that pair.
+// Editing applies to all ×N participants of its row — and, for the character
+// half, to every other seat and party slot wearing the same character, which is
+// the whole point: a level cannot fork.
 // =============================================================================
 
 export function GuildTrialPanel({
-  masterBuilds,
+  characters,
   roster,
   selectedEntryId,
   participantCount,
   items,
-  players,
+  party,
   trialConfig,
   onSelectEntry,
   onDuplicate,
   onSetCount,
   onSaveAsNew,
   onDelete,
-  onDeleteBuild,
-  onAddEntryFromBuild,
+  onDeleteLoadout,
+  onAddEntryFromRef,
   onAddBuildFromSlot,
-  onAddBuildFromLoadout,
+  onAddRowFromRef,
   onAddBlankBuild,
   onImportRoster,
   onImportBuild
 }) {
   const [dupCount, setDupCount] = useState(20);
-  const [existingBuildId, setExistingBuildId] = useState(null);
+  const [existingRefKey, setExistingRefKey] = useState(null);
   const [showImport, setShowImport] = useState(false);
   const [importText, setImportText] = useState('');
   // Separate modal from the roster import: this brings in a single BUILD (or a
@@ -69,21 +72,22 @@ export function GuildTrialPanel({
   const [showBuildImport, setShowBuildImport] = useState(false);
   const [buildImportText, setBuildImportText] = useState('');
   const [message, setMessage] = useState(null);
-  // Saved zone/lab loadouts (LoadoutManager's store) — re-read every time the
-  // "Add build" menu opens so freshly-saved loadouts appear without a reload.
-  const [savedLoadouts, setSavedLoadouts] = useState(() => loadSavedLoadouts());
 
   const entries = useMemo(
-    () => listRosterEntries(roster, masterBuilds),
-    [roster, masterBuilds]
+    () => listRosterEntries(roster, characters),
+    [roster, characters]
   );
 
+  // Every (character, loadout) pair in the store. There is no separate loadout
+  // store to re-read any more — this IS the store the party slots use.
+  const allRefs = useMemo(() => listLoadoutRefs(characters), [characters]);
   const buildOptions = useMemo(
-    () =>
-      Object.values(masterBuilds || {})
-        .sort((a, b) => a.name.localeCompare(b.name))
-        .map(b => ({ value: b.id, label: b.name })),
-    [masterBuilds]
+    () => allRefs.map(r => ({ value: refKey(r), label: r.label })),
+    [allRefs]
+  );
+  const existingRef = useMemo(
+    () => allRefs.find(r => refKey(r) === existingRefKey) || null,
+    [allRefs, existingRefKey]
   );
 
   const showMessage = useCallback((text, isError = false) => {
@@ -91,15 +95,28 @@ export function GuildTrialPanel({
     setTimeout(() => setMessage(null), 3000);
   }, []);
 
+  // WIRE FORMAT UNCHANGED: {masterBuilds, roster, trialConfig}, exactly what
+  // SCLIRoster's rosterLink.js reads. Each rostered pair is MERGED back into one
+  // flat master build by resolvePlayer, which is lossy in one specific way —
+  // two loadouts of one character export as two independent builds, because the
+  // receiving wire has no character concept to preserve.
   const handleExport = useCallback(async () => {
-    const payload = { masterBuilds, roster, trialConfig };
+    const masterBuilds = {};
+    const wireRoster = [];
+    for (const entry of entries) {
+      if (!entry.build) continue;
+      const buildId = refKey(entry).replace(/[^\w-]+/g, '_');
+      masterBuilds[buildId] = { ...entry.build, id: buildId, name: entry.displayName };
+      wireRoster.push({ id: entry.id, buildId, count: entry.count });
+    }
+    const payload = { masterBuilds, roster: wireRoster, trialConfig };
     try {
       await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
       showMessage('Roster copied to clipboard');
     } catch (err) {
       showMessage('Copy failed: ' + err.message, true);
     }
-  }, [masterBuilds, roster, trialConfig, showMessage]);
+  }, [entries, trialConfig, showMessage]);
 
   const handleImport = useCallback(() => {
     try {
@@ -142,31 +159,33 @@ export function GuildTrialPanel({
     }
   }, [buildImportText, onImportBuild, showMessage]);
 
-  // Permanently delete the master build chosen in the "Existing build" picker.
-  // If it is currently rostered, deleting also removes its row(s), so confirm
-  // first; orphaned builds (no rows) delete without ceremony.
+  // Permanently delete the LOADOUT chosen in the picker. If it is currently
+  // rostered, deleting also removes its row(s), so confirm first; unrostered
+  // loadouts delete without ceremony. The CHARACTER survives either way — its
+  // levels were never this loadout's to take away.
   const handleDeleteExistingBuild = useCallback(() => {
-    if (!existingBuildId) return;
-    const build = masterBuilds?.[existingBuildId];
-    const name = build?.name || 'this build';
+    if (!existingRef) return;
+    const name = existingRef.label;
+    const key = refKey(existingRef);
     const rosteredCount = (roster || [])
-      .filter(e => e.buildId === existingBuildId)
+      .filter(e => refKey(e) === key)
       .reduce((sum, e) => sum + (Number(e.count) || 1), 0);
     if (
       rosteredCount > 0 &&
       !window.confirm(
-        `Delete build “${name}”? It is on the roster (${rosteredCount} participant` +
-          `${rosteredCount === 1 ? '' : 's'}) — that row will be removed too.`
+        `Delete loadout “${name}”? It is on the roster (${rosteredCount} participant` +
+          `${rosteredCount === 1 ? '' : 's'}) — that row will be removed too. ` +
+          'The character keeps its levels and its other loadouts.'
       )
     ) {
       return;
     }
-    onDeleteBuild?.(existingBuildId);
-    setExistingBuildId(null);
-    showMessage(`Deleted build “${name}”`);
-  }, [existingBuildId, masterBuilds, roster, onDeleteBuild, showMessage]);
+    onDeleteLoadout?.(existingRef);
+    setExistingRefKey(null);
+    showMessage(`Deleted loadout “${name}”`);
+  }, [existingRef, roster, onDeleteLoadout, showMessage]);
 
-  const slotIds = Object.keys(players || {}).map(Number).sort((a, b) => a - b);
+  const slotIds = Object.keys(party || {}).map(Number).sort((a, b) => a - b);
 
   return (
     <Stack gap="sm">
@@ -179,12 +198,7 @@ export function GuildTrialPanel({
 
       {/* Add / seed builds */}
       <Group gap={6} wrap="wrap">
-        <Menu
-          shadow="md"
-          position="bottom-start"
-          withinPortal={false}
-          onOpen={() => setSavedLoadouts(loadSavedLoadouts())}
-        >
+        <Menu shadow="md" position="bottom-start" withinPortal={false}>
           <Menu.Target>
             <Button variant="default" size="compact-xs">Add build ▾</Button>
           </Menu.Target>
@@ -202,13 +216,13 @@ export function GuildTrialPanel({
               </Menu.Item>
             ))}
             <Menu.Divider />
-            <Menu.Label>From saved loadout</Menu.Label>
-            {savedLoadouts.length === 0 ? (
-              <Menu.Item disabled>No saved loadouts</Menu.Item>
+            <Menu.Label>From a stored character's loadout</Menu.Label>
+            {allRefs.length === 0 ? (
+              <Menu.Item disabled>No stored characters</Menu.Item>
             ) : (
-              savedLoadouts.map(l => (
-                <Menu.Item key={l.name} onClick={() => onAddBuildFromLoadout(l)}>
-                  {l.name}
+              allRefs.map(r => (
+                <Menu.Item key={refKey(r)} onClick={() => onAddRowFromRef(r)}>
+                  {r.label}
                 </Menu.Item>
               ))
             )}
@@ -219,9 +233,9 @@ export function GuildTrialPanel({
           <Group gap={4} wrap="nowrap">
             <Select
               data={buildOptions}
-              value={existingBuildId}
-              onChange={setExistingBuildId}
-              placeholder="Existing build…"
+              value={existingRefKey}
+              onChange={setExistingRefKey}
+              placeholder="Existing loadout…"
               size="xs"
               w={150}
               comboboxProps={{ withinPortal: false }}
@@ -230,18 +244,18 @@ export function GuildTrialPanel({
             <Button
               variant="default"
               size="compact-xs"
-              disabled={!existingBuildId}
-              onClick={() => existingBuildId && onAddEntryFromBuild(existingBuildId)}
-              title="Adds one participant of this build (increments its row if already rostered)"
+              disabled={!existingRef}
+              onClick={() => existingRef && onAddEntryFromRef(existingRef)}
+              title="Adds one participant of this character/loadout (increments its row if already rostered)"
             >
               Add entry
             </Button>
-            <Tooltip label="Delete this build permanently" withinPortal={false}>
+            <Tooltip label="Delete this loadout permanently (the character survives)" withinPortal={false}>
               <ActionIcon
                 size="lg"
                 variant="subtle"
                 color="red"
-                disabled={!existingBuildId}
+                disabled={!existingRef}
                 onClick={handleDeleteExistingBuild}
                 aria-label="Delete selected build"
               >
@@ -278,9 +292,9 @@ export function GuildTrialPanel({
       {entries.length === 0 ? (
         <Paper p="md" radius="md" withBorder>
           <Text size="sm" c="dimmed">
-            Roster is empty. Add a build from P1–P5, a saved loadout, or import
-            one from JSON via the “Add build” menu above — then crank its ×N
-            count to fill the guild.
+            Roster is empty. Add a seat from P1–P5, from a stored character's
+            loadout, or import one from JSON via the “Add build” menu above —
+            then crank its ×N count to fill the guild.
           </Text>
         </Paper>
       ) : (
@@ -376,7 +390,16 @@ export function GuildTrialPanel({
 
       {/* Roster JSON import / export */}
       <Group gap={6}>
-        <Button variant="default" size="compact-xs" onClick={handleExport}>
+        <Button
+          variant="default"
+          size="compact-xs"
+          onClick={handleExport}
+          title={
+            'Exports the interchange format SCLIRoster reads. It has no character ' +
+            'concept, so two loadouts of one character travel as two independent ' +
+            'builds — correct, but the grouping does not survive the trip.'
+          }
+        >
           Export roster
         </Button>
         <Button

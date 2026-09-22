@@ -2,12 +2,20 @@ import { useState, useCallback, useEffect } from 'react';
 import { Button, Group, Modal, Stack, Text, Textarea } from '@mantine/core';
 import { playerToExportFormat, exportFormatToPlayer } from '../utils/importSet';
 import { saveSession, SESSION_KEY } from '../utils/session';
+import { CHARACTERS_KEY } from '../utils/characterStore';
 
 // `setSelectedPlayers` is gone from the props: its only reader was the restore
 // effect, and the party selection is now restored in App's own initialiser.
+//
+// The WIRE FORMAT IS UNCHANGED. A set is still exactly what the webpack UI and
+// upstream users paste, in both directions — utils/importSet.js is not edited.
+// What it does not carry is the character→loadouts GROUPING added in
+// schemaVersion 2, because there is no such thing in the format: an export is
+// one resolved player, and an import lands as a new character with one loadout.
 export function ImportExport({
-  players,
-  setPlayers,
+  resolvedParty,
+  party,
+  onImportPlayer,
   selectedPlayers,
   activeTab,
   zone,
@@ -29,13 +37,13 @@ export function ImportExport({
   // same way every other persisted slice in this UI is read. See utils/session.js.
   useEffect(() => {
     saveSession({
-      players,
+      party,
       selectedPlayers,
       zone,
       difficultyTier,
       duration
     });
-  }, [players, selectedPlayers, zone, difficultyTier, duration]);
+  }, [party, selectedPlayers, zone, difficultyTier, duration]);
 
   const showMessage = useCallback((text, isError = false) => {
     setMessage({ text, isError });
@@ -44,7 +52,11 @@ export function ImportExport({
 
   // Export current player to clipboard
   const handleExportSolo = useCallback(async () => {
-    const player = players[activeTab];
+    const player = resolvedParty[activeTab];
+    if (!player) {
+      showMessage(`P${activeTab} is empty — bind a character first`, true);
+      return;
+    }
     const exportData = playerToExportFormat(player, zone, difficultyTier, duration);
     try {
       await navigator.clipboard.writeText(JSON.stringify(exportData, null, 2));
@@ -52,13 +64,14 @@ export function ImportExport({
     } catch (err) {
       showMessage('Failed to copy to clipboard: ' + err.message, true);
     }
-  }, [players, activeTab, zone, difficultyTier, duration, showMessage]);
+  }, [resolvedParty, activeTab, zone, difficultyTier, duration, showMessage]);
 
   // Export all selected players to clipboard
   const handleExportGroup = useCallback(async () => {
     const exportData = {};
     for (const playerId of selectedPlayers) {
-      const player = players[playerId];
+      const player = resolvedParty[playerId];
+      if (!player) continue;
       exportData[playerId] = JSON.stringify(
         playerToExportFormat(player, zone, difficultyTier, duration)
       );
@@ -69,7 +82,7 @@ export function ImportExport({
     } catch (err) {
       showMessage('Failed to copy to clipboard: ' + err.message, true);
     }
-  }, [players, selectedPlayers, zone, difficultyTier, duration, showMessage]);
+  }, [resolvedParty, selectedPlayers, zone, difficultyTier, duration, showMessage]);
 
   // Open import modal
   const handleOpenImport = useCallback(() => {
@@ -95,12 +108,9 @@ export function ImportExport({
       const isGroup = isGroupFormat(data);
 
       if (!isGroup) {
-        // Solo format - import single player
-        const player = exportFormatToPlayer(data, activeTab);
-        setPlayers(prev => ({
-          ...prev,
-          [activeTab]: player
-        }));
+        // Solo format - import single player. Adapted ON ARRIVAL into a
+        // character with one loadout; the format itself is unchanged.
+        onImportPlayer(activeTab, exportFormatToPlayer(data, activeTab));
 
         // Also import zone settings if present
         if (data.zone) {
@@ -116,13 +126,12 @@ export function ImportExport({
         showMessage(`Player ${activeTab} imported successfully`);
       } else {
         // Group format - import multiple players
-        const newPlayers = { ...players };
         let zoneSet = false;
 
         for (const [playerId, playerJson] of Object.entries(data)) {
           // Parse nested JSON string if needed
           const playerData = typeof playerJson === 'string' ? JSON.parse(playerJson) : playerJson;
-          newPlayers[playerId] = exportFormatToPlayer(playerData, playerId);
+          onImportPlayer(Number(playerId), exportFormatToPlayer(playerData, playerId));
 
           // Use zone from first player only
           if (!zoneSet) {
@@ -138,7 +147,6 @@ export function ImportExport({
             zoneSet = true;
           }
         }
-        setPlayers(newPlayers);
         showMessage(`${Object.keys(data).length} player(s) imported successfully`);
       }
 
@@ -146,13 +154,14 @@ export function ImportExport({
     } catch (err) {
       showMessage('Failed to parse import data: ' + err.message, true);
     }
-  }, [importText, activeTab, players, setPlayers, setZone, setDifficultyTier, setDuration, showMessage]);
+  }, [importText, activeTab, onImportPlayer, setZone, setDifficultyTier, setDuration, showMessage]);
 
   // Clear localStorage
   const handleClearSaved = useCallback(() => {
-    if (confirm('Clear all saved data from local storage?')) {
+    if (confirm('Clear the saved session AND every stored character (with all their loadouts) from local storage?')) {
       localStorage.removeItem(SESSION_KEY);
-      showMessage('Saved data cleared');
+      localStorage.removeItem(CHARACTERS_KEY);
+      showMessage('Saved session and characters cleared');
     }
   }, [showMessage]);
 

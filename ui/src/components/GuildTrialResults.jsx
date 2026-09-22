@@ -73,26 +73,28 @@ export function GuildTrialResults({ result }) {
 
   // -- DPS by build (debugging: find the underperformers) --------------------
   // avgPlayerDps: { [hrid]: dps } is a new aggregate field (absent on older
-  // engine builds); meta.hridToBuild: { [hrid]: { buildId, buildName } } is
-  // captured by the UI at run time (absent on older stored results). The
-  // section renders only when BOTH exist; hrids missing from the map (e.g. a
-  // roster edited mid-flight) group under "Unknown".
+  // engine builds); meta.hridToLoadout: { [hrid]: { characterId, loadoutName,
+  // label } } is captured by the UI at run time (absent on older stored
+  // results). The section renders only when BOTH exist; hrids missing from the
+  // map (e.g. a roster edited mid-flight) group under "Unknown".
   const avgPlayerDps = agg.avgPlayerDps || null;
-  const hridToBuild = meta.hridToBuild || null;
+  const hridToLoadout = meta.hridToLoadout || null;
   const hasDpsByBuild =
     !!avgPlayerDps && Object.keys(avgPlayerDps).length > 0 &&
-    !!hridToBuild && Object.keys(hridToBuild).length > 0;
+    !!hridToLoadout && Object.keys(hridToLoadout).length > 0;
 
   let dpsRows = [];
   let dpsGrandTotal = 0;
   if (hasDpsByBuild) {
-    const groups = new Map(); // buildId (or '__unknown') → accumulator
+    // Grouped by the (character, loadout) pair: two loadouts of one character
+    // are two different answers to "how much damage does this seat do".
+    const groups = new Map();
     for (const [hrid, dps] of Object.entries(avgPlayerDps)) {
-      const link = hridToBuild[hrid];
-      const key = link?.buildId || '__unknown';
+      const link = hridToLoadout[hrid];
+      const key = link ? `${link.characterId}\u0000${link.loadoutName}` : '__unknown';
       const group = groups.get(key) || {
         key,
-        name: link?.buildName || 'Unknown',
+        name: link?.label || 'Unknown',
         copies: 0,
         total: 0,
       };

@@ -21,24 +21,35 @@
 // save writes back exactly what was read.
 // =============================================================================
 
+import { loadVersioned } from './characterStore.js';
+
 export const SESSION_KEY = 'csim_player_data';
+export const SESSION_VERSION = 2;
 
 /**
- * The stored session, or null. Every field is validated by the caller's own
- * defaults — a partially-written store should cost you that field, not the app.
+ * The stored session, plus how the read went. Since schemaVersion 2 the five
+ * party slots hold `{characterId, loadoutName}` REFERENCES into the character
+ * store rather than embedded players, which an older blob cannot express — so
+ * the version gate (utils/characterStore.js `loadVersioned`) sets an
+ * incompatible blob aside at `csim_player_data.v1` and hands back the defaults
+ * rather than guessing. Nothing is mangled; see PARITY.md for the recovery.
+ *
+ * @returns {{data: object, status: 'empty'|'ok'|'incompatible'}}
  */
 export function loadSession() {
-  try {
-    const raw = JSON.parse(localStorage.getItem(SESSION_KEY) || 'null');
-    return raw && typeof raw === 'object' ? raw : null;
-  } catch {
-    return null;
-  }
+  return loadVersioned(SESSION_KEY, SESSION_VERSION, {
+    schemaVersion: SESSION_VERSION,
+    party: { 1: null, 2: null, 3: null, 4: null, 5: null },
+    selectedPlayers: [1]
+  });
 }
 
 export function saveSession(data) {
   try {
-    localStorage.setItem(SESSION_KEY, JSON.stringify(data));
+    localStorage.setItem(
+      SESSION_KEY,
+      JSON.stringify({ ...data, schemaVersion: SESSION_VERSION })
+    );
   } catch {
     // Quota or private browsing — the session still works, it just will not persist.
   }

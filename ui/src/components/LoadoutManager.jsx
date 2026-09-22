@@ -1,95 +1,69 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useMemo } from 'react';
 import { ActionIcon, Button, Collapse, Group, Paper, Stack, Text, TextInput } from '@mantine/core';
+import { deleteLoadout, setLoadout, splitPlayer, uniqueLoadoutName } from '../utils/characterStore';
 
-const LOADOUTS_KEY = 'csim_loadouts';
+// =============================================================================
+// LoadoutManager — the CURRENT CHARACTER's named loadouts.
+//
+// It no longer has a store of its own. The old flat loadout blob held whole
+// players, so saving a loadout copied the character's levels, houses,
+// achievements and shrines alongside the gear — and loading one put that copy
+// back, silently overwriting whatever the character had become in the meantime.
+// A loadout now holds gear, ability slots and consumables and NOTHING ELSE
+// (utils/characterStore.js `sanitizeLoadout` drops the rest physically), so a
+// save cannot fork a level and a load cannot un-level you.
+// =============================================================================
 
-// Get loadouts from localStorage
-function getLoadouts() {
-  try {
-    return JSON.parse(localStorage.getItem(LOADOUTS_KEY)) || {};
-  } catch {
-    return {};
-  }
-}
-
-// Save loadouts to localStorage
-function saveLoadouts(loadouts) {
-  localStorage.setItem(LOADOUTS_KEY, JSON.stringify(loadouts));
-}
-
-export function LoadoutManager({ player, onLoadPlayer, playerId }) {
-  // Lazy initializer reads localStorage once on mount
-  const [loadouts, setLoadouts] = useState(getLoadouts);
+export function LoadoutManager({ characters, setCharacters, slotRef, slotId, setParty, player }) {
   const [saveName, setSaveName] = useState('');
   const [showManager, setShowManager] = useState(false);
 
+  const character = slotRef?.characterId ? characters?.characters?.[slotRef.characterId] : null;
+  const loadoutNames = useMemo(
+    () => Object.keys(character?.loadouts || {}).sort(),
+    [character]
+  );
+
   const handleSave = useCallback(() => {
-    if (!saveName.trim()) return;
-
-    const name = saveName.trim();
-    const newLoadouts = {
-      ...loadouts,
-      [name]: {
-        savedAt: new Date().toISOString(),
-        player: {
-          staminaLevel: player.staminaLevel,
-          intelligenceLevel: player.intelligenceLevel,
-          attackLevel: player.attackLevel,
-          meleeLevel: player.meleeLevel,
-          defenseLevel: player.defenseLevel,
-          rangedLevel: player.rangedLevel,
-          magicLevel: player.magicLevel,
-          equipment: player.equipment,
-          food: player.food,
-          drinks: player.drinks,
-          abilities: player.abilities,
-          houseRooms: player.houseRooms || {},
-          achievements: player.achievements || {},
-          // A loadout is a whole character, so it carries the character's own
-          // shrines and seals as well as their gear. Without these three a
-          // saved-then-loaded build came back stripped of its buffs, which is
-          // the one thing a loadout manager must not do.
-          //
-          // `guildShrines` is spread in only when the player HAS it, never
-          // defaulted to `{}`: that spelling means "owns none" to
-          // utils/guildBuffs.js `ownsShrines`, whereas an absent key defers to
-          // the trial's party-wide knobs, and loadouts feed guild-trial builds
-          // via App's addBuildFromLoadout. Today this panel is only ever handed
-          // a zone slot, which always has the key — so the guard is currently
-          // unreachable, and kept so that it stays true if that changes.
-          ...(player.guildShrines ? { guildShrines: player.guildShrines } : {}),
-          personalBuffs: player.personalBuffs || [],
-          abilityMemory: player.abilityMemory || {}
-        }
-      }
-    };
-
-    saveLoadouts(newLoadouts);
-    setLoadouts(newLoadouts);
+    if (!saveName.trim() || !character || !player) return;
+    // Only the loadout half is written. The character half is already stored and
+    // is shared by every loadout, which is what makes this safe.
+    const name = character.loadouts?.[saveName.trim()]
+      ? saveName.trim()
+      : uniqueLoadoutName(saveName.trim(), character.loadouts);
+    const { loadout } = splitPlayer(player);
+    setCharacters(prev => setLoadout(prev, character.id, name, loadout));
+    setParty(prev => ({ ...prev, [slotId]: { characterId: character.id, loadoutName: name } }));
     setSaveName('');
-  }, [saveName, player, loadouts]);
+  }, [saveName, character, player, setCharacters, setParty, slotId]);
 
   const handleLoad = useCallback((name) => {
-    const loadout = loadouts[name];
-    if (!loadout) return;
-
-    onLoadPlayer({
-      ...loadout.player,
-      hrid: `player${playerId}`,
-      debuffOnLevelGap: 0
-    });
-  }, [loadouts, onLoadPlayer, playerId]);
+    if (!character) return;
+    // Loading is now a REBIND, not a replacement: the slot points at a different
+    // loadout of the same character. Nothing is copied.
+    setParty(prev => ({ ...prev, [slotId]: { characterId: character.id, loadoutName: name } }));
+  }, [character, setParty, slotId]);
 
   const handleDelete = useCallback((name) => {
+    if (!character) return;
     if (!confirm(`Delete loadout "${name}"?`)) return;
+    setCharacters(prev => deleteLoadout(prev, character.id, name));
+    if (slotRef?.loadoutName === name) {
+      const remaining = Object.keys(character.loadouts || {}).filter(n => n !== name);
+      setParty(prev => ({
+        ...prev,
+        [slotId]: { characterId: character.id, loadoutName: remaining[0] || 'default' }
+      }));
+    }
+  }, [character, setCharacters, setParty, slotId, slotRef]);
 
-    const newLoadouts = { ...loadouts };
-    delete newLoadouts[name];
-    saveLoadouts(newLoadouts);
-    setLoadouts(newLoadouts);
-  }, [loadouts]);
-
-  const loadoutNames = Object.keys(loadouts).sort();
+  if (!character) {
+    return (
+      <Text size="xs" c="dimmed">
+        Bind a character to P{slotId} to manage its loadouts.
+      </Text>
+    );
+  }
 
   return (
     <Stack gap={6}>
@@ -103,6 +77,11 @@ export function LoadoutManager({ player, onLoadPlayer, playerId }) {
 
       <Collapse expanded={showManager}>
         <Stack gap={6}>
+          <Text size="xs" c="dimmed">
+            Loadouts of {character.name}. They share this character's levels,
+            houses, achievements, shrines and seals — only gear, abilities and
+            consumables differ.
+          </Text>
           <Group gap={6} wrap="nowrap">
             <TextInput
               value={saveName}
@@ -121,34 +100,32 @@ export function LoadoutManager({ player, onLoadPlayer, playerId }) {
             <Text size="xs" c="dimmed">No saved loadouts</Text>
           ) : (
             <Stack gap={4}>
-              {loadoutNames.map(name => {
-                const loadout = loadouts[name];
-                const savedDate = new Date(loadout.savedAt).toLocaleDateString();
-                return (
-                  <Paper key={name} p={6} radius="sm" withBorder>
-                    <Group justify="space-between" wrap="nowrap">
-                      <div style={{ minWidth: 0 }}>
-                        <Text size="xs" fw={600} truncate>{name}</Text>
-                        <Text size="xs" c="dimmed">{savedDate}</Text>
-                      </div>
-                      <Group gap={4} wrap="nowrap">
-                        <Button size="compact-xs" variant="light" onClick={() => handleLoad(name)}>
-                          Load
-                        </Button>
-                        <ActionIcon
-                          size="sm"
-                          variant="subtle"
-                          color="red"
-                          onClick={() => handleDelete(name)}
-                          title={`Delete loadout ${name}`}
-                        >
-                          ×
-                        </ActionIcon>
-                      </Group>
+              {loadoutNames.map(name => (
+                <Paper key={name} p={6} radius="sm" withBorder>
+                  <Group justify="space-between" wrap="nowrap">
+                    <div style={{ minWidth: 0 }}>
+                      <Text size="xs" fw={600} truncate>{name}</Text>
+                      {slotRef?.loadoutName === name && (
+                        <Text size="xs" c="dimmed">worn by P{slotId}</Text>
+                      )}
+                    </div>
+                    <Group gap={4} wrap="nowrap">
+                      <Button size="compact-xs" variant="light" onClick={() => handleLoad(name)}>
+                        Load
+                      </Button>
+                      <ActionIcon
+                        size="sm"
+                        variant="subtle"
+                        color="red"
+                        onClick={() => handleDelete(name)}
+                        title={`Delete loadout ${name}`}
+                      >
+                        ×
+                      </ActionIcon>
                     </Group>
-                  </Paper>
-                );
-              })}
+                  </Group>
+                </Paper>
+              ))}
             </Stack>
           )}
         </Stack>
