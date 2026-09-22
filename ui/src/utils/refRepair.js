@@ -40,20 +40,36 @@ import { deleteCharacter, deleteLoadout, renameLoadout } from './characterStore.
 const refExists = (store, ref) =>
   Boolean(ref?.characterId && store?.characters?.[ref.characterId]?.loadouts?.[ref.loadoutName]);
 
+/** Is this reference the exact (character, loadout) pair just deleted? */
+const refIsDoomed = (ref, doomed) =>
+  Boolean(doomed && ref
+    && ref.characterId === doomed.characterId
+    && ref.loadoutName === doomed.loadoutName);
+
 /**
  * Drop every reference that no longer resolves, from BOTH holders, together.
  *
  * This also clears PRE-EXISTING dangles as a side effect. That is intentional:
  * a dangling reference is already non-functional, so this is self-healing
  * rather than data loss.
+ *
+ * `doomed` names a pair that must be dropped BY IDENTITY, whatever the store
+ * now says about it. Resolvability alone is not enough: `deleteLoadout` keeps a
+ * character wearable by re-creating a blank `default` when its last loadout
+ * goes (characterStore.js), so deleting the sole loadout of a freshly imported
+ * character — whose one loadout IS called `default` — makes the name spring
+ * back into existence before this sweep ever runs. Every reference would then
+ * still resolve, stay bound, and silently simulate empty gear: the exact
+ * plausible-wrong-answer this module's drop rule exists to prevent.
  */
-function dropDangling(world) {
+function dropDangling(world, doomed = null) {
   const { characters } = world;
+  const survives = (ref) => refExists(characters, ref) && !refIsDoomed(ref, doomed);
   const party = {};
   for (const [slot, ref] of Object.entries(world.party || {})) {
-    party[slot] = refExists(characters, ref) ? ref : null;
+    party[slot] = survives(ref) ? ref : null;
   }
-  const roster = (world.roster || []).filter(e => refExists(characters, e));
+  const roster = (world.roster || []).filter(survives);
   const selectedEntryId = roster.some(e => e.id === world.selectedEntryId)
     ? world.selectedEntryId
     : (roster[0]?.id ?? null);
@@ -62,10 +78,10 @@ function dropDangling(world) {
 
 /** Delete a loadout and drop every reference to it. @returns {object} world */
 export function deleteLoadoutEverywhere(world, characterId, loadoutName) {
-  return dropDangling({
-    ...world,
-    characters: deleteLoadout(world.characters, characterId, loadoutName)
-  });
+  return dropDangling(
+    { ...world, characters: deleteLoadout(world.characters, characterId, loadoutName) },
+    { characterId, loadoutName }
+  );
 }
 
 /** Delete a character and drop every reference to it. @returns {object} world */

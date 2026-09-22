@@ -408,3 +408,46 @@ test('both former half-repairs, one rule', () => {
   assert.deepEqual(b.party[1], { characterId: 'e', loadoutName: 'a' });
   assert.equal(b.selectedEntryId, null);
 });
+
+// REGRESSION (P1-A). `deleteLoadout` keeps a character wearable by re-creating
+// a blank `default` when its last loadout goes. A sweep that drops references
+// by RESOLVABILITY therefore drops nothing here — the name springs back before
+// the sweep runs — and every reference stays bound to empty gear. That is the
+// ordinary state of a freshly imported character, and it simulates silently
+// wrong rather than failing: no crash, no empty slot, just naked numbers.
+test('deleting a sole `default` loadout drops its references despite the blank re-creation', () => {
+  const store = upsertCharacter(
+    { schemaVersion: 2, characters: {} },
+    { ...createCharacter({ name: 'hero', id: 'hero' }), attackLevel: 90 }
+  );
+  assert.deepEqual(Object.keys(store.characters.hero.loadouts), ['default']);
+
+  const world = {
+    characters: store,
+    party: {
+      1: { characterId: 'hero', loadoutName: 'default' },
+      2: { characterId: 'hero', loadoutName: 'default' },
+      3: null, 4: null, 5: null
+    },
+    roster: [{ id: 'r1', characterId: 'hero', loadoutName: 'default', count: 20 }],
+    selectedEntryId: 'r1'
+  };
+
+  const next = deleteLoadoutEverywhere(world, 'hero', 'default');
+
+  // The blank re-creation still happens — the character stays wearable, and
+  // this test pins that interaction rather than wishing it away.
+  assert.deepEqual(Object.keys(next.characters.characters.hero.loadouts), ['default']);
+  assert.ok(next.characters.characters.hero.loadouts.default);
+
+  // But NOTHING may still be bound to it, in EITHER holder.
+  assert.equal(next.party[1], null);
+  assert.equal(next.party[2], null);
+  assert.deepEqual(next.roster, []);
+  assert.equal(next.selectedEntryId, null);
+  assert.equal(allRefs(next).length, 0);
+
+  // The character itself survives, levels intact — a delete of one loadout is
+  // not a delete of the character.
+  assert.equal(next.characters.characters.hero.attackLevel, 90);
+});

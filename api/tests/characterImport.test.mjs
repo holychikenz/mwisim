@@ -536,3 +536,63 @@ test('the migration runs once, changes nothing on a second pass, and never touch
   assert.equal(third.created, 0);
   assert.ok(!('orphan_1' in third.store.characters));
 });
+
+// REGRESSION (P1-B). CharacterImport awaits a network round trip before it
+// calls back, so the `characters` captured in the handler's closure is a
+// PRE-FETCH snapshot. A wholesale `setCharacters(merge(snapshot, incoming))`
+// discards everything the user changed while the import was in flight, and the
+// autosave effect then makes that loss permanent. The write must go through a
+// functional updater so it merges onto the LATEST base.
+test('an import in flight does not overwrite an edit made while it was fetching', () => {
+  const incoming = {
+    id: 'hero',
+    name: 'hero',
+    attackLevel: 99,
+    loadouts: { tank: sanitizeLoadout({}) }
+  };
+
+  // t0 — the user clicks Import. This is the base the closure captures.
+  const snapshot = upsertCharacter(emptyStore(), {
+    id: 'hero',
+    name: 'hero',
+    attackLevel: 1,
+    guildShrines: { '/buff_types/guild_force': 5 },
+    personalBuffs: ['/items/tarnished_seal'],
+    loadouts: { tank: sanitizeLoadout({}), pvp: sanitizeLoadout({}) }
+  });
+
+  // t1 — while the fetch is in flight the user edits a DIFFERENT character and
+  // hand-makes another loadout on the one being imported.
+  let live = upsertCharacter(snapshot, {
+    id: 'other', name: 'other', attackLevel: 50, loadouts: { solo: sanitizeLoadout({}) }
+  });
+  live = setLoadout(live, 'hero', 'inflight', sanitizeLoadout({}));
+
+  // t2 — the fetch resolves. THE FIX: merge onto `prev`, not onto the snapshot.
+  const applied = mergeImportedCharacter(live, incoming).store;
+
+  // The concurrent edits survive.
+  assert.ok(applied.characters.other, 'a character created during the fetch must survive');
+  assert.equal(applied.characters.other.attackLevel, 50);
+  assert.ok(
+    applied.characters.hero.loadouts.inflight,
+    'a loadout hand-made during the fetch must survive'
+  );
+
+  // The import still did its job.
+  assert.equal(applied.characters.hero.attackLevel, 99);
+  assert.ok(applied.characters.hero.loadouts.tank);
+  assert.ok(applied.characters.hero.loadouts.pvp, 'and the untouched hand-made one is kept');
+  // ...without clobbering what the import does not carry.
+  assert.deepEqual(applied.characters.hero.guildShrines, { '/buff_types/guild_force': 5 });
+  assert.deepEqual(applied.characters.hero.personalBuffs, ['/items/tarnished_seal']);
+
+  // And the bug this pins: merging onto the STALE snapshot loses both edits.
+  const stale = mergeImportedCharacter(snapshot, incoming).store;
+  assert.ok(!stale.characters.other, 'proves the snapshot really was stale');
+  assert.ok(!stale.characters.hero.loadouts.inflight);
+
+  // The merge is idempotent on the same base, which is why re-running under
+  // StrictMode is harmless and the functional form is safe.
+  assert.deepEqual(mergeImportedCharacter(applied, incoming).store, applied);
+});

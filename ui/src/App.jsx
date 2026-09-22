@@ -557,24 +557,41 @@ function App() {
    * on the same key — and used to destroy every shrine level, every seal and
    * every hand-made loadout on the way in. See `mergeImportedCharacter`.
    *
-   * Reads `characters` directly rather than through a functional updater, the
-   * same idiom handleDeleteLoadout and handleRenameLoadout use: the merge
-   * summary is needed for the notice, and a functional updater would also
-   * double-fire under StrictMode.
+   * The WRITE goes through a functional updater, and must stay that way.
+   * `CharacterImport` awaits a network round trip before calling back, so the
+   * `characters` captured in this closure is a PRE-FETCH snapshot: anything the
+   * user changed while the import was in flight — a level, a shrine, a gear
+   * swap, a deletion, a second import — would be overwritten by a wholesale
+   * `setCharacters(result.store)` and then autosaved, making the loss permanent.
+   * A functional updater re-running under StrictMode is harmless here, because
+   * `mergeImportedCharacter` is idempotent on the same base.
    */
   const handleImportCharacter = useCallback((slotId, character, defaultLoadoutName) => {
-    const result = mergeImportedCharacter(characters, character);
-    setCharacters(result.store);
     const id = character.id || makeCharacterId(character.name);
-    const stored = result.store.characters[id];
-    const loadoutName = (defaultLoadoutName && stored.loadouts[defaultLoadoutName])
+    setCharacters(prev => mergeImportedCharacter(prev, character).store);
+
+    // Which loadout to bind depends only on the INCOMING character, never on
+    // the base: the merge is a union, so any loadout the import carries is in
+    // the result whatever was there before. That keeps the binding correct even
+    // when the snapshot below is stale.
+    const incoming = character.loadouts || {};
+    const loadoutName = (defaultLoadoutName && incoming[defaultLoadoutName])
       ? defaultLoadoutName
-      : Object.keys(stored.loadouts)[0];
-    setParty(prev => ({ ...prev, [slotId]: { characterId: id, loadoutName } }));
-    if (!result.created) {
+      : Object.keys(incoming)[0];
+    if (loadoutName) {
+      setParty(prev => ({ ...prev, [slotId]: { characterId: id, loadoutName } }));
+    }
+
+    // The notice is COSMETIC, so it may be computed against the snapshot: in
+    // the rare in-flight race its counts can lag by an edit, which is a wrong
+    // sentence rather than wrong data. The merge is pure, so previewing it here
+    // changes nothing.
+    const preview = mergeImportedCharacter(characters, character);
+    if (!preview.created) {
       setBridgeMessage(
-        `Re-imported ${stored.name} — ${result.replaced.length} loadout(s) updated, ` +
-        `${result.added.length} added, ${result.kept.length} of your own kept. ` +
+        `Re-imported ${preview.store.characters[id]?.name || character.name} — ` +
+        `${preview.replaced.length} loadout(s) updated, ` +
+        `${preview.added.length} added, ${preview.kept.length} of your own kept. ` +
         'Shrines and seals preserved.'
       );
     }
