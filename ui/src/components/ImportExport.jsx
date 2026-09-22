@@ -3,6 +3,7 @@ import { Button, Group, Modal, Stack, Text, Textarea } from '@mantine/core';
 import { playerToExportFormat, exportFormatToPlayer } from '../utils/importSet';
 import { saveSession, SESSION_KEY } from '../utils/session';
 import { CHARACTERS_KEY } from '../utils/characterStore';
+import { GUILD_TRIAL_KEY } from '../utils/roster';
 
 // `setSelectedPlayers` is gone from the props: its only reader was the restore
 // effect, and the party selection is now restored in App's own initialiser.
@@ -23,7 +24,8 @@ export function ImportExport({
   difficultyTier,
   setDifficultyTier,
   duration,
-  setDuration
+  setDuration,
+  onClearSaved
 }) {
   const [importText, setImportText] = useState('');
   const [showImportModal, setShowImportModal] = useState(false);
@@ -156,14 +158,21 @@ export function ImportExport({
     }
   }, [importText, activeTab, onImportPlayer, setZone, setDifficultyTier, setDuration, showMessage]);
 
-  // Clear localStorage
+  // Clearing is a STATE reset first and a storage wipe second: removing the
+  // keys alone was undone milliseconds later by the three autosave effects,
+  // which rewrote every key from the still-in-memory state. The removeItem
+  // calls stay as belt-and-braces for effects that may not have run yet, and
+  // `csim_guild_trial` — which this used to forget entirely — is now among
+  // them. The legacy backups (csim_loadouts and the .v1 keys) are deliberately
+  // NOT cleared: destroying a backup is never what "Clear Saved" means.
   const handleClearSaved = useCallback(() => {
-    if (confirm('Clear the saved session AND every stored character (with all their loadouts) from local storage?')) {
-      localStorage.removeItem(SESSION_KEY);
-      localStorage.removeItem(CHARACTERS_KEY);
-      showMessage('Saved session and characters cleared');
-    }
-  }, [showMessage]);
+    if (!confirm('Clear the saved session, the guild-trial roster AND every stored character (with all their loadouts) from local storage?')) return;
+    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(CHARACTERS_KEY);
+    localStorage.removeItem(GUILD_TRIAL_KEY);
+    onClearSaved();
+    showMessage('Saved session, roster and characters cleared');
+  }, [onClearSaved, showMessage]);
 
   return (
     <Stack gap={6}>

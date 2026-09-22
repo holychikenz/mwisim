@@ -19,7 +19,7 @@
 
 import { loadVersioned, resolveRef } from './characterStore.js';
 
-const STORAGE_KEY = 'csim_guild_trial';
+export const GUILD_TRIAL_KEY = 'csim_guild_trial';
 export const TRIAL_SCHEMA_VERSION = 2;
 
 /** The composite identity of a roster row: which character, wearing what. */
@@ -167,7 +167,7 @@ export function loadGuildTrialState() {
     selectedEntryId: null,
     trialConfig: { ...DEFAULT_TRIAL_CONFIG },
   };
-  const { data, status } = loadVersioned(STORAGE_KEY, TRIAL_SCHEMA_VERSION, fallback);
+  const { data, status } = loadVersioned(GUILD_TRIAL_KEY, TRIAL_SCHEMA_VERSION, fallback);
   const roster = normalizeRoster(Array.isArray(data.roster) ? data.roster : []);
   const selectedEntryId =
     data.selectedEntryId != null && roster.some(e => e.id === data.selectedEntryId)
@@ -186,7 +186,7 @@ export function loadGuildTrialState() {
 export function saveGuildTrialState(state) {
   try {
     localStorage.setItem(
-      STORAGE_KEY,
+      GUILD_TRIAL_KEY,
       JSON.stringify({ ...state, schemaVersion: TRIAL_SCHEMA_VERSION })
     );
   } catch (e) {

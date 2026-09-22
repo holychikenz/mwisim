@@ -115,19 +115,24 @@ export function characterToCharacter(char, gameData, displayName) {
   const lvl = (hrid) => skills.get(hrid)?.level ?? 1;
 
   const name = displayName || char.name || 'Imported character';
+  // The game API carries no guild or seal information, so this function does
+  // not answer the question AT ALL: both keys are OMITTED rather than emitted
+  // empty. The distinction is the whole point. `guildShrines: {}` means
+  // "captured, owns none" to resolveUnitShrineBuffs (utils/guildBuffs.js) and
+  // must not fall back; an ABSENT key means "nothing said". Only the CALLER
+  // knows which is true, because only the caller knows whether this is a FIRST
+  // import (nothing has ever been said, so `{}` and `[]` are the honest
+  // answers — an imported character deferring to someone else's shrines would
+  // be a lie) or a RE-import (the user has since said something, and this
+  // payload has no standing to contradict it). Both branches now live in
+  // `mergeImportedCharacter` (utils/characterStore.js), where they are
+  // enforced; `ownsShrines: false` already omits `guildShrines`.
+  const base = createCharacter({ name, id: makeCharacterId(name), ownsShrines: false });
+  delete base.personalBuffs; // createCharacter seeds `[]`; omit it, as above.
   const character = {
-    ...createCharacter({ name, id: makeCharacterId(name) }),
+    ...base,
     houseRooms: {},
     achievements: {},
-    // The character API carries no guild or seal information, so these start
-    // empty and the user fills them in. They are present rather than absent on
-    // purpose: an absent `guildShrines` means "defer to the party-wide knobs"
-    // to resolveUnitShrineBuffs (utils/guildBuffs.js), and an imported
-    // character deferring to someone else's shrines would be a lie. The
-    // reasoning is stronger now than it was: a LOADOUT cannot carry a shrine at
-    // all, so this is the only place the question can be answered.
-    guildShrines: {},
-    personalBuffs: [],
     abilityLevels: {},
     loadouts: {}
   };

@@ -31,8 +31,15 @@ const {
   loadCharacters,
   saveCharacters,
   loadVersioned,
-  emptyStore
+  emptyStore,
+  resolveRef,
+  createCharacter
 } = await import('../../ui/src/utils/characterStore.js');
+const {
+  deleteLoadoutEverywhere,
+  deleteCharacterEverywhere,
+  renameLoadoutEverywhere
+} = await import('../../ui/src/utils/refRepair.js');
 const { ownsShrines } = await import('../../ui/src/utils/guildBuffs.js');
 const { toPlayerDTO } = await import('../../ui/src/utils/playerDTO.js');
 
@@ -239,4 +246,165 @@ test('the version gate backs up rather than mangles', () => {
   assert.deepEqual(second.data, JSON.parse(fresh));
   assert.equal(localStorage.getItem('csim_player_data.v1'), legacy);
   assert.deepEqual(emptyStore(), { schemaVersion: 2, characters: {} });
+});
+
+// =============================================================================
+// REFERENCE REPAIR (utils/refRepair.js) — the two holders, mended together.
+//
+// A `{characterId, loadoutName}` reference is held in exactly two places: the
+// five party slots and the guild-trial roster (with `selectedEntryId` riding
+// along). Before refRepair.js each mutation site mended one of them and forgot
+// the other, in opposite directions. These pin the one rule.
+// =============================================================================
+
+/** Every live reference in a world, both holders at once. */
+const allRefs = (world) =>
+  Object.values(world.party || {}).filter(Boolean).concat(world.roster || []);
+
+function refWorld() {
+  const store = storeWith(character(), { tank: loadout(), mage: loadout({ equipment: {} }) });
+  return {
+    characters: store,
+    party: {
+      1: { characterId: 'c', loadoutName: 'tank' },
+      2: { characterId: 'c', loadoutName: 'tank' },
+      3: { characterId: 'c', loadoutName: 'mage' },
+      4: null,
+      5: null
+    },
+    roster: [
+      { id: 'r1', characterId: 'c', loadoutName: 'tank', count: 20 },
+      { id: 'r2', characterId: 'c', loadoutName: 'mage', count: 1 }
+    ],
+    selectedEntryId: 'r1'
+  };
+}
+
+test('after renameLoadout no live reference anywhere still names the old key', () => {
+  const world = refWorld();
+  const next = renameLoadoutEverywhere(world, 'c', 'tank', 'bruiser');
+
+  assert.equal(next.name, 'bruiser');
+  const loadouts = next.characters.characters.c.loadouts;
+  assert.ok(!('tank' in loadouts));
+  assert.ok('bruiser' in loadouts);
+  // Renaming must not reshuffle the picker.
+  assert.deepEqual(Object.keys(loadouts), ['bruiser', 'mage']);
+
+  // THE PARTY — the holder the app's only rename entry point never touched.
+  assert.equal(next.party[1].loadoutName, 'bruiser');
+  assert.equal(next.party[2].loadoutName, 'bruiser');
+  assert.equal(next.party[3].loadoutName, 'mage');
+  assert.equal(next.party[4], null);
+
+  assert.equal(next.roster.find(r => r.id === 'r1').loadoutName, 'bruiser');
+  assert.deepEqual(next.roster.find(r => r.id === 'r2'), world.roster[1]);
+  assert.equal(next.selectedEntryId, 'r1');
+
+  assert.ok(allRefs(next).every(r => r.loadoutName !== 'tank'));
+  assert.ok(allRefs(next).every(r => resolveRef(next.characters, r) !== null));
+});
+
+test('after deleteLoadout every reference to it is dropped from BOTH holders', () => {
+  const world = refWorld();
+  const next = deleteLoadoutEverywhere(world, 'c', 'tank');
+
+  assert.deepEqual(Object.keys(next.characters.characters.c.loadouts), ['mage']);
+  // DROPPED, never repointed: a slot that wore it goes empty rather than being
+  // silently re-geared into a loadout the user never chose for it.
+  assert.equal(next.party[1], null);
+  assert.equal(next.party[2], null);
+  assert.deepEqual(next.party[3], { characterId: 'c', loadoutName: 'mage' });
+  assert.deepEqual(next.roster.map(r => r.id), ['r2']);
+  assert.equal(next.selectedEntryId, 'r2');
+  assert.ok(allRefs(next).every(r => resolveRef(next.characters, r) !== null));
+});
+
+test('deleting the last loadout leaves a wearable character and no dangling refs', () => {
+  const store = storeWith({ ...character(), id: 'd', name: 'd' }, { solo: loadout() });
+  const world = {
+    characters: { schemaVersion: 2, characters: { d: store.characters.c } },
+    party: { 1: { characterId: 'd', loadoutName: 'solo' }, 2: null, 3: null, 4: null, 5: null },
+    roster: [{ id: 'r', characterId: 'd', loadoutName: 'solo', count: 1 }],
+    selectedEntryId: 'r'
+  };
+  const next = deleteLoadoutEverywhere(world, 'd', 'solo');
+
+  // deleteLoadout recreates `default` so the character stays wearable — but
+  // that is NOT a place to repoint the old references at. The user re-binds.
+  assert.deepEqual(Object.keys(next.characters.characters.d.loadouts), ['default']);
+  assert.equal(next.party[1], null);
+  assert.deepEqual(next.roster, []);
+  assert.equal(next.selectedEntryId, null);
+});
+
+test('after deleteCharacter no reference to it survives', () => {
+  const c = { ...character(), loadouts: { tank: loadout() } };
+  const d = { ...character(), id: 'd', name: 'd', loadouts: { default: loadout() } };
+  const world = {
+    characters: { schemaVersion: 2, characters: { c, d } },
+    party: {
+      1: { characterId: 'c', loadoutName: 'tank' },
+      2: { characterId: 'd', loadoutName: 'default' },
+      3: null,
+      4: null,
+      5: null
+    },
+    roster: [
+      { id: 'r1', characterId: 'c', loadoutName: 'tank', count: 20 },
+      { id: 'r2', characterId: 'd', loadoutName: 'default', count: 1 }
+    ],
+    selectedEntryId: 'r1'
+  };
+  const next = deleteCharacterEverywhere(world, 'c');
+
+  assert.ok(!('c' in next.characters.characters));
+  assert.ok('d' in next.characters.characters);
+  assert.equal(next.party[1], null);
+  assert.deepEqual(next.party[2], { characterId: 'd', loadoutName: 'default' });
+  assert.deepEqual(next.roster.map(r => r.id), ['r2']);
+  assert.equal(next.selectedEntryId, 'r2');
+  assert.ok(allRefs(next).every(r => resolveRef(next.characters, r) !== null));
+});
+
+test('renaming a character needs no repair — references key off id, not name', () => {
+  const world = refWorld();
+  // The exact App.jsx handleRenameCharacter idiom.
+  const next = upsertCharacter(world.characters, {
+    ...world.characters.characters.c,
+    name: 'Renamed'
+  });
+
+  assert.equal(next.characters.c.id, 'c');
+  assert.equal(next.characters.c.name, 'Renamed');
+  assert.ok(!('renamed' in next.characters));
+  assert.deepEqual(Object.keys(next.characters), ['c']);
+  // Every reference still resolves, so there is nothing for a
+  // `renameCharacterEverywhere` to do — and none is written.
+  assert.ok(allRefs(world).every(r => resolveRef(next, r) !== null));
+  assert.equal(resolveRef(next, world.party[1]).attackLevel, 90);
+  assert.ok(createCharacter({ ownsShrines: false }).guildShrines === undefined);
+});
+
+test('both former half-repairs, one rule', () => {
+  const base = {
+    characters: {
+      schemaVersion: 2,
+      characters: { e: { ...character(), id: 'e', name: 'e', loadouts: { a: loadout(), b: loadout() } } }
+    },
+    party: { 1: { characterId: 'e', loadoutName: 'a' }, 2: null, 3: null, 4: null, 5: null },
+    roster: [{ id: 'x', characterId: 'e', loadoutName: 'b', count: 1 }],
+    selectedEntryId: 'x'
+  };
+
+  // (a) referenced ONLY by a party slot — the holder App's handler forgot.
+  const a = deleteLoadoutEverywhere(base, 'e', 'a');
+  assert.equal(a.party[1], null);
+  assert.deepEqual(a.roster, base.roster);
+
+  // (b) referenced ONLY by a roster row — the holder LoadoutManager forgot.
+  const b = deleteLoadoutEverywhere(base, 'e', 'b');
+  assert.deepEqual(b.roster, []);
+  assert.deepEqual(b.party[1], { characterId: 'e', loadoutName: 'a' });
+  assert.equal(b.selectedEntryId, null);
 });

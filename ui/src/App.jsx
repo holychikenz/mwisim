@@ -61,14 +61,15 @@ import {
   normalizeRoster,
   refKey,
   rosterSize,
-  clampCount
+  clampCount,
+  DEFAULT_TRIAL_CONFIG
 } from './utils/roster';
 import {
   createCharacter,
-  deleteLoadout,
+  emptyStore,
   loadCharacters,
   makeCharacterId,
-  renameLoadout,
+  mergeImportedCharacter,
   resolveRef,
   saveCharacters,
   setLoadout,
@@ -76,6 +77,14 @@ import {
   uniqueLoadoutName,
   upsertCharacter
 } from './utils/characterStore';
+// The ONE atomic repair: party AND roster (AND the trial selection) rewritten
+// together, so neither holder can be mended at the other's expense.
+import {
+  deleteCharacterEverywhere,
+  deleteLoadoutEverywhere,
+  renameLoadoutEverywhere
+} from './utils/refRepair';
+import { migrateLegacyLoadouts } from './utils/orphanMigration';
 import { buildConsumableCosts, describeConsumableCosts } from './utils/consumableCosts';
 import {
   loadTriggerOptState,
@@ -198,7 +207,11 @@ function App() {
   // THE ONE STORE. A character owns its levels, houses, achievements, shrines,
   // seals and ability training levels; each of its named loadouts owns only
   // gear, ability slots and consumables. See utils/characterStore.js.
-  const [characters, setCharacters] = useState(loadCharacters);
+  // Recover a pre-v2 `csim_loadouts` library, at most once ever, before the
+  // store is first handed to React. See utils/orphanMigration.js — the original
+  // blob is never written, cleared or deleted.
+  const restored = useMemo(() => migrateLegacyLoadouts(loadCharacters()), []);
+  const [characters, setCharacters] = useState(() => restored.store);
   // Five slots, each a {characterId, loadoutName} REFERENCE — so two slots can
   // be the same character in different gear with no copy of anything.
   const [party, setParty] = useState(() => normalizeParty(savedSession.party));
@@ -268,10 +281,22 @@ function App() {
   const [mazeContext, setMazeContext] = useState(false);
   // One honest notice when a pre-v2 blob was set aside rather than guessed at.
   // It rides the EXISTING alert; no new UI plumbing for a once-per-user message.
+  // Both notices can fire on the same load, so they compose rather than
+  // competing for the one alert.
   const [bridgeMessage, setBridgeMessage] = useState(
-    session.status === 'incompatible' || trialState.status === 'incompatible'
-      ? VERSION_NOTICE
-      : null
+    () => [
+      session.status === 'incompatible' || trialState.status === 'incompatible'
+        ? VERSION_NOTICE
+        : null,
+      restored.recovered
+        ? `Recovered ${restored.recovered} saved loadout${restored.recovered === 1 ? '' : 's'} ` +
+          `from the previous version into ${restored.created} character` +
+          `${restored.created === 1 ? '' : 's'} (${restored.names.join(', ')}). ` +
+          'Their stats differed where they were split apart — nothing was merged. ' +
+          'Rename or delete them freely; they are ordinary characters. ' +
+          'Your original data is untouched in csim_loadouts.'
+        : null
+    ].filter(Boolean).join(' ') || null
   );
 
   // -- All Zones sweep -------------------------------------------------------
@@ -525,17 +550,35 @@ function App() {
     setParty(prev => ({ ...prev, [slotId]: { characterId: id, loadoutName: 'default' } }));
   }, []);
 
-  /** A full character import: every combat loadout it owns, in one write. */
+  /**
+   * A full character import: every combat loadout it owns, MERGED onto whatever
+   * is already stored rather than replacing it. The import id is deterministic
+   * (`makeCharacterId(name)`), so re-importing the same character always lands
+   * on the same key — and used to destroy every shrine level, every seal and
+   * every hand-made loadout on the way in. See `mergeImportedCharacter`.
+   *
+   * Reads `characters` directly rather than through a functional updater, the
+   * same idiom handleDeleteLoadout and handleRenameLoadout use: the merge
+   * summary is needed for the notice, and a functional updater would also
+   * double-fire under StrictMode.
+   */
   const handleImportCharacter = useCallback((slotId, character, defaultLoadoutName) => {
-    setCharacters(prev => upsertCharacter(prev, character));
-    setParty(prev => ({
-      ...prev,
-      [slotId]: {
-        characterId: character.id,
-        loadoutName: defaultLoadoutName || Object.keys(character.loadouts)[0]
-      }
-    }));
-  }, []);
+    const result = mergeImportedCharacter(characters, character);
+    setCharacters(result.store);
+    const id = character.id || makeCharacterId(character.name);
+    const stored = result.store.characters[id];
+    const loadoutName = (defaultLoadoutName && stored.loadouts[defaultLoadoutName])
+      ? defaultLoadoutName
+      : Object.keys(stored.loadouts)[0];
+    setParty(prev => ({ ...prev, [slotId]: { characterId: id, loadoutName } }));
+    if (!result.created) {
+      setBridgeMessage(
+        `Re-imported ${stored.name} — ${result.replaced.length} loadout(s) updated, ` +
+        `${result.added.length} added, ${result.kept.length} of your own kept. ` +
+        'Shrines and seals preserved.'
+      );
+    }
+  }, [characters]);
 
   const handleSelectedPlayersChange = useCallback((values) => {
     if (values.length === 0) return; // Must have at least one player
@@ -706,6 +749,24 @@ function App() {
     }
   }, [roster, characters]);
 
+  /**
+   * The four reference-holding slices, rewritten TOGETHER. A
+   * `{characterId, loadoutName}` reference lives in the party AND in the trial
+   * roster, and every mutation site used to mend one and forget the other —
+   * in opposite directions, depending on which site you reached it from. See
+   * utils/refRepair.js for the DROP rule and the history.
+   */
+  const applyWorld = useCallback((next) => {
+    setCharacters(next.characters);
+    setParty(next.party);
+    setRoster(next.roster);
+    setSelectedEntryId(next.selectedEntryId);
+  }, []);
+  const worldNow = useCallback(
+    () => ({ characters, party, roster, selectedEntryId }),
+    [characters, party, roster, selectedEntryId]
+  );
+
   // Permanently delete a LOADOUT (not just a roster row). Unlike
   // handleDeleteEntry — which keeps the loadout as a re-addable orphan — this
   // removes it from the character AND drops every roster row pointing at it,
@@ -713,14 +774,18 @@ function App() {
   // survives: its levels are not this loadout's to take away.
   const handleDeleteLoadout = useCallback((ref) => {
     if (!ref?.characterId || !ref?.loadoutName) return;
-    const key = refKey(ref);
-    const nextRoster = roster.filter(e => refKey(e) !== key);
-    setCharacters(prev => deleteLoadout(prev, ref.characterId, ref.loadoutName));
-    setRoster(nextRoster);
-    if (selectedEntry && refKey(selectedEntry) === key) {
-      setSelectedEntryId(nextRoster[0]?.id ?? null);
-    }
-  }, [roster, selectedEntry]);
+    applyWorld(deleteLoadoutEverywhere(worldNow(), ref.characterId, ref.loadoutName));
+  }, [applyWorld, worldNow]);
+
+  /**
+   * Permanently delete a CHARACTER and everything it owns. There was no UI for
+   * this at all before — which made a recovered orphan un-removable in practice
+   * — so it is wired through the same one helper from the start.
+   */
+  const handleDeleteCharacter = useCallback((characterId) => {
+    if (!characterId) return;
+    applyWorld(deleteCharacterEverywhere(worldNow(), characterId));
+  }, [applyWorld, worldNow]);
 
   // Remove a whole row (all N participants). The master build is intentionally
   // KEPT even when this was its only row (it becomes a re-addable orphan).
@@ -751,22 +816,46 @@ function App() {
   // edited beside it), rewriting every row that pointed at the old name.
   const handleRenameLoadout = useCallback((name) => {
     if (!selectedEntry || !name?.trim()) return;
-    const from = selectedEntry.loadoutName;
-    const characterId = selectedEntry.characterId;
-    const result = renameLoadout(characters, characterId, from, name.trim());
-    if (result.name === from) return;
-    setCharacters(result.store);
-    setRoster(rows => rows.map(e =>
-      e.characterId === characterId && e.loadoutName === from
-        ? { ...e, loadoutName: result.name }
-        : e
-    ));
-  }, [selectedEntry, characters]);
+    const next = renameLoadoutEverywhere(
+      worldNow(),
+      selectedEntry.characterId,
+      selectedEntry.loadoutName,
+      name.trim()
+    );
+    if (next.name === selectedEntry.loadoutName) return;
+    applyWorld(next);
+  }, [selectedEntry, applyWorld, worldNow]);
 
-  const handleRenameCharacter = useCallback((name) => {
-    if (!selectedCharacter || !name) return;
-    setCharacters(prev => upsertCharacter(prev, { ...selectedCharacter, name }));
-  }, [selectedCharacter]);
+  /**
+   * Renaming a CHARACTER needs no reference repair: `sanitizeCharacter` copies
+   * the existing `id` rather than re-deriving it from the name, and both
+   * holders reference `characterId`. Only the display name changes, so there is
+   * deliberately no `renameCharacterEverywhere` — the property is pinned by a
+   * regression test instead of guarded by dead code.
+   */
+  const handleRenameCharacter = useCallback((characterId, name) => {
+    if (!characterId || !name) return;
+    setCharacters(prev => {
+      const existing = prev.characters?.[characterId];
+      return existing ? upsertCharacter(prev, { ...existing, name }) : prev;
+    });
+  }, []);
+
+  /**
+   * Clearing is a STATE reset first and a storage wipe second. Removing the
+   * keys alone was undone milliseconds later by the autosave effects (this
+   * file's saveCharacters and saveGuildTrialState, ImportExport's saveSession),
+   * which rewrote every key from the still-in-memory state. ImportExport keeps
+   * its removeItem calls as belt-and-braces for effects that may not have run.
+   */
+  const handleClearSaved = useCallback(() => {
+    setCharacters(emptyStore());
+    setParty(createInitialParty());
+    setSelectedPlayers([1]);
+    setRoster([]);
+    setSelectedEntryId(null);
+    setTrialConfig({ ...DEFAULT_TRIAL_CONFIG });
+  }, []);
 
   // WIRE FORMAT UNCHANGED, adapted on arrival. The {masterBuilds, roster}
   // payload is a two-repo protocol (utils/rosterBridge.js) and carries no
@@ -1527,7 +1616,8 @@ function App() {
                     <TextInput
                       label="Character name"
                       value={selectedCharacter?.name || ''}
-                      onChange={(e) => handleRenameCharacter(e.currentTarget.value)}
+                      onChange={(e) =>
+                        handleRenameCharacter(selectedCharacter?.id, e.currentTarget.value)}
                       size="xs"
                     />
                     {/* Uncontrolled and committed on blur/Enter, unlike the
@@ -1709,6 +1799,7 @@ function App() {
                   setDifficultyTier={setDifficultyTier}
                   duration={duration}
                   setDuration={setDuration}
+                  onClearSaved={handleClearSaved}
                 />
 
                 <LoadoutManager
@@ -1718,6 +1809,9 @@ function App() {
                   slotId={activeTab}
                   setParty={setParty}
                   player={resolvedParty[activeTab]}
+                  onDeleteLoadout={handleDeleteLoadout}
+                  onDeleteCharacter={handleDeleteCharacter}
+                  onRenameCharacter={handleRenameCharacter}
                 />
 
                 <Divider />

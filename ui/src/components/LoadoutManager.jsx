@@ -1,6 +1,6 @@
 import { useState, useCallback, useMemo } from 'react';
 import { ActionIcon, Button, Collapse, Group, Paper, Stack, Text, TextInput } from '@mantine/core';
-import { deleteLoadout, setLoadout, splitPlayer, uniqueLoadoutName } from '../utils/characterStore';
+import { setLoadout, splitPlayer, uniqueLoadoutName } from '../utils/characterStore';
 
 // =============================================================================
 // LoadoutManager — the CURRENT CHARACTER's named loadouts.
@@ -14,7 +14,17 @@ import { deleteLoadout, setLoadout, splitPlayer, uniqueLoadoutName } from '../ut
 // save cannot fork a level and a load cannot un-level you.
 // =============================================================================
 
-export function LoadoutManager({ characters, setCharacters, slotRef, slotId, setParty, player }) {
+export function LoadoutManager({
+  characters,
+  setCharacters,
+  slotRef,
+  slotId,
+  setParty,
+  player,
+  onDeleteLoadout,
+  onDeleteCharacter,
+  onRenameCharacter
+}) {
   const [saveName, setSaveName] = useState('');
   const [showManager, setShowManager] = useState(false);
 
@@ -47,15 +57,12 @@ export function LoadoutManager({ characters, setCharacters, slotRef, slotId, set
   const handleDelete = useCallback((name) => {
     if (!character) return;
     if (!confirm(`Delete loadout "${name}"?`)) return;
-    setCharacters(prev => deleteLoadout(prev, character.id, name));
-    if (slotRef?.loadoutName === name) {
-      const remaining = Object.keys(character.loadouts || {}).filter(n => n !== name);
-      setParty(prev => ({
-        ...prev,
-        [slotId]: { characterId: character.id, loadoutName: remaining[0] || 'default' }
-      }));
-    }
-  }, [character, setCharacters, setParty, slotId, slotRef]);
+    // ONE helper, in App, rewriting the party AND the trial roster together.
+    // This component used to repair its own slot and nothing else — repointing
+    // it at a surviving loadout the user never chose — while App's handler
+    // repaired the roster and nothing else. See utils/refRepair.js.
+    onDeleteLoadout({ characterId: character.id, loadoutName: name });
+  }, [character, onDeleteLoadout]);
 
   if (!character) {
     return (
@@ -82,6 +89,32 @@ export function LoadoutManager({ characters, setCharacters, slotRef, slotId, set
             houses, achievements, shrines and seals — only gear, abilities and
             consumables differ.
           </Text>
+          {/* Renaming and deleting the CHARACTER itself. There was no UI for
+              either outside the trial panel, which made a recovered orphan
+              un-removable in practice. Both are ordinary characters now. */}
+          <Group gap={6} wrap="nowrap">
+            <TextInput
+              key={character.id}
+              size="xs"
+              style={{ flex: 1 }}
+              defaultValue={character.name}
+              onBlur={(e) =>
+                onRenameCharacter(character.id, e.currentTarget.value.trim() || character.name)}
+              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+            />
+            <Button
+              size="compact-xs"
+              color="red"
+              variant="light"
+              onClick={() => {
+                if (confirm(`Delete character "${character.name}" and all ${loadoutNames.length} of its loadouts?`)) {
+                  onDeleteCharacter(character.id);
+                }
+              }}
+            >
+              Delete character
+            </Button>
+          </Group>
           <Group gap={6} wrap="nowrap">
             <TextInput
               value={saveName}

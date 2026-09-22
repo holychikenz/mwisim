@@ -332,6 +332,66 @@ export function patchCharacter(store, characterId, partial) {
   return upsertCharacter(store, { ...existing, ...partial, id: existing.id, name: existing.name });
 }
 
+/**
+ * Merge an IMPORTED character onto whatever is already stored.
+ *
+ *  - NEW character: stored as-is, plus the FIRST-IMPORT defaults for anything
+ *    the import omitted. `{}` means "captured, owns none" and `[]` means "no
+ *    seals" — the honest answers when nothing has ever been said, because an
+ *    imported character DEFERRING to someone else's shrines would be a lie.
+ *    (The game API carries no guild or seal information at all, so
+ *    `characterToCharacter` omits both keys rather than answering a question it
+ *    cannot answer. Only the caller knows whether this is a first import.)
+ *  - EXISTING character: every character field the import CARRIES is updated;
+ *    every field it OMITS keeps the stored value — so shrines and seals the
+ *    user has since entered survive a re-import, which is the whole point.
+ *    Loadouts merge BY NAME: same-named incoming replaces, existing-without-
+ *    incoming is PRESERVED, incoming-without-existing is ADDED.
+ *
+ * It operates on the RAW `incoming`, before `sanitizeCharacter` — which fills
+ * `base[key]` for any absent non-`guildShrines` key and would manufacture the
+ * very `personalBuffs: []` we are avoiding. `upsertCharacter` sanitizes at the
+ * end, as always.
+ *
+ * @returns {{store, created: boolean, replaced: string[], added: string[], kept: string[]}}
+ */
+export function mergeImportedCharacter(store, incoming) {
+  const id = incoming?.id || makeCharacterId(incoming?.name);
+  const existing = store?.characters?.[id];
+  const incomingLoadouts = isObject(incoming?.loadouts) ? incoming.loadouts : {};
+
+  if (!existing) {
+    const character = { ...incoming, id };
+    if (!has(incoming, 'guildShrines')) character.guildShrines = {};
+    if (!has(incoming, 'personalBuffs')) character.personalBuffs = [];
+    return {
+      store: upsertCharacter(store, character),
+      created: true,
+      replaced: [],
+      added: Object.keys(incomingLoadouts),
+      kept: []
+    };
+  }
+
+  // Only the keys the import actually carries. `loadouts` is deliberately NOT
+  // in the partial: patchCharacter is a shallow spread and would clobber them.
+  const partial = {};
+  for (const key of CHARACTER_KEYS) {
+    if (key === 'id' || key === 'name' || key === 'loadouts') continue;
+    if (has(incoming, key)) partial[key] = incoming[key];
+  }
+  let next = patchCharacter(store, id, partial);
+
+  const replaced = [];
+  const added = [];
+  for (const [name, loadout] of Object.entries(incomingLoadouts)) {
+    (has(existing.loadouts || {}, name) ? replaced : added).push(name);
+    next = setLoadout(next, id, name, loadout);
+  }
+  const kept = Object.keys(existing.loadouts || {}).filter(n => !has(incomingLoadouts, n));
+  return { store: next, created: false, replaced, added, kept };
+}
+
 export function setLoadout(store, characterId, loadoutName, loadout) {
   const existing = store?.characters?.[characterId];
   if (!existing || !loadoutName) return store;
