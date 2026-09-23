@@ -48,7 +48,7 @@ const LABYRINTH_METRIC_COLUMNS = [
  * what the search ranked on.
  */
 const DUNGEON_METRIC_COLUMNS = [
-  { key: 'effectiveCompletionsPerHour', label: 'Effective runs/h', decimals: 2, costed: true },
+  { key: 'effectiveCompletionsPerHour', label: 'Effective completions/h', decimals: 2, costed: true },
   { key: 'completionsPerHour', label: 'Completions/h', decimals: 2 },
   { key: 'dungeonFailuresPerHour', label: 'Failed/h', decimals: 2 },
   { key: 'consumablesPerHour', label: 'Eaten/h', decimals: 1 },
@@ -111,8 +111,18 @@ function KpiCard({ label, value, hint }) {
   );
 }
 
+/**
+ * Did this row move the objective up? From the relative margin when there is
+ * one; from the absolute delta when there is not — a baseline that finishes no
+ * dungeon runs has no relative margin, and a rescue from zero is still a gain.
+ */
+function isGain(row, objective) {
+  if (Number.isFinite(row?.marginPct)) return row.marginPct > 0;
+  return (Number(row?.deltas?.[objective]?.value) || 0) > 0;
+}
+
 /** Badge describing what a row actually is. */
-function RowBadge({ row }) {
+function RowBadge({ row, objective }) {
   if (row.isBaseline) {
     return (
       <Badge size="sm" variant="light" color="gray">
@@ -121,7 +131,7 @@ function RowBadge({ row }) {
     );
   }
   if (row.significant) {
-    const better = (row.marginPct ?? 0) > 0;
+    const better = isGain(row, objective);
     return (
       <Badge size="sm" variant="filled" color={better ? 'teal' : 'red'}>
         {better ? 'Real gain' : 'Real loss'}
@@ -277,10 +287,20 @@ export function TriggerOptimizerResults({ results }) {
         <Alert
           color="grape"
           variant="light"
-          title={saturated === 'ceiling' ? 'Every attempt already clears' : 'No attempt ever clears'}
+          title={
+            dungeon
+              ? 'No run ever completes'
+              : saturated === 'ceiling'
+                ? 'Every attempt already clears'
+                : 'No attempt ever clears'
+          }
         >
           <Text size="sm">
-            {saturated === 'ceiling'
+            {/* A dungeon rate has a floor but no ceiling (score.js
+                objectiveSaturation), so only the floor needs its own words. */}
+            {dungeon
+              ? 'The party never finishes a run at these thresholds, and no threshold change produced a completion. Lower the difficulty tier to one you sometimes finish, then tune there.'
+              : saturated === 'ceiling'
               ? 'The clear rate is 100% at these thresholds, so no threshold change can improve on it and every row below ties by construction. Raise the room level until you start failing, then tune there.'
               : 'The clear rate is 0% at these thresholds, and no threshold change moved it. Lower the room level to one you sometimes clear, then tune there.'}
           </Text>
@@ -304,8 +324,13 @@ export function TriggerOptimizerResults({ results }) {
         <Alert color="teal" variant="light" title="A better threshold set was found">
           <Text size="sm">
             {leader?.changedCount} of {leader?.triggers.length} threshold
-            {leader?.triggers.length === 1 ? '' : 's'} changed, worth {formatPct(leader?.marginPct)} on{' '}
-            {OBJECTIVE_LABELS[objective] || objective}.
+            {leader?.triggers.length === 1 ? '' : 's'} changed,{' '}
+            {Number.isFinite(leader?.marginPct)
+              ? `worth ${formatPct(leader.marginPct)} on ${OBJECTIVE_LABELS[objective] || objective}.`
+              : // From a zero baseline there is no percentage to quote.
+                `taking ${OBJECTIVE_LABELS[objective] || objective} from zero to ${formatNumber(
+                  leader?.metrics?.[objective]
+                )}.`}
           </Text>
         </Alert>
       )}
@@ -334,7 +359,7 @@ export function TriggerOptimizerResults({ results }) {
       <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
         {dungeon ? (
           <KpiCard
-            label={costed ? 'Effective runs/h' : 'Best completions/h'}
+            label={costed ? 'Effective completions/h' : 'Best completions/h'}
             value={formatNumber(
               costed ? leader?.metrics?.effectiveCompletionsPerHour : leader?.metrics?.completionsPerHour
             )}
@@ -415,7 +440,7 @@ export function TriggerOptimizerResults({ results }) {
                   <Table.Tr key={row.id}>
                     <Table.Td fw={600}>{row.rank}</Table.Td>
                     <Table.Td>
-                      <RowBadge row={row} />
+                      <RowBadge row={row} objective={objective} />
                     </Table.Td>
                     {columns.map((column) => (
                       <Table.Td key={column.key} ta="right" ff="monospace">

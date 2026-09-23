@@ -450,6 +450,13 @@ export function defaultObjective({ consumableCostsKnown = false, labyrinth = fal
 }
 
 /**
+ * The dungeon objectives. Unlike encounters (hundreds an hour) these sit in
+ * single figures and can fall below one, which matters to the ranking's scale
+ * floor — see rankResults.
+ */
+export const COMPLETION_OBJECTIVES = new Set(['completionsPerHour', 'effectiveCompletionsPerHour']);
+
+/**
  * Has the objective pinned against one of its limits, so that no candidate can
  * differ from any other on it?
  *
@@ -476,9 +483,14 @@ export function defaultObjective({ consumableCostsKnown = false, labyrinth = fal
  * @returns {'ceiling'|'floor'|null}
  */
 export function objectiveSaturation(objective, baselineValue) {
-  if (objective !== 'clearRatePercent') return null;
   const value = Number(baselineValue);
   if (!Number.isFinite(value)) return null;
+  // A dungeon rate has no ceiling, but it has a floor that is reached in
+  // practice: a party that never finishes a run scores zero on every candidate,
+  // and the table ties by construction exactly as a 0% clear rate does. Waves
+  // cleared are no longer the objective, so nothing is left to climb on.
+  if (COMPLETION_OBJECTIVES.has(objective)) return value <= 1e-9 ? 'floor' : null;
+  if (objective !== 'clearRatePercent') return null;
   if (value >= 100 - 1e-9) return 'ceiling';
   if (value <= 1e-9) return 'floor';
   return null;
@@ -538,7 +550,7 @@ export function rankResults(results, { objective = 'encountersPerHour', epsilon 
    * Split `list` into runs of entries within `epsilon` (relative) of each run's
    * leader, having first ordered it by `valueOf` in the given direction.
    */
-  const cluster = (list, valueOf, direction) => {
+  const cluster = (list, valueOf, direction, scaleFloor = 1) => {
     const ordered = [...list].sort(
       (a, b) => direction * (valueOf(b) - valueOf(a)) || String(a?.id ?? '').localeCompare(String(b?.id ?? ''))
     );
@@ -549,7 +561,7 @@ export function rankResults(results, { objective = 'encountersPerHour', epsilon 
       const leader = valueOf(ordered[index]);
       // Floor of 1 stops two near-zero values from dividing their way into a
       // spurious difference; for deaths, an all-zero set collapses to one cluster.
-      const scale = Math.max(Math.abs(leader), 1);
+      const scale = Math.max(Math.abs(leader), scaleFloor);
       let end = index;
       while (end < ordered.length && Math.abs(leader - valueOf(ordered[end])) / scale <= epsilon) end += 1;
       clusters.push(ordered.slice(index, Math.max(end, index + 1)));
@@ -588,7 +600,13 @@ export function rankResults(results, { objective = 'encountersPerHour', epsilon 
 
   const ranked = [];
   // Objective descending — more is better.
-  for (const objectiveCluster of cluster(results || [], objectiveOf, 1)) {
+  // The floor of 1 is the wrong floor for a dungeon: a hard one completes well
+  // under one run an hour, and below 1 the floor turns the relative epsilon into
+  // an absolute one — 0.20 against 0.24 runs/hour, a 20% gain, would tie at a 5%
+  // epsilon. Completion rates are compared relatively all the way down; two
+  // zeroes still tie, since their difference is zero.
+  const objectiveFloor = COMPLETION_OBJECTIVES.has(objective) ? 1e-9 : 1;
+  for (const objectiveCluster of cluster(results || [], objectiveOf, 1, objectiveFloor)) {
     // Deaths ascending — fewer is better. Same epsilon: see the note above about
     // 0.01 deaths/hour deciding a ranking it has no business deciding.
     for (const deathCluster of cluster(objectiveCluster, deathsOf, -1)) {

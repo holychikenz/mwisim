@@ -41,6 +41,7 @@ import { applyValues, countConditions, readValues } from './params.js';
 import {
   DEFAULT_INSENSITIVITY_EPSILON,
   DEFAULT_RANK_EPSILON,
+  COMPLETION_OBJECTIVES,
   ONE_HOUR_NS,
   coefficientOfVariation,
   computeDeltas,
@@ -156,6 +157,45 @@ export function estimateWorkload(params, stageOverrides = {}) {
  * @param {AbortSignal} [args.signal]
  * @returns {Promise<object>} the result document
  */
+/**
+ * objectiveSaturation of the baseline, withheld at the FLOOR when some finalist
+ * scored above it. "Nothing ever clears / completes, and no threshold change
+ * moved it" is then false — a candidate did move it — and the ordinary
+ * gain/no-gain verdict is the true one.
+ */
+function rescuesFromZero(objective, baseline, metrics) {
+  // A baseline that finishes NO dungeon runs has no relative margin to beat —
+  // computeDeltas reports pct null against a zero — so without this a candidate
+  // that finishes some would never count as a gain, and the headline would say
+  // "no change worth making" above a row that turns failure into success. Both
+  // are measured on the same pinned verification seed, so the paired design
+  // stands behind it. Scoped to the completion objectives: the labyrinth's 0%
+  // clear rate has the same shape but predates this and is left as it was.
+  //
+  // The baseline must have been MEASURED. A failed baseline simulation leaves
+  // `baseline` empty, and a missing value is not a zero: coercing it would claim
+  // a rescue from a starting point nobody observed.
+  if (!COMPLETION_OBJECTIVES.has(objective)) return false;
+  const base = baseline?.[objective];
+  if (base == null || !Number.isFinite(Number(base))) return false;
+  return Number(base) <= 1e-9 && (Number(metrics?.[objective]) || 0) > 1e-9;
+}
+
+function saturationOf(objective, baseline, rows, verifiedBaseline) {
+  // For a dungeon, only a like-for-like measurement may claim "no run ever
+  // completes": the baseline measured at verification, beside at least one
+  // verified row. A failed verification must not be reported as a conclusive
+  // zero. The labyrinth keeps its earlier-stage fallback as before.
+  if (COMPLETION_OBJECTIVES.has(objective)) {
+    if (rows.length === 0 || verifiedBaseline?.[objective] == null) return null;
+    baseline = verifiedBaseline;
+  }
+  const saturation = objectiveSaturation(objective, Number(baseline?.[objective]));
+  if (saturation !== 'floor') return saturation;
+  const moved = rows.some((row) => (Number(row.metrics?.[objective]) || 0) > 1e-9);
+  return moved ? null : saturation;
+}
+
 export async function optimizeTriggers({
   playerDTOs,
   params,
@@ -577,7 +617,13 @@ export async function optimizeTriggers({
       // Whether this row's advantage over the baseline is larger than the noise.
       // A false here means "we cannot tell these apart" — and the UI must say so
       // rather than presenting a +0.4% delta as though it were a finding.
-      significant: !isBaseline && Number.isFinite(marginPct) && Math.abs(marginPct) > significanceBar,
+      significant:
+        !isBaseline &&
+        ((Number.isFinite(marginPct) && Math.abs(marginPct) > significanceBar) ||
+          // The VERIFIED baseline only, never the earlier-stage fallback: a zero
+          // measured over a shorter window on another seed is not the same
+          // zero, and a rescue claim needs a like-for-like pair.
+          rescuesFromZero(objective, baselineEntry?.metrics, entry.metrics)),
       marginPct: Number.isFinite(marginPct) ? marginPct : null,
       changedCount: entry.values.reduce(
         (total, value, i) => total + (value === baselineValues[i] ? 0 : 1),
@@ -644,7 +690,7 @@ export async function optimizeTriggers({
     // construction. 'ceiling' means the room is already cleared every time and
     // no threshold will improve on that; 'floor' means nothing ever clears, and
     // no threshold will rescue it. The measurement succeeded in both cases.
-    saturated: objectiveSaturation(objective, Number(baseline?.[objective])),
+    saturated: saturationOf(objective, baseline, rows, baselineEntry?.metrics),
     simulationsRun: completed,
     estimatedSimulations: estimate.total,
   };

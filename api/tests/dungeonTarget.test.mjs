@@ -24,6 +24,8 @@ import {
   DUNGEON_REPORTED_METRICS,
   REPORTED_METRICS,
   defaultObjective,
+  objectiveSaturation,
+  rankResults,
   reportedMetricsFor,
   scoreSimResult,
 } from '../lib/triggerSearch/score.js';
@@ -218,4 +220,172 @@ test('the search ranks a dungeon on completions even when encounters disagree', 
   });
   assert.equal(result.objective, 'completionsPerHour');
   assert.equal(result.rows[0].triggers[0].value, 70);
+});
+
+// -----------------------------------------------------------------------------
+// review follow-ups: rates below one an hour, and dungeons never finished
+// -----------------------------------------------------------------------------
+
+test('completion rates below one an hour are still compared relatively', () => {
+  // A hard dungeon: 0.20 vs 0.24 runs/hour is a 20% gain. With the objective's
+  // scale floored at 1 (right for encounters, which run in the hundreds) a 5%
+  // epsilon would treat it as a 0.04 absolute gap and call it a tie.
+  const objective = defaultObjective({ dungeon: true });
+  const ranked = rankResults(
+    [
+      { id: 'baseline', metrics: { [objective]: 0.2, deathsPerHour: 0 }, changedFromBaseline: 0 },
+      { id: 'improved', metrics: { [objective]: 0.24, deathsPerHour: 0 }, changedFromBaseline: 1 },
+    ],
+    { objective, epsilon: 0.05 }
+  );
+  assert.equal(ranked[0].id, 'improved');
+});
+
+test('a dungeon nobody finishes is reported as pinned at the floor', () => {
+  assert.equal(objectiveSaturation('completionsPerHour', 0), 'floor');
+  assert.equal(objectiveSaturation('effectiveCompletionsPerHour', 0), 'floor');
+  assert.equal(objectiveSaturation('completionsPerHour', 2.5), null, 'no ceiling on a rate');
+  assert.equal(objectiveSaturation('encountersPerHour', 0), null, 'zones unchanged');
+});
+
+test('the floor is not claimed when some candidate did finish a run', async () => {
+  const playerDTOs = [namedParty()[0]];
+  const bounds = { players: [{ maxHp: 1000, maxMp: 1000 }], partyMissingHp: 1000 };
+  const { params } = collectSearchParams(
+    playerDTOs,
+    [{ playerIndex: 0, slotKind: 'abilities', slotIndex: 0, triggerIndex: 0 }],
+    bounds
+  );
+  const stages = {
+    calibration: { repeats: 0 },
+    initial: { hours: 1, keepPerParam: 3 },
+    coarse: { hours: 2, beamWidth: 4 },
+    fine: { hours: 3, keep: 3 },
+    verify: { hours: 4 },
+  };
+  const run = (rate) =>
+    optimizeTriggers({
+      playerDTOs,
+      params,
+      objective: 'completionsPerHour',
+      stages,
+      seedBase: 7,
+      evaluate: async (jobs) =>
+        jobs.map((job) => ({
+          id: job.id,
+          metrics: { completionsPerHour: rate(job.playerDTOs[0].abilities[0].triggers[0].value), deathsPerHour: 0 },
+        })),
+    });
+
+  const never = await run(() => 0);
+  assert.equal(never.saturated, 'floor', 'nothing ever completes: say so');
+
+  // The incumbent (50) finishes nothing; a lower threshold does.
+  const rescued = await run((value) => (value <= 20 ? 0.5 : 0));
+  assert.equal(rescued.saturated, null);
+  assert.equal(rescued.inconclusive, false);
+});
+
+test('an unmeasured baseline is not a zero to be rescued from', async () => {
+  // The baseline's simulation fails (the evaluator reports an error for it), so
+  // there is no measured starting point, and a candidate that completes runs
+  // must not be declared a rescue "from zero".
+  const playerDTOs = [namedParty()[0]];
+  const bounds = { players: [{ maxHp: 1000, maxMp: 1000 }], partyMissingHp: 1000 };
+  const { params } = collectSearchParams(
+    playerDTOs,
+    [{ playerIndex: 0, slotKind: 'abilities', slotIndex: 0, triggerIndex: 0 }],
+    bounds
+  );
+  const result = await optimizeTriggers({
+    playerDTOs,
+    params,
+    objective: 'completionsPerHour',
+    stages: {
+      calibration: { repeats: 0 },
+      initial: { hours: 1, keepPerParam: 3 },
+      coarse: { hours: 2, beamWidth: 4 },
+      fine: { hours: 3, keep: 3 },
+      verify: { hours: 4 },
+    },
+    seedBase: 7,
+    evaluate: async (jobs) =>
+      jobs.map((job) => {
+        const value = job.playerDTOs[0].abilities[0].triggers[0].value;
+        return value === 50
+          ? { id: job.id, error: 'simulated worker failure' }
+          : { id: job.id, metrics: { completionsPerHour: 0.5, deathsPerHour: 0 } };
+      }),
+  });
+  assert.equal(result.rows.some((row) => row.significant), false);
+  assert.equal(result.inconclusive, true);
+});
+
+test('a rescue needs the baseline measured at verification, not an earlier stage', async () => {
+  // The incumbent finishes nothing in the short early stages, then its
+  // verification run fails. The fallback baseline is that earlier zero — over a
+  // different window and seed — and must not license a "from zero" gain.
+  const playerDTOs = [namedParty()[0]];
+  const bounds = { players: [{ maxHp: 1000, maxMp: 1000 }], partyMissingHp: 1000 };
+  const { params } = collectSearchParams(
+    playerDTOs,
+    [{ playerIndex: 0, slotKind: 'abilities', slotIndex: 0, triggerIndex: 0 }],
+    bounds
+  );
+  const result = await optimizeTriggers({
+    playerDTOs,
+    params,
+    objective: 'completionsPerHour',
+    stages: {
+      calibration: { repeats: 0 },
+      initial: { hours: 1, keepPerParam: 3 },
+      coarse: { hours: 2, beamWidth: 4 },
+      fine: { hours: 3, keep: 3 },
+      verify: { hours: 4 },
+    },
+    seedBase: 7,
+    evaluate: async (jobs, meta) =>
+      jobs.map((job) => {
+        const value = job.playerDTOs[0].abilities[0].triggers[0].value;
+        if (value === 50) {
+          return meta?.stage === 'verify'
+            ? { id: job.id, error: 'simulated worker failure' }
+            : { id: job.id, metrics: { completionsPerHour: 0, deathsPerHour: 0 } };
+        }
+        return { id: job.id, metrics: { completionsPerHour: value <= 20 ? 0.5 : 0, deathsPerHour: 0 } };
+      }),
+  });
+  assert.equal(result.rows.some((row) => row.significant), false);
+  assert.equal(result.inconclusive, true);
+});
+
+test('a failed verification does not claim that no run ever completes', async () => {
+  const playerDTOs = [namedParty()[0]];
+  const bounds = { players: [{ maxHp: 1000, maxMp: 1000 }], partyMissingHp: 1000 };
+  const { params } = collectSearchParams(
+    playerDTOs,
+    [{ playerIndex: 0, slotKind: 'abilities', slotIndex: 0, triggerIndex: 0 }],
+    bounds
+  );
+  const result = await optimizeTriggers({
+    playerDTOs,
+    params,
+    objective: 'completionsPerHour',
+    stages: {
+      calibration: { repeats: 0 },
+      initial: { hours: 1, keepPerParam: 3 },
+      coarse: { hours: 2, beamWidth: 4 },
+      fine: { hours: 3, keep: 3 },
+      verify: { hours: 4 },
+    },
+    seedBase: 7,
+    // Zero completions everywhere early; every verification run fails.
+    evaluate: async (jobs, meta) =>
+      jobs.map((job) =>
+        meta?.stage === 'verify'
+          ? { id: job.id, error: 'simulated worker failure' }
+          : { id: job.id, metrics: { completionsPerHour: 0, deathsPerHour: 0 } }
+      ),
+  });
+  assert.equal(result.saturated, null, 'nothing was verified, so nothing is claimed');
 });
