@@ -146,6 +146,11 @@ export function EquipmentOptimizerPanel({
   // back clamped and validated, so the panel describes the run that will
   // actually happen rather than the one the header hoped to ask for.
   const labyrinth = preview?.target?.kind === 'labyrinth';
+  // Set by the API (target.js markDungeon): a dungeon ranks on completed runs,
+  // since inside one the engine's encounters are waves.
+  const dungeon = !labyrinth && !!preview?.target?.dungeon;
+  const rateShort = dungeon ? 'completions' : 'enc';
+  const rateNoun = dungeon ? 'dungeon completions' : 'encounters';
 
   if (apiReachable === false) {
     return (
@@ -272,11 +277,11 @@ export function EquipmentOptimizerPanel({
           color={costed ? 'teal' : 'yellow'}
           variant="light"
           p="xs"
-          title={costed ? 'Ranking on effective enc/hour' : 'Ranking on raw enc/hour'}
+          title={costed ? `Ranking on effective ${rateShort}/hour` : `Ranking on raw ${rateShort}/hour`}
         >
           <Text size="xs">
             {costed
-              ? 'Gains are measured in encounters per hour of TOTAL time — combat plus the production owed for every consumable burned.'
+              ? `Gains are measured in ${rateNoun} per hour of TOTAL time — combat plus the production owed for every consumable burned.`
               : 'No production times are loaded, so the food bill is not counted. An enhancement that lets the build eat less will not be rewarded.'}
           </Text>
         </Alert>

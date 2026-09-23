@@ -65,6 +65,41 @@ const LABYRINTH_METRIC_COLUMNS = [
   { key: 'experiencePerHour', label: 'XP/h', decimals: 0 },
 ];
 
+/**
+ * A dungeon run's columns: the zone list with encounters replaced by completed
+ * runs, as in the trigger optimiser. Inside a dungeon the engine counts every
+ * cleared WAVE as an encounter, so "Enc/h" there is waves per hour — not what a
+ * dungeon pays out on, and not what the scan ranked on.
+ */
+const DUNGEON_METRIC_COLUMNS = [
+  { key: 'effectiveCompletionsPerHour', label: 'Effective completions/h', decimals: 2, costed: true },
+  { key: 'completionsPerHour', label: 'Completions/h', decimals: 2 },
+  { key: 'dungeonFailuresPerHour', label: 'Failed/h', decimals: 2 },
+  { key: 'deathsPerHour', label: 'Deaths/h', decimals: 2 },
+  { key: 'experiencePerHour', label: 'XP/h', decimals: 0 },
+];
+
+/** Objectives measured per hour of total time (combat plus cooking). */
+const EFFECTIVE_OBJECTIVES = new Set(['effectiveEncountersPerHour', 'effectiveCompletionsPerHour']);
+
+/** "encounters" or "dungeon completions" — what a rate objective counts. */
+function rateNounOf(objective) {
+  return objective === 'completionsPerHour' || objective === 'effectiveCompletionsPerHour'
+    ? 'dungeon completions'
+    : 'encounters';
+}
+
+/**
+ * The per-level gain as a percentage — or, against a dungeon baseline that
+ * finishes no runs, where no percentage exists, as completed runs per hour.
+ */
+function formatPerLevel(row) {
+  if (Number.isFinite(row?.perLevelPct) || !Number.isFinite(row?.perLevel)) {
+    return formatSignedPct(row?.perLevelPct);
+  }
+  return `${row.perLevel > 0 ? '+' : ''}${formatNumber(row.perLevel, 3)}/h`;
+}
+
 function formatNumber(value, decimals = 2) {
   const number = Number(value);
   if (!Number.isFinite(number)) return '—';
@@ -345,7 +380,7 @@ function ReturnOnInvestment({
       {!costed && !labyrinth && costs && (
         <Alert color="yellow" variant="light" p="xs" mb={6}>
           <Text size="xs">
-            Gains are raw encounters per hour, but costs are production seconds. Load Iron
+            Gains are raw {rateNounOf(objective)} per hour, but costs are production seconds. Load Iron
             production times and rerun the scan so both sides are denominated in the same currency.
           </Text>
         </Alert>
@@ -446,7 +481,7 @@ function ReturnOnInvestment({
                     >
                       {labyrinth
                         ? `${row.perLevel > 0 ? '+' : ''}${formatNumber(row.perLevel, 3)} pp`
-                        : formatSignedPct(row.perLevelPct)}
+                        : formatPerLevel(row)}
                     </Table.Td>
                     <Table.Td ta="right" ff="monospace" fw={hours == null ? 400 : 700}>
                       {hours == null ? (
@@ -489,7 +524,7 @@ function ReturnOnInvestment({
               <>
                 Pay-back is the combat time at which the enhancement has repaid the time it cost:{' '}
                 <Text span ff="monospace">
-                  (cost / 3600) × {objective === 'effectiveEncountersPerHour' ? 'effective rate' : 'rate'}{' '}
+                  (cost / 3600) × {EFFECTIVE_OBJECTIVES.has(objective) ? 'effective rate' : 'rate'}{' '}
                   ÷ gain
                 </Text>
                 . Rows that never repay are those whose measured gain was zero or negative.
@@ -514,13 +549,17 @@ export function EquipmentOptimizerResults({
   const rows = Array.isArray(results?.rows) ? results.rows : null;
 
   const labyrinth = results?.target?.kind === 'labyrinth';
+  // Set by the API (target.js markDungeon) for a zone that is a dungeon.
+  const dungeon = !labyrinth && !!results?.target?.dungeon;
 
   const columns = useMemo(
     () =>
       labyrinth
         ? LABYRINTH_METRIC_COLUMNS
-        : METRIC_COLUMNS.filter((column) => !column.costed || results?.consumableCostsKnown),
-    [labyrinth, results?.consumableCostsKnown]
+        : (dungeon ? DUNGEON_METRIC_COLUMNS : METRIC_COLUMNS).filter(
+            (column) => !column.costed || results?.consumableCostsKnown
+          ),
+    [labyrinth, dungeon, results?.consumableCostsKnown]
   );
 
   // What this run could actually resolve. The median margin rather than the best
@@ -578,13 +617,19 @@ export function EquipmentOptimizerResults({
           color="grape"
           variant="light"
           title={
-            saturated === 'ceiling'
-              ? 'Every attempt already clears'
-              : 'No attempt ever clears'
+            dungeon
+              ? 'No run ever completes'
+              : saturated === 'ceiling'
+                ? 'Every attempt already clears'
+                : 'No attempt ever clears'
           }
         >
           <Text size="sm">
-            {saturated === 'ceiling'
+            {/* A dungeon rate has a floor but no ceiling (score.js
+                objectiveSaturation), so only the floor needs its own words. */}
+            {dungeon
+              ? 'The party finishes no dungeon run on any replicate, with or without any of these enhancements, so every row below is necessarily a tie. Lower the difficulty tier to one you sometimes finish, and scan there.'
+              : saturated === 'ceiling'
               ? 'The clear rate is 100% on every replicate, so no enhancement can improve it and every row below is necessarily a tie. Clearing this room is not what limits you — raise the room level until you start failing, and scan there.'
               : 'The clear rate is 0% on every replicate, so no single enhancement level moves it and every row below is necessarily a tie. Lower the room level to one you sometimes clear, and scan there.'}
           </Text>
@@ -594,7 +639,7 @@ export function EquipmentOptimizerResults({
           <Text size="sm">
             At {replicates} replicates of {hours} simulated hours, no slot&apos;s gain could be
             distinguished from run-to-run variance. Raise the replicates or the hours — or accept
-            that on this {labyrinth ? 'room' : 'zone'}, at this build, an enhancement level is worth
+            that on this {labyrinth ? 'room' : dungeon ? 'dungeon' : 'zone'}, at this build, an enhancement level is worth
             less than the noise.
           </Text>
         </Alert>
@@ -602,13 +647,22 @@ export function EquipmentOptimizerResults({
         <Alert color="teal" variant="light" title={`Best next level: ${leader.slotName}`}>
           <Text size="sm">
             One more level on <b>{leader.itemName}</b> (currently +{leader.currentLevel}) is worth{' '}
-            <b>{formatSignedPct(leader.perLevelPct)}</b> of{' '}
-            {labyrinth
-              ? 'the current clear rate'
-              : costed
-                ? 'effective encounters per hour'
-                : 'encounters per hour'}
-            , ±{formatPct(leader.perLevelMarginPct, 3)} at 95% confidence.
+            {Number.isFinite(leader.perLevelPct) ? (
+              <>
+                <b>{formatSignedPct(leader.perLevelPct)}</b> of{' '}
+                {labyrinth
+                  ? 'the current clear rate'
+                  : `${costed ? 'effective ' : ''}${rateNounOf(objective)} per hour`}
+                , ±{formatPct(leader.perLevelMarginPct, 3)} at 95% confidence.
+              </>
+            ) : (
+              // From a dungeon baseline that finishes nothing there is no
+              // percentage to quote — only the runs it now finishes.
+              <>
+                <b>{formatPerLevel(leader)}</b> {costed ? 'effective ' : ''}
+                {rateNounOf(objective)}, from a baseline that finishes none.
+              </>
+            )}
           </Text>
         </Alert>
       )}
@@ -616,8 +670,9 @@ export function EquipmentOptimizerResults({
       {!costed && !labyrinth && (
         <Alert color="yellow" variant="light" title="The food bill is not counted">
           <Text size="xs">
-            Ranking is on raw encounters per hour. Load Iron production times to rank on effective
-            encounters per hour instead, which counts the time owed for every consumable burned.
+            Ranking is on raw {rateNounOf(objective)} per hour. Load Iron production times to rank on
+            effective {rateNounOf(objective)} per hour instead, which counts the time owed for every
+            consumable burned.
           </Text>
         </Alert>
       )}
@@ -641,16 +696,20 @@ export function EquipmentOptimizerResults({
           label={
             labyrinth
               ? 'Baseline clear rate %'
-              : costed
-                ? 'Baseline effective enc/h'
-                : 'Baseline enc/h'
+              : dungeon
+                ? costed
+                  ? 'Baseline effective completions/h'
+                  : 'Baseline completions/h'
+                : costed
+                  ? 'Baseline effective enc/h'
+                  : 'Baseline enc/h'
           }
           value={formatNumber(baseline?.metrics?.[objective], 2)}
           hint={`The unmodified build, averaged over ${replicates} runs of ${hours} simulated hours.`}
         />
         <KpiCard
           label="Best per +1"
-          value={inconclusive ? '—' : formatSignedPct(leader.perLevelPct)}
+          value={inconclusive ? '—' : formatPerLevel(leader)}
           hint="Measured over the full probe, then divided by the probe size. The multiplier table is convex, so this slightly flatters the next single level."
         />
         <KpiCard
@@ -735,7 +794,7 @@ export function EquipmentOptimizerResults({
                     fw={row.significant ? 700 : 400}
                     c={row.significant ? (row.perLevel >= 0 ? 'teal' : 'red') : undefined}
                   >
-                    {formatSignedPct(row.perLevelPct)}
+                    {formatPerLevel(row)}
                   </Table.Td>
                   <Table.Td ta="right" ff="monospace" c="dimmed">
                     {formatPct(row.perLevelMarginPct, 3)}

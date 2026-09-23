@@ -40,6 +40,7 @@ import {
   ALL_REPORTED_METRICS,
   coefficientOfVariation,
   computeDeltas,
+  COMPLETION_OBJECTIVES,
   objectiveSaturation,
 } from '../triggerSearch/score.js';
 import { pairedComparison } from './stats.js';
@@ -140,6 +141,20 @@ function throwIfAborted(signal) {
  * @param {(progress: object) => void} [args.onProgress]
  * @returns {Promise<object>} the result document
  */
+/**
+ * objectiveSaturation of the baseline mean — withheld, for a dungeon, at the
+ * FLOOR when some probe completed runs. "No run ever completes" is then false,
+ * and a +6 that turns a party that never finishes into one that does is the
+ * most useful thing the scan can report. The labyrinth's floor is left as it
+ * was.
+ */
+function saturationOf(objective, baselineMean, rows) {
+  const saturation = objectiveSaturation(objective, baselineMean);
+  if (saturation !== 'floor' || !COMPLETION_OBJECTIVES.has(objective)) return saturation;
+  const moved = rows.some((row) => (Number(row.metrics?.[objective]) || 0) > 1e-9);
+  return moved ? null : saturation;
+}
+
 export async function scanEquipment({
   playerDTOs,
   candidates,
@@ -270,7 +285,17 @@ export async function scanEquipment({
   // Ranked on the per-level percentage, which is the comparable quantity across
   // slots. Ties broken by the tighter interval (a better-measured equal is the
   // safer recommendation) and then by id, so the order is deterministic.
+  //
+  // A dungeon baseline that finishes no runs has no percentage to rank on — every
+  // perLevelPct is null — so there, and only there, the absolute per-level gain
+  // stands in. One baseline is shared by every row, so the two orderings agree
+  // whenever both exist. The labyrinth's 0% floor keeps its old ordering.
+  const absoluteFallback = COMPLETION_OBJECTIVES.has(objective);
   rows.sort((left, right) => {
+    if (absoluteFallback && left.perLevelPct == null && right.perLevelPct == null) {
+      const gap = (Number(right.perLevel) || 0) - (Number(left.perLevel) || 0);
+      if (gap !== 0) return gap;
+    }
     const a = left.perLevelPct ?? -Infinity;
     const b = right.perLevelPct ?? -Infinity;
     if (a !== b) return b - a;
@@ -327,6 +352,6 @@ export async function scanEquipment({
     // measured perfectly and found that every attempt already clears ('ceiling')
     // or that none of them ever will ('floor') — not "we could not tell".
     // Reported separately, and named, because the two ends want opposite advice.
-    saturated: objectiveSaturation(objective, noise.mean),
+    saturated: saturationOf(objective, noise.mean, rows),
   };
 }

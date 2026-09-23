@@ -16,7 +16,7 @@
 import { Router } from 'express';
 import { isKnownCost } from '../../shared/consumableCost.js';
 import { buildExtraBuffs } from '../lib/simulator.js';
-import { normaliseTarget, targetExtraBuffs, targetPlayerDTOs } from '../lib/target.js';
+import { markDungeon, normaliseTarget, targetExtraBuffs, targetPlayerDTOs } from '../lib/target.js';
 import { createSimulationPool, defaultPoolSize, makePoolEvaluator, MAX_WORKERS } from '../lib/triggerSearch/pool.js';
 import { defaultObjective, reportedMetricsFor } from '../lib/triggerSearch/score.js';
 import {
@@ -92,12 +92,19 @@ function sanitiseConsumableCosts(input) {
   return Object.keys(costs).length ? costs : null;
 }
 
-/** Shared setup for both routes. */
+/**
+ * Shared setup for both routes. Exported for the tests only, as
+ * prepareEquipmentRun: the objective chosen here is the decision under test,
+ * and the router offers no way to observe it short of running a scan.
+ */
 function prepare(body) {
   const { players, extra = {}, guildBuffs = [] } = body;
   const scan = sanitiseScan(body.scan);
-  const target = normaliseTarget(body);
+  // A dungeon ranks on completed runs, not waves — the same flag, objective and
+  // reported metrics as the trigger optimiser (score.js dungeonMetrics).
+  const target = markDungeon(normaliseTarget(body));
   const labyrinth = target.kind === 'labyrinth';
+  const dungeon = !!target.dungeon;
 
   // Same composition runSimulation uses, so a candidate is scored against exactly
   // the build a normal simulation would produce — plus the lab-shop combat
@@ -134,9 +141,10 @@ function prepare(body) {
   // Default to the time-denominated objective whenever the food can be priced.
   // Raw throughput cannot see the consumable bill, and an enhancement that lets
   // the build eat less would go unrewarded by it. A labyrinth ranks on the
-  // completion chance instead — see score.js defaultObjective.
+  // completion chance instead, and a dungeon on completed runs per hour — see
+  // score.js defaultObjective.
   const objective =
-    body.objective || defaultObjective({ consumableCostsKnown: !!consumableCosts, labyrinth });
+    body.objective || defaultObjective({ consumableCostsKnown: !!consumableCosts, labyrinth, dungeon });
 
   return {
     scan,
@@ -302,5 +310,7 @@ router.post('/optimize-equipment', async (req, res) => {
     if (!res.writableEnded) res.end();
   }
 });
+
+export { prepare as prepareEquipmentRun };
 
 export default router;
