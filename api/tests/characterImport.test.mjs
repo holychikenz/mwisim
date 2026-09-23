@@ -155,6 +155,77 @@ test('the loadouts genuinely differ, and no slot carries a level', () => {
   assert.ok(!('level' in mage.abilities[0]));
 });
 
+// A loadout's wearableMap ref is the item's HASH as it was when the loadout was
+// last SAVED in game ("charID::location::itemHrid::enhancement"). Enhance the
+// item afterwards and the ref goes stale — the real holychikenz payload has 161
+// of 317 combat refs pointing at an enhancement level no owned item has any
+// more. The game resolves them to the highest-enhanced copy you own unless the
+// loadout sets useExactEnhancement (lab-crr.js resolveWearableEnhancement);
+// the importer must do the same, reading the truth from characterItems.
+const staleChar = {
+  name: 'stale',
+  characterSkills: [{ skillHrid: '/skills/ranged', level: 99 }],
+  characterItems: [
+    // Worn right now at +6 (loadout ref says +3).
+    { itemHrid: '/items/philosophers_earrings', itemLocationHrid: '/item_locations/earrings', enhancementLevel: 6, count: 1 },
+    // In the bag at +9 (loadout ref says +7).
+    { itemHrid: '/items/kraken_tunic', itemLocationHrid: '/item_locations/inventory', enhancementLevel: 9, count: 1 },
+    // Two copies: the +8 is the one the game equips for a stale +1 ref.
+    { itemHrid: '/items/pathbreaker_boots_refined', itemLocationHrid: '/item_locations/inventory', enhancementLevel: 8, count: 1 },
+    { itemHrid: '/items/pathbreaker_boots_refined', itemLocationHrid: '/item_locations/inventory', enhancementLevel: 0, count: 1 },
+    // A count-0 ghost must not win.
+    { itemHrid: '/items/sinister_cape', itemLocationHrid: '/item_locations/inventory', enhancementLevel: 10, count: 0 }
+  ],
+  characterLoadoutMap: {
+    s1: {
+      id: 's1',
+      name: 'old',
+      actionTypeHrid: '/action_types/combat',
+      useExactEnhancement: false,
+      wearableMap: {
+        '/item_locations/earrings': '17::/item_locations/inventory::/items/philosophers_earrings::3',
+        '/item_locations/body': '17::/item_locations/inventory::/items/kraken_tunic::7',
+        '/item_locations/feet': '17::/item_locations/inventory::/items/pathbreaker_boots_refined::1',
+        '/item_locations/back': '17::/item_locations/inventory::/items/sinister_cape::2',
+        // Sold since: nothing owned, so the saved level is all there is.
+        '/item_locations/ring': '17::/item_locations/inventory::/items/ring_of_armor::4'
+      },
+      abilityMap: {}
+    },
+    s2: {
+      id: 's2',
+      name: 'exact',
+      actionTypeHrid: '/action_types/combat',
+      useExactEnhancement: true,
+      wearableMap: {
+        '/item_locations/feet': '17::/item_locations/inventory::/items/pathbreaker_boots_refined::0'
+      },
+      abilityMap: {}
+    }
+  }
+};
+const staleResult = characterToCharacter(staleChar, null, 'stale');
+const enh = (loadout, slot) =>
+  staleResult.character.loadouts[loadout].equipment[`/equipment_types/${slot}`]?.enhancementLevel;
+
+test('a stale loadout ref resolves to the highest-enhanced copy the character owns', () => {
+  assert.equal(enh('old', 'earrings'), 6);
+  assert.equal(enh('old', 'body'), 9);
+  assert.equal(enh('old', 'feet'), 8);
+});
+
+test('a count-0 item does not count as owned', () => {
+  assert.equal(enh('old', 'back'), 2);
+});
+
+test('an item no longer owned keeps the enhancement the loadout saved', () => {
+  assert.equal(enh('old', 'ring'), 4);
+});
+
+test('useExactEnhancement pins the saved enhancement, as the game does', () => {
+  assert.equal(enh('exact', 'feet'), 0);
+});
+
 test('the producer does not answer the shrine question at all', () => {
   // It used to hard-code `guildShrines: {}` and `personalBuffs: []`, which
   // destroyed both on every RE-import. The game API carries neither, so both

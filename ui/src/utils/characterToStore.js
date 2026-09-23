@@ -23,8 +23,11 @@
 //   achievements  ← characterAchievements (array) → { hrid: true } CHARACTER
 //   loadouts      ← every COMBAT entry of characterLoadoutMap:     LOADOUT
 //     equipment     ← loadout.wearableMap ("charID::loc::itemHrid::enh" refs),
-//                       falling back to worn characterItems when the character
-//                       has no combat loadouts at all
+//                       enhancement ← the highest owned copy in characterItems
+//                       (the ref's own level is a save-time snapshot) unless
+//                       loadout.useExactEnhancement; falling back to worn
+//                       characterItems when the character has no combat
+//                       loadouts at all
 //     food/drinks   ← loadout.foodItemHrids / drinkItemHrids
 //                       + loadout.consumableCombatTriggersMap[hrid]
 //     abilities     ← loadout.abilityMap (slot→hrid)
@@ -185,6 +188,21 @@ export function characterToCharacter(char, gameData, displayName) {
     };
   }
 
+  // The highest enhancement of every item the character OWNS (worn or bagged,
+  // count > 0). A wearableMap ref is the item's hash as of the moment the
+  // loadout was last SAVED in game, and the hash embeds the enhancement level:
+  // enhance the item afterwards and the ref still says the old number. The
+  // game does not equip that number — unless the loadout sets
+  // useExactEnhancement it equips the best copy you own — so neither may we.
+  // Same rule as lab-crr.js buildMaxEnhancementByItem /
+  // resolveWearableEnhancement.
+  const maxEnhancementByItem = new Map();
+  for (const item of char.characterItems || []) {
+    if (!item?.itemHrid || !(Number(item.count) > 0)) continue;
+    const e = Math.max(0, Math.floor(Number(item.enhancementLevel) || 0));
+    if (!(maxEnhancementByItem.get(item.itemHrid) >= e)) maxEnhancementByItem.set(item.itemHrid, e);
+  }
+
   /** One raw game loadout → one stored loadout (gear, slots, consumables). */
   function convertLoadout(raw) {
     const out = createLoadout();
@@ -195,7 +213,9 @@ export function characterToCharacter(char, gameData, displayName) {
         if (!rawRef) continue;
         const parts = String(rawRef).split('::');
         if (parts.length < 4) continue;
-        recordEquipment(out.equipment, slotLocation, parts[2], Number(parts[3]) || 0);
+        const saved = Number(parts[3]) || 0;
+        const owned = raw.useExactEnhancement ? undefined : maxEnhancementByItem.get(parts[2]);
+        recordEquipment(out.equipment, slotLocation, parts[2], owned ?? saved);
       }
     }
 
