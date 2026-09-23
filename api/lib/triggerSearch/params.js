@@ -187,6 +187,16 @@ export function resolveMaxValue(dependencyHrid, boundKey, bounds, playerIndex = 
 /** The three trigger-bearing slot arrays on a player DTO. */
 export const SLOT_KINDS = ['abilities', 'food', 'drinks'];
 
+/**
+ * The owning character's name, for display beside a trigger. The DTO field is
+ * optional and client-supplied, so anything but a non-empty string is null —
+ * the UI then falls back to the positional P1..P5 label.
+ */
+function playerNameOf(player) {
+  const name = player?.name;
+  return typeof name === 'string' && name.trim() ? name.trim() : null;
+}
+
 /** Resolve a (playerIndex, slotKind, slotIndex, triggerIndex) address. */
 function resolveAddress(playerDTOs, { playerIndex, slotKind, slotIndex, triggerIndex }) {
   if (!SLOT_KINDS.includes(slotKind)) return {};
@@ -245,6 +255,9 @@ export function collectSearchParams(playerDTOs, selection, bounds, { labyrinth =
       slotIndex,
       triggerIndex,
       playerHrid: player.hrid,
+      // Display only: the character's name, when the client sent one. The hrid
+      // is positional ("player2") and says nothing about who that is.
+      playerName: playerNameOf(player),
       slotHrid,
       dependencyHrid: trigger.dependencyHrid,
       conditionHrid: trigger.conditionHrid,
@@ -298,6 +311,7 @@ export function enumerateTriggers(playerDTOs, { labyrinth = false } = {}) {
             slotIndex,
             triggerIndex,
             playerHrid: player.hrid,
+            playerName: playerNameOf(player),
             slotHrid: slot.hrid,
             dependencyHrid: trigger.dependencyHrid,
             conditionHrid: trigger.conditionHrid,

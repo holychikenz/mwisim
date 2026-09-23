@@ -41,6 +41,37 @@ const LABYRINTH_METRIC_COLUMNS = [
   { key: 'damagePerSecond', label: 'DPS', decimals: 1 },
 ];
 
+/**
+ * A dungeon run's columns: the zone list with encounters replaced by completed
+ * runs. Inside a dungeon the engine counts every cleared WAVE as an encounter,
+ * so "Enc/h" there is waves per hour — not what a dungeon pays out on, and not
+ * what the search ranked on.
+ */
+const DUNGEON_METRIC_COLUMNS = [
+  { key: 'effectiveCompletionsPerHour', label: 'Effective runs/h', decimals: 2, costed: true },
+  { key: 'completionsPerHour', label: 'Completions/h', decimals: 2 },
+  { key: 'dungeonFailuresPerHour', label: 'Failed/h', decimals: 2 },
+  { key: 'consumablesPerHour', label: 'Eaten/h', decimals: 1 },
+  { key: 'deathsPerHour', label: 'Deaths/h', decimals: 2 },
+  { key: 'experiencePerHour', label: 'XP/h', decimals: 0 },
+  { key: 'damagePerSecond', label: 'DPS', decimals: 1 },
+];
+
+/** What the headline says the margin was measured on. */
+const OBJECTIVE_LABELS = {
+  encountersPerHour: 'encounters per hour',
+  effectiveEncountersPerHour: 'encounters per hour of total time',
+  completionsPerHour: 'dungeon completions per hour',
+  effectiveCompletionsPerHour: 'dungeon completions per hour of total time',
+  clearRatePercent: 'the room completion chance',
+};
+
+/** 'player3' → 'P3'. Anything unrecognised is shown as it came. */
+function playerLabel(hrid) {
+  const match = /^player(\d+)$/.exec(String(hrid || ''));
+  return match ? `P${match[1]}` : String(hrid || '');
+}
+
 function formatNumber(value, decimals = 2) {
   const number = Number(value);
   if (!Number.isFinite(number)) return '—';
@@ -127,6 +158,9 @@ function Recommendation({ row, labyrinth = false }) {
         <Table striped highlightOnHover withTableBorder>
           <Table.Thead>
             <Table.Tr>
+              {/* A trigger alone does not say whose it is: two party members can
+                  carry the same heal on the same threshold. */}
+              <Table.Th>Player</Table.Th>
               <Table.Th>Slot</Table.Th>
               <Table.Th>Condition</Table.Th>
               <Table.Th ta="right">Value</Table.Th>
@@ -138,7 +172,19 @@ function Recommendation({ row, labyrinth = false }) {
             {row.triggers.map((trigger) => {
               const band = formatBand(trigger.insensitiveValues);
               return (
-                <Table.Tr key={`${trigger.slotKind}-${trigger.slotIndex}-${trigger.triggerIndex}`}>
+                <Table.Tr
+                  key={`${trigger.playerIndex}-${trigger.slotKind}-${trigger.slotIndex}-${trigger.triggerIndex}`}
+                >
+                  <Table.Td>
+                    <Text size="xs" fw={600}>
+                      {trigger.playerName || playerLabel(trigger.playerHrid)}
+                    </Text>
+                    {trigger.playerName && (
+                      <Text size="xs" c="dimmed">
+                        {playerLabel(trigger.playerHrid)}
+                      </Text>
+                    )}
+                  </Table.Td>
                   <Table.Td>
                     <Text size="xs" fw={600}>
                       {lastSegment(trigger.slotHrid)}
@@ -205,9 +251,11 @@ export function TriggerOptimizerResults({ results }) {
   const cvPct = noise?.calibrated ? noise.coefficientOfVariation * 100 : null;
   const costed = !!results.consumableCostsKnown;
   const labyrinth = results?.target?.kind === 'labyrinth';
+  // Set by the API (target.js markDungeon) for a zone that is a dungeon.
+  const dungeon = !labyrinth && !!results?.target?.dungeon;
   const columns = labyrinth
     ? LABYRINTH_METRIC_COLUMNS
-    : METRIC_COLUMNS.filter((column) => !column.costed || costed);
+    : (dungeon ? DUNGEON_METRIC_COLUMNS : METRIC_COLUMNS).filter((column) => !column.costed || costed);
   const consumableSeconds = leader?.metrics?.consumableSecondsPerHour || 0;
   const timeShare = leader?.metrics?.consumableTimeShare || 0;
 
@@ -245,7 +293,7 @@ export function TriggerOptimizerResults({ results }) {
           </Text>
           {cvPct != null && (
             <Text size="xs" c="dimmed" mt={6}>
-              Run-to-run spread for this build and {labyrinth ? 'room' : 'zone'} was {cvPct.toFixed(2)}% at{' '}
+              Run-to-run spread for this build and {labyrinth ? 'room' : dungeon ? 'dungeon' : 'zone'} was {cvPct.toFixed(2)}% at{' '}
               {noise.measuredAtHours}h over{' '}
               {noise.samples} runs. A candidate had to beat the baseline by more than{' '}
               {(epsilons.significanceBar * 100).toFixed(2)}% at {verifyHours}h to count.
@@ -257,11 +305,7 @@ export function TriggerOptimizerResults({ results }) {
           <Text size="sm">
             {leader?.changedCount} of {leader?.triggers.length} threshold
             {leader?.triggers.length === 1 ? '' : 's'} changed, worth {formatPct(leader?.marginPct)} on{' '}
-            {objective === 'encountersPerHour'
-              ? 'encounters per hour'
-              : objective === 'clearRatePercent'
-                ? 'the room completion chance'
-                : objective}.
+            {OBJECTIVE_LABELS[objective] || objective}.
           </Text>
         </Alert>
       )}
@@ -288,23 +332,37 @@ export function TriggerOptimizerResults({ results }) {
       )}
 
       <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
-        <KpiCard
-          label={labyrinth ? 'Clear rate %' : costed ? 'Effective enc/h' : 'Best enc/h'}
-          value={formatNumber(
-            labyrinth
-              ? leader?.metrics?.clearRatePercent
-              : costed
-                ? leader?.metrics?.effectiveEncountersPerHour
-                : leader?.metrics?.encountersPerHour
-          )}
-          hint={
-            labyrinth
-              ? 'Share of room attempts ending in a kill inside the 120-second timer, at the verification fidelity. Unresolved rooms are not counted either way.'
-              : costed
-                ? 'Encounters per hour of TOTAL time — combat plus the production time owed for everything consumed. The real ironcow rate.'
-                : 'Encounters per hour of combat time, measured at the verification fidelity. Does not account for consumable production.'
-          }
-        />
+        {dungeon ? (
+          <KpiCard
+            label={costed ? 'Effective runs/h' : 'Best completions/h'}
+            value={formatNumber(
+              costed ? leader?.metrics?.effectiveCompletionsPerHour : leader?.metrics?.completionsPerHour
+            )}
+            hint={
+              costed
+                ? 'Full dungeon runs completed per hour of TOTAL time — combat plus the production time owed for everything consumed.'
+                : 'Full dungeon runs completed per hour of combat time, every wave through the last, measured at the verification fidelity. Does not account for consumable production.'
+            }
+          />
+        ) : (
+          <KpiCard
+            label={labyrinth ? 'Clear rate %' : costed ? 'Effective enc/h' : 'Best enc/h'}
+            value={formatNumber(
+              labyrinth
+                ? leader?.metrics?.clearRatePercent
+                : costed
+                  ? leader?.metrics?.effectiveEncountersPerHour
+                  : leader?.metrics?.encountersPerHour
+            )}
+            hint={
+              labyrinth
+                ? 'Share of room attempts ending in a kill inside the 120-second timer, at the verification fidelity. Unresolved rooms are not counted either way.'
+                : costed
+                  ? 'Encounters per hour of TOTAL time — combat plus the production time owed for everything consumed. The real ironcow rate.'
+                  : 'Encounters per hour of combat time, measured at the verification fidelity. Does not account for consumable production.'
+            }
+          />
+        )}
         <KpiCard
           label="Vs current"
           value={leader?.isBaseline ? '—' : formatPct(leader?.marginPct)}
@@ -377,7 +435,7 @@ export function TriggerOptimizerResults({ results }) {
           {rows.some((row) => row.metrics?.ranOutOfMana) && (
             <Text size="xs" c="orange">
               At least one configuration ran out of mana during the run. A mana threshold that starves the
-              build can still score well on encounters per hour — check the recommended values before adopting
+              build can still score well on {dungeon ? 'completions' : 'encounters'} per hour — check the recommended values before adopting
               them.
             </Text>
           )}

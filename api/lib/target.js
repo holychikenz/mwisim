@@ -29,7 +29,7 @@
 // bounds derivation and a pool worker cannot disagree about what was asked for.
 // =============================================================================
 
-const { labyrinthCrateDetailMap, combatMonsterDetailMap } =
+const { labyrinthCrateDetailMap, combatMonsterDetailMap, actionDetailMap } =
   await import('../../src/combatsimulator/dataProvider.js');
 
 /** Room levels the UI offers. Clamped rather than rejected — see normaliseTarget. */
@@ -191,6 +191,28 @@ export function normaliseTarget(body = {}) {
     labyrinth: { labyrinthHrid: monsterHrid, roomLevel, crates, upgrades },
     error: null,
   };
+}
+
+/**
+ * Flag a zone target that is a dungeon, as `target.dungeon`.
+ *
+ * A dungeon is fought as a zone — same Zone class, same worker path — so it
+ * needs no kind of its own; but its unit of progress is the whole run rather
+ * than the wave, which changes what the trigger optimiser should rank on (see
+ * triggerSearch/score.js dungeonMetrics). Separate from normaliseTarget, and
+ * applied by the trigger route only, so the equipment optimiser's echoed target
+ * and reported metrics are left exactly as they were.
+ *
+ * An unknown zone hrid is NOT a dungeon: guessing would switch the objective on
+ * the strength of a typo.
+ *
+ * @param {object} target  from normaliseTarget
+ * @returns {object} a new target with a boolean `dungeon`
+ */
+export function markDungeon(target) {
+  const zoneHrid = target?.kind === 'zone' ? target?.zone?.zoneHrid : null;
+  const dungeon = !!(zoneHrid && actionDetailMap[zoneHrid]?.combatZoneInfo?.isDungeon);
+  return { ...target, dungeon };
 }
 
 /**

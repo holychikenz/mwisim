@@ -24,7 +24,7 @@
 import { Router } from 'express';
 import { isKnownCost } from '../../shared/consumableCost.js';
 import { buildExtraBuffs } from '../lib/simulator.js';
-import { normaliseTarget, targetExtraBuffs, targetPlayerDTOs } from '../lib/target.js';
+import { markDungeon, normaliseTarget, targetExtraBuffs, targetPlayerDTOs } from '../lib/target.js';
 import { deriveBounds } from '../lib/triggerSearch/bounds.js';
 import { collectSearchParams, enumerateTriggers } from '../lib/triggerSearch/params.js';
 import { createSimulationPool, defaultPoolSize, MAX_WORKERS } from '../lib/triggerSearch/pool.js';
@@ -124,8 +124,11 @@ function sanitiseConsumableCosts(input) {
 /** Shared setup for both routes: bounds, enumerated triggers, resolved params. */
 function prepare(body) {
   const { players, extra = {}, guildBuffs = [] } = body;
-  const target = normaliseTarget(body);
+  // A dungeon is a zone whose objective is completed runs, not waves, so the
+  // flag rides on the target and is echoed back for the UI to label by.
+  const target = markDungeon(normaliseTarget(body));
   const labyrinth = target.kind === 'labyrinth';
+  const dungeon = !!target.dungeon;
 
   // Same composition runSimulation uses (api/lib/simulator.js:123), so a candidate
   // is scored against exactly the build a normal simulation would produce — plus,
@@ -167,7 +170,7 @@ function prepare(body) {
   // nothing to eat and nothing to price, so the objective is the completion
   // chance instead — see score.js defaultObjective.
   const objective =
-    body.objective || defaultObjective({ consumableCostsKnown: !!consumableCosts, labyrinth });
+    body.objective || defaultObjective({ consumableCostsKnown: !!consumableCosts, labyrinth, dungeon });
 
   return {
     target,

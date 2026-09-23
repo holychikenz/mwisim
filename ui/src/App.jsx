@@ -1104,6 +1104,10 @@ function App() {
     // beside them — a user who set those thresholds is owed the explanation.
     const playerDTOs = selectedParty.map(playerId => ({
       ...toPlayerDTO(resolvedParty[playerId], { hrid: `player${playerId}` }),
+      // Display only — the engine never reads it. The optimiser lists triggers
+      // for the whole party, and "player2" does not say whose heal threshold a
+      // row is; the character's name does. Echoed back on every trigger row.
+      name: characters.characters?.[party[playerId]?.characterId]?.name || undefined,
       // Shrines and seals ride on the UNIT, exactly as the trial path has done
       // since 2026-09-18. The API concatenates this tail onto its shared buff
       // list in api/lib/triggerSearch/poolWorker.js and bounds.js, and the
@@ -1151,6 +1155,8 @@ function App() {
     labConfig,
     resolvedParty,
     selectedParty,
+    characters,
+    party,
     zone,
     difficultyTier,
     extraOptions,

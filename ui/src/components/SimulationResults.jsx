@@ -77,16 +77,29 @@ function SummaryStats({ results, monsters, pricing }) {
       { label: 'Timeouts/Hour', value: formatNumber(timeouts / hoursSimulated) }
     );
   } else {
-    const encountersPerHour = results.encounters / hoursSimulated;
+    // A dungeon is paid out per finished RUN, and inside one the engine counts
+    // every cleared wave as an encounter — so "encounters per hour" there is
+    // waves per hour, a number nobody is chasing. Show completed runs instead,
+    // over the full simulated time: the same rate the trigger optimiser ranks a
+    // dungeon on (api/lib/triggerSearch/score.js dungeonMetrics) and the All
+    // Zones sweep reports as Clears/h.
+    const dungeon = !!results.isDungeon;
+    const ratePerHour = dungeon
+      ? (results.dungeonsCompleted || 0) / hoursSimulated
+      : results.encounters / hoursSimulated;
     kpis.push(
-      { label: 'Zone', value: lastSegment(results.zoneName || '') },
+      { label: dungeon ? 'Dungeon' : 'Zone', value: lastSegment(results.zoneName || '') },
       { label: 'Difficulty', value: `T${results.difficultyTier}` },
       { label: 'Time Simulated', value: `${hoursSimulated.toFixed(2)} h` },
-      { label: 'Encounters', value: results.encounters },
-      { label: 'Encounters/Hour', value: formatNumber(encountersPerHour) }
+      dungeon
+        ? { label: 'Dungeons Completed', value: results.dungeonsCompleted || 0 }
+        : { label: 'Encounters', value: results.encounters },
+      dungeon
+        ? { label: 'Completions/Hour', value: formatNumber(ratePerHour) }
+        : { label: 'Encounters/Hour', value: formatNumber(ratePerHour) }
     );
 
-    // Encounters per hour of TOTAL time — combat plus the production owed for
+    // The rate per hour of TOTAL time — combat plus the production owed for
     // everything eaten. The same objective the trigger optimiser ranks on, and
     // worth having here for the same reason: raw throughput cannot see the food
     // bill, so two builds that look a percent apart on it can be twenty percent
@@ -94,9 +107,10 @@ function SummaryStats({ results, monsters, pricing }) {
     // time cooking made 229 encounters/hour of combat but 128 of real time.
     if (consumableCost.known) {
       const unpriced = consumableCost.unpriced.length;
+      const rateNoun = dungeon ? 'Completions' : 'Encounters';
       kpis.push({
-        label: 'Effective Enc/Hour',
-        value: formatNumber(effectiveRatePerHour(encountersPerHour, consumableCost.secondsPerHour)),
+        label: dungeon ? 'Effective Completions/Hour' : 'Effective Enc/Hour',
+        value: formatNumber(effectiveRatePerHour(ratePerHour, consumableCost.secondsPerHour)),
         // A run that ate nothing owes no production time, so its effective rate
         // IS its raw rate — said plainly, rather than as "0 items priced", which
         // reads like a failure to price something.
@@ -106,7 +120,7 @@ function SummaryStats({ results, monsters, pricing }) {
         tip: consumableCost.nothingConsumed
           ? `Nothing was eaten or drunk during this run, so no production time is owed — ` +
             `the effective rate is the raw rate.`
-          : `Encounters per hour of total time — combat plus the ` +
+          : `${rateNoun} per hour of total time — combat plus the ` +
             `${formatSeconds(consumableCost.secondsPerHour)} per hour of production owed for ` +
             `everything consumed. ${consumableCost.priced.length} item` +
             `${consumableCost.priced.length === 1 ? '' : 's'} priced from your iron times` +
@@ -158,8 +172,8 @@ function SummaryStats({ results, monsters, pricing }) {
   });
 
   if (results.isDungeon) {
+    // Completed runs are already up with the rate they feed.
     kpis.push(
-      { label: 'Dungeons Completed', value: results.dungeonsCompleted },
       { label: 'Dungeons Failed', value: results.dungeonsFailed },
       { label: 'Max Wave', value: results.maxWaveReached }
     );

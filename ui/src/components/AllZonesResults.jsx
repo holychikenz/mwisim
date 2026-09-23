@@ -147,10 +147,16 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
         pricing: costBasis,
       });
 
+      // A dungeon's encounters are its WAVES, so its Enc/h is waves per hour —
+      // not comparable with a planet's and not what a dungeon pays out on. Its
+      // rate is Clears/h; the encounter columns read "—" for it (null sorts
+      // last either way, as a failed row's missing numbers do).
+      const dungeon = !!row.isDungeon;
+
       return {
         ...row,
         zoneName: name,
-        encountersPerHour,
+        encountersPerHour: dungeon ? null : encountersPerHour,
         experiencePerHour,
         deathsPerHour,
         clearsPerHour,
@@ -158,7 +164,7 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
         nothingConsumed: cost.nothingConsumed,
         timeShare: cost.timeShare,
         secondsPerHour: cost.secondsPerHour,
-        effEncountersPerHour: cost.known
+        effEncountersPerHour: cost.known && !dungeon
           ? effectiveRatePerHour(encountersPerHour, cost.secondsPerHour)
           : null,
         effExperiencePerHour: cost.known
@@ -364,7 +370,7 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
                     );
                     return (
                       <Table.Td key={col.key}>
-                        {col.effective && row.costKnown ? (
+                        {col.effective && row.costKnown && value != null ? (
                           <Tooltip
                             label={
                               row.nothingConsumed

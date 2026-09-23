@@ -50,6 +50,21 @@ function lastSegment(hrid) {
   return String(hrid).split('/').pop().replace(/_/g, ' ');
 }
 
+/** 'player3' → 'P3'. Anything unrecognised is shown as it came. */
+function playerLabel(hrid) {
+  const match = /^player(\d+)$/.exec(String(hrid || ''));
+  return match ? `P${match[1]}` : String(hrid || '');
+}
+
+/**
+ * Whose trigger this is. A party can carry the same ability on the same
+ * threshold twice, and the slot alone cannot tell the two apart.
+ */
+function ownerOf(row) {
+  const label = playerLabel(row.playerHrid);
+  return row.playerName ? `${row.playerName} (${label})` : label;
+}
+
 /** One trigger row: a checkbox when it can be swept, a dimmed reason when not. */
 function TriggerRow({ row, checked, disabled, onToggle }) {
   const summary = `${row.dependencyName} ${row.conditionName} ${row.comparatorName} ${row.value}`;
@@ -59,7 +74,7 @@ function TriggerRow({ row, checked, disabled, onToggle }) {
       <Tooltip label={row.reason} withArrow position="right" multiline w={240}>
         <Paper p={6} radius="sm" withBorder style={{ opacity: 0.55 }}>
           <Text size="xs" c="dimmed">
-            {lastSegment(row.slotHrid)} — {summary}
+            {ownerOf(row)} · {lastSegment(row.slotHrid)} — {summary}
           </Text>
           <Text size="xs" c="dimmed" fs="italic">
             {row.reason}
@@ -79,7 +94,7 @@ function TriggerRow({ row, checked, disabled, onToggle }) {
         label={
           <Stack gap={0}>
             <Text size="xs" fw={600}>
-              {lastSegment(row.slotHrid)}
+              {ownerOf(row)} · {lastSegment(row.slotHrid)}
             </Text>
             <Text size="xs" c="dimmed">
               {summary}
@@ -205,6 +220,10 @@ export function TriggerOptimizerPanel({
   // From the preview, not a prop: the server echoes the target back clamped and
   // validated, so this describes the run that will actually happen.
   const labyrinth = preview?.target?.kind === 'labyrinth';
+  // Set by the API (target.js markDungeon): the objective is then completed
+  // runs per hour, not encounters — which inside a dungeon count waves.
+  const dungeon = !labyrinth && !!preview?.target?.dungeon;
+  const rateNoun = dungeon ? 'dungeon completions' : 'encounters';
 
   const toggle = (row) => {
     const key = triggerKey(row);
@@ -248,6 +267,18 @@ export function TriggerOptimizerPanel({
             entry, so their values are never read. The supply crates and lab-shop upgrades set under
             Supplies <i>are</i> applied. A room spawns exactly one monster, so any &ldquo;2+ units&rdquo;
             threshold is dead in there and is flagged as such.
+          </Text>
+        </Alert>
+      )}
+
+      {/* A dungeon is a zone to the engine, but it pays out per finished run, and
+          the engine's encounter count inside one is a count of waves. */}
+      {dungeon && (
+        <Alert color="grape" variant="light" title="Tuning for a dungeon">
+          <Text size="xs">
+            Thresholds are ranked on <b>dungeon completions per hour</b> — full runs, every wave through
+            the last — rather than on encounters per hour, which inside a dungeon counts waves. A run that
+            wipes on the boss clears waves but completes nothing.
           </Text>
         </Alert>
       )}
@@ -392,7 +423,7 @@ export function TriggerOptimizerPanel({
           </Text>
           <Text size="xs" mt={6}>
             Set the price source to <Text span fw={600}>Iron</Text> in the results pane to supply per-item
-            production time in seconds. The objective then becomes encounters per hour of{' '}
+            production time in seconds. The objective then becomes {rateNoun} per hour of{' '}
             <Text span fs="italic">total</Text> time — combat plus cooking.
           </Text>
         </Alert>
@@ -401,7 +432,7 @@ export function TriggerOptimizerPanel({
       {preview?.consumableCostsKnown && consumableParamCount > 0 && (
         <Alert color="teal" variant="light" title="Costing food in production time">
           <Text size="xs">
-            Ranking on encounters per hour of total time, counting the time owed to produce everything consumed.
+            Ranking on {rateNoun} per hour of total time, counting the time owed to produce everything consumed.
             {pricedSummary}
           </Text>
         </Alert>
@@ -510,8 +541,12 @@ export function TriggerOptimizerPanel({
                     ? `0–${param.maxValue} (every value)`
                     : `1–${param.maxValue}`;
               return (
-                <Text size="xs" c="dimmed" key={`${param.slotKind}-${param.slotIndex}-${param.triggerIndex}`}>
-                  {lastSegment(param.slotHrid)}: {range}
+                <Text
+                  size="xs"
+                  c="dimmed"
+                  key={`${param.playerIndex}-${param.slotKind}-${param.slotIndex}-${param.triggerIndex}`}
+                >
+                  {ownerOf(param)} · {lastSegment(param.slotHrid)}: {range}
                 </Text>
               );
             })}

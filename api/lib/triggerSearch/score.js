@@ -206,6 +206,47 @@ function labyrinthMetrics(simResult, perHour) {
 }
 
 /**
+ * Dungeon-only metrics. Empty for any other run, for the same reason as
+ * labyrinthMetrics: a planet run should not carry zeroes that look like
+ * measurements of something.
+ *
+ * WHY A DUNGEON NEEDS ITS OWN RATE. The engine calls addEncounterEnd() on every
+ * cleared WAVE, so inside a dungeon `encounters` counts waves, and waves per hour
+ * is not what a dungeon pays out on — the chest comes at the end of the run. A
+ * build that clears early waves quickly and then stalls or wipes on the boss can
+ * post more waves per hour than one that actually finishes, and an optimiser
+ * ranking on encounters would recommend it. A COMPLETION is one full run, every
+ * wave through the last: `zone.dungeonsCompleted`, copied onto the SimResult at
+ * the end of simulate().
+ *
+ * Divided by the full simulated time, like every other rate here and like the
+ * All Zones sweep's Clears/h — not by the time of the last finished run as the
+ * legacy webpack page does. Over the whole window a partial run in progress is
+ * time spent and not yet paid for, which is the honest accounting for a
+ * comparison between candidates run on the same clock.
+ *
+ * @param {object} simResult
+ * @param {(value: number) => number} perHour
+ * @param {number} consumableSecondsPerHour
+ * @returns {object}
+ */
+function dungeonMetrics(simResult, perHour, consumableSecondsPerHour) {
+  if (!simResult?.isDungeon) return {};
+  const completed = Number(simResult?.dungeonsCompleted) || 0;
+  const failed = Number(simResult?.dungeonsFailed) || 0;
+  const completionsPerHour = perHour(completed);
+  return {
+    dungeonsCompleted: completed,
+    dungeonsFailed: failed,
+    completionsPerHour,
+    // Same time-denominated restatement as effectiveEncountersPerHour, and equal
+    // to the raw rate when no cost table was supplied.
+    effectiveCompletionsPerHour: effectiveRatePerHour(completionsPerHour, consumableSecondsPerHour),
+    dungeonFailuresPerHour: perHour(failed),
+  };
+}
+
+/**
  * Reduce a SimResult to the scalars we rank and report on.
  *
  * CONSUMABLE COST. `consumableCosts` maps an item hrid to its cost per unit, in
@@ -298,6 +339,7 @@ export function scoreSimResult(simResult, { consumableCosts = null } = {}) {
 
   return {
     ...labyrinthMetrics(simResult, perHour),
+    ...dungeonMetrics(simResult, perHour, consumableSecondsPerHour),
     hoursSimulated: hours,
     encounters: Number(simResult?.encounters) || 0,
     encountersPerHour,
@@ -349,14 +391,38 @@ export const LABYRINTH_REPORTED_METRICS = [
   'outOfManaSecondsPerHour',
 ];
 
-/** Every metric either kind of run can produce. Used where the kind is unknown. */
-export const ALL_REPORTED_METRICS = [
-  ...new Set([...LABYRINTH_REPORTED_METRICS, ...REPORTED_METRICS]),
+/**
+ * …and for a DUNGEON run. The zone list with encounters swapped for completed
+ * runs: inside a dungeon `encounters` counts waves (see dungeonMetrics), and
+ * reporting it beside the objective would invite exactly the comparison this
+ * list exists to prevent. Consumables stay — a dungeon is eaten through like any
+ * zone, and the food bill is as real.
+ */
+export const DUNGEON_REPORTED_METRICS = [
+  'effectiveCompletionsPerHour',
+  'completionsPerHour',
+  'dungeonFailuresPerHour',
+  'consumableSecondsPerHour',
+  'consumablesPerHour',
+  'enemyKillsPerHour',
+  'experiencePerHour',
+  'damagePerSecond',
+  'deathsPerHour',
+  'outOfManaSecondsPerHour',
 ];
 
-/** Which display list a target calls for. */
+/** Every metric any kind of run can produce. Used where the kind is unknown. */
+export const ALL_REPORTED_METRICS = [
+  ...new Set([...LABYRINTH_REPORTED_METRICS, ...REPORTED_METRICS, ...DUNGEON_REPORTED_METRICS]),
+];
+
+/**
+ * Which display list a target calls for. `target.dungeon` is set by
+ * target.js markDungeon; a target without it is read as an ordinary zone.
+ */
 export function reportedMetricsFor(target) {
-  return target?.kind === 'labyrinth' ? LABYRINTH_REPORTED_METRICS : REPORTED_METRICS;
+  if (target?.kind === 'labyrinth') return LABYRINTH_REPORTED_METRICS;
+  return target?.dungeon ? DUNGEON_REPORTED_METRICS : REPORTED_METRICS;
 }
 
 /**
@@ -372,9 +438,14 @@ export function reportedMetricsFor(target) {
  * and the table is a wall of ties. That is a true and useful answer ("this room
  * level is not the constraint"), but only if it is *said*, which is what
  * `isSaturatedObjective` below is for.
+ *
+ * DUNGEON. Completed runs per hour — costed, like a zone, when the food can be
+ * priced. Never encounters: inside a dungeon those are waves, and a build can
+ * clear waves faster while finishing fewer runs (see dungeonMetrics).
  */
-export function defaultObjective({ consumableCostsKnown = false, labyrinth = false } = {}) {
+export function defaultObjective({ consumableCostsKnown = false, labyrinth = false, dungeon = false } = {}) {
   if (labyrinth) return 'clearRatePercent';
+  if (dungeon) return consumableCostsKnown ? 'effectiveCompletionsPerHour' : 'completionsPerHour';
   return consumableCostsKnown ? 'effectiveEncountersPerHour' : 'encountersPerHour';
 }
 

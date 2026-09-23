@@ -590,6 +590,7 @@ export async function optimizeTriggers({
         slotIndex: param.slotIndex,
         triggerIndex: param.triggerIndex,
         playerHrid: param.playerHrid,
+        playerName: param.playerName ?? null,
         slotHrid: param.slotHrid,
         dependencyName: param.dependencyName,
         conditionName: param.conditionName,
