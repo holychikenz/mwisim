@@ -38,7 +38,8 @@ const RESTART_INTERVAL = 3 * ONE_SECOND;
 const ENRAGE_TICK_INTERVAL = 60 * ONE_SECOND;
 // MWIX adaptation (dungeon run mode): headroom per run in the derived time
 // limit, so the loop always ends on the run count, never on the clock. A run
-// lasts at most maxRunDurationNs plus the 3 s restart.
+// lasts at most maxRunDurationNs; the next one starts at once (see
+// _endDungeonRun).
 const RUN_GUARD_SLACK_NS = 60 * ONE_SECOND;
 
 // Official rule (Guild Expansion patch): "Each incoming attack can receive at
@@ -295,7 +296,7 @@ class CombatSimulator extends EventTarget {
         this.simResult.simulatedTime = this.simulationTime;
         // MWIX adaptation (dungeon run mode): only assigned in run mode, so the
         // hour-based SimResult keeps its exact shape.
-        if (this.runLimits) this.simResult.dungeonsTimedOut = this.dungeonsTimedOut;
+        if (this.runLimits) this._finishRunMode();
 
         for (let i = 0; i < this.players.length; i++) {
             // Trial mode grants NO regular loot, so skip the drop-rate multiplier
@@ -453,6 +454,8 @@ class CombatSimulator extends EventTarget {
 
     processCombatStartEvent(event) {
         // console.log("Combat Start " + (this.simulationTime / 1000000000));
+        // MWIX adaptation (dungeon run mode)
+        if (this._freshRunPending) this._startFreshRun();
         for (let i = 0; i < this.players.length; i++) {
             if (event.time == 0) { // First combat start event
                 this.players[i].generatePermanentBuffs();
@@ -527,6 +530,7 @@ class CombatSimulator extends EventTarget {
         this.runLimits = null;
         this.dungeonRunStartTime = -1;
         this.dungeonsTimedOut = 0;
+        this._freshRunPending = false;
         if (runLimits == null) return simulationTimeLimit;
         const { maxRuns, maxRunDurationNs } = runLimits;
         if (!this.zone?.isDungeon || this.labyrinth || this.guildTrial) {
@@ -547,16 +551,64 @@ class CombatSimulator extends EventTarget {
         return Math.min((zone.dungeonsCompleted + zone.dungeonsFailed) / this.runLimits.maxRuns, 1);
     }
 
-    // Called after every dungeon wave spawns. getNextWave() has already booked
-    // the previous run as completed (and startNewEncounter's failWave() a failed
-    // one), so the count is final here. The loop exit reuses trialEnded, which
-    // reset() clears and which only the guild-trial path otherwise sets.
-    _onDungeonWaveSpawned() {
+    // The idle between runs is not simulated: every run starts from a full
+    // reset, so the gap changes nothing but the clock. The result carries the
+    // engine's own gaps instead, and shared/dungeonRuns.js addRunIdleTime()
+    // adds them once, to the final merged total. A completed run is followed
+    // by the boss-kill respawn delay, a failed one (wipe or timeout) by the
+    // restart delay — the two delays hours mode simulates.
+    _finishRunMode() {
+        this.simResult.dungeonsTimedOut = this.dungeonsTimedOut;
+        this.simResult.dungeonRunGapNs = { completed: ENEMY_RESPAWN_INTERVAL, failed: RESTART_INTERVAL };
+    }
+
+    // A run just ended: the boss died (completed), the party wiped or the run
+    // timed out (failed). Book it, then — before anything of the next run can
+    // happen — stop if that was the last one. Otherwise the next run starts at
+    // this same instant, from a full reset (_startFreshRun). The loop exit
+    // reuses trialEnded, which reset() clears and which only the guild-trial
+    // path otherwise sets.
+    _endDungeonRun(completed) {
         const zone = this.zone;
+        if (completed) {
+            zone.dungeonsCompleted++;
+            zone.encountersKilled = 1;
+            this.tempDungeonCount = zone.dungeonsCompleted;
+        } else {
+            zone.failWave();
+        }
+        this.allPlayersDead = false;
+        this.enemies = null;
+        this.eventQueue.clear();
         if (zone.dungeonsCompleted + zone.dungeonsFailed >= this.runLimits.maxRuns) {
             this.trialEnded = true;
             return;
         }
+        this._freshRunPending = true;
+        this.eventQueue.addEvent(new CombatStartEvent(this.simulationTime));
+    }
+
+    // Every run from the second on starts exactly as run 1 does at t = 0. The
+    // queue is emptied of anything the last run left (buff expiries, cooldown
+    // and await events, DoTs, its timeout). reset() with no time is
+    // CombatUnit's full branch — the one t = 0 takes: buffs back to the
+    // permanent ones only (consumable buffs included), every ability and
+    // consumable cooldown cleared, HP/MP full. permanentBuffs themselves are
+    // kept, not regenerated: generatePermanentBuffs() accumulates, so a second
+    // call would double them, and clearBuffs() already restores them.
+    _startFreshRun() {
+        this._freshRunPending = false;
+        this.eventQueue.clear();
+        for (const player of this.players) {
+            player.reset();
+            player.isOutOfMana = false;
+        }
+    }
+
+    // Called after every dungeon wave spawns: a run's first wave books its
+    // time limit.
+    _onDungeonWaveSpawned() {
+        const zone = this.zone;
         if (zone.encountersKilled - 1 !== 1) return; // not a run's first wave
         this.dungeonRunStartTime = this.simulationTime;
         this.eventQueue.clearEventsOfType(DungeonRunTimeoutEvent.type);
@@ -573,25 +625,7 @@ class CombatSimulator extends EventTarget {
         if (!this.enemies && this.zone.encountersKilled > this.zone.dungeonSpawnInfo.maxWaves) return;
 
         this.dungeonsTimedOut++;
-        // Keep in sync with the dungeon wipe branch of checkEncounterEnd(): the
-        // same clears, plus the pending next-wave spawn if the clock ran out
-        // between waves.
-        const queue = this.eventQueue;
-        queue.clearEventsOfType(AutoAttackEvent.type);
-        queue.clearEventsOfType(AbilityCastEndEvent.type);
-        queue.clearEventsOfType(DamageOverTimeEvent.type);
-        queue.clearEventsOfType(ConsumableTickEvent.type);
-        queue.clearEventsOfType(RegenTickEvent.type);
-        queue.clearEventsOfType(EnrageTickEvent.type);
-        queue.clearEventsOfType(StunExpirationEvent.type);
-        queue.clearEventsOfType(BlindExpirationEvent.type);
-        queue.clearEventsOfType(SilenceExpirationEvent.type);
-        queue.clearEventsOfType(AwaitCooldownEvent.type);
-        queue.clearEventsOfType(EnemyRespawnEvent.type);
-        this.enemies = null;
-        // Read by startNewEncounter(), which then books the failure.
-        this.allPlayersDead = true;
-        queue.addEvent(new CombatStartEvent(this.simulationTime + RESTART_INTERVAL));
+        this._endDungeonRun(false);
     }
 
     startNewEncounter() {
@@ -1036,6 +1070,8 @@ class CombatSimulator extends EventTarget {
                 if (this.zone.encountersKilled > this.zone.dungeonSpawnInfo.maxWaves) {
                     this.simResult.updateDungenonFinish("#1", this.simulationTime);
                     this.simResult.lastDungeonFinishTime = this.simulationTime;
+                    // MWIX adaptation (dungeon run mode)
+                    if (this.runLimits) this._endDungeonRun(true);
                 }
             }
             this.simResult.addEncounterEnd();
@@ -1128,8 +1164,6 @@ class CombatSimulator extends EventTarget {
                     this.wipeLogs.count = 0;
 
                     // 地下城团灭：只清除战斗相关事件，保留buff过期检查和CD事件
-                    // MWIX adaptation (dungeon run mode): keep this list in sync with
-                    // processDungeonRunTimeoutEvent(), which restarts a timed-out run the same way.
                     this.eventQueue.clearEventsOfType(AutoAttackEvent.type);
                     this.eventQueue.clearEventsOfType(AbilityCastEndEvent.type);
                     this.eventQueue.clearEventsOfType(DamageOverTimeEvent.type);
@@ -1153,6 +1187,8 @@ class CombatSimulator extends EventTarget {
             // console.log("All Players died");
             encounterEnded = true;
             this.allPlayersDead = true;
+            // MWIX adaptation (dungeon run mode)
+            if (this.runLimits) this._endDungeonRun(false);
             if (this.guildTrial) {
                 // Wipe ends the trial immediately — no retry of a tier. Record
                 // the wipe against the tier in progress (with how much of the

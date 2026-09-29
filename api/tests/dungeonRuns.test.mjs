@@ -13,7 +13,10 @@ import assert from 'node:assert/strict';
 import {
   ONE_HOUR_NS,
   DEFAULT_MAX_RUN_HOURS,
+  MIN_RUN_HOURS,
+  MAX_RUN_HOURS,
   MERGE_RULES,
+  addRunIdleTime,
   normaliseRunLimits,
   planShards,
   planBatches,
@@ -31,7 +34,17 @@ test('normaliseRunLimits defaults a run to 3 hours', () => {
   assert.equal(DEFAULT_MAX_RUN_HOURS, 3);
   assert.equal(ONE_HOUR_NS, 3600e9);
   assert.deepEqual(normaliseRunLimits({ maxRuns: 10 }), { maxRuns: 10, maxRunDurationNs: 3 * 3600e9 });
-  assert.deepEqual(normaliseRunLimits({ maxRuns: 10, maxRunHours: 0.5 }), { maxRuns: 10, maxRunDurationNs: 0.5 * 3600e9 });
+  assert.deepEqual(normaliseRunLimits({ maxRuns: 10, maxRunHours: 1.5 }), { maxRuns: 10, maxRunDurationNs: 1.5 * 3600e9 });
+});
+
+test('normaliseRunLimits allows a run of 1 to 10 hours, both ends included', () => {
+  assert.equal(MIN_RUN_HOURS, 1);
+  assert.equal(MAX_RUN_HOURS, 10);
+  assert.equal(normaliseRunLimits({ maxRuns: 1, maxRunHours: 1 }).maxRunDurationNs, 1 * 3600e9);
+  assert.equal(normaliseRunLimits({ maxRuns: 1, maxRunHours: 10 }).maxRunDurationNs, 10 * 3600e9);
+  for (const h of [0.5, 0.99, 10.01, 11]) {
+    assert.throws(() => normaliseRunLimits({ maxRuns: 5, maxRunHours: h }), RangeError, String(h));
+  }
 });
 
 test('normaliseRunLimits is null without maxRuns', () => {
@@ -258,4 +271,65 @@ test('workerBatchRunner drives a worker.js one start_simulation per batch', asyn
 
   worker.postMessage = function () { queueMicrotask(() => this.onmessage({ data: { type: 'simulation_error', error: 'boom' } })); };
   await assert.rejects(run(1, 1, () => {}), /boom/);
+});
+
+// -- the idle between runs -------------------------------------------------------
+
+const GAP = { completed: 3e9, failed: 3e9 };
+
+/** One engine-shaped result per run, as a shard of one run would return it. */
+function perRunResults() {
+  const outcome = [true, true, false, true, false, false, true];
+  return outcome.map((ok, i) => ({
+    simulatedTime: 1000e9 + i * 17e9,
+    dungeonsCompleted: ok ? 1 : 0,
+    dungeonsFailed: ok ? 0 : 1,
+    dungeonsTimedOut: ok ? 0 : 1,
+    deaths: { boss: ok ? 1 : 0 },
+    dungeonRunGapNs: GAP,
+  }));
+}
+
+test('addRunIdleTime adds one gap per run, by outcome, and records it', () => {
+  const r = addRunIdleTime({ simulatedTime: 100e9, dungeonsCompleted: 3, dungeonsFailed: 2, dungeonRunGapNs: { completed: 3e9, failed: 5e9 } });
+  assert.equal(r.dungeonIdleTime, 3 * 3e9 + 2 * 5e9);
+  assert.equal(r.simulatedTime, 100e9 + 3 * 3e9 + 2 * 5e9);
+});
+
+test('addRunIdleTime refuses to be applied twice, or to a result without the gap', () => {
+  const r = addRunIdleTime({ simulatedTime: 10, dungeonsCompleted: 1, dungeonsFailed: 0, dungeonRunGapNs: GAP });
+  assert.throws(() => addRunIdleTime(r), /already/);
+  assert.throws(() => addRunIdleTime({ simulatedTime: 10, dungeonsCompleted: 1, dungeonsFailed: 0 }), TypeError);
+});
+
+test('mergeSimResults refuses a result that already carries the idle', () => {
+  const [a, b] = perRunResults();
+  assert.throws(() => mergeSimResults([addRunIdleTime(a), b]), /idle/);
+});
+
+test('the idle total does not depend on how the runs were split', () => {
+  const runs = perRunResults();
+  const split = (k) => {
+    const shards = Array.from({ length: k }, () => []);
+    runs.forEach((r, i) => shards[i % k].push(r));
+    return addRunIdleTime(mergeSimResults(shards.map((s) => mergeSimResults(s))));
+  };
+  const one = split(1);
+  assert.equal(one.dungeonIdleTime, runs.length * 3e9);
+  assert.equal(one.simulatedTime, sum(runs.map((r) => r.simulatedTime)) + runs.length * 3e9);
+  for (const k of [2, 4, 7]) {
+    const m = split(k);
+    assert.equal(m.simulatedTime, one.simulatedTime, `${k} shards`);
+    assert.equal(m.dungeonIdleTime, one.dungeonIdleTime, `${k} shards`);
+  }
+});
+
+test('runDungeonRunsSerial returns the raw merge: the idle is for the caller to add once', async () => {
+  const r = await runDungeonRunsSerial({
+    totalRuns: 5,
+    maxRunDurationNs: 10 * H,
+    runBatch: async (n) => ({ simulatedTime: n, dungeonsCompleted: n, dungeonsFailed: 0, dungeonRunGapNs: GAP }),
+  });
+  assert.equal('dungeonIdleTime' in r, false);
+  assert.equal(r.simulatedTime, 5);
 });

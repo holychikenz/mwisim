@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { runDungeonRunsSerial, workerBatchRunner } from '../../../shared/dungeonRuns.js';
+import { runDungeonRunsSerial, workerBatchRunner, addRunIdleTime } from '../../../shared/dungeonRuns.js';
 
 // =============================================================================
 // useSimulation — runs the combat simulator in a browser Web Worker.
@@ -118,6 +118,7 @@ export function useSimulation() {
     }
     workerRef.current = worker;
     const current = () => workerRef.current === worker;
+    // This path is a top level: the idle between runs is added once, here.
     runDungeonRunsSerial({
       totalRuns: message.maxRuns,
       maxRunDurationNs: message.maxRunDurationNs,
@@ -127,7 +128,7 @@ export function useSimulation() {
         armWatchdog();
         setProgress(p * 100);
       }
-    }).then((simResult) => {
+    }).then(addRunIdleTime).then((simResult) => {
       if (!current()) return;
       setProgress(100);
       setResults(simResult);

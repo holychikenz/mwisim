@@ -16,7 +16,7 @@ const Zone = (await import('../../src/combatsimulator/zone.js')).default;
 const GuildTrial = (await import('../../src/combatsimulator/guildTrial.js')).default;
 const { extractTrialSummary, aggregateTrialResults } =
   await import('../../src/combatsimulator/guildTrialStats.js');
-const { runDungeonRunsSerial, DEFAULT_MAX_RUN_HOURS, ONE_HOUR_NS } = await import('../../shared/dungeonRuns.js');
+const { runDungeonRunsSerial, addRunIdleTime, DEFAULT_MAX_RUN_HOURS, ONE_HOUR_NS } = await import('../../shared/dungeonRuns.js');
 
 /**
  * Build extra buffs based on options
@@ -113,20 +113,22 @@ export function runSimulationWithWorker({ players: playersData, zone: zoneConfig
  *
  * With `maxRuns` (a dungeon only), the dungeon is simulated as that many runs,
  * each failed if still going after `maxRunDurationNs` (default 3 h), in
- * batches on the main thread and merged — see shared/dungeonRuns.js. Progress,
- * if asked for, is reported as { type: 'progress', progress } like the worker's.
+ * batches on the main thread and merged — see shared/dungeonRuns.js — and the
+ * idle between runs is added once, to the merged total. Progress, if asked
+ * for, is reported as { type: 'progress', progress } like the worker's.
  */
 export async function runSimulation({ players: playersData, zone: zoneConfig, simulationTimeLimit, extra = {}, guildBuffs = [], maxRuns, maxRunDurationNs }, onProgress = null) {
   const args = { players: playersData, zone: zoneConfig, simulationTimeLimit, extra, guildBuffs };
 
   if (maxRuns != null) {
     const runDurationNs = maxRunDurationNs ?? DEFAULT_MAX_RUN_HOURS * ONE_HOUR_NS;
-    return runDungeonRunsSerial({
+    const merged = await runDungeonRunsSerial({
       totalRuns: maxRuns,
       maxRunDurationNs: runDurationNs,
       runBatch: (n) => simulateOnMainThread(args, { maxRuns: n, maxRunDurationNs: runDurationNs }),
       onProgress: onProgress && ((progress) => onProgress({ type: 'progress', progress })),
     });
+    return addRunIdleTime(merged);
   }
 
   // If progress callback is provided, use worker thread

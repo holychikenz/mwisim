@@ -26,14 +26,23 @@
 // shard i-1's simulatedTime ended. Counts add, so every per-hour rate a reader
 // computes by dividing by simulatedTime is the rate of the concatenated whole.
 // Timestamps are offset onto that clock. Per-key rules are in MERGE_RULES.
+//
+// IDLE BETWEEN RUNS. The engine does not simulate the few seconds between one
+// run and the next: every run starts from a full reset, so the gap changes
+// nothing but the clock. A run-mode result carries the engine's gap constants
+// (dungeonRunGapNs), and addRunIdleTime() adds the idle ONCE, to the final
+// merged total, at each top-level entry point: api/lib/simulator.js
+// runSimulation, src/multiWorker.js's final merge, and useSimulation's serial
+// fallback. Shards and batches stay raw; mergeSimResults refuses an input that
+// already has it.
 // =============================================================================
 
 export const ONE_HOUR_NS = 3600e9;
 export const DEFAULT_MAX_RUN_HOURS = 3;
 export const DEFAULT_DUNGEON_RUNS = 100;
 export const MAX_DUNGEON_RUNS = 10000;
-export const MIN_RUN_HOURS = 0.1;
-export const MAX_RUN_HOURS = 24;
+export const MIN_RUN_HOURS = 1;
+export const MAX_RUN_HOURS = 10;
 export const MIN_RUNS_PER_SHARD = 10;
 export const MAX_SHARDS = 16;
 export const DEFAULT_CONCURRENCY = 4;
@@ -108,6 +117,7 @@ export const MERGE_RULES = {
   lastDungeonFinishTime: 'lastOnClock', lastEncounterFinishTime: 'lastOnClock',
   firstEncounterFinishTime: 'firstOnClock',
   wipeEvents: 'concatOnClock', labRoomOutcomes: 'concatOnClock',
+  dungeonRunGapNs: 'first',
   zoneName: 'first', difficultyTier: 'first', labyrinthName: 'first', roomLevel: 'first',
   isDungeon: 'first', isLabyrinth: 'first', numberOfPlayers: 'first', dropRateMultiplier: 'first',
   rareFindMultiplier: 'first', combatDropQuantity: 'first', debuffOnLevelGap: 'first',
@@ -194,6 +204,9 @@ export function mergeSimResults(results) {
   if (!Array.isArray(results) || results.length === 0) {
     throw new Error('mergeSimResults: nothing to merge');
   }
+  if (results.some((r) => r.dungeonIdleTime != null)) {
+    throw new Error('mergeSimResults: an input already carries the idle between runs; add it once, after the last merge');
+  }
   if (results.length === 1) return results[0];
 
   const offsets = [];
@@ -224,7 +237,38 @@ export function mergeSimResults(results) {
 }
 
 /**
+ * Add the idle between runs to a merged run-mode result, once. Sets
+ * `dungeonIdleTime` and adds it to `simulatedTime`; returns the same object.
+ *
+ * Why N gaps, not N - 1: a run is followed by its gap whether or not another
+ * run comes after it. The old single-simulation model stopped only at the
+ * start of run N + 1, so its simulatedTime already held a gap after every run,
+ * the last included; and in hours mode the steady-state cycle is one run plus
+ * one gap, so N / (sum of run times + N gaps) is the true long-run throughput.
+ * N is completed + failed (= maxRuns); each outcome takes its own gap
+ * (dungeonRunGapNs.completed after a boss kill, .failed after a wipe or a
+ * timeout), since the engine uses a different delay constant for each.
+ *
+ * Throws if applied twice, or to a result that is not from run mode.
+ */
+export function addRunIdleTime(result) {
+  if (result.dungeonIdleTime != null) {
+    throw new Error('addRunIdleTime: the idle between runs is already added');
+  }
+  const gap = result.dungeonRunGapNs;
+  if (!gap || !Number.isFinite(gap.completed) || !Number.isFinite(gap.failed)) {
+    throw new TypeError('addRunIdleTime: not a run-mode result (no dungeonRunGapNs)');
+  }
+  const idle = (result.dungeonsCompleted || 0) * gap.completed + (result.dungeonsFailed || 0) * gap.failed;
+  result.dungeonIdleTime = idle;
+  result.simulatedTime += idle;
+  return result;
+}
+
+/**
  * Run `totalRuns` as planBatches() batches, one after another, and merge.
+ * The merge is raw: the caller adds the idle between runs (addRunIdleTime)
+ * once, to its final total.
  *
  * runBatch(n, batchIndex, onBatchProgress) => Promise<SimResult> runs n runs on
  * a fresh Zone and calls onBatchProgress(p) with p in [0, 1]. onProgress, if

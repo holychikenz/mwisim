@@ -1,5 +1,5 @@
 import { aggregateTrialResults } from "./combatsimulator/guildTrialStats";
-import { planShards, mergeSimResults, runDungeonRunsSerial, workerBatchRunner } from "../shared/dungeonRuns.js";
+import { planShards, mergeSimResults, runDungeonRunsSerial, workerBatchRunner, addRunIdleTime } from "../shared/dungeonRuns.js";
 
 onmessage = async function (event) {
     switch (event.data.type) {
@@ -75,7 +75,9 @@ onmessage = async function (event) {
             // (planShards); each shard is ONE nested worker.js that runs its
             // runs in batches, one start_simulation per batch (planBatches),
             // and the shards merge back into one SimResult laid end to end on
-            // one clock (mergeSimResults). See shared/dungeonRuns.js.
+            // one clock (mergeSimResults). Shards come back raw; the idle
+            // between runs is added once, here, to the final merge
+            // (addRunIdleTime). See shared/dungeonRuns.js.
             // Payload: { players[], zone, extra, guildBuffs[], simulationTimeLimit,
             //   maxRuns, maxRunDurationNs }
             // Without nested workers (some browsers) the caller is told so and
@@ -114,7 +116,7 @@ onmessage = async function (event) {
                     }
                 };
                 const results = await Promise.all(shards.map(runShard));
-                this.postMessage({ type: "simulation_result", simResult: mergeSimResults(results) });
+                this.postMessage({ type: "simulation_result", simResult: addRunIdleTime(mergeSimResults(results)) });
             } catch (e) {
                 console.log(e);
                 this.postMessage({ type: "simulation_error", error: e });

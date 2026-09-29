@@ -9,8 +9,9 @@ const router = Router();
  * Run a single zone simulation (returns result when complete)
  *
  * A dungeon may instead be simulated as a number of runs: send `maxRuns`
- * (1-10000) and optionally `maxRunHours` (0.1-24, default 3; a run still going
- * after that long fails). The result then carries `dungeonsTimedOut`. Bad
+ * (1-10000) and optionally `maxRunHours` (1-10, default 3; a run still going
+ * after that long fails). The result then carries `dungeonsTimedOut`, and
+ * `dungeonIdleTime`, the idle between runs included in `simulatedTime`. Bad
  * limits, or limits on a zone that is not a dungeon, are a 400.
  */
 router.post('/simulate', async (req, res) => {
