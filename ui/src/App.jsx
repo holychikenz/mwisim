@@ -109,7 +109,7 @@ import {
   clampTier,
   findZone
 } from './utils/zones';
-import { DEFAULT_DUNGEON_RUNS, DEFAULT_MAX_RUN_HOURS } from '../../shared/dungeonRuns.js';
+import { clampRunCount, clampRunHours } from '../../shared/dungeonRuns.js';
 import {
   comboKey,
   parseComboKey,
@@ -263,12 +263,10 @@ function App() {
   );
   // A dungeon is simulated as a number of runs rather than hours, each failed
   // if it is still going after maxRunHours (see shared/dungeonRuns.js).
-  const [dungeonRuns, setDungeonRuns] = useState(
-    () => (typeof savedSession?.dungeonRuns === 'number' ? savedSession.dungeonRuns : DEFAULT_DUNGEON_RUNS)
-  );
-  const [maxRunHours, setMaxRunHours] = useState(
-    () => (typeof savedSession?.maxRunHours === 'number' ? savedSession.maxRunHours : DEFAULT_MAX_RUN_HOURS)
-  );
+  // Clamped on load as well: a session saved under older bounds (a 0.5 h
+  // limit) comes back inside the current ones; anything else, the default.
+  const [dungeonRuns, setDungeonRuns] = useState(() => clampRunCount(savedSession?.dungeonRuns));
+  const [maxRunHours, setMaxRunHours] = useState(() => clampRunHours(savedSession?.maxRunHours));
   // Genuinely account- or server-wide only. Seals used to live here and are now
   // a per-character field on each player (see createDefaultPlayer), because a
   // seal is an item ONE character equips.
@@ -1474,6 +1472,15 @@ function App() {
       mwixMaze: { enabled: isLab || mazeContext }
     };
 
+    // The run fields hold whatever was typed until they lose focus; a start
+    // straight from the keyboard clamps them here too (and shows the result).
+    const runs = clampRunCount(dungeonRuns);
+    const runHours = clampRunHours(maxRunHours);
+    if (dungeonRunMode) {
+      setDungeonRuns(runs);
+      setMaxRunHours(runHours);
+    }
+
     runSimulation({
       players: playerDTOs,
       zone: isLab ? null : { zoneHrid: zone, difficultyTier },
@@ -1485,7 +1492,7 @@ function App() {
           }
         : null,
       simulationTimeLimit: duration * ONE_HOUR,
-      ...(dungeonRunMode ? { maxRuns: dungeonRuns, maxRunDurationNs: maxRunHours * ONE_HOUR } : {}),
+      ...(dungeonRunMode ? { maxRuns: runs, maxRunDurationNs: runHours * ONE_HOUR } : {}),
       extra,
       // Shrine buffs are still permanent character buffs that apply to every
       // fight (the game exposes them via

@@ -17,6 +17,10 @@ import {
   MAX_RUN_HOURS,
   MERGE_RULES,
   addRunIdleTime,
+  clampRunHours,
+  clampRunCount,
+  DEFAULT_DUNGEON_RUNS,
+  MAX_DUNGEON_RUNS,
   normaliseRunLimits,
   planShards,
   planBatches,
@@ -58,6 +62,23 @@ test('normaliseRunLimits refuses bad runs and durations', () => {
     { maxRuns: 5, maxRunHours: 0.05 }, { maxRuns: 5, maxRunHours: 25 }, { maxRuns: 5, maxRunHours: NaN }]) {
     assert.throws(() => normaliseRunLimits(bad), RangeError, JSON.stringify(bad));
   }
+});
+
+test('clampRunHours puts what was typed into 1 to 10 hours, and a blank back to the default', () => {
+  assert.equal(clampRunHours(0.5), 1);
+  assert.equal(clampRunHours('0.5'), 1);
+  assert.equal(clampRunHours(2.5), 2.5);
+  assert.equal(clampRunHours('7'), 7);
+  assert.equal(clampRunHours(11), 10);
+  for (const blank of ['', '-', null, undefined, NaN]) assert.equal(clampRunHours(blank), DEFAULT_MAX_RUN_HOURS, String(blank));
+});
+
+test('clampRunCount puts what was typed into a whole number of runs from 1 to the maximum', () => {
+  assert.equal(clampRunCount(0), 1);
+  assert.equal(clampRunCount('25'), 25);
+  assert.equal(clampRunCount(12.6), 13);
+  assert.equal(clampRunCount(MAX_DUNGEON_RUNS + 1), MAX_DUNGEON_RUNS);
+  for (const blank of ['', null, undefined, NaN]) assert.equal(clampRunCount(blank), DEFAULT_DUNGEON_RUNS, String(blank));
 });
 
 // -- planning ------------------------------------------------------------------

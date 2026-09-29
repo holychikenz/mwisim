@@ -94,6 +94,26 @@ export function normaliseRunLimits({ maxRuns, maxRunHours } = {}) {
   return { maxRuns, maxRunDurationNs: hours * ONE_HOUR_NS };
 }
 
+/**
+ * A value typed into the UI's Max run field as hours within [MIN_RUN_HOURS,
+ * MAX_RUN_HOURS]; anything that is not a number (a blank field) gives the
+ * default. Applied when the field loses focus and when a simulation starts,
+ * never per keystroke, so a half-typed value ("", "2.") is never rewritten
+ * under the cursor.
+ */
+export function clampRunHours(value) {
+  const n = value === '' || value == null ? NaN : Number(value);
+  if (!Number.isFinite(n)) return DEFAULT_MAX_RUN_HOURS;
+  return Math.min(MAX_RUN_HOURS, Math.max(MIN_RUN_HOURS, n));
+}
+
+/** As clampRunHours, for the Runs field: a whole number from 1 to MAX_DUNGEON_RUNS. */
+export function clampRunCount(value) {
+  const n = value === '' || value == null ? NaN : Number(value);
+  if (!Number.isFinite(n)) return DEFAULT_DUNGEON_RUNS;
+  return Math.min(MAX_DUNGEON_RUNS, Math.max(1, Math.round(n)));
+}
+
 // ---- merging -------------------------------------------------------------------
 
 const TRIAL_KEYS = [
