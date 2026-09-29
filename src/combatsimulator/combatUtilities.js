@@ -247,7 +247,20 @@ class CombatUtilities {
             target.combatDetails.currentHitpoints -= damageDone;
         }
 
-        if (targetThornPower > 0.0 && targetResistance > -99.0) {
+        // MWIX adaptation: a target this attack has just killed reflects
+        // nothing — no thorns, no retaliation. Upstream reflected from a dead
+        // target, which let a killing blow kill the attacker in the same event
+        // and so let both sides die in one checkEncounterEnd() (a dungeon then
+        // crashed on this.enemies.map, and run mode booked one run twice).
+        // This is an explicit assumption we chose WITHOUT checking the live
+        // game: we do not know whether the game reflects from a killing blow.
+        // If it turns out that it does, revert this guard and handle the
+        // mutual kill in checkEncounterEnd() instead. Applies everywhere, not
+        // only in dungeons. A target that survives, including one the attack
+        // missed, reflects exactly as before.
+        const targetAlive = target.combatDetails.currentHitpoints > 0;
+
+        if (targetAlive && targetThornPower > 0.0 && targetResistance > -99.0) {
             let penetratedSourceResistance = sourceResistance
 
             if (sourceResistance > 0) {
@@ -276,8 +289,8 @@ class CombatUtilities {
         }
 
         let retaliationDamageDone = 0;
-        if (target.combatDetails.combatStats.retaliation > 0) {
-            let retaliationHitChance = 
+        if (targetAlive && target.combatDetails.combatStats.retaliation > 0) {
+            let retaliationHitChance =
                 Math.pow(target.combatDetails.smashAccuracyRating, 1.4) /
                 (Math.pow(target.combatDetails.smashAccuracyRating, 1.4) + Math.pow(source.combatDetails.smashEvasionRating, 1.4));
 

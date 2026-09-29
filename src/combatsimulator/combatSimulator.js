@@ -957,7 +957,7 @@ class CombatSimulator extends EventTarget {
                 this.addToWipeLogs(log);
             }
 
-            if (target.combatDetails.combatStats.retaliation > 0) {
+            if (target.combatDetails.combatStats.retaliation > 0 && target.combatDetails.currentHitpoints > 0) { // a dead target does not retaliate (combatUtilities.js processAttack)
                 this.simResult.addAttack(target, source, "retaliation", attackResult.retaliationDamageDone > 0?attackResult.retaliationDamageDone:"miss");
             }
             if (this.zone?.isDungeon && attackResult.retaliationDamageDone > 0 && source.isPlayer) {
@@ -2024,7 +2024,7 @@ class CombatSimulator extends EventTarget {
                 if (attackResult.thornDamageDone > 0) {
                     this.simResult.addAttack(tempTarget, tempSource, attackResult.thornType, attackResult.thornDamageDone);
                 }
-                if (tempTarget.combatDetails.combatStats.retaliation > 0) {
+                if (tempTarget.combatDetails.combatStats.retaliation > 0 && tempTarget.combatDetails.currentHitpoints > 0) { // a dead target does not retaliate (combatUtilities.js processAttack)
                     this.simResult.addAttack(tempTarget, tempSource, "retaliation", attackResult.retaliationDamageDone > 0 ? attackResult.retaliationDamageDone : "miss");
                 }
 
@@ -2257,7 +2257,7 @@ class CombatSimulator extends EventTarget {
                     this.addToWipeLogs(log);
                 }
 
-                if (target.combatDetails.combatStats.retaliation > 0) {
+                if (target.combatDetails.combatStats.retaliation > 0 && target.combatDetails.currentHitpoints > 0) { // a dead target does not retaliate (combatUtilities.js processAttack)
                     this.simResult.addAttack(target, source, "retaliation", attackResult.retaliationDamageDone > 0 ? attackResult.retaliationDamageDone : "miss");
                 }
                 if (this.zone?.isDungeon && attackResult.retaliationDamageDone > 0 && source.isPlayer) {
