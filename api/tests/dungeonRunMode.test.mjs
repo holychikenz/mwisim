@@ -178,3 +178,65 @@ test('E7 run-mode progress counts runs, stays in [0, 1] and never goes back', as
     if (i > 0) assert.ok(seen[i] >= seen[i - 1], `progress went back at ${i}`);
   }
 });
+
+// -- E8–E11: through api/lib/simulator.js, batched and merged ------------------
+
+const { runSimulation } = await import('../lib/simulator.js');
+const { MERGE_RULES, mergeSimResults } = await import('../../shared/dungeonRuns.js');
+const { canonical, digest } = await import('../lib/determinism.mjs');
+const { MIXED_PARTY } = await import('../bench/builds.mjs');
+
+const apiRun = (seed, builds, level, runLimits, onProgress) =>
+  withSeed(seed, () =>
+    quietly(() =>
+      runSimulation(
+        { players: dtos(builds, level), zone: { zoneHrid: DEN, difficultyTier: 0 }, extra: {}, ...runLimits },
+        onProgress
+      )
+    )
+  );
+
+test('E8 runSimulation runs long-limit runs in batches and reports progress to 1', async () => {
+  const progress = [];
+  const r = await apiRun(3, ['melee'], 600, { maxRuns: 5, maxRunDurationNs: 40 * ONE_HOUR }, (m) => {
+    assert.equal(m.type, 'progress');
+    progress.push(m.progress);
+  });
+  assert.equal(r.dungeonsCompleted + r.dungeonsFailed, 5);
+  assert.equal(r.dungeonsTimedOut, 0);
+  assert.ok(progress.length > 0);
+  for (let i = 1; i < progress.length; i++) assert.ok(progress[i] >= progress[i - 1]);
+  assert.equal(progress.at(-1), 1);
+});
+
+test('E9 a single batch through runSimulation is the engine run, bit for bit', async () => {
+  const limits = { maxRuns: 3, maxRunDurationNs: 3 * ONE_HOUR };
+  const direct = await runSeeded(4, makeSim(['melee'], 600), undefined, limits);
+  const viaApi = await apiRun(4, ['melee'], 600, limits);
+  assert.equal(digest(canonical(viaApi)), digest(canonical(direct)));
+});
+
+test('E10 twenty runs in one call and as four merged shards agree on the rates', async () => {
+  const limits = { maxRunDurationNs: 3 * ONE_HOUR };
+  const whole = await apiRun(10, MIXED_PARTY, 600, { ...limits, maxRuns: 20 });
+  const shards = [];
+  for (let i = 0; i < 4; i++) shards.push(await apiRun(100 + i, MIXED_PARTY, 600, { ...limits, maxRuns: 5 }));
+  const merged = mergeSimResults(shards);
+
+  const runs = (r) => r.dungeonsCompleted + r.dungeonsFailed;
+  assert.equal(runs(whole), 20);
+  assert.equal(runs(merged), 20);
+  const perHour = (r, v) => v / (r.simulatedTime / ONE_HOUR);
+  const xp = (r) => Object.values(r.experienceGained).reduce((a, p) => a + Object.values(p).reduce((b, x) => b + x, 0), 0);
+  const bossDeaths = (r) => Object.entries(r.deaths).filter(([k]) => !k.startsWith('player')).reduce((a, [, v]) => a + v, 0);
+  const near = (a, b, what) => assert.ok(Math.abs(a - b) <= 0.1 * Math.max(a, b), `${what}: ${a} vs ${b}`);
+  near(whole.simulatedTime / runs(whole), merged.simulatedTime / runs(merged), 'average run time');
+  near(perHour(whole, xp(whole)), perHour(merged, xp(merged)), 'XP/h');
+  near(perHour(whole, bossDeaths(whole)), perHour(merged, bossDeaths(merged)), 'monster deaths/h');
+});
+
+test('E11 every key of a run-mode SimResult has a merge rule', async () => {
+  const r = await runSeeded(5, makeSim(['melee'], 600), undefined, { maxRuns: 2, maxRunDurationNs: 3 * ONE_HOUR });
+  const missing = Object.keys(r).filter((k) => !(k in MERGE_RULES));
+  assert.deepEqual(missing, []);
+});

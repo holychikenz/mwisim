@@ -198,10 +198,9 @@ export function normaliseTarget(body = {}) {
  *
  * A dungeon is fought as a zone — same Zone class, same worker path — so it
  * needs no kind of its own; but its unit of progress is the whole run rather
- * than the wave, which changes what the trigger optimiser should rank on (see
- * triggerSearch/score.js dungeonMetrics). Separate from normaliseTarget, and
- * applied by the trigger route only, so the equipment optimiser's echoed target
- * and reported metrics are left exactly as they were.
+ * than the wave, which changes what both optimisers should rank on (see
+ * triggerSearch/score.js dungeonMetrics). Separate from normaliseTarget; applied
+ * by both optimiser routes (optimizeTriggers.js and optimizeEquipment.js).
  *
  * An unknown zone hrid is NOT a dungeon: guessing would switch the objective on
  * the strength of a typo.
