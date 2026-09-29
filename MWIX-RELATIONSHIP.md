@@ -83,7 +83,8 @@ csim/
   shared/                ← code common to api/ and ui/ but NOT to the engine.
                            Deliberately outside src/combatsimulator/ so it never
                            appears in the upstream diff or the vendored bundle.
-                           Today: consumableCost.js (production-time economics).
+                           Today: consumableCost.js (production-time economics),
+                           dungeonRuns.js (dungeon runs split across workers).
   api/                   ← Express server (independent product)
   ui/                    ← React UI (independent product)
   locales/               ← i18n strings for the UI

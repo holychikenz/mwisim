@@ -177,6 +177,15 @@ function SummaryStats({ results, monsters, pricing }) {
       { label: 'Dungeons Failed', value: results.dungeonsFailed },
       { label: 'Max Wave', value: results.maxWaveReached }
     );
+    // Only a run-count simulation carries dungeonsTimedOut (see
+    // shared/dungeonRuns.js), and only there is every run finished or failed.
+    if (typeof results.dungeonsTimedOut === 'number') {
+      const runs = (results.dungeonsCompleted || 0) + (results.dungeonsFailed || 0);
+      kpis.push(
+        { label: 'Completion Rate', value: runs > 0 ? `${((results.dungeonsCompleted || 0) / runs * 100).toFixed(1)}%` : '—' },
+        { label: 'Timed Out', value: results.dungeonsTimedOut }
+      );
+    }
   }
 
   if (results.maxEnrageStack > 0) {

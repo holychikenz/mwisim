@@ -11,7 +11,8 @@ import {
   Indicator,
   SegmentedControl,
   Anchor,
-  Divider
+  Divider,
+  Tooltip
 } from '@mantine/core';
 import {
   GUILD_COMBAT_BUFFS,
@@ -22,6 +23,7 @@ import {
 import { levelToTierIndex, tierIndexToLevel, MAX_TIER_INDEX } from '../utils/trialTiers';
 import { simulableZones, zoneTiers, findZone } from '../utils/zones';
 import { SettingsMenu } from './SettingsMenu';
+import { MAX_DUNGEON_RUNS, MIN_RUN_HOURS, MAX_RUN_HOURS } from '../../../shared/dungeonRuns.js';
 
 // =============================================================================
 // HeaderControls — the sticky simulation bar: mode (zone / labyrinth), the
@@ -78,6 +80,13 @@ export function HeaderControls({
   onLabConfigChange,
   duration,
   onDurationChange,
+  // A dungeon in Zone mode is simulated as a number of runs, each with a time
+  // limit, instead of a number of hours (see shared/dungeonRuns.js).
+  dungeonRunMode = false,
+  dungeonRuns,
+  onDungeonRunsChange,
+  maxRunHours,
+  onMaxRunHoursChange,
   extraOptions,
   onExtraChange,
   onStart,
@@ -477,7 +486,35 @@ export function HeaderControls({
           suffix=" runs"
           aria-label="Trial iterations"
         />
-      ) : simMode === 'triggerOpt' || simMode === 'equipOpt' || simMode === 'itemCosts' ? null : (
+      ) : simMode === 'triggerOpt' || simMode === 'equipOpt' || simMode === 'itemCosts' ? null : dungeonRunMode ? (
+        <>
+          <NumberInput
+            value={dungeonRuns}
+            onChange={(v) => onDungeonRunsChange(Math.max(1, Math.min(MAX_DUNGEON_RUNS, Math.round(Number(v) || 1))))}
+            min={1}
+            max={MAX_DUNGEON_RUNS}
+            step={10}
+            w={110}
+            size="sm"
+            suffix=" runs"
+            aria-label="Dungeon runs"
+          />
+          <Tooltip label="A run still going after this long counts as failed" withArrow>
+            <NumberInput
+              value={maxRunHours}
+              onChange={(v) => onMaxRunHoursChange(Math.max(MIN_RUN_HOURS, Math.min(MAX_RUN_HOURS, Number(v) || MIN_RUN_HOURS)))}
+              min={MIN_RUN_HOURS}
+              max={MAX_RUN_HOURS}
+              step={0.5}
+              decimalScale={2}
+              w={90}
+              size="sm"
+              suffix=" h"
+              aria-label="Maximum run duration (hours)"
+            />
+          </Tooltip>
+        </>
+      ) : (
         <NumberInput
           value={duration}
           onChange={(v) => onDurationChange(Math.max(1, Math.min(1000, Number(v) || 1)))}

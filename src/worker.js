@@ -160,8 +160,15 @@ onmessage = async function (event) {
                 });
             });
 
+            // MWIX adaptation (dungeon run mode): `maxRuns` asks for that many
+            // dungeon runs instead of an amount of time (see
+            // CombatSimulator._beginRunMode); multiWorker's
+            // start_simulation_dungeon_runs sends one such message per batch.
+            const runLimits = event.data.maxRuns
+                ? { maxRuns: event.data.maxRuns, maxRunDurationNs: event.data.maxRunDurationNs }
+                : undefined;
             try {
-                let simResult = await combatSimulator.simulate(simulationTimeLimit);
+                let simResult = await combatSimulator.simulate(simulationTimeLimit, runLimits);
                 this.postMessage({ type: "simulation_result", simResult: simResult });
             } catch (e) {
                 console.log(e);

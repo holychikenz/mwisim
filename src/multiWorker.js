@@ -1,4 +1,5 @@
 import { aggregateTrialResults } from "./combatsimulator/guildTrialStats";
+import { planShards, mergeSimResults, runDungeonRunsSerial, workerBatchRunner } from "../shared/dungeonRuns.js";
 
 onmessage = async function (event) {
     switch (event.data.type) {
@@ -62,6 +63,58 @@ onmessage = async function (event) {
                     aggregate,
                     summaries,
                 });
+            } catch (e) {
+                console.log(e);
+                this.postMessage({ type: "simulation_error", error: e });
+            }
+            break;
+        }
+        case "start_simulation_dungeon_runs": {
+            // A dungeon as `maxRuns` runs, each failed if still going after
+            // `maxRunDurationNs`. Runs are split into one shard per core
+            // (planShards); each shard is ONE nested worker.js that runs its
+            // runs in batches, one start_simulation per batch (planBatches),
+            // and the shards merge back into one SimResult laid end to end on
+            // one clock (mergeSimResults). See shared/dungeonRuns.js.
+            // Payload: { players[], zone, extra, guildBuffs[], simulationTimeLimit,
+            //   maxRuns, maxRunDurationNs }
+            // Without nested workers (some browsers) the caller is told so and
+            // runs the same batches over a single worker.js itself.
+            if (typeof Worker !== "function") {
+                this.postMessage({ type: "dungeon_runs_unsupported" });
+                break;
+            }
+            try {
+                const { maxRuns, maxRunDurationNs } = event.data;
+                const message = {
+                    players: event.data.players,
+                    zone: event.data.zone,
+                    extra: event.data.extra || {},
+                    guildBuffs: event.data.guildBuffs || [],
+                    simulationTimeLimit: event.data.simulationTimeLimit,
+                    maxRunDurationNs,
+                };
+                const shards = planShards(maxRuns, navigator.hardwareConcurrency);
+                const runsDone = shards.map(() => 0);
+                const runShard = async (runs, i) => {
+                    const simulationWorker = new Worker(new URL('worker.js', import.meta.url), { type: 'module' });
+                    try {
+                        return await runDungeonRunsSerial({
+                            totalRuns: runs,
+                            maxRunDurationNs,
+                            runBatch: workerBatchRunner(simulationWorker, message),
+                            onProgress: (p) => {
+                                runsDone[i] = p * runs;
+                                const progress = runsDone.reduce((a, b) => a + b, 0) / maxRuns;
+                                this.postMessage({ type: "simulation_progress", progress });
+                            },
+                        });
+                    } finally {
+                        simulationWorker.terminate();
+                    }
+                };
+                const results = await Promise.all(shards.map(runShard));
+                this.postMessage({ type: "simulation_result", simResult: mergeSimResults(results) });
             } catch (e) {
                 console.log(e);
                 this.postMessage({ type: "simulation_error", error: e });

@@ -106,8 +106,10 @@ import {
   zoneTiers,
   maxTierFor,
   resolveZoneHrid,
-  clampTier
+  clampTier,
+  findZone
 } from './utils/zones';
+import { DEFAULT_DUNGEON_RUNS, DEFAULT_MAX_RUN_HOURS } from '../../shared/dungeonRuns.js';
 import {
   comboKey,
   parseComboKey,
@@ -258,6 +260,14 @@ function App() {
   });
   const [duration, setDuration] = useState(
     () => (typeof savedSession?.duration === 'number' ? savedSession.duration : 100)
+  );
+  // A dungeon is simulated as a number of runs rather than hours, each failed
+  // if it is still going after maxRunHours (see shared/dungeonRuns.js).
+  const [dungeonRuns, setDungeonRuns] = useState(
+    () => (typeof savedSession?.dungeonRuns === 'number' ? savedSession.dungeonRuns : DEFAULT_DUNGEON_RUNS)
+  );
+  const [maxRunHours, setMaxRunHours] = useState(
+    () => (typeof savedSession?.maxRunHours === 'number' ? savedSession.maxRunHours : DEFAULT_MAX_RUN_HOURS)
   );
   // Genuinely account- or server-wide only. Seals used to live here and are now
   // a per-character field on each player (see createDefaultPlayer), because a
@@ -1420,6 +1430,8 @@ function App() {
     runAllZones
   ]);
 
+  const dungeonRunMode = simMode === 'zone' && !!findZone(gameData?.zones, zone)?.isDungeon;
+
   const handleStartSimulation = useCallback(() => {
     // A single run replaces the sweep table with its own results — two answers
     // in one pane, one of them stale, helps nobody.
@@ -1473,6 +1485,7 @@ function App() {
           }
         : null,
       simulationTimeLimit: duration * ONE_HOUR,
+      ...(dungeonRunMode ? { maxRuns: dungeonRuns, maxRunDurationNs: maxRunHours * ONE_HOUR } : {}),
       extra,
       // Shrine buffs are still permanent character buffs that apply to every
       // fight (the game exposes them via
@@ -1484,7 +1497,7 @@ function App() {
       // reader does not have to wonder whether it was forgotten.
       guildBuffs: []
     });
-  }, [resolvedParty, selectedParty, simMode, zone, difficultyTier, labConfig, mazeContext, duration, extraOptions, experimental, runSimulation, handleStartTrial, handleStartTriggerOpt, handleStartEquipOpt]);
+  }, [resolvedParty, selectedParty, simMode, zone, difficultyTier, labConfig, mazeContext, duration, dungeonRunMode, dungeonRuns, maxRunHours, extraOptions, experimental, runSimulation, handleStartTrial, handleStartTriggerOpt, handleStartEquipOpt]);
 
   // Pickers for the slot binder, and the label the party checkboxes wear.
   const characterOptions = useMemo(
@@ -1577,6 +1590,11 @@ function App() {
             onLabConfigChange={setLabConfig}
             duration={duration}
             onDurationChange={setDuration}
+            dungeonRunMode={dungeonRunMode}
+            dungeonRuns={dungeonRuns}
+            onDungeonRunsChange={setDungeonRuns}
+            maxRunHours={maxRunHours}
+            onMaxRunHoursChange={setMaxRunHours}
             extraOptions={extraOptions}
             onExtraChange={setExtraOptions}
             onStart={handleStartSimulation}
@@ -1822,6 +1840,8 @@ function App() {
                   setDifficultyTier={setDifficultyTier}
                   duration={duration}
                   setDuration={setDuration}
+                  dungeonRuns={dungeonRuns}
+                  maxRunHours={maxRunHours}
                   onClearSaved={handleClearSaved}
                 />
 
@@ -1891,7 +1911,9 @@ function App() {
                       `(${allZones.meta?.hours ?? allZonesHours} h each) · ${activeProgress.toFixed(1)}%`
                     : simMode === 'guildTrial'
                       ? `Running ${trialConfig.iterations} trial iterations… ${activeProgress.toFixed(1)}%`
-                      : `Simulating ${duration} hours of combat… ${activeProgress.toFixed(1)}%`
+                      : dungeonRunMode
+                        ? `Simulating ${dungeonRuns} dungeon runs (max ${maxRunHours} h each)… ${activeProgress.toFixed(1)}%`
+                        : `Simulating ${duration} hours of combat… ${activeProgress.toFixed(1)}%`
               }
             />
           )}

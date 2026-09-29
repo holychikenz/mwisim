@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { runDungeonRunsSerial, workerBatchRunner } from '../../../shared/dungeonRuns.js';
 
 // =============================================================================
 // useSimulation — runs the combat simulator in a browser Web Worker.
@@ -13,6 +14,15 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 //   ←  { type: "simulation_result", simResult }
 //   ←  { type: "simulation_error", error }
 //
+// A dungeon given `maxRuns` is simulated as that many runs instead, spread
+// across cores by multiWorker.js (see createMultiWorker below):
+//
+//   →  { type: "start_simulation_dungeon_runs", players, zone,
+//        simulationTimeLimit, extra, guildBuffs, maxRuns, maxRunDurationNs }
+//   ←  simulation_progress / simulation_result / simulation_error, as above
+//   ←  { type: "dungeon_runs_unsupported" }   no nested workers in this browser:
+//        the same batches then run here over a single worker.js
+//
 // Because we never modify worker.js or the engine, upstream rebases pass
 // straight through this seam. The Express API (csim/api) remains available
 // for headless/automation callers but is no longer needed to use this UI.
@@ -24,16 +34,17 @@ function createSimWorker() {
   });
 }
 
-// Guild trials shard their iterations across a worker pool, so they run through
-// upstream's `src/multiWorker.js` (which itself spawns nested `worker.js`
-// shards). Message protocol (consumed verbatim from Phase 2 plumbing):
+// Guild trials and dungeon runs shard their work across a worker pool, so they
+// run through upstream's `src/multiWorker.js` (which itself spawns nested
+// `worker.js` shards). Guild-trial protocol (consumed verbatim from Phase 2
+// plumbing; dungeon runs are in the header above):
 //
 //   →  { type: "start_simulation_guild_trial", players, guildTrial, guildBuffs,
 //        extra, iterations, aggregateOptions }
 //   ←  { type: "simulation_progress", progress /* 0-1 */ }
 //   ←  { type: "simulation_result_guildTrial", aggregate, summaries }
 //   ←  { type: "simulation_error", error }
-function createTrialWorker() {
+function createMultiWorker() {
   return new Worker(new URL('../../../src/multiWorker.js', import.meta.url), {
     type: 'module'
   });
@@ -93,6 +104,44 @@ export function useSimulation() {
     }, STALL_TIMEOUT_MS);
   }, [clearWatchdog, failAndReset]);
 
+  // Dungeon runs without multiWorker (it could not start, or this browser has
+  // no nested workers): the same batches, one after another, over one
+  // worker.js. Slower, since it uses a single core, but it gives the same answer.
+  const runDungeonRunsHere = useCallback((message) => {
+    stopWorker();
+    let worker;
+    try {
+      worker = createSimWorker();
+    } catch (e) {
+      failAndReset('Could not start the simulation worker: ' + (e?.message || e));
+      return;
+    }
+    workerRef.current = worker;
+    const current = () => workerRef.current === worker;
+    runDungeonRunsSerial({
+      totalRuns: message.maxRuns,
+      maxRunDurationNs: message.maxRunDurationNs,
+      runBatch: workerBatchRunner(worker, message),
+      onProgress: (p) => {
+        if (!current()) return;
+        armWatchdog();
+        setProgress(p * 100);
+      }
+    }).then((simResult) => {
+      if (!current()) return;
+      setProgress(100);
+      setResults(simResult);
+      setLoading(false);
+      stopWorker();
+    }, (e) => {
+      if (!current()) return;
+      setError(e instanceof Error ? e : new Error(String(e?.message || e || 'Simulation failed')));
+      setLoading(false);
+      stopWorker();
+    });
+    armWatchdog();
+  }, [stopWorker, armWatchdog, failAndReset]);
+
   const runSimulation = useCallback((params) => {
     // One worker per run: cheap to spawn, and guarantees no stale engine
     // state bleeds between simulations.
@@ -102,10 +151,30 @@ export function useSimulation() {
     setError(null);
     setResults(null);
 
+    const message = {
+      players: params.players,
+      zone: params.zone ?? null,
+      labyrinth: params.labyrinth ?? null,
+      simulationTimeLimit: params.simulationTimeLimit,
+      extra: params.extra ?? {},
+      // Guild shrine buffs apply to all combat, not just trials — see the
+      // adaptation note in worker.js. Pre-resolved by resolveGuildBuffs().
+      guildBuffs: params.guildBuffs ?? []
+    };
+    const dungeonRuns = params.maxRuns != null;
+    if (dungeonRuns) {
+      message.maxRuns = params.maxRuns;
+      message.maxRunDurationNs = params.maxRunDurationNs;
+    }
+
     let worker;
     try {
-      worker = createSimWorker();
+      worker = dungeonRuns ? createMultiWorker() : createSimWorker();
     } catch (e) {
+      if (dungeonRuns) {
+        runDungeonRunsHere(message);
+        return;
+      }
       failAndReset('Could not start the simulation worker: ' + (e?.message || e));
       return;
     }
@@ -132,6 +201,9 @@ export function useSimulation() {
           stopWorker();
           break;
         }
+        case 'dungeon_runs_unsupported':
+          runDungeonRunsHere(message);
+          break;
         default:
           break;
       }
@@ -142,19 +214,12 @@ export function useSimulation() {
     };
 
     worker.postMessage({
-      type: 'start_simulation',
-      players: params.players,
-      zone: params.zone ?? null,
-      labyrinth: params.labyrinth ?? null,
-      simulationTimeLimit: params.simulationTimeLimit,
-      extra: params.extra ?? {},
-      // Guild shrine buffs apply to all combat, not just trials — see the
-      // adaptation note in worker.js. Pre-resolved by resolveGuildBuffs().
-      guildBuffs: params.guildBuffs ?? []
+      ...message,
+      type: dungeonRuns ? 'start_simulation_dungeon_runs' : 'start_simulation'
     });
     // Guard the gap between dispatch and the first progress tick, too.
     armWatchdog();
-  }, [stopWorker, armWatchdog, failAndReset]);
+  }, [stopWorker, armWatchdog, failAndReset, runDungeonRunsHere]);
 
   const runGuildTrial = useCallback((params) => {
     stopWorker();
@@ -165,7 +230,7 @@ export function useSimulation() {
 
     let worker;
     try {
-      worker = createTrialWorker();
+      worker = createMultiWorker();
     } catch (e) {
       failAndReset('Could not start the trial worker: ' + (e?.message || e));
       return;

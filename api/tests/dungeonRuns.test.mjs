@@ -19,6 +19,7 @@ import {
   planBatches,
   mergeSimResults,
   runDungeonRunsSerial,
+  workerBatchRunner,
 } from '../../shared/dungeonRuns.js';
 
 const H = ONE_HOUR_NS;
@@ -235,4 +236,26 @@ test('runDungeonRunsSerial runs the planned batches, reports progress, and merge
   assert.equal(result.simulatedTime, 50);
   for (let i = 1; i < progress.length; i++) assert.ok(progress[i] >= progress[i - 1]);
   assert.equal(progress.at(-1), 1);
+});
+
+test('workerBatchRunner drives a worker.js one start_simulation per batch', async () => {
+  const posted = [];
+  const worker = {
+    postMessage(msg) {
+      posted.push(msg);
+      queueMicrotask(() => {
+        this.onmessage({ data: { type: 'simulation_progress', progress: 0.5 } });
+        this.onmessage({ data: { type: 'simulation_result', simResult: { simulatedTime: msg.maxRuns, dungeonsCompleted: msg.maxRuns, dungeonsFailed: 0 } } });
+      });
+    },
+  };
+  const seen = [];
+  const run = workerBatchRunner(worker, { players: [1], zone: { zoneHrid: 'z' }, maxRunDurationNs: 3 * H });
+  const r = await run(7, 0, (p) => seen.push(p));
+  assert.deepEqual(posted, [{ type: 'start_simulation', players: [1], zone: { zoneHrid: 'z' }, maxRunDurationNs: 3 * H, maxRuns: 7 }]);
+  assert.deepEqual(seen, [0.5]);
+  assert.equal(r.dungeonsCompleted, 7);
+
+  worker.postMessage = function () { queueMicrotask(() => this.onmessage({ data: { type: 'simulation_error', error: 'boom' } })); };
+  await assert.rejects(run(1, 1, () => {}), /boom/);
 });

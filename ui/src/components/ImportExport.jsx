@@ -25,6 +25,8 @@ export function ImportExport({
   setDifficultyTier,
   duration,
   setDuration,
+  dungeonRuns,
+  maxRunHours,
   onClearSaved
 }) {
   const [importText, setImportText] = useState('');
@@ -43,9 +45,11 @@ export function ImportExport({
       selectedPlayers,
       zone,
       difficultyTier,
-      duration
+      duration,
+      dungeonRuns,
+      maxRunHours
     });
-  }, [party, selectedPlayers, zone, difficultyTier, duration]);
+  }, [party, selectedPlayers, zone, difficultyTier, duration, dungeonRuns, maxRunHours]);
 
   const showMessage = useCallback((text, isError = false) => {
     setMessage({ text, isError });

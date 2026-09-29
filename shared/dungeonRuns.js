@@ -248,3 +248,27 @@ export async function runDungeonRunsSerial({ totalRuns, maxRunDurationNs, runBat
   }
   return mergeSimResults(results);
 }
+
+/**
+ * A runBatch for runDungeonRunsSerial that runs each batch on `worker` (a
+ * src/worker.js Worker, or anything with postMessage/onmessage) as one
+ * `start_simulation` message with `maxRuns: n`. Batches go one at a time, so
+ * a single worker serves the whole shard. `message` carries the rest of the
+ * start_simulation payload (players, zone, extra, guildBuffs, maxRunDurationNs).
+ */
+export function workerBatchRunner(worker, message) {
+  return (n, batchIndex, onBatchProgress) =>
+    new Promise((resolve, reject) => {
+      const fail = (raw) => reject(raw instanceof Error ? raw : new Error(String(raw?.message || raw || 'Simulation failed')));
+      worker.onmessage = ({ data }) => {
+        if (data.type === 'simulation_progress') onBatchProgress(data.progress);
+        else if (data.type === 'simulation_result') resolve(data.simResult);
+        else if (data.type === 'simulation_error') fail(data.error);
+      };
+      worker.onerror = (e) => {
+        e?.preventDefault?.();
+        fail(e?.message || 'Simulation worker crashed');
+      };
+      worker.postMessage({ ...message, type: 'start_simulation', maxRuns: n });
+    });
+}
