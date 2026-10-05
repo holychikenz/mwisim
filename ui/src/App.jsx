@@ -504,13 +504,25 @@ function App() {
   // the user is ALREADY standing on — the zone never changes, so watching the
   // zone alone would never re-run, and Mantine renders an unmatched Select value
   // as an empty box while Run happily simulates a tier the game does not have.
-  // Setting an already-valid value is a no-op (React bails out on an identical
-  // value), so this converges rather than loops.
+  // It writes ONLY when a repair is needed, and only if nothing else wrote in
+  // the meantime (the functional updaters compare against the value this run
+  // saw). On mount it runs in the same flush as the MWIX bridge effect above,
+  // with the PRE-import zone in its closure; the old unconditional
+  // `setZone(repaired)` queued that stale zone after the bridge's own setZone
+  // and won, so a bridged zone never stuck while the tier (already a
+  // functional update) did. Any write re-runs this effect with fresh values,
+  // so it still converges rather than loops.
   useEffect(() => {
     if (!gameData?.zones) return;
     const repaired = resolveZoneHrid(gameData.zones, zone);
-    setZone(repaired);
-    setDifficultyTier(tier => clampTier(gameData.zones, repaired, tier));
+    if (repaired !== zone) {
+      setZone(z => (z === zone ? repaired : z));
+      return;
+    }
+    const clamped = clampTier(gameData.zones, zone, difficultyTier);
+    if (clamped !== difficultyTier) {
+      setDifficultyTier(t => (t === difficultyTier ? clamped : t));
+    }
   }, [gameData, zone, difficultyTier]);
 
   // Default sweep selection: every zone at every tier it offers.

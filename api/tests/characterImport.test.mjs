@@ -226,7 +226,7 @@ test('useExactEnhancement pins the saved enhancement, as the game does', () => {
   assert.equal(enh('exact', 'feet'), 0);
 });
 
-test('the producer does not answer the shrine question at all', () => {
+test('a payload WITHOUT characterGuildBuffMap does not answer the shrine question', () => {
   // It used to hard-code `guildShrines: {}` and `personalBuffs: []`, which
   // destroyed both on every RE-import. The game API carries neither, so both
   // keys are now OMITTED and the caller decides: see mergeImportedCharacter,
@@ -234,6 +234,38 @@ test('the producer does not answer the shrine question at all', () => {
   // pinned end to end in 'a first import lands shrines as {}' below.
   assert.ok(!('guildShrines' in result.character));
   assert.ok(!('personalBuffs' in result.character));
+});
+
+test('a payload WITH characterGuildBuffMap lands its combat shrine levels', () => {
+  // The shape init_character_data carries; skilling shrines are dropped.
+  const withShrines = {
+    ...char,
+    characterGuildBuffMap: {
+      '/guild_buffs/force_combat': { guildBuffHrid: '/guild_buffs/force_combat', level: 4 },
+      '/guild_buffs/tempo_combat': { level: 3 },
+      '/guild_buffs/force_skilling': { level: 5 },
+      '/guild_buffs/rarity_combat': { level: 0 }
+    }
+  };
+  const r = characterToCharacter(withShrines, null, 'holychikenz');
+  assert.deepEqual(r.character.guildShrines, {
+    '/guild_buffs/force_combat': 4,
+    '/guild_buffs/tempo_combat': 3
+  });
+  assert.ok(!('personalBuffs' in r.character));
+});
+
+test('an EMPTY characterGuildBuffMap is a positive "owns none"', () => {
+  const r = characterToCharacter({ ...char, characterGuildBuffMap: {} }, null, 'x');
+  assert.deepEqual(r.character.guildShrines, {});
+});
+
+test('a re-import WITH shrines overwrites the stored ones', () => {
+  const r = characterToCharacter(
+    { ...char, characterGuildBuffMap: { '/guild_buffs/force_combat': { level: 5 } } }, null, 'holychikenz');
+  let store = upsertCharacter(emptyStore(), { ...r.character, guildShrines: { '/guild_buffs/force_combat': 1 } });
+  store = mergeImportedCharacter(store, r.character).store;
+  assert.deepEqual(store.characters[r.character.id].guildShrines, { '/guild_buffs/force_combat': 5 });
 });
 
 test('ability triggers seed both the slot and the loadout trigger memory', () => {

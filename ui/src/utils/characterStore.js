@@ -339,8 +339,9 @@ export function patchCharacter(store, characterId, partial) {
  *    the import omitted. `{}` means "captured, owns none" and `[]` means "no
  *    seals" — the honest answers when nothing has ever been said, because an
  *    imported character DEFERRING to someone else's shrines would be a lie.
- *    (The game API carries no guild or seal information at all, so
- *    `characterToCharacter` omits both keys rather than answering a question it
+ *    (A payload with no `characterGuildBuffMap` — one captured before shrines
+ *    existed — and every payload, for seals, carry no answer, so
+ *    `characterToCharacter` omits the key rather than answering a question it
  *    cannot answer. Only the caller knows whether this is a first import.)
  *  - EXISTING character: every character field the import CARRIES is updated;
  *    every field it OMITS keeps the stored value — so shrines and seals the

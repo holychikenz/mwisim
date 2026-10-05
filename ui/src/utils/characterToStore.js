@@ -36,6 +36,7 @@
 // =============================================================================
 
 import { createCharacter, createLoadout, makeCharacterId } from './characterStore.js';
+import { GUILD_COMBAT_BUFFS, MAX_GUILD_BUFF_LEVEL } from './guildBuffs.js';
 
 const LEVEL_MAP = {
   staminaLevel: '/skills/stamina',
@@ -93,6 +94,23 @@ function uniqueName(base, taken) {
 }
 
 /**
+ * `characterGuildBuffMap` → { [combatShrineHrid]: level }, or null when the
+ * payload says nothing (the map is absent). Entries may be `{ level }` or a
+ * bare number; unknown and skilling shrines are dropped.
+ */
+export function shrineLevelsFrom(map) {
+  if (!map || typeof map !== 'object') return null;
+  const levels = {};
+  for (const def of GUILD_COMBAT_BUFFS) {
+    const entry = map[def.hrid];
+    const raw = Math.floor(Number(entry?.level ?? entry) || 0);
+    const level = Math.max(0, Math.min(MAX_GUILD_BUFF_LEVEL, raw));
+    if (level > 0) levels[def.hrid] = level;
+  }
+  return levels;
+}
+
+/**
  * @param {object} char - raw characterData
  * @param {object} gameData - the bundled game data from useGameData
  * @param {string} [displayName] - what to call the character (the cow/webapp
@@ -118,9 +136,19 @@ export function characterToCharacter(char, gameData, displayName) {
   const lvl = (hrid) => skills.get(hrid)?.level ?? 1;
 
   const name = displayName || char.name || 'Imported character';
-  // The game API carries no guild or seal information, so this function does
-  // not answer the question AT ALL: both keys are OMITTED rather than emitted
-  // empty. The distinction is the whole point. `guildShrines: {}` means
+  // SEALS: the payload carries no seal information, so this function does not
+  // answer that question AT ALL: `personalBuffs` is OMITTED rather than
+  // emitted empty.
+  //
+  // SHRINES: `init_character_data` DOES carry them — `characterGuildBuffMap`,
+  // { [guildBuffHrid]: { level } }, what this character has bought — and has
+  // since shrines shipped (2026-08). When the map is PRESENT it is the
+  // authoritative answer, `{}` included ("owns none"), and lands as
+  // `guildShrines` (combat shrines only; skilling ones have nowhere to go).
+  // When it is ABSENT — a snapshot captured before shrines existed — the key
+  // is omitted, exactly as for seals, and the rest of this note applies.
+  //
+  // Absent vs empty is the whole point. `guildShrines: {}` means
   // "captured, owns none" to resolveUnitShrineBuffs (utils/guildBuffs.js) and
   // must not fall back; an ABSENT key means "nothing said". Only the CALLER
   // knows which is true, because only the caller knows whether this is a FIRST
@@ -132,6 +160,8 @@ export function characterToCharacter(char, gameData, displayName) {
   // enforced; `ownsShrines: false` already omits `guildShrines`.
   const base = createCharacter({ name, id: makeCharacterId(name), ownsShrines: false });
   delete base.personalBuffs; // createCharacter seeds `[]`; omit it, as above.
+  const shrines = shrineLevelsFrom(char.characterGuildBuffMap);
+  if (shrines) base.guildShrines = shrines;
   const character = {
     ...base,
     houseRooms: {},
