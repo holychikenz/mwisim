@@ -21,7 +21,7 @@ import { useTriggerOptimizer } from './hooks/useTriggerOptimizer';
 import { useEquipmentOptimizer } from './hooks/useEquipmentOptimizer';
 import { usePrices } from './hooks/usePrices';
 import { exportFormatToPlayer } from './utils/importSet';
-import { readMwixBridgePayload, clearMwixBridgeHash } from './utils/mwixBridge';
+import { readMwixBridgePayload, clearMwixBridgeHash, partyFromBridgePayload } from './utils/mwixBridge';
 import {
   readRosterLinkValue,
   decodeRosterLinkValue,
@@ -338,6 +338,46 @@ function App() {
     const payload = readMwixBridgePayload();
     if (!payload) return;
     try {
+      // "Sim Party" (MWIX modules/party-sim-launch): every member into its own
+      // slot, in the game's order, each with its OWN shrines — so the shared
+      // trial knobs are not touched. A member's loadout is filed under its
+      // in-game name beside any loadouts that character already has here.
+      const partyMembers = partyFromBridgePayload(payload);
+      if (partyMembers) {
+        const refs = {};
+        for (const m of partyMembers) {
+          refs[m.slot] = { characterId: makeCharacterId(`mwix ${m.name}`), loadoutName: m.loadoutName };
+        }
+        setCharacters(prev => {
+          let next = prev;
+          for (const m of partyMembers) {
+            const { characterId } = refs[m.slot];
+            const split = splitPlayer(m.player);
+            const existing = next.characters?.[characterId];
+            next = upsertCharacter(next, {
+              ...split.character,
+              id: characterId,
+              name: m.name,
+              loadouts: { ...(existing?.loadouts || {}), [m.loadoutName]: split.loadout }
+            });
+          }
+          return next;
+        });
+        setParty({ ...createInitialParty(), ...refs });
+        setSelectedPlayers(partyMembers.map(m => m.slot));
+        setActiveTab(1);
+        const first = payload.importSet || {};
+        if (first.zone) setZone(first.zone);
+        if (first.difficultyTier != null) setDifficultyTier(Number(first.difficultyTier) || 0);
+        setMazeContext(false);
+        setBridgeMessage(
+          `MWIX party imported into P1–P${partyMembers.length}: ` +
+          partyMembers.map(m => `${m.name} (${m.loadoutName})`).join(', ')
+        );
+        console.info('[mwix-bridge] imported party from', payload.source, payload);
+        return;
+      }
+
       const importSet = payload.importSet || payload;
       const player = exportFormatToPlayer(importSet, 1);
       const ctx = payload.mwixContext;

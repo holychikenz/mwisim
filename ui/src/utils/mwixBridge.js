@@ -32,7 +32,16 @@
 //
 // A roster, as opposed to one character, comes through a different door:
 // utils/rosterBridge.js, at `#rosterBridge=`.
+//
+// A PARTY rides the same door: MWIX's "Sim Party" button adds
+//   party: [{ name, characterId, role, loadout, importSet, mwixContext }, …]
+// in the game's slot order, every importSet carrying the party's zone and
+// `difficultyTier`. The top-level importSet is the first member's, so an older
+// csim still imports P1. See partyFromBridgePayload below.
 // =============================================================================
+
+import { exportFormatToPlayer } from './importSet.js';
+import { GUILD_COMBAT_BUFFS, MAX_GUILD_BUFF_LEVEL } from './guildBuffs.js';
 
 const PARAM = 'mwiLabBridge';
 
@@ -93,4 +102,37 @@ export function clearMwixBridgeHash() {
   } catch {
     /* noop */
   }
+}
+
+/** A shrine-level map clamped to the known combat shrines (unknown keys dropped). */
+export function clampShrineLevels(raw) {
+  const levels = {};
+  if (!raw || typeof raw !== 'object') return levels;
+  for (const def of GUILD_COMBAT_BUFFS) {
+    const level = Math.max(0, Math.min(MAX_GUILD_BUFF_LEVEL, Math.floor(Number(raw[def.hrid]) || 0)));
+    if (level > 0) levels[def.hrid] = level;
+  }
+  return levels;
+}
+
+/**
+ * The party carried by a "Sim Party" payload, as flat players for slots 1..5,
+ * or null when the payload is a single loadout. Each entry:
+ *   { slot, name, loadoutName, player }
+ * where `player` already carries its own `guildShrines` — shrines are a
+ * per-member purchase, so one member's must never stand in for another's.
+ */
+export function partyFromBridgePayload(payload) {
+  const members = Array.isArray(payload?.party) ? payload.party.slice(0, 5) : [];
+  if (!members.length) return null;
+  return members.map((m, i) => {
+    const player = exportFormatToPlayer(m.importSet || {}, i + 1);
+    player.guildShrines = clampShrineLevels(m.mwixContext?.guildShrines);
+    return {
+      slot: i + 1,
+      name: String(m.name || `MWIX party ${i + 1}`),
+      loadoutName: String(m.loadout?.name || 'bridge'),
+      player
+    };
+  });
 }
