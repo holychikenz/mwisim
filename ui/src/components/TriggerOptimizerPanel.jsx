@@ -169,8 +169,6 @@ export function TriggerOptimizerPanel({
   config = DEFAULT_TRIGGER_OPT_CONFIG,
   onConfigChange,
   loading,
-  onRun,
-  onCancel,
   pricing,
   consumableCostRows = [],
 }) {
@@ -658,20 +656,6 @@ export function TriggerOptimizerPanel({
           </Accordion.Panel>
         </Accordion.Item>
       </Accordion>
-
-      {loading ? (
-        <Button color="red" variant="light" size="sm" onClick={onCancel}>
-          Stop optimising
-        </Button>
-      ) : (
-        <Button
-          size="sm"
-          onClick={onRun}
-          disabled={!preview || selection.length === 0 || previewing}
-        >
-          Optimise {selection.length} threshold{selection.length === 1 ? '' : 's'}
-        </Button>
-      )}
     </Stack>
   );
 }

@@ -107,8 +107,6 @@ export function EquipmentOptimizerPanel({
   config,
   onConfigChange,
   loading,
-  onRun,
-  onCancel,
   pricing,
   consumableCostRows = [],
 }) {
@@ -414,15 +412,6 @@ export function EquipmentOptimizerPanel({
           </Accordion.Panel>
         </Accordion.Item>
       </Accordion>
-
-      <Button
-        fullWidth
-        color={loading ? 'red' : 'indigo'}
-        disabled={!loading && !selectedIds.size}
-        onClick={loading ? onCancel : onRun}
-      >
-        {loading ? 'Stop' : 'Run equipment scan'}
-      </Button>
     </Stack>
   );
 }

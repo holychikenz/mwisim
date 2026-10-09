@@ -21,6 +21,14 @@ Decisions for the React UI redesign (agreed 2026-10-09). Theme tokens live in
 - **Run strip**: top of the main pane — zone/tier/hours (or the mode's
   equivalents), All Zones, Run. Mode settings (optimiser slots, fidelity,
   thresholds, trial options) live in a collapsible panel directly under it.
+- **One Run**: the run strip's Run (and Stop) is the only one, in every mode.
+  The optimisers' panels hold settings only; in Triggers the strip's button
+  reads "Optimise N thresholds", in Gear "Run equipment scan", and each is
+  disabled until there is something to run.
+- **Narrow screens** (below Mantine `sm`, 768 px): the rail is hidden and a
+  burger in the header opens it as an overlay; picking a member closes it and
+  opens the sheet. The brand moves from the header to the top of the rail, so
+  the mode tabs keep the header (they scroll sideways rather than overflow).
 
 ## Gear (G2)
 Paper doll: slots as a 3-column grid of tiles (slot, item, +N). Clicking a tile

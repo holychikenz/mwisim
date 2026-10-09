@@ -95,6 +95,10 @@ export function HeaderControls({
   onStop,
   onOpenAllZones,
   loading,
+  // The one Run in every mode. The optimisers name what will run ("Optimise
+  // 3 thresholds") and disable it until there is something to run.
+  runLabel = 'Run',
+  runDisabled = false,
   guildTrials,
   trialConfig,
   onTrialConfigChange,
@@ -197,7 +201,8 @@ export function HeaderControls({
 
   if (part === 'header') {
     return (
-      <Group gap="sm" wrap="nowrap">
+      // Scrolls rather than overflowing when a phone squeezes the header.
+      <Group gap="sm" wrap="nowrap" style={{ minWidth: 0, overflowX: 'auto' }}>
         <SegmentedControl
           size="sm"
           radius="xl"
@@ -562,8 +567,8 @@ export function HeaderControls({
           run, and a Run button that did nothing would be worse than none. */}
       {simMode !== 'itemCosts' && (
         <>
-          <Button onClick={onStart} loading={loading} size="sm">
-            Run
+          <Button onClick={onStart} loading={loading} disabled={runDisabled && !loading} size="sm">
+            {runLabel}
           </Button>
           {loading && (
             <Button onClick={onStop} variant="default" size="sm">

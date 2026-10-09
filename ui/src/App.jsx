@@ -16,8 +16,10 @@ import {
   Paper,
   CloseButton,
   Collapse,
-  UnstyledButton
+  UnstyledButton,
+  Burger
 } from '@mantine/core';
+import { useDisclosure } from '@mantine/hooks';
 import { useGameData } from './hooks/useGameData';
 import { useSimulation } from './hooks/useSimulation';
 import { useAllZones } from './hooks/useAllZones';
@@ -228,6 +230,10 @@ function App() {
   // be the same character in different gear with no copy of anything.
   const [party, setParty] = useState(() => normalizeParty(savedSession.party));
   const [navbarWidth, setNavbarWidth] = useState(loadNavbarWidth);
+  // Below Mantine's `sm` the rail is hidden; the header burger brings it back
+  // as an overlay, and picking a member closes it again to reveal the sheet.
+  // Ignored on wider screens, where the rail is always shown.
+  const [navOpened, { toggle: toggleNav, close: closeNav }] = useDisclosure(false);
   // The member editor sheet (AppShell aside, breakpoint 90em). From 90em up it
   // sits beside the results and starts open; below that Mantine draws it over
   // the results, so it starts closed and opens when a member card is clicked.
@@ -1612,7 +1618,8 @@ function App() {
     }
     setActiveTab(id);
     setSheetOpen(true);
-  }, [sheetOpen, activeTab, setSheetOpen]);
+    closeNav();
+  }, [sheetOpen, activeTab, setSheetOpen, closeNav]);
 
   // Character names for the results tables. Read from the party as it is NOW:
   // re-binding a slot after a run relabels that run's rows.
@@ -1664,6 +1671,16 @@ function App() {
 
   const isTrial = simMode === 'guildTrial';
   const isCosts = simMode === 'itemCosts';
+  // One Run, in the run strip, for every mode. The optimisers' panels hold
+  // settings only; their Run label keeps the count their own button showed.
+  const runButtonProps = isTriggerOpt
+    ? {
+        runLabel: `Optimise ${triggerOptSelection.length} threshold${triggerOptSelection.length === 1 ? '' : 's'}`,
+        runDisabled: !triggerOpt.preview || triggerOpt.previewing || triggerOptSelection.length === 0
+      }
+    : isEquipOpt
+      ? { runLabel: 'Run equipment scan', runDisabled: !equipOptPayload || equipOptSelection.length === 0 }
+      : {};
   // Costs is a settings view: no party editing, so no sheet.
   const showSheet = sheetOpen && !isCosts;
   // A new run no longer clears the old results (that unmounted the results
@@ -1677,17 +1694,20 @@ function App() {
   return (
     <AppShell
       header={{ height: 56 }}
-      navbar={{ width: navbarWidth, breakpoint: 'sm' }}
+      navbar={{ width: navbarWidth, breakpoint: 'sm', collapsed: { mobile: !navOpened } }}
       aside={{ width: 500, breakpoint: '90em', collapsed: { desktop: !showSheet, mobile: !showSheet } }}
       padding="md"
     >
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between" wrap="nowrap">
           <Group gap="xs" wrap="nowrap">
-            <Title order={4} style={{ whiteSpace: 'nowrap' }}>
+            <Burger opened={navOpened} onClick={toggleNav} hiddenFrom="sm" size="sm" aria-label="Toggle party rail" />
+            {/* On phones the brand moves to the top of the rail (below), so
+                the mode tabs have the header to themselves. */}
+            <Title order={4} style={{ whiteSpace: 'nowrap' }} visibleFrom="sm">
               MWI Combat Simulator
             </Title>
-            <Badge variant="light" color="teal" size="sm">
+            <Badge variant="light" color="teal" size="sm" visibleFrom="sm">
               in-browser
             </Badge>
             {(mazeContext || simMode === 'labyrinth' || (isApiOpt && optTarget === 'labyrinth')) && (
@@ -1722,6 +1742,14 @@ function App() {
         />
         <ScrollArea type="hover" style={{ height: '100%' }}>
           <Stack gap="sm" p="sm">
+            <Group gap="xs" wrap="nowrap" hiddenFrom="sm">
+              <Title order={5} style={{ whiteSpace: 'nowrap' }}>
+                MWI Combat Simulator
+              </Title>
+              <Badge variant="light" color="teal" size="sm">
+                in-browser
+              </Badge>
+            </Group>
             {isTrial ? (
               <GuildTrialPanel
                   characters={characters}
@@ -1731,7 +1759,7 @@ function App() {
                   items={gameData?.items}
                   party={party}
                   trialConfig={trialConfig}
-                  onSelectEntry={(id) => { setSelectedEntryId(id); setSheetOpen(true); }}
+                  onSelectEntry={(id) => { setSelectedEntryId(id); setSheetOpen(true); closeNav(); }}
                   onDuplicate={handleDuplicate}
                   onSetCount={handleSetCount}
                   onSaveAsNew={handleSaveAsNew}
@@ -1947,6 +1975,7 @@ function App() {
                 onStop={handleStop}
                 onOpenAllZones={() => setAllZonesOpen(true)}
                 loading={activeLoading}
+                {...runButtonProps}
                 guildTrials={gameData?.guildTrials}
                 trialConfig={trialConfig}
                 onTrialConfigChange={setTrialConfig}
@@ -1978,8 +2007,6 @@ function App() {
                       config={triggerOptConfig}
                       onConfigChange={setTriggerOptConfig}
                       loading={triggerOpt.loading}
-                      onRun={handleStartTriggerOpt}
-                      onCancel={cancelTriggerOpt}
                       pricing={pricing}
                       consumableCostRows={consumableCostRows}
                     />                  ) : (
@@ -1992,8 +2019,6 @@ function App() {
                       config={equipOptConfig}
                       onConfigChange={setEquipOptConfig}
                       loading={equipOpt.loading}
-                      onRun={handleStartEquipOpt}
-                      onCancel={cancelEquipOpt}
                       pricing={pricing}
                       consumableCostRows={consumableCostRows}
                     />                  )}
