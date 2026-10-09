@@ -12,7 +12,11 @@ import {
   ScrollArea,
   Alert,
   Center,
-  Divider
+  Divider,
+  Paper,
+  CloseButton,
+  Collapse,
+  UnstyledButton
 } from '@mantine/core';
 import { useGameData } from './hooks/useGameData';
 import { useSimulation } from './hooks/useSimulation';
@@ -28,7 +32,8 @@ import {
   validateRosterPayload,
   clearRosterLinkHash
 } from './utils/rosterBridge';
-import { HeaderControls } from './components/HeaderControls';
+import { HeaderControls, GlobalBuffsCard } from './components/HeaderControls';
+import { PartyRail } from './components/PartyRail';
 import { PlayerConfig } from './components/PlayerConfig';
 import { SimulationResults } from './components/SimulationResults';
 import { AllZonesModal } from './components/AllZonesModal';
@@ -124,10 +129,13 @@ const ONE_HOUR = 60 * 60 * 1e9;
 // -- Resizable left column (AppShell navbar) ---------------------------------
 // Width is user-draggable within [NAV_MIN, NAV_MAX] and persisted so the choice
 // survives reloads. Double-clicking the handle restores NAV_DEFAULT.
-const NAV_MIN = 300;
-const NAV_MAX = 760;
-const NAV_DEFAULT = 430;
-const NAV_WIDTH_KEY = 'csim_navbar_width';
+// The column is now the party RAIL (member cards), far narrower than the old
+// editor column, so it has its own key: an old stored editor width would be
+// far too wide for a rail.
+const NAV_MIN = 200;
+const NAV_MAX = 420;
+const NAV_DEFAULT = 250;
+const NAV_WIDTH_KEY = 'csim_rail_width';
 
 function loadNavbarWidth() {
   try {
@@ -218,6 +226,13 @@ function App() {
   // be the same character in different gear with no copy of anything.
   const [party, setParty] = useState(() => normalizeParty(savedSession.party));
   const [navbarWidth, setNavbarWidth] = useState(loadNavbarWidth);
+  // The member editor sheet (AppShell aside, breakpoint 90em). From 90em up it
+  // sits beside the results and starts open; below that Mantine draws it over
+  // the results, so it starts closed and opens when a member card is clicked.
+  const [sheetOpen, setSheetOpen] = useState(() => {
+    try { return window.matchMedia('(min-width: 90em)').matches; } catch { return true; }
+  });
+  const [modeSettingsOpen, setModeSettingsOpen] = useState(true);
   const [activeTab, setActiveTab] = useState(1);
   const [selectedPlayers, setSelectedPlayers] = useState(
     () => (Array.isArray(savedSession?.selectedPlayers) && savedSession.selectedPlayers.length
@@ -1569,6 +1584,33 @@ function App() {
     const id = party[activeTab]?.characterId;
     return Object.keys(characters.characters?.[id]?.loadouts || {});
   }, [characters, party, activeTab]);
+  // Rail card labels: character name and loadout, read from the store.
+  const railLabels = useMemo(() => {
+    const out = {};
+    for (const id of PARTY_SLOTS) {
+      const ref = party[id];
+      const character = ref && characters.characters?.[ref.characterId];
+      out[id] = character
+        ? { name: character.name || character.id, loadout: ref.loadoutName }
+        : { name: `P${id}`, loadout: '' };
+    }
+    return out;
+  }, [characters, party]);
+  const handleToggleInRun = useCallback((id) => {
+    const next = selectedPlayers.includes(id)
+      ? selectedPlayers.filter(x => x !== id)
+      : [...selectedPlayers, id];
+    handleSelectedPlayersChange(next.map(String));
+  }, [selectedPlayers, handleSelectedPlayersChange]);
+  const handleSelectMember = useCallback((id) => {
+    if (sheetOpen && activeTab === id) {
+      setSheetOpen(false);
+      return;
+    }
+    setActiveTab(id);
+    setSheetOpen(true);
+  }, [sheetOpen, activeTab]);
+
   // Character names for the results tables. Read from the party as it is NOW:
   // re-binding a slot after a run relabels that run's rows.
   const playerNames = useMemo(() => {
@@ -1579,13 +1621,6 @@ function App() {
       if (character) out[`player${id}`] = `${character.name || character.id} · ${ref.loadoutName}`;
     }
     return out;
-  }, [characters, party]);
-  const slotLabel = useCallback((id) => {
-    const ref = party[id];
-    if (!ref) return 'empty';
-    const character = characters.characters?.[ref.characterId];
-    if (!character) return 'missing';
-    return `${character.name || character.id}/${ref.loadoutName}`;
   }, [characters, party]);
 
   // The header, progress bar and results pane read from whichever engine the
@@ -1624,10 +1659,16 @@ function App() {
         ? cancelTriggerOpt
         : clearResults;
 
+  const isTrial = simMode === 'guildTrial';
+  const isCosts = simMode === 'itemCosts';
+  // Costs is a settings view: no party editing, so no sheet.
+  const showSheet = sheetOpen && !isCosts;
+
   return (
     <AppShell
-      header={{ height: 64 }}
+      header={{ height: 56 }}
       navbar={{ width: navbarWidth, breakpoint: 'sm' }}
+      aside={{ width: 500, breakpoint: '90em', collapsed: { desktop: !showSheet, mobile: !showSheet } }}
       padding="md"
     >
       <AppShell.Header>
@@ -1646,35 +1687,11 @@ function App() {
             )}
           </Group>
           <HeaderControls
+            part="header"
             simMode={simMode}
             onSimModeChange={setSimMode}
-            optTarget={optTarget}
-            onOptTargetChange={setOptTarget}
-            zones={gameData?.zones}
-            zone={zone}
-            onZoneChange={handleZoneChange}
-            difficultyTier={difficultyTier}
-            onDifficultyChange={setDifficultyTier}
-            monsters={gameData?.monsters}
             labConfig={labConfig}
-            onLabConfigChange={setLabConfig}
-            duration={duration}
-            onDurationChange={setDuration}
-            dungeonRunMode={dungeonRunMode}
-            dungeonRuns={dungeonRuns}
-            onDungeonRunsChange={setDungeonRuns}
-            maxRunHours={maxRunHours}
-            onMaxRunHoursChange={setMaxRunHours}
             extraOptions={extraOptions}
-            onExtraChange={setExtraOptions}
-            onStart={handleStartSimulation}
-            onStop={handleStop}
-            onOpenAllZones={() => setAllZonesOpen(true)}
-            loading={activeLoading}
-            guildTrials={gameData?.guildTrials}
-            trialConfig={trialConfig}
-            onTrialConfigChange={setTrialConfig}
-            rosterLength={rosterSize(roster)}
             experimental={experimental}
             onExperimentalChange={handleExperimentalChange}
           />
@@ -1682,9 +1699,8 @@ function App() {
       </AppShell.Header>
 
       <AppShell.Navbar>
-        {/* Drag-to-resize handle pinned to the navbar's right edge. Double-click
-            restores the default width. Hidden below the navbar breakpoint,
-            where the column collapses and dragging is meaningless. */}
+        {/* Drag-to-resize handle pinned to the rail's right edge. Double-click
+            restores the default width. */}
         <div
           className="nav-resize-handle"
           onPointerDown={handleNavbarResizeStart}
@@ -1695,10 +1711,9 @@ function App() {
           title="Drag to resize · double-click to reset"
         />
         <ScrollArea type="hover" style={{ height: '100%' }}>
-          <Stack gap="sm" p="md">
-            {simMode === 'guildTrial' ? (
-              <>
-                <GuildTrialPanel
+          <Stack gap="sm" p="sm">
+            {isTrial ? (
+              <GuildTrialPanel
                   characters={characters}
                   roster={roster}
                   selectedEntryId={selectedEntryId}
@@ -1706,7 +1721,7 @@ function App() {
                   items={gameData?.items}
                   party={party}
                   trialConfig={trialConfig}
-                  onSelectEntry={setSelectedEntryId}
+                  onSelectEntry={(id) => { setSelectedEntryId(id); setSheetOpen(true); }}
                   onDuplicate={handleDuplicate}
                   onSetCount={handleSetCount}
                   onSaveAsNew={handleSaveAsNew}
@@ -1720,8 +1735,58 @@ function App() {
                   onImportBuild={handleImportBuild}
                 />
 
-                <Divider />
+            ) : (
+              <>
+                <PartyRail
+                  slots={PARTY_SLOTS}
+                  labels={railLabels}
+                  resolvedParty={resolvedParty}
+                  selectedPlayers={selectedPlayers}
+                  activeTab={activeTab}
+                  sheetOpen={showSheet}
+                  onSelect={handleSelectMember}
+                  onToggle={handleToggleInRun}
+                  showFoodWarning={simMode === 'zone'}
+                />
+                <ImportExport
+                  resolvedParty={resolvedParty}
+                  party={party}
+                  onImportPlayer={handleImportPlayer}
+                  selectedPlayers={selectedPlayers}
+                  activeTab={activeTab}
+                  zone={zone}
+                  // Coercing setter: an exported set may name a solo monster
+                  // ("/actions/combat/fly"), which is no longer selectable.
+                  setZone={handleZoneChange}
+                  difficultyTier={difficultyTier}
+                  setDifficultyTier={setDifficultyTier}
+                  duration={duration}
+                  setDuration={setDuration}
+                  dungeonRuns={dungeonRuns}
+                  maxRunHours={maxRunHours}
+                  onClearSaved={handleClearSaved}
+                />
 
+                <GlobalBuffsCard extraOptions={extraOptions} onExtraChange={setExtraOptions} />
+              </>
+            )}
+          </Stack>
+        </ScrollArea>
+      </AppShell.Navbar>
+
+      <AppShell.Aside>
+        <ScrollArea type="hover" style={{ height: '100%' }}>
+          <Stack gap="sm" p="md">
+            <Group justify="space-between" wrap="nowrap">
+              <Title order={5} style={{ minWidth: 0 }}>
+                {isTrial
+                  ? (selectedCharacter?.name || 'Roster entry')
+                  : `P${activeTab} · ${railLabels[activeTab]?.name ?? ''}`}
+              </Title>
+              <CloseButton onClick={() => setSheetOpen(false)} aria-label="Close editor" />
+            </Group>
+            {isTrial ? (
+              <>
                 {selectedTrialPlayer ? (
                   <>
                     <TextInput
@@ -1767,92 +1832,6 @@ function App() {
               </>
             ) : (
               <>
-                {/* Trigger Optimizer sits ABOVE the party editor rather than
-                    replacing it: the whole point is to tune the triggers the user
-                    can see and edit in PlayerConfig below, and the panel's preview
-                    re-reads them on every change. */}
-                {simMode === 'triggerOpt' && (
-                  <>
-                    <TriggerOptimizerPanel
-                      preview={triggerOpt.preview}
-                      previewing={triggerOpt.previewing}
-                      apiReachable={triggerOpt.apiReachable}
-                      selection={triggerOptSelection}
-                      onSelectionChange={setTriggerOptSelection}
-                      config={triggerOptConfig}
-                      onConfigChange={setTriggerOptConfig}
-                      loading={triggerOpt.loading}
-                      onRun={handleStartTriggerOpt}
-                      onCancel={cancelTriggerOpt}
-                      pricing={pricing}
-                      consumableCostRows={consumableCostRows}
-                    />
-                    <Divider />
-                  </>
-                )}
-
-                {/* Same placement and the same reason as the trigger panel: the
-                    scan reads the very equipment the user edits in PlayerConfig
-                    below, and re-previews on every change. */}
-                {simMode === 'equipOpt' && (
-                  <>
-                    <EquipmentOptimizerPanel
-                      preview={equipOpt.preview}
-                      previewing={equipOpt.previewing}
-                      apiReachable={equipOpt.apiReachable}
-                      selection={equipOptSelection}
-                      onSelectionChange={setEquipOptSelection}
-                      config={equipOptConfig}
-                      onConfigChange={setEquipOptConfig}
-                      loading={equipOpt.loading}
-                      onRun={handleStartEquipOpt}
-                      onCancel={cancelEquipOpt}
-                      pricing={pricing}
-                      consumableCostRows={consumableCostRows}
-                    />
-                    <Divider />
-                  </>
-                )}
-
-                <div>
-                  <Text size="sm" fw={600} mb={4}>
-                    Party
-                  </Text>
-                  <Checkbox.Group
-                    value={selectedPlayers.map(String)}
-                    onChange={handleSelectedPlayersChange}
-                  >
-                    <Group gap="sm">
-                      {PARTY_SLOTS.map(id => (
-                        <Checkbox
-                          key={id}
-                          value={String(id)}
-                          label={`P${id} — ${slotLabel(id)}`}
-                          size="xs"
-                        />
-                      ))}
-                    </Group>
-                  </Checkbox.Group>
-                  <Text size="xs" c="dimmed" mt={4}>
-                    {selectedPlayers.length} player{selectedPlayers.length !== 1 ? 's' : ''} in simulation
-                  </Text>
-                </div>
-
-                <Tabs
-                  value={String(activeTab)}
-                  onChange={(v) => setActiveTab(Number(v))}
-                  variant="pills"
-                  radius="md"
-                >
-                  <Tabs.List grow>
-                    {PARTY_SLOTS.map(id => (
-                      <Tabs.Tab key={id} value={String(id)}>
-                        P{id}
-                      </Tabs.Tab>
-                    ))}
-                  </Tabs.List>
-                </Tabs>
-
                 {/* The slot binder: pick a CHARACTER, then one of ITS loadouts.
                     Two slots may name the same character — that is the point:
                     they then share one set of levels, with no copy step. */}
@@ -1895,26 +1874,6 @@ function App() {
                   onLoadCharacter={(character, defaultLoadoutName) =>
                     handleImportCharacter(activeTab, character, defaultLoadoutName)}
                 />
-
-                <ImportExport
-                  resolvedParty={resolvedParty}
-                  party={party}
-                  onImportPlayer={handleImportPlayer}
-                  selectedPlayers={selectedPlayers}
-                  activeTab={activeTab}
-                  zone={zone}
-                  // Coercing setter: an exported set may name a solo monster
-                  // ("/actions/combat/fly"), which is no longer selectable.
-                  setZone={handleZoneChange}
-                  difficultyTier={difficultyTier}
-                  setDifficultyTier={setDifficultyTier}
-                  duration={duration}
-                  setDuration={setDuration}
-                  dungeonRuns={dungeonRuns}
-                  maxRunHours={maxRunHours}
-                  onClearSaved={handleClearSaved}
-                />
-
                 <LoadoutManager
                   characters={characters}
                   setCharacters={setCharacters}
@@ -1948,10 +1907,90 @@ function App() {
             )}
           </Stack>
         </ScrollArea>
-      </AppShell.Navbar>
+      </AppShell.Aside>
 
       <AppShell.Main>
         <Stack gap="md">
+          {!isCosts && (
+            <Paper withBorder radius="md" p="xs">
+              <HeaderControls
+                part="strip"
+                simMode={simMode}
+                optTarget={optTarget}
+                onOptTargetChange={setOptTarget}
+                zones={gameData?.zones}
+                zone={zone}
+                onZoneChange={handleZoneChange}
+                difficultyTier={difficultyTier}
+                onDifficultyChange={setDifficultyTier}
+                monsters={gameData?.monsters}
+                labConfig={labConfig}
+                onLabConfigChange={setLabConfig}
+                duration={duration}
+                onDurationChange={setDuration}
+                dungeonRunMode={dungeonRunMode}
+                dungeonRuns={dungeonRuns}
+                onDungeonRunsChange={setDungeonRuns}
+                maxRunHours={maxRunHours}
+                onMaxRunHoursChange={setMaxRunHours}
+                onStart={handleStartSimulation}
+                onStop={handleStop}
+                onOpenAllZones={() => setAllZonesOpen(true)}
+                loading={activeLoading}
+                guildTrials={gameData?.guildTrials}
+                trialConfig={trialConfig}
+                onTrialConfigChange={setTrialConfig}
+                rosterLength={rosterSize(roster)}
+              />
+            </Paper>
+          )}
+
+          {/* Mode settings: the optimisers' own knobs, directly under the Run
+              they govern. They read the very build the user edits in the
+              sheet, and re-preview on every change. */}
+          {isApiOpt && (
+            <Paper withBorder radius="md" p="sm">
+              <UnstyledButton onClick={() => setModeSettingsOpen(o => !o)} w="100%" aria-expanded={modeSettingsOpen}>
+                <Group justify="space-between">
+                  <Text size="xs" fw={600} tt="uppercase" c="dimmed" style={{ letterSpacing: '0.08em' }}>Settings</Text>
+                  <Text size="xs" c="dimmed">{modeSettingsOpen ? 'Hide ▴' : 'Show ▾'}</Text>
+                </Group>
+              </UnstyledButton>
+              <Collapse expanded={modeSettingsOpen}>
+                <div className="mode-settings">
+                  {isTriggerOpt ? (
+                    <TriggerOptimizerPanel
+                      preview={triggerOpt.preview}
+                      previewing={triggerOpt.previewing}
+                      apiReachable={triggerOpt.apiReachable}
+                      selection={triggerOptSelection}
+                      onSelectionChange={setTriggerOptSelection}
+                      config={triggerOptConfig}
+                      onConfigChange={setTriggerOptConfig}
+                      loading={triggerOpt.loading}
+                      onRun={handleStartTriggerOpt}
+                      onCancel={cancelTriggerOpt}
+                      pricing={pricing}
+                      consumableCostRows={consumableCostRows}
+                    />                  ) : (
+                    <EquipmentOptimizerPanel
+                      preview={equipOpt.preview}
+                      previewing={equipOpt.previewing}
+                      apiReachable={equipOpt.apiReachable}
+                      selection={equipOptSelection}
+                      onSelectionChange={setEquipOptSelection}
+                      config={equipOptConfig}
+                      onConfigChange={setEquipOptConfig}
+                      loading={equipOpt.loading}
+                      onRun={handleStartEquipOpt}
+                      onCancel={cancelEquipOpt}
+                      pricing={pricing}
+                      consumableCostRows={consumableCostRows}
+                    />                  )}
+                </div>
+              </Collapse>
+            </Paper>
+          )}
           {bridgeMessage && (
             <Alert
               color={bridgeMessage.includes('failed') ? 'red' : 'teal'}
@@ -2073,10 +2112,10 @@ function App() {
                 {simMode === 'guildTrial'
                   ? 'Build a roster on the left, then press Run.'
                   : isTriggerOpt
-                    ? 'Pick which trigger thresholds to search on the left, then press Run.'
+                    ? 'Pick which trigger thresholds to search above, then press Run.'
                     : isEquipOpt
-                      ? 'Pick which equipment slots to probe on the left, then press Run.'
-                      : 'Configure your party on the left, then press Run — or press All Zones to sweep every zone and tier at once.'}
+                      ? 'Pick which equipment slots to probe above, then press Run.'
+                      : 'Set up your party on the left, then press Run — or All Zones to sweep every zone and tier at once.'}
               </Text>
             </Center>
           )}

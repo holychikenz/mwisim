@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Group,
   Select,
@@ -12,7 +12,10 @@ import {
   SegmentedControl,
   Anchor,
   Divider,
-  Tooltip
+  Tooltip,
+  Paper,
+  Collapse,
+  UnstyledButton
 } from '@mantine/core';
 import {
   GUILD_COMBAT_BUFFS,
@@ -87,8 +90,6 @@ export function HeaderControls({
   onDungeonRunsChange,
   maxRunHours,
   onMaxRunHoursChange,
-  extraOptions,
-  onExtraChange,
   onStart,
   onStop,
   onOpenAllZones,
@@ -100,7 +101,10 @@ export function HeaderControls({
   // Experimental engine knobs (see utils/experimental.js). Kept beside Run
   // because they change what a run MEANS, not merely what it targets.
   experimental,
-  onExperimentalChange
+  onExperimentalChange,
+  // 'header' renders the mode tabs and the settings cog; 'strip' renders the
+  // run strip (target, duration, All Zones, Run/Stop) above the results.
+  part = 'strip'
 }) {
   // Planets and dungeons only. The 44 solo-monster combat actions ("Fly",
   // "Granite Golem") are spawns inside a planet rather than places to send a
@@ -135,14 +139,6 @@ export function HeaderControls({
       .sort((a, b) => (a.sortIndex || 0) - (b.sortIndex || 0))
       .map(m => ({ value: m.hrid, label: m.name }));
   }, [monsters]);
-
-  // Community buffs and MooPass only. Seals used to be counted here; they are
-  // now a per-character control in PlayerConfig's "Houses, Achievements &
-  // Buffs" panel, and this header knows nothing about them.
-  const activeBuffCount =
-    (extraOptions.comExp > 0 ? 1 : 0) +
-    (extraOptions.comDrop > 0 ? 1 : 0) +
-    (extraOptions.mooPass ? 1 : 0);
 
   const crateCount = CRATE_CATEGORIES.filter(c => labConfig.crates[c.key]).length;
   const upgradeCount = LAB_UPGRADE_FIELDS.filter(f => labConfig.upgrades[f.key] > 0).length;
@@ -198,21 +194,36 @@ export function HeaderControls({
     />
   ));
 
+  if (part === 'header') {
+    return (
+      <Group gap="sm" wrap="nowrap">
+        <SegmentedControl
+          size="sm"
+          radius="xl"
+          value={simMode}
+          onChange={onSimModeChange}
+          data={[
+            { value: 'zone', label: 'Zone' },
+            { value: 'labyrinth', label: 'Lab' },
+            { value: 'guildTrial', label: 'Trial' },
+            { value: 'triggerOpt', label: 'Triggers' },
+            { value: 'equipOpt', label: 'Gear' },
+            { value: 'itemCosts', label: 'Costs' }
+          ]}
+        />
+        {/* The cog. Present in every mode, including Costs — an experiment
+            left on is a fact about the whole app, so hiding it anywhere would
+            be a way to forget it. */}
+        <SettingsMenu settings={experimental} onChange={onExperimentalChange} />
+      </Group>
+    );
+  }
+
+  // Costs edits per-item times: no target, nothing to run, so no strip.
+  if (simMode === 'itemCosts') return null;
+
   return (
-    <Group gap="xs" wrap="nowrap">
-      <SegmentedControl
-        size="xs"
-        value={simMode}
-        onChange={onSimModeChange}
-        data={[
-          { value: 'zone', label: 'Zone' },
-          { value: 'labyrinth', label: 'Lab' },
-          { value: 'guildTrial', label: 'Trial' },
-          { value: 'triggerOpt', label: 'Triggers' },
-          { value: 'equipOpt', label: 'Gear' },
-          { value: 'itemCosts', label: 'Costs' }
-        ]}
-      />
+    <Group gap="xs" wrap="wrap">
 
       {/* Costs edits per-item times; it has no target to pick. Without this it
           would fall through to the labyrinth controls, which are meaningless here. */}
@@ -535,68 +546,6 @@ export function HeaderControls({
         />
       )}
 
-      {/* Community buffs and MooPass do NOT apply inside guild trials — the
-          trial worker sends a neutral extra — so the button is hidden in trial
-          mode to avoid implying otherwise. What remains in here is genuinely
-          server- or account-wide: the two community buff ladders are the same
-          for everyone logged in, and a MooPass is an account subscription.
-          Seals and guild shrines used to be here too and are not any more:
-          both are per-CHARACTER and now live in each player's "Houses,
-          Achievements & Buffs" panel. */}
-      {simMode !== 'guildTrial' && (
-      <Popover width={280} position="bottom-end" shadow="md">
-        <Popover.Target>
-          <Indicator
-            disabled={activeBuffCount === 0}
-            label={activeBuffCount}
-            size={16}
-          >
-            <Button variant="default" size="sm">
-              Buffs
-            </Button>
-          </Indicator>
-        </Popover.Target>
-        <Popover.Dropdown>
-          <Stack gap="xs">
-            <Text size="sm" fw={600}>
-              Community buffs
-            </Text>
-            <Select
-              label="Experience"
-              data={BUFF_LEVEL_OPTIONS}
-              value={String(extraOptions.comExp)}
-              onChange={(v) =>
-                v != null && onExtraChange({ ...extraOptions, comExp: Number(v) })
-              }
-              allowDeselect={false}
-              size="xs"
-              comboboxProps={{ withinPortal: false }}
-            />
-            <Select
-              label="Combat drop"
-              data={BUFF_LEVEL_OPTIONS}
-              value={String(extraOptions.comDrop)}
-              onChange={(v) =>
-                v != null && onExtraChange({ ...extraOptions, comDrop: Number(v) })
-              }
-              allowDeselect={false}
-              size="xs"
-              comboboxProps={{ withinPortal: false }}
-            />
-            <Switch
-              label="MooPass (+5% wisdom)"
-              size="xs"
-              mt={4}
-              checked={!!extraOptions.mooPass}
-              onChange={(e) =>
-                onExtraChange({ ...extraOptions, mooPass: e.currentTarget.checked })
-              }
-            />
-          </Stack>
-        </Popover.Dropdown>
-      </Popover>
-      )}
-
       {/* One run answers "how good is this zone"; the sweep answers "which
           zone". Offered in zone mode only — the labyrinth, trials and both
           optimisers have their own targets and their own panels. */}
@@ -606,10 +555,7 @@ export function HeaderControls({
         </Button>
       )}
 
-      {/* The cog. Present in every mode, including Costs — an experiment left
-          on is a fact about the whole app, so hiding it anywhere would be a
-          way to forget it. */}
-      <SettingsMenu settings={experimental} onChange={onExperimentalChange} />
+      <div style={{ flex: 1 }} />
 
       {/* Costs is a settings view, not a simulation mode — there is nothing to
           run, and a Run button that did nothing would be worse than none. */}
@@ -626,5 +572,58 @@ export function HeaderControls({
         </>
       )}
     </Group>
+  );
+}
+
+// Account- and server-wide buffs: the two community ladders are the same for
+// everyone logged in, and a MooPass is an account subscription. Shown as a card
+// at the foot of the party rail, so what is switched on is always visible.
+// Community buffs and MooPass do NOT apply inside guild trials (the trial
+// worker sends a neutral extra), so App omits this card in Trial mode.
+// Seals and guild shrines are per-CHARACTER and live in each member's Buffs tab.
+export function GlobalBuffsCard({ extraOptions, onExtraChange }) {
+  const [open, setOpen] = useState(false);
+  const parts = [];
+  if (extraOptions.comExp > 0) parts.push(`XP ${extraOptions.comExp}`);
+  if (extraOptions.comDrop > 0) parts.push(`Drop ${extraOptions.comDrop}`);
+  if (extraOptions.mooPass) parts.push('MooPass');
+  return (
+    <Paper withBorder radius="md" p="xs">
+      <UnstyledButton onClick={() => setOpen(o => !o)} w="100%" aria-expanded={open}>
+        <Group justify="space-between" wrap="nowrap" gap="xs">
+          <div style={{ minWidth: 0 }}>
+            <Text size="xs" fw={600}>Global buffs</Text>
+            <Text size="xs" c="dimmed" truncate>{parts.length ? parts.join(' · ') : 'None active'}</Text>
+          </div>
+          <Text size="xs" c="dimmed">{open ? '▴' : '▾'}</Text>
+        </Group>
+      </UnstyledButton>
+      <Collapse expanded={open}>
+        <Stack gap="xs" mt="xs">
+          <Select
+            label="Community: experience"
+            data={BUFF_LEVEL_OPTIONS}
+            value={String(extraOptions.comExp)}
+            onChange={(v) => v != null && onExtraChange({ ...extraOptions, comExp: Number(v) })}
+            allowDeselect={false}
+            size="xs"
+          />
+          <Select
+            label="Community: combat drop"
+            data={BUFF_LEVEL_OPTIONS}
+            value={String(extraOptions.comDrop)}
+            onChange={(v) => v != null && onExtraChange({ ...extraOptions, comDrop: Number(v) })}
+            allowDeselect={false}
+            size="xs"
+          />
+          <Switch
+            label="MooPass (+5% wisdom)"
+            size="xs"
+            checked={!!extraOptions.mooPass}
+            onChange={(e) => onExtraChange({ ...extraOptions, mooPass: e.currentTarget.checked })}
+          />
+        </Stack>
+      </Collapse>
+    </Paper>
   );
 }

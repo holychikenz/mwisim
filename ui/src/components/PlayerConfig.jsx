@@ -1,15 +1,17 @@
 import { useState, useCallback, useMemo } from 'react';
 import {
-  Accordion,
   ActionIcon,
   Badge,
+  Button,
   Collapse,
   Group,
   NumberInput,
   Select,
   SimpleGrid,
   Stack,
-  Text
+  Tabs,
+  Text,
+  UnstyledButton
 } from '@mantine/core';
 import { getFood, getDrinks, getCombatAbilities, getAuras } from '../hooks/useGameData';
 import { TriggerEditor } from './TriggerEditor';
@@ -34,43 +36,102 @@ const EQUIPMENT_SLOTS = [
   { key: '/equipment_types/charm', label: 'Charm' },
 ];
 
-function EquipmentSlot({ slot, items, selected, enhancementLevel, onChange }) {
+// Paper-doll order: armour down the left, jewellery beside it, weapons last.
+// `null` leaves a cell empty so the weapon row starts on its own line.
+const DOLL_ORDER = [
+  'head', 'neck', 'earrings',
+  'body', 'back', 'ring',
+  'legs', 'hands', 'charm',
+  'feet', 'pouch', null,
+  'main_hand', 'two_hand', 'off_hand'
+].map(k => (k ? EQUIPMENT_SLOTS.find(s => s.key === `/equipment_types/${k}`) : null));
+
+// The paper doll: a 3-column grid of slot tiles. Clicking a tile selects it
+// and opens one picker beneath the grid (searchable item list, enhancement
+// level, unequip); clicking the selected tile again closes it.
+function GearDoll({ items, equipment, onChange }) {
+  const [editing, setEditing] = useState(null);
+  const slot = editing ? EQUIPMENT_SLOTS.find(s => s.key === editing) : null;
+  const selected = slot ? equipment[slot.key]?.itemHrid : null;
+  const enhancementLevel = slot ? equipment[slot.key]?.enhancementLevel || 0 : 0;
   const slotOptions = useMemo(() => {
-    if (!items) return [];
+    if (!items || !slot) return [];
     return Object.values(items)
       .filter(item => item.equipmentDetail?.type === slot.key)
       .sort((a, b) => a.name.localeCompare(b.name))
       .map(item => ({ value: item.hrid, label: item.name }));
-  }, [items, slot.key]);
+  }, [items, slot]);
 
   return (
-    <Group gap={6} wrap="nowrap" align="flex-end">
-      <Select
-        label={slot.label}
-        data={slotOptions}
-        value={selected || null}
-        onChange={(v) => onChange(slot.key, v || null, enhancementLevel)}
-        searchable
-        clearable
-        placeholder="None"
-        size="xs"
-        style={{ flex: 1 }}
-      />
-      {selected && (
-        <NumberInput
-          value={enhancementLevel || 0}
-          onChange={(v) =>
-            onChange(slot.key, selected, Math.max(0, Math.min(20, Number(v) || 0)))
-          }
-          min={0}
-          max={20}
-          size="xs"
-          w={64}
-          prefix="+"
-          aria-label={`${slot.label} enhancement level`}
-        />
+    <Stack gap="xs">
+      <div className="gear-doll">
+        {DOLL_ORDER.map((s, i) => {
+          if (!s) return <div key={`gap-${i}`} />;
+          const hrid = equipment[s.key]?.itemHrid;
+          const enh = equipment[s.key]?.enhancementLevel || 0;
+          const name = hrid ? (items?.[hrid]?.name || hrid.split('/').pop()) : null;
+          return (
+            <UnstyledButton
+              key={s.key}
+              className="gear-tile"
+              data-empty={!hrid || undefined}
+              data-open={editing === s.key || undefined}
+              onClick={() => setEditing(e => (e === s.key ? null : s.key))}
+              aria-pressed={editing === s.key}
+              title={name ? `${name}${enh ? ` +${enh}` : ''}` : `${s.label}: empty`}
+            >
+              <Text size="10px" c="dimmed" tt="uppercase" style={{ letterSpacing: '0.06em' }}>{s.label}</Text>
+              <Group gap={4} wrap="nowrap" justify="space-between">
+                <Text size="xs" fw={hrid ? 500 : 400} c={hrid ? undefined : 'dimmed'} truncate>
+                  {name || 'empty'}
+                </Text>
+                {hrid && enh > 0 && (
+                  <Text size="xs" fw={700} c="moss" style={{ flexShrink: 0 }}>+{enh}</Text>
+                )}
+              </Group>
+            </UnstyledButton>
+          );
+        })}
+      </div>
+      {slot && (
+        <div className="gear-picker">
+          <Group gap="xs" align="flex-end" wrap="nowrap">
+            <Select
+              key={slot.key}
+              label={slot.label}
+              data={slotOptions}
+              value={selected || null}
+              onChange={(v) => onChange(slot.key, v || null, enhancementLevel)}
+              searchable
+              clearable
+              placeholder="None"
+              size="xs"
+              style={{ flex: 1 }}
+            />
+            {selected && (
+              <NumberInput
+                label="Enhancement"
+                value={enhancementLevel}
+                onChange={(v) => onChange(slot.key, selected, Math.max(0, Math.min(20, Number(v) || 0)))}
+                min={0}
+                max={20}
+                size="xs"
+                prefix="+"
+                w={96}
+              />
+            )}
+          </Group>
+          <Group justify="space-between" mt={6}>
+            {selected ? (
+              <Button size="compact-xs" variant="subtle" color="red" onClick={() => onChange(slot.key, null, 0)}>
+                Unequip
+              </Button>
+            ) : <span />}
+            <Button size="compact-xs" variant="default" onClick={() => setEditing(null)}>Done</Button>
+          </Group>
+        </div>
       )}
-    </Group>
+    </Stack>
   );
 }
 
@@ -213,7 +274,7 @@ function AbilitySlot({ index, abilities, selected, onChange, onTriggersChange, l
   );
 }
 
-export function PlayerConfig({ gameData, player, onPlayerChange, playerId = 1, hideConsumables = false, hideSeals = false }) {
+export function PlayerConfig({ gameData, player, onPlayerChange, hideConsumables = false, hideSeals = false }) {
   const items = gameData?.items;
   const abilities = gameData?.abilities;
 
@@ -419,20 +480,18 @@ export function PlayerConfig({ gameData, player, onPlayerChange, playerId = 1, h
   const bonusesCount = housesCount + shrineCount + sealCount;
 
   return (
-    <Accordion
-      multiple
-      defaultValue={['levels', 'equipment']}
-      variant="separated"
-      radius="md"
-    >
-      <Accordion.Item value="levels">
-        <Accordion.Control>
-          <Group gap="xs">
-            <Text size="sm" fw={600}>Levels</Text>
-            <Badge variant="default" size="xs">P{playerId}</Badge>
-          </Group>
-        </Accordion.Control>
-        <Accordion.Panel>
+    <Tabs defaultValue="levels" keepMounted={false} radius="md" styles={{ list: { flexWrap: "nowrap" }, tab: { paddingInline: 10 } }}>
+      <Tabs.List>
+        <Tabs.Tab value="levels">Levels</Tabs.Tab>
+        <Tabs.Tab value="equipment" rightSection={equippedCount > 0 ? <Badge variant="default" size="xs">{equippedCount}</Badge> : null}>Gear</Tabs.Tab>
+        <Tabs.Tab value="abilities" rightSection={abilitiesCount > 0 ? <Badge variant="default" size="xs">{abilitiesCount}</Badge> : null}>Abilities</Tabs.Tab>
+        <Tabs.Tab value="houses" rightSection={bonusesCount > 0 ? <Badge variant="default" size="xs">{bonusesCount}</Badge> : null}>Buffs</Tabs.Tab>
+        {!hideConsumables && (
+          <Tabs.Tab value="consumables" rightSection={consumablesCount > 0 ? <Badge variant="default" size="xs">{consumablesCount}</Badge> : null}>Food</Tabs.Tab>
+        )}
+      </Tabs.List>
+      <Tabs.Panel value="levels" pt="sm">
+        <>
           <SimpleGrid cols={2} spacing="xs">
             {SKILL_NAMES.map(skill => (
               <NumberInput
@@ -446,44 +505,17 @@ export function PlayerConfig({ gameData, player, onPlayerChange, playerId = 1, h
               />
             ))}
           </SimpleGrid>
-        </Accordion.Panel>
-      </Accordion.Item>
+        </>
+      </Tabs.Panel>
 
-      <Accordion.Item value="equipment">
-        <Accordion.Control>
-          <Group gap="xs">
-            <Text size="sm" fw={600}>Equipment</Text>
-            {equippedCount > 0 && (
-              <Badge variant="default" size="xs">{equippedCount}</Badge>
-            )}
-          </Group>
-        </Accordion.Control>
-        <Accordion.Panel>
-          <Stack gap="xs">
-            {EQUIPMENT_SLOTS.map(slot => (
-              <EquipmentSlot
-                key={slot.key}
-                slot={slot}
-                items={items}
-                selected={player.equipment[slot.key]?.itemHrid}
-                enhancementLevel={player.equipment[slot.key]?.enhancementLevel}
-                onChange={handleEquipmentChange}
-              />
-            ))}
-          </Stack>
-        </Accordion.Panel>
-      </Accordion.Item>
+      <Tabs.Panel value="equipment" pt="sm">
+        <>
+          <GearDoll items={items} equipment={player.equipment} onChange={handleEquipmentChange} />
+        </>
+      </Tabs.Panel>
 
-      <Accordion.Item value="abilities">
-        <Accordion.Control>
-          <Group gap="xs">
-            <Text size="sm" fw={600}>Aura &amp; Abilities</Text>
-            {abilitiesCount > 0 && (
-              <Badge variant="default" size="xs">{abilitiesCount}</Badge>
-            )}
-          </Group>
-        </Accordion.Control>
-        <Accordion.Panel>
+      <Tabs.Panel value="abilities" pt="sm">
+        <>
           <Stack gap="xs">
             <AbilitySlot
               index={0}
@@ -509,45 +541,29 @@ export function PlayerConfig({ gameData, player, onPlayerChange, playerId = 1, h
               />
             ))}
           </Stack>
-        </Accordion.Panel>
-      </Accordion.Item>
+        </>
+      </Tabs.Panel>
 
       {/* `value="houses"` is deliberately unchanged despite the new label: it
           is the key any persisted accordion state was written under, and
           renaming it would collapse the panel for everyone who had it open. */}
-      <Accordion.Item value="houses">
-        <Accordion.Control>
-          <Group gap="xs">
-            <Text size="sm" fw={600}>Houses, Achievements &amp; Buffs</Text>
-            {bonusesCount > 0 && (
-              <Badge variant="default" size="xs">{bonusesCount}</Badge>
-            )}
-          </Group>
-        </Accordion.Control>
-        <Accordion.Panel>
+      <Tabs.Panel value="houses" pt="sm">
+        <>
           <CharacterBonuses
             gameData={gameData}
             player={player}
             onPlayerChange={onPlayerChange}
             hideSeals={hideSeals}
           />
-        </Accordion.Panel>
-      </Accordion.Item>
+        </>
+      </Tabs.Panel>
 
       {/* Trials strip every consumable (the engine ignores food/drinks — see
           toPlayerDTO(..., { stripConsumables: true }) in App's trial path), so
           the guild-trial build editor hides this section entirely. */}
       {!hideConsumables && (
-      <Accordion.Item value="consumables">
-        <Accordion.Control>
-          <Group gap="xs">
-            <Text size="sm" fw={600}>Consumables</Text>
-            {consumablesCount > 0 && (
-              <Badge variant="default" size="xs">{consumablesCount}</Badge>
-            )}
-          </Group>
-        </Accordion.Control>
-        <Accordion.Panel>
+      <Tabs.Panel value="consumables" pt="sm">
+        <>
           <Stack gap="xs">
             {[0, 1, 2].map(i => (
               <ConsumableSlot
@@ -576,9 +592,9 @@ export function PlayerConfig({ gameData, player, onPlayerChange, playerId = 1, h
               />
             ))}
           </Stack>
-        </Accordion.Panel>
-      </Accordion.Item>
+        </>
+      </Tabs.Panel>
       )}
-    </Accordion>
+    </Tabs>
   );
 }

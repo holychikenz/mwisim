@@ -39,3 +39,52 @@ body {
     display: none;
   }
 }
+
+/* Paper-doll gear editor (PlayerConfig): a 3-column grid of slot tiles. */
+.gear-doll {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.gear-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  padding: 6px 8px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+  background: var(--mantine-color-default);
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+.gear-tile:hover { border-color: var(--mantine-color-moss-filled); }
+.gear-tile[data-open] {
+  border-color: var(--mantine-color-moss-filled);
+  box-shadow: inset 0 0 0 1px var(--mantine-color-moss-filled);
+}
+.gear-tile[data-empty] { background: transparent; border-style: dashed; }
+.gear-tile:focus-visible { outline: 2px solid var(--mantine-color-moss-filled); outline-offset: 2px; }
+
+/* Party rail member cards (PartyRail). */
+.member-card {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 8px 10px;
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-md);
+  background: var(--mantine-color-body);
+  transition: border-color 120ms ease, opacity 120ms ease;
+}
+.member-card:hover { border-color: var(--mantine-color-moss-filled); }
+.member-card[data-active] {
+  border-color: var(--mantine-color-moss-filled);
+  box-shadow: inset 0 0 0 1px var(--mantine-color-moss-filled);
+}
+.member-card[data-out] { opacity: 0.6; }
+.gear-picker {
+  padding: 8px 10px;
+  border: 1px solid var(--mantine-color-moss-filled);
+  border-radius: var(--mantine-radius-md);
+  background: var(--mantine-color-default);
+}
