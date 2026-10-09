@@ -1,5 +1,5 @@
 import { useMemo, useCallback } from 'react';
-import { Accordion, Badge, Button, Group, Paper, ScrollArea, SimpleGrid, Stack, Table, Tabs, Text, Title, Tooltip } from '@mantine/core';
+import { Accordion, Badge, Button, Group, Paper, Progress, ScrollArea, SimpleGrid, Stack, Table, Tabs, Text, Title, Tooltip } from '@mantine/core';
 import { DropsEconomy } from './DropsEconomy';
 import { effectiveRatePerHour, summariseConsumableCost } from '../utils/consumableCosts';
 import { formatSeconds } from '../utils/triggerOptimizer';
@@ -23,26 +23,53 @@ function lastSegment(hrid) {
   return String(hrid).split('/').pop();
 }
 
-function KpiCard({ label, value, hint, tip }) {
-  const card = (
-    <Paper p="sm" radius="md" withBorder>
-      <Text size="xs" c="dimmed" tt="uppercase">{label}</Text>
-      <Text size="lg" fw={700}>{value}</Text>
-      {hint && <Text size="xs" c="dimmed">{hint}</Text>}
-    </Paper>
-  );
+function fmtCount(n) {
+  return Number.isFinite(Number(n)) ? Number(n).toLocaleString('en-US') : n;
+}
 
-  // A card only gets a tooltip when its number needs a caveat attached — chiefly
-  // the effective rate, which is meaningless without knowing what was priced.
-  if (!tip) return card;
+// A tooltip only where a number needs a caveat attached — chiefly the
+// effective rate, which is meaningless without knowing what was priced.
+function withTip(tip, node) {
+  if (!tip) return node;
   return (
     <Tooltip label={tip} withArrow multiline w={280} position="bottom">
-      {card}
+      {node}
     </Tooltip>
   );
 }
 
-function SummaryStats({ results, monsters, pricing }) {
+// One of the three summary cards (Run · Pace · Outcome). The lead figure is
+// shown large; every other figure keeps its own labelled row beneath it.
+function KpiGroup({ title, kpis }) {
+  if (kpis.length === 0) return null;
+  const lead = kpis.find(k => k.lead) || kpis[0];
+  const rest = kpis.filter(k => k !== lead);
+  return (
+    <Paper p="sm" radius="md" withBorder>
+      <Stack gap={6}>
+        <Title order={6}>{title}</Title>
+        {withTip(lead.tip, (
+          <div>
+            <Text size="xs" c="dimmed" tt="uppercase" style={{ letterSpacing: '0.06em' }}>{lead.label}</Text>
+            <Text fz={22} fw={700} lh={1.2}>{lead.value}</Text>
+            {lead.hint && <Text size="xs" c="dimmed">{lead.hint}</Text>}
+          </div>
+        ))}
+        {rest.map(k => withTip(k.tip, (
+          <div key={k.label}>
+            <Group justify="space-between" wrap="nowrap" gap="xs">
+              <Text size="sm" c="dimmed">{k.label}</Text>
+              <Text size="sm" fw={600}>{k.value}</Text>
+            </Group>
+            {k.hint && <Text size="xs" c="dimmed" ta="right">{k.hint}</Text>}
+          </div>
+        )))}
+      </Stack>
+    </Paper>
+  );
+}
+
+function SummaryStats({ results, monsters, pricing, zones }) {
   const hoursSimulated = results.simulatedTime / ONE_HOUR;
 
   // What the run's eating actually cost, in production time. Only the iron price
@@ -68,13 +95,13 @@ function SummaryStats({ results, monsters, pricing }) {
     const completions = results.encounters || 0;
     const timeouts = Math.max(0, attempts - completions);
     kpis.push(
-      { label: 'Labyrinth', value: monsters?.[results.labyrinthName]?.name || lastSegment(results.labyrinthName || '') },
-      { label: 'Room Level', value: results.roomLevel },
-      { label: 'Time Simulated', value: `${hoursSimulated.toFixed(2)} h` },
-      { label: 'Attempts', value: attempts },
-      { label: 'Completion Chance', value: attempts > 0 ? `${(completions / attempts * 100).toFixed(1)}%` : '—' },
-      { label: 'Clears/Hour', value: formatNumber(completions / hoursSimulated) },
-      { label: 'Timeouts/Hour', value: formatNumber(timeouts / hoursSimulated) }
+      { group: 'run', lead: true, label: 'Labyrinth', value: monsters?.[results.labyrinthName]?.name || lastSegment(results.labyrinthName || '') },
+      { group: 'run', label: 'Room Level', value: results.roomLevel },
+      { group: 'run', label: 'Time Simulated', value: `${hoursSimulated.toFixed(2)} h` },
+      { group: 'pace', lead: true, label: 'Clears/Hour', value: formatNumber(completions / hoursSimulated) },
+      { group: 'pace', label: 'Timeouts/Hour', value: formatNumber(timeouts / hoursSimulated) },
+      { group: 'pace', label: 'Attempts', value: fmtCount(attempts) },
+      { group: 'outcome', label: 'Completion Chance', value: attempts > 0 ? `${(completions / attempts * 100).toFixed(1)}%` : '—' }
     );
   } else {
     // A dungeon is paid out per finished RUN, and inside one the engine counts
@@ -88,15 +115,18 @@ function SummaryStats({ results, monsters, pricing }) {
       ? (results.dungeonsCompleted || 0) / hoursSimulated
       : results.encounters / hoursSimulated;
     kpis.push(
-      { label: dungeon ? 'Dungeon' : 'Zone', value: lastSegment(results.zoneName || '') },
-      { label: 'Difficulty', value: `T${results.difficultyTier}` },
-      { label: 'Time Simulated', value: `${hoursSimulated.toFixed(2)} h` },
+      {
+        group: 'run', lead: true, label: dungeon ? 'Dungeon' : 'Zone',
+        value: zones?.find(z => z.hrid === results.zoneName)?.name || lastSegment(results.zoneName || '')
+      },
+      { group: 'run', label: 'Difficulty', value: `T${results.difficultyTier}` },
+      { group: 'run', label: 'Time Simulated', value: `${hoursSimulated.toFixed(2)} h` },
       dungeon
-        ? { label: 'Dungeons Completed', value: results.dungeonsCompleted || 0 }
-        : { label: 'Encounters', value: results.encounters },
+        ? { group: 'pace', lead: true, label: 'Completions/Hour', value: formatNumber(ratePerHour) }
+        : { group: 'pace', lead: true, label: 'Encounters/Hour', value: formatNumber(ratePerHour) },
       dungeon
-        ? { label: 'Completions/Hour', value: formatNumber(ratePerHour) }
-        : { label: 'Encounters/Hour', value: formatNumber(ratePerHour) }
+        ? { group: 'pace', label: 'Dungeons Completed', value: fmtCount(results.dungeonsCompleted || 0) }
+        : { group: 'pace', label: 'Encounters', value: fmtCount(results.encounters) }
     );
 
     // The rate per hour of TOTAL time — combat plus the production owed for
@@ -109,6 +139,7 @@ function SummaryStats({ results, monsters, pricing }) {
       const unpriced = consumableCost.unpriced.length;
       const rateNoun = dungeon ? 'Completions' : 'Encounters';
       kpis.push({
+        group: 'pace',
         label: dungeon ? 'Effective Completions/Hour' : 'Effective Enc/Hour',
         value: formatNumber(effectiveRatePerHour(ratePerHour, consumableCost.secondsPerHour)),
         // A run that ate nothing owes no production time, so its effective rate
@@ -145,13 +176,16 @@ function SummaryStats({ results, monsters, pricing }) {
   // encounters are: a build that out-levels another while spending half its day
   // cooking is not in fact levelling faster.
   kpis.push({
+    group: 'outcome',
+    lead: true,
     label: 'Experience/Hour',
-    value: consumableCost.known
-      ? `${formatNumber(experiencePerHour)} (${formatNumber(
-          effectiveRatePerHour(experiencePerHour, consumableCost.secondsPerHour)
-        )})`
-      : formatNumber(experiencePerHour),
-    hint: consumableCost.known ? 'raw (effective)' : undefined,
+    value: formatNumber(experiencePerHour),
+    hint: consumableCost.known ? 'raw, combat time only' : undefined,
+  });
+  if (consumableCost.known) kpis.push({
+    group: 'outcome',
+    label: 'Effective Experience/Hour',
+    value: formatNumber(effectiveRatePerHour(experiencePerHour, consumableCost.secondsPerHour)),
     tip: !consumableCost.known
       ? undefined
       : consumableCost.nothingConsumed
@@ -167,6 +201,7 @@ function SummaryStats({ results, monsters, pricing }) {
     .map(p => results.deaths?.[p] || 0)
     .reduce((a, b) => a + b, 0);
   kpis.push({
+    group: 'outcome',
     label: 'Player Deaths/Hour',
     value: formatNumber(totalPlayerDeaths / hoursSimulated)
   });
@@ -174,34 +209,34 @@ function SummaryStats({ results, monsters, pricing }) {
   if (results.isDungeon) {
     // Completed runs are already up with the rate they feed.
     kpis.push(
-      { label: 'Dungeons Failed', value: results.dungeonsFailed },
-      { label: 'Max Wave', value: results.maxWaveReached }
+      { group: 'outcome', label: 'Dungeons Failed', value: fmtCount(results.dungeonsFailed) },
+      { group: 'outcome', label: 'Max Wave', value: results.maxWaveReached }
     );
     // Only a run-count simulation carries dungeonsTimedOut (see
     // shared/dungeonRuns.js), and only there is every run finished or failed.
     if (typeof results.dungeonsTimedOut === 'number') {
       const runs = (results.dungeonsCompleted || 0) + (results.dungeonsFailed || 0);
       kpis.push(
-        { label: 'Completion Rate', value: runs > 0 ? `${((results.dungeonsCompleted || 0) / runs * 100).toFixed(1)}%` : '—' },
-        { label: 'Timed Out', value: results.dungeonsTimedOut }
+        { group: 'outcome', label: 'Completion Rate', value: runs > 0 ? `${((results.dungeonsCompleted || 0) / runs * 100).toFixed(1)}%` : '—' },
+        { group: 'outcome', label: 'Timed Out', value: fmtCount(results.dungeonsTimedOut) }
       );
     }
   }
 
   if (results.maxEnrageStack > 0) {
-    kpis.push({ label: 'Max Enrage Stack', value: results.maxEnrageStack });
+    kpis.push({ group: 'outcome', label: 'Max Enrage Stack', value: results.maxEnrageStack });
   }
 
   return (
-    <SimpleGrid cols={{ base: 2, sm: 3, lg: 5 }} spacing="sm">
-      {kpis.map(kpi => (
-        <KpiCard key={kpi.label} label={kpi.label} value={kpi.value} hint={kpi.hint} tip={kpi.tip} />
-      ))}
+    <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
+      <KpiGroup title="Run" kpis={kpis.filter(k => k.group === 'run')} />
+      <KpiGroup title="Pace" kpis={kpis.filter(k => k.group === 'pace')} />
+      <KpiGroup title="Outcome" kpis={kpis.filter(k => k.group === 'outcome')} />
     </SimpleGrid>
   );
 }
 
-function ExperienceTable({ experienceGained, simulatedTime }) {
+function ExperienceTable({ experienceGained, simulatedTime, playerNames }) {
   const players = Object.keys(experienceGained || {});
   const hoursSimulated = simulatedTime / ONE_HOUR;
 
@@ -210,34 +245,62 @@ function ExperienceTable({ experienceGained, simulatedTime }) {
   }
 
   const skills = ['stamina', 'intelligence', 'attack', 'melee', 'defense', 'ranged', 'magic'];
+  const totals = Object.fromEntries(players.map(p => [
+    p, skills.reduce((s, k) => s + (experienceGained[p][k] || 0), 0)
+  ]));
+  const partyTotal = Object.values(totals).reduce((a, b) => a + b, 0);
+  // Zero cells stay in the table (nothing is hidden) but fade, so the skills a
+  // run actually trains stand out at a glance.
+  const faded = { color: 'color-mix(in srgb, var(--mantine-color-dimmed) 55%, transparent)' };
 
   return (
-    <Table striped highlightOnHover withTableBorder>
-      <Table.Thead>
-        <Table.Tr>
-          <Table.Th>Player</Table.Th>
-          {skills.map(s => (
-            <Table.Th key={s} style={{ textTransform: 'capitalize' }}>{s}</Table.Th>
-          ))}
-          <Table.Th>Total</Table.Th>
-        </Table.Tr>
-      </Table.Thead>
-      <Table.Tbody>
-        {players.map(player => {
-          const exp = experienceGained[player];
-          const total = skills.reduce((s, k) => s + (exp[k] || 0), 0);
-          return (
-            <Table.Tr key={player}>
-              <Table.Td>{player}</Table.Td>
-              {skills.map(s => (
-                <Table.Td key={s}>{formatNumber((exp[s] || 0) / hoursSimulated)}/hr</Table.Td>
-              ))}
-              <Table.Td fw={600}>{formatNumber(total / hoursSimulated)}/hr</Table.Td>
-            </Table.Tr>
-          );
-        })}
-      </Table.Tbody>
-    </Table>
+    <Stack gap="sm">
+      <Table striped highlightOnHover withTableBorder>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>Player</Table.Th>
+            {skills.map(s => (
+              <Table.Th key={s} ta="right" style={{ textTransform: 'capitalize' }}>{s}</Table.Th>
+            ))}
+            <Table.Th ta="right">Total</Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {players.map(player => {
+            const exp = experienceGained[player];
+            return (
+              <Table.Tr key={player}>
+                <Table.Td>{playerNames?.[player] || player}</Table.Td>
+                {skills.map(s => {
+                  const v = exp[s] || 0;
+                  return (
+                    <Table.Td key={s} ta="right" fw={v > 0 ? 600 : undefined} style={v > 0 ? undefined : faded}>
+                      {formatNumber(v / hoursSimulated)}/hr
+                    </Table.Td>
+                  );
+                })}
+                <Table.Td ta="right" fw={700}>{formatNumber(totals[player] / hoursSimulated)}/hr</Table.Td>
+              </Table.Tr>
+            );
+          })}
+        </Table.Tbody>
+      </Table>
+      {players.length > 1 && partyTotal > 0 && (
+        <Stack gap={4}>
+          <Text size="xs" c="dimmed">Share of party experience</Text>
+          {players.map(player => {
+            const share = totals[player] / partyTotal;
+            return (
+              <Group key={player} gap="sm" wrap="nowrap">
+                <Text size="sm" w={160} truncate>{playerNames?.[player] || player}</Text>
+                <Progress value={share * 100} color="sand" size="sm" style={{ flex: 1 }} />
+                <Text size="sm" w={56} ta="right">{(share * 100).toFixed(1)}%</Text>
+              </Group>
+            );
+          })}
+        </Stack>
+      )}
+    </Stack>
   );
 }
 
@@ -830,7 +893,7 @@ function LabOutcomesPanel({ results }) {
 // `focusHrid` names the player the Drops tab answers for — the member whose
 // config is open in the left panel's P-tab. Per-character drop stats (magnetic
 // gloves, lucky coffee) mean the party does not share one loot table.
-export function SimulationResults({ results, monsters, items, pricing, focusHrid }) {
+export function SimulationResults({ results, monsters, items, pricing, focusHrid, zones, playerNames }) {
   const handleDownload = useCallback(() => {
     const blob = new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -854,7 +917,7 @@ export function SimulationResults({ results, monsters, items, pricing, focusHrid
           Download JSON
         </Button>
       </Group>
-      <SummaryStats results={results} monsters={monsters} pricing={pricing} />
+      <SummaryStats results={results} monsters={monsters} pricing={pricing} zones={zones} />
 
       <Tabs defaultValue={results.isLabyrinth ? 'labstats' : 'experience'} keepMounted={false}>
         <Tabs.List>
@@ -883,6 +946,7 @@ export function SimulationResults({ results, monsters, items, pricing, focusHrid
           <ExperienceTable
             experienceGained={results.experienceGained}
             simulatedTime={results.simulatedTime}
+            playerNames={playerNames}
           />
         </Tabs.Panel>
 

@@ -1569,6 +1569,17 @@ function App() {
     const id = party[activeTab]?.characterId;
     return Object.keys(characters.characters?.[id]?.loadouts || {});
   }, [characters, party, activeTab]);
+  // Character names for the results tables. Read from the party as it is NOW:
+  // re-binding a slot after a run relabels that run's rows.
+  const playerNames = useMemo(() => {
+    const out = {};
+    for (const id of [1, 2, 3, 4, 5]) {
+      const ref = party[id];
+      const character = ref && characters.characters?.[ref.characterId];
+      if (character) out[`player${id}`] = `${character.name || character.id} · ${ref.loadoutName}`;
+    }
+    return out;
+  }, [characters, party]);
   const slotLabel = useCallback((id) => {
     const ref = party[id];
     if (!ref) return 'empty';
@@ -2045,6 +2056,8 @@ function App() {
               monsters={gameData?.monsters}
               items={gameData?.items}
               pricing={pricing}
+              zones={gameData?.zones}
+              playerNames={playerNames}
               // Whose loot the Drops tab shows. Same convention as the All Zones
               // table: the party's members do not share a drop table — drop
               // rate and rare find are per-character stats — so the panel

@@ -1,4 +1,4 @@
-import { Popover, ActionIcon, Stack, Text, SegmentedControl, Indicator, Divider, Anchor } from '@mantine/core';
+import { Popover, ActionIcon, Stack, Text, SegmentedControl, Indicator, Divider, Anchor, useMantineColorScheme } from '@mantine/core';
 import { EXPERIMENTAL_DEFAULTS, countExperimentsOn } from '../utils/experimental';
 
 // =============================================================================
@@ -19,6 +19,8 @@ export function SettingsMenu({ settings, onChange }) {
   const s = { ...EXPERIMENTAL_DEFAULTS, ...(settings || {}) };
   const activeCount = countExperimentsOn(s);
   const set = (patch) => onChange({ ...s, ...patch });
+  // Appearance is not an experiment: it never counts toward the indicator.
+  const { colorScheme, setColorScheme } = useMantineColorScheme();
 
   return (
     <Popover width={320} position="bottom-end" shadow="md">
@@ -28,7 +30,7 @@ export function SettingsMenu({ settings, onChange }) {
             variant={activeCount > 0 ? 'light' : 'default'}
             color={activeCount > 0 ? 'orange' : undefined}
             size="lg"
-            aria-label="Experimental settings"
+            aria-label="Settings"
           >
             {/* No icon package in this UI — the glyph is the icon. */}
             <span style={{ fontSize: 16, lineHeight: 1 }}>⚙</span>
@@ -37,6 +39,22 @@ export function SettingsMenu({ settings, onChange }) {
       </Popover.Target>
       <Popover.Dropdown>
         <Stack gap="xs">
+          <Text size="sm" fw={600}>Appearance</Text>
+          <SegmentedControl
+            size="xs"
+            fullWidth
+            value={colorScheme}
+            onChange={setColorScheme}
+            data={[
+              { value: 'auto', label: 'Auto' },
+              { value: 'light', label: 'Light' },
+              { value: 'dark', label: 'Dark' }
+            ]}
+          />
+          <Text size="xs" c="dimmed">Auto follows your operating system.</Text>
+
+          <Divider my={4} />
+
           <Text size="sm" fw={600}>Experimental</Text>
           <Text size="xs" c="dimmed">
             Engine models under test. Defaults reproduce the simulator's
