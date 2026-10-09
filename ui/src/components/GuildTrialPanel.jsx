@@ -305,7 +305,9 @@ export function GuildTrialPanel({
             // The character alone: the loadout has its own line below, and
             // displayName already carries it.
             const character = characters?.characters?.[entry.characterId];
-            const characterName = character?.name || character?.id || entry.characterId;
+            // A missing character (the "build missing" badge below) is named
+            // as such, never by its raw id.
+            const characterName = character ? (character.name || character.id) : 'Unknown build';
             const owns = ownsShrines(entry.build);
             return (
               <div key={entry.id} className="member-card" data-active={selected || undefined}>

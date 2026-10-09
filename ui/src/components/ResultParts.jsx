@@ -1,5 +1,5 @@
 import { Fragment } from 'react';
-import { Group, Paper, Progress, Stack, Table, Text, Title, Tooltip } from '@mantine/core';
+import { Button, Group, Paper, Progress, Stack, Table, Text, Title, Tooltip } from '@mantine/core';
 
 // =============================================================================
 // ResultParts — the shared building blocks of every result view, so all modes
@@ -89,6 +89,17 @@ export function ShareBar({ value, color = 'sand', w }) {
 }
 
 // A titled paper around one table or block of a result view.
+// The results header's Clear: empties the pane for the current mode. Renders
+// nothing without `onClear` (App passes none while a run is in progress).
+export function ClearResultsButton({ onClear }) {
+  if (!onClear) return null;
+  return (
+    <Button variant="subtle" color="gray" size="compact-xs" onClick={onClear}>
+      Clear
+    </Button>
+  );
+}
+
 export function Section({ title, right, children }) {
   return (
     <Paper p="sm" radius="md" withBorder>

@@ -1,7 +1,7 @@
 import { Alert, Badge, Group, SimpleGrid, Stack, Table, Text, Title, Tooltip } from '@mantine/core';
 import { formatBand, formatSeconds } from '../utils/triggerOptimizer';
 import { nameOf } from '../utils/names';
-import { NumTd, Section, StatCard } from './ResultParts';
+import { ClearResultsButton, NumTd, Section, StatCard } from './ResultParts';
 
 // =============================================================================
 // TriggerOptimizerResults — the ranked outcome of a threshold search.
@@ -223,7 +223,7 @@ function Recommendation({ row, labyrinth = false, items, abilities }) {
   );
 }
 
-export function TriggerOptimizerResults({ results, items, abilities }) {
+export function TriggerOptimizerResults({ results, items, abilities, onClear }) {
   if (!results || !Array.isArray(results.rows)) return null;
 
   const { rows, noise, epsilons, screening, verifyHours, simulationsRun, inconclusive, saturated, objective } =
@@ -247,6 +247,7 @@ export function TriggerOptimizerResults({ results, items, abilities }) {
         <Group gap="xs">
           <Badge variant="light">{simulationsRun} simulations</Badge>
           <Badge variant="light">verified at {verifyHours}h</Badge>
+          <ClearResultsButton onClear={onClear} />
         </Group>
       </Group>
 

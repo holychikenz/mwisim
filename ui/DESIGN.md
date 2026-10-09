@@ -74,7 +74,12 @@ opens one searchable picker with the enhancement level; owned items first.
 - Re-running keeps the previous results mounted (no reset of tabs or scroll),
   dimmed and badged "Previous run" until the new results arrive; a failed or
   stopped run leaves them badged "the last run did not finish". Stop never
-  clears results. Anything a results view
+  clears results. This holds only for results of the same kind as the new run
+  (zone, labyrinth, guild trial, each optimiser): a run of another kind clears
+  them at start, so a trial never shows a zone run as its previous run. The
+  shared slot is `useRunResults` (`src/hooks/useRunResults.js`). The results
+  header's **Clear** (beside Download JSON, shown only while nothing runs)
+  empties the pane for the current mode. Anything a results view
   derives and holds itself (e.g. Gear's return-on-investment costs) is tied to
   the run it came from and never shown against another.
 - Key registry: `csim_ui_result_tab`, `csim_ui_sheet_tab`, `csim_ui_sheet_open`
@@ -94,10 +99,16 @@ opens one searchable picker with the enhancement level; owned items first.
 - One `Suspense` wraps the results pane (plus one each for the trial rail,
   the mode-settings panel and the trial monster cards). Each sits inside a
   `ChunkBoundary` (`src/components/ChunkBoundary.jsx`): a chunk that fails to
-  load (usually a rebuild) shows "This view failed to load" with a Reload
-  button instead of blanking the app; switching mode retries. Lazy element types
-  are module-level constants, so a re-run never remounts a view: once its
-  chunk is loaded, a re-run shows the dimmed previous results, not a loader.
+  load shows "This view failed to load" with Retry and Reload instead of
+  blanking the app. `React.lazy` caches a failed import, so the lazies go
+  through `retryableLazy` (`src/utils/retryableLazy.js`), which swaps in a
+  fresh lazy after a failure: Retry, switching mode, or (results pane) a new
+  result calls `import()` again. A chunk gone after a rebuild still needs
+  Reload. A results view that throws while rendering shows "This view failed
+  to render" with Retry. The All Zones picker's boundary shows its error in a
+  modal and retries when the picker is reopened. Lazy element types are
+  module-level constants, so a re-run never remounts a view: once its chunk is
+  loaded, a re-run shows the dimmed previous results, not a loader.
 - **Vendor and game data are separate chunks** (`react`, `mantine`,
   `gamedata`, via `manualChunks` in `vite.config.js`), cached independently of
   app code. The game data is still needed at start (`useGameData`), so this

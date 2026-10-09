@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef, Suspense } from 'react';
 import {
   AppShell,
   Group,
@@ -18,9 +18,10 @@ import {
   Collapse,
   UnstyledButton,
   Burger,
-  Loader
+  Loader,
+  Modal
 } from '@mantine/core';
-import { useDisclosure } from '@mantine/hooks';
+import { useDisclosure, useMediaQuery } from '@mantine/hooks';
 import { useGameData } from './hooks/useGameData';
 import { useSimulation } from './hooks/useSimulation';
 import { useAllZones } from './hooks/useAllZones';
@@ -45,6 +46,7 @@ import { ProgressBar } from './components/ProgressBar';
 import { LoadoutManager } from './components/LoadoutManager';
 import { CharacterImport } from './components/CharacterImport';
 import { ChunkBoundary } from './components/ChunkBoundary';
+import { retryableLazy } from './utils/retryableLazy';
 import { TextInput } from '@mantine/core';
 import { toPlayerDTO } from './utils/playerDTO';
 import { loadExperimental, saveExperimental } from './utils/experimental';
@@ -122,7 +124,7 @@ import {
 // Mode-specific views load on demand: each becomes its own chunk, fetched the
 // first time its mode (or the All Zones picker) is opened. The element types
 // are module-level constants, so a re-run never remounts them.
-const lazyNamed = (load, name) => lazy(() => load().then(m => ({ default: m[name] })));
+const lazyNamed = (load, name) => retryableLazy(() => load().then(m => ({ default: m[name] })));
 const AllZonesModal = lazyNamed(() => import('./components/AllZonesModal'), 'AllZonesModal');
 const AllZonesResults = lazyNamed(() => import('./components/AllZonesResults'), 'AllZonesResults');
 const GuildTrialResults = lazyNamed(() => import('./components/GuildTrialResults'), 'GuildTrialResults');
@@ -204,7 +206,8 @@ function App() {
     error: simError,
     runSimulation,
     runGuildTrial,
-    cancelRun
+    cancelRun,
+    clearResults: clearSimResults
   } = useSimulation();
 
   // The trigger optimiser is the only feature that runs on the csim API rather
@@ -252,10 +255,9 @@ function App() {
   // Below that Mantine draws it over the results, so it always starts closed
   // and opens when a member card is clicked; that state is never stored, so a
   // narrow visit cannot leave a wide screen's sheet shut (or vice versa).
-  // The width is read once at mount.
-  const [sheetWide] = useState(() => {
-    try { return window.matchMedia('(min-width: 90em)').matches; } catch { return true; }
-  });
+  // The width is tracked live, so crossing 90em switches which state is used
+  // and a narrow screen never writes the remembered (wide) one.
+  const sheetWide = useMediaQuery('(min-width: 90em)', undefined, { getInitialValueInEffect: false });
   const [storedSheetOpen, setStoredSheetOpen] = usePersistentState('csim_ui_sheet_open', true, isBool);
   const [narrowSheetOpen, setNarrowSheetOpen] = useState(false);
   const sheetOpen = sheetWide ? storedSheetOpen : narrowSheetOpen;
@@ -263,13 +265,9 @@ function App() {
   // Below 90em the sheet overlays everything, rail included: opening the rail
   // from the burger closes the sheet so the rail is not drawn under it.
   const handleToggleNav = useCallback(() => {
-    if (!navOpened) {
-      let wideNow = true;
-      try { wideNow = window.matchMedia('(min-width: 90em)').matches; } catch { /* keep the sheet */ }
-      if (!wideNow) setSheetOpen(false);
-    }
+    if (!navOpened && !sheetWide) setSheetOpen(false);
     toggleNav();
-  }, [navOpened, toggleNav, setSheetOpen]);
+  }, [navOpened, sheetWide, toggleNav, setSheetOpen]);
   const [modeSettingsOpen, setModeSettingsOpen] = usePersistentState('csim_ui_mode_settings_open', true, isBool);
   const [activeTab, setActiveTab] = useState(1);
   const [selectedPlayers, setSelectedPlayers] = useState(
@@ -1726,6 +1724,11 @@ function App() {
   // stale in this sense.
   const resultsStale = !!activeResults && !isCosts && !showAllZones
     && (isApiOpt ? apiEngine.stale : simStale);
+  // The results header's Clear: empties this mode's results pane. Offered only
+  // while nothing is running (a run in progress is stopped with Stop).
+  const clearActiveResults = activeLoading
+    ? undefined
+    : (isApiOpt ? apiEngine.clearResults : clearSimResults);
 
   return (
     <AppShell
@@ -2147,7 +2150,9 @@ function App() {
           )}
 
           <div className="results-pane" data-stale={resultsStale || undefined}>
-          <ChunkBoundary resetKey={simMode}>
+          {/* Reset on a new result too, so a view that failed to render one
+              result gets a fresh try with the next. */}
+          <ChunkBoundary resetKey={[simMode, activeResults]}>
           <Suspense fallback={Pending}>
           {simMode === 'itemCosts' ? (
             <ItemCostsView
@@ -2175,10 +2180,12 @@ function App() {
               results={activeResults}
               items={gameData?.items}
               abilities={gameData?.abilities}
+              onClear={clearActiveResults}
             />
           ) : activeResults && activeResults.__kind === 'equipOpt' ? (
             <EquipmentOptimizerResults
               results={activeResults}
+              onClear={clearActiveResults}
               gameItems={gameData?.items}
               pricing={pricing}
               protectionPricing={equipOptConfig.protectionPricing}
@@ -2191,7 +2198,7 @@ function App() {
               }
             />
           ) : activeResults && activeResults.__kind === 'guildTrial' ? (
-            <GuildTrialResults result={activeResults} />
+            <GuildTrialResults result={activeResults} onClear={clearActiveResults} />
           ) : (
             <SimulationResults
               results={activeResults}
@@ -2201,6 +2208,7 @@ function App() {
               pricing={pricing}
               zones={gameData?.zones}
               playerNames={playerNames}
+              onClear={clearActiveResults}
               // Whose loot the Drops tab shows. Same convention as the All Zones
               // table: the party's members do not share a drop table — drop
               // rate and rare find are per-character stats — so the panel
@@ -2230,9 +2238,18 @@ function App() {
       </AppShell.Main>
 
       {/* Mounted on first open, so its chunk loads on first use rather than at
-          startup, and kept mounted after so its close transition can play. */}
+          startup, and kept mounted after so its close transition can play.
+          A failed load shows in a modal of its own (the picker's place) with
+          Retry, and reopening the picker retries too. */}
       {allZonesMounted && (
-        <ChunkBoundary>
+        <ChunkBoundary
+          resetKey={allZonesOpen}
+          renderError={(content) => (
+            <Modal opened={allZonesOpen} onClose={() => setAllZonesOpen(false)} title="All Zones">
+              {content}
+            </Modal>
+          )}
+        >
         <Suspense fallback={null}>
           <AllZonesModal
             opened={allZonesOpen}

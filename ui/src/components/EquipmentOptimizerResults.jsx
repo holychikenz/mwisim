@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Alert,
   Badge,
@@ -23,7 +23,7 @@ import {
 } from '../utils/equipmentOptimizer';
 import { formatSeconds } from '../utils/triggerOptimizer';
 import { useEnhancementCosts } from '../hooks/useEnhancementCosts';
-import { NumTd, Section, StatCard } from './ResultParts';
+import { ClearResultsButton, NumTd, Section, StatCard } from './ResultParts';
 import {
   PROTECTION_PRICING,
   breakEvenHours,
@@ -189,7 +189,15 @@ function ReturnOnInvestment({
   onProtectionPricingChange,
   onProtectAtChange,
 }) {
-  const { costs: fetchedCosts, loading, progress, error, fetchCosts, clear: clearCosts } = useEnhancementCosts();
+  const {
+    costs: fetchedCosts,
+    loading: fetchLoading,
+    progress: fetchProgress,
+    error: fetchError,
+    fetchCosts,
+    clear: clearCosts,
+    cancel: cancelCosts,
+  } = useEnhancementCosts();
 
   // Which policy the table on screen was actually costed under. Changing the
   // controls does not refetch — thirty requests to a personal Flask server should
@@ -199,7 +207,15 @@ function ReturnOnInvestment({
   // Results stay mounted across a re-run, so this panel outlives the scan it
   // costed. Costs are keyed by row id, which a new scan reuses; show them only
   // against the very rows they were fetched for, never a later scan's.
-  const costs = fetchedCosts && fetchedUnder?.rows === rows ? fetchedCosts : null;
+  // The same goes for a fetch's spinner, progress and error: a fetch still in
+  // flight when a new scan's rows arrive is aborted (the cleanup below), and
+  // whatever it left behind is not shown against the new rows.
+  const current = fetchedUnder?.rows === rows;
+  const costs = fetchedCosts && current ? fetchedCosts : null;
+  const loading = current && fetchLoading;
+  const progress = current ? fetchProgress : null;
+  const error = current ? fetchError : null;
+  useEffect(() => cancelCosts, [rows, cancelCosts]);
   const forced = forcedProtectLevel({ protectionPricing, protectAt });
   const stale =
     !!costs &&
@@ -527,6 +543,7 @@ export function EquipmentOptimizerResults({
   protectAt,
   onProtectionPricingChange,
   onProtectAtChange,
+  onClear,
 }) {
   const rows = Array.isArray(results?.rows) ? results.rows : null;
 
@@ -588,6 +605,7 @@ export function EquipmentOptimizerResults({
             {replicates} × {hours}h
           </Badge>
           <Badge variant="light">probed at +{step}</Badge>
+          <ClearResultsButton onClear={onClear} />
         </Group>
       </Group>
 

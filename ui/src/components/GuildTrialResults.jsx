@@ -1,5 +1,5 @@
 import { Badge, Group, Progress, SimpleGrid, Stack, Table, Text, Title } from '@mantine/core';
-import { NumTd, Section, ShareBar, StatGroup } from './ResultParts';
+import { ClearResultsButton, NumTd, Section, ShareBar, StatGroup } from './ResultParts';
 import { formatTier, levelToTierIndex, TIER_BASE_LEVEL } from '../utils/trialTiers';
 
 // =============================================================================
@@ -30,7 +30,7 @@ function fmtDps(x) {
   return Math.round(n).toLocaleString();
 }
 
-export function GuildTrialResults({ result }) {
+export function GuildTrialResults({ result, onClear }) {
   const agg = result?.aggregate;
   const meta = result?.meta || {};
   if (!agg) return null;
@@ -166,6 +166,7 @@ export function GuildTrialResults({ result }) {
           <Badge variant="light">Start {formatTier(meta.startTier ?? agg.startTier)}</Badge>
           <Badge variant="light" color="grape">{meta.participantCount ?? '—'} participants</Badge>
           <Badge variant="light" color="teal">{agg.iterations} runs</Badge>
+          <ClearResultsButton onClear={onClear} />
         </Group>
       </Group>
 

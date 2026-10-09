@@ -24,10 +24,13 @@ export function useEnhancementCosts() {
 
   const abortRef = useRef(null);
 
+  // Abort the fetch in flight, if any. An aborted fetch writes no state of
+  // its own (see fetchCosts), so its loading flag is dropped here.
   const stop = useCallback(() => {
     if (abortRef.current) {
       abortRef.current.abort();
       abortRef.current = null;
+      setLoading(false);
     }
   }, []);
 
@@ -65,7 +68,7 @@ export function useEnhancementCosts() {
         });
         if (!controller.signal.aborted) setCosts(table);
       } catch (caught) {
-        if (caught?.name !== 'AbortError') {
+        if (!controller.signal.aborted && caught?.name !== 'AbortError') {
           // Overwhelmingly the likeliest cause, and the one the user can fix.
           setError(
             new Error(
@@ -75,8 +78,12 @@ export function useEnhancementCosts() {
           );
         }
       } finally {
-        abortRef.current = null;
-        setLoading(false);
+        // Only the current fetch may settle the shared state: a superseded one
+        // must not clear its successor's controller or loading flag.
+        if (abortRef.current === controller) {
+          abortRef.current = null;
+          setLoading(false);
+        }
       }
     },
     [stop]

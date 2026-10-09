@@ -14,6 +14,7 @@
 // =============================================================================
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRunResults } from './useRunResults.js';
 import { apiUrl, pingApi } from '../utils/apiBase';
 
 /** The server heartbeats every 10s, so silence this long means a dead socket. */
@@ -31,19 +32,12 @@ export function useEquipmentOptimizer() {
   const [progress, setProgress] = useState(0); // 0..100, matching ProgressBar
   const [stage, setStage] = useState('');
   const [label, setLabel] = useState('');
-  const [results, setResults] = useState(null);
-  // True while `results` belong to an earlier run (see useSimulation).
-  const [stale, setStale] = useState(false);
+  // `stale`: true while `results` belong to an earlier run (see useRunResults).
+  const { results, stale, publish, begin, clear } = useRunResults();
   const [error, setError] = useState(null);
   const [preview, setPreview] = useState(null);
   const [previewing, setPreviewing] = useState(false);
   const [apiReachable, setApiReachable] = useState(null); // null = not yet checked
-
-  // The one way a finished run's results are shown: new results are never stale.
-  const publish = useCallback((r) => {
-    setResults(r);
-    setStale(false);
-  }, []);
 
   const abortRef = useRef(null);
   const watchdogRef = useRef(null);
@@ -119,7 +113,7 @@ export function useEquipmentOptimizer() {
       setProgress(0);
       setStage('');
       setLabel('Starting…');
-      setStale(true);
+      begin();
       setError(null);
 
       const controller = new AbortController();
@@ -236,7 +230,7 @@ export function useEquipmentOptimizer() {
         setLoading(false);
       }
     },
-    [armWatchdog, clearWatchdog, stop, publish]
+    [armWatchdog, clearWatchdog, stop, publish, begin]
   );
 
   /** Cancel an in-flight run. The server sees the socket close and tears down its pool. */
@@ -252,10 +246,9 @@ export function useEquipmentOptimizer() {
     setProgress(0);
     setStage('');
     setLabel('');
-    setResults(null);
-    setStale(false);
+    clear();
     setError(null);
-  }, [stop]);
+  }, [stop, clear]);
 
   return {
     loading,

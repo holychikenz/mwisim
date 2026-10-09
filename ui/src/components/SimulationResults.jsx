@@ -1,7 +1,7 @@
 import { useMemo, useCallback } from 'react';
 import { Accordion, Badge, Button, Group, Progress, ScrollArea, SimpleGrid, Stack, Table, Tabs, Text, Title } from '@mantine/core';
 import { DropsEconomy } from './DropsEconomy';
-import { NumTd, Section, StatGroup } from './ResultParts';
+import { ClearResultsButton, NumTd, Section, StatGroup } from './ResultParts';
 import { nameOf } from '../utils/names';
 import { effectiveRatePerHour, summariseConsumableCost } from '../utils/consumableCosts';
 import { formatSeconds } from '../utils/triggerOptimizer';
@@ -880,7 +880,7 @@ function LabOutcomesPanel({ results }) {
 // `focusHrid` names the player the Drops tab answers for — the member whose
 // config is open in the left panel's P-tab. Per-character drop stats (magnetic
 // gloves, lucky coffee) mean the party does not share one loot table.
-export function SimulationResults({ results, monsters, items, abilities, pricing, focusHrid, zones, playerNames }) {
+export function SimulationResults({ results, monsters, items, abilities, pricing, focusHrid, zones, playerNames, onClear }) {
   const handleDownload = useCallback(() => {
     const blob = new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -908,9 +908,12 @@ export function SimulationResults({ results, monsters, items, abilities, pricing
     <Stack gap="md">
       <Group justify="space-between">
         <Title order={4}>Results</Title>
-        <Button variant="default" size="compact-xs" onClick={handleDownload}>
-          Download JSON
-        </Button>
+        <Group gap="xs">
+          <ClearResultsButton onClear={onClear} />
+          <Button variant="default" size="compact-xs" onClick={handleDownload}>
+            Download JSON
+          </Button>
+        </Group>
       </Group>
       <SummaryStats results={results} monsters={monsters} pricing={pricing} zones={zones} />
 

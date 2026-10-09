@@ -14,6 +14,7 @@
 // =============================================================================
 
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useRunResults } from './useRunResults.js';
 import { apiUrl, pingApi } from '../utils/apiBase';
 
 /**
@@ -33,20 +34,13 @@ export function useTriggerOptimizer() {
   const [progress, setProgress] = useState(0); // 0..100, matching ProgressBar
   const [stage, setStage] = useState('');
   const [label, setLabel] = useState('');
-  const [results, setResults] = useState(null);
-  // True while `results` belong to an earlier run (see useSimulation).
-  const [stale, setStale] = useState(false);
+  // `stale`: true while `results` belong to an earlier run (see useRunResults).
+  const { results, stale, publish, begin, clear } = useRunResults();
   const [error, setError] = useState(null);
   const [checkpoint, setCheckpoint] = useState(null);
   const [preview, setPreview] = useState(null);
   const [previewing, setPreviewing] = useState(false);
   const [apiReachable, setApiReachable] = useState(null); // null = not yet checked
-
-  // The one way a finished run's results are shown: new results are never stale.
-  const publish = useCallback((r) => {
-    setResults(r);
-    setStale(false);
-  }, []);
 
   const abortRef = useRef(null);
   const watchdogRef = useRef(null);
@@ -134,7 +128,7 @@ export function useTriggerOptimizer() {
       setProgress(0);
       setStage('');
       setLabel('Starting…');
-      setStale(true);
+      begin();
       setError(null);
       setCheckpoint(null);
 
@@ -264,7 +258,7 @@ export function useTriggerOptimizer() {
         setLoading(false);
       }
     },
-    [armWatchdog, clearWatchdog, stop, publish]
+    [armWatchdog, clearWatchdog, stop, publish, begin]
   );
 
   /** Cancel an in-flight run. The server sees the socket close and tears down its pool. */
@@ -280,11 +274,10 @@ export function useTriggerOptimizer() {
     setProgress(0);
     setStage('');
     setLabel('');
-    setResults(null);
-    setStale(false);
+    clear();
     setError(null);
     setCheckpoint(null);
-  }, [stop]);
+  }, [stop, clear]);
 
   return {
     loading,

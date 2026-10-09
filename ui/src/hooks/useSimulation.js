@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { useRunResults } from './useRunResults.js';
 import { runDungeonRunsSerial, workerBatchRunner, addRunIdleTime } from '../../../shared/dungeonRuns.js';
 
 // =============================================================================
@@ -61,20 +62,13 @@ const STALL_TIMEOUT_MS = 30_000;
 export function useSimulation() {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
-  const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
-  // True while `results` belong to an earlier run: a new run has started (or
-  // the last one failed or was abandoned) and nothing has replaced them yet.
-  // Results stay mounted so the open tab and scroll survive a re-run.
-  const [stale, setStale] = useState(false);
+  // `stale`: true while `results` belong to an earlier run of the same kind
+  // (zone, labyrinth or guild trial) — see useRunResults. Results stay mounted
+  // so the open tab and scroll survive a re-run.
+  const { results, stale, publish, begin, clear } = useRunResults();
   const workerRef = useRef(null);
   const watchdogRef = useRef(null);
-
-  // The one way a finished run's results are shown: new results are never stale.
-  const publish = useCallback((r) => {
-    setResults(r);
-    setStale(false);
-  }, []);
 
   const clearWatchdog = useCallback(() => {
     if (watchdogRef.current) {
@@ -141,7 +135,7 @@ export function useSimulation() {
     }).then(addRunIdleTime).then((simResult) => {
       if (!current()) return;
       setProgress(100);
-      publish(simResult);
+      publish(simResult, 'zone');
       setLoading(false);
       stopWorker();
     }, (e) => {
@@ -160,7 +154,8 @@ export function useSimulation() {
     setLoading(true);
     setProgress(0);
     setError(null);
-    setStale(true);
+    const kind = params.labyrinth ? 'labyrinth' : 'zone';
+    begin(kind);
 
     const message = {
       players: params.players,
@@ -201,7 +196,7 @@ export function useSimulation() {
           break;
         case 'simulation_result':
           setProgress(100);
-          publish(event.data.simResult);
+          publish(event.data.simResult, kind);
           setLoading(false);
           stopWorker();
           break;
@@ -230,14 +225,14 @@ export function useSimulation() {
     });
     // Guard the gap between dispatch and the first progress tick, too.
     armWatchdog();
-  }, [stopWorker, armWatchdog, failAndReset, runDungeonRunsHere, publish]);
+  }, [stopWorker, armWatchdog, failAndReset, runDungeonRunsHere, publish, begin]);
 
   const runGuildTrial = useCallback((params) => {
     stopWorker();
     setLoading(true);
     setProgress(0);
     setError(null);
-    setStale(true);
+    begin('guildTrial');
 
     let worker;
     try {
@@ -264,7 +259,7 @@ export function useSimulation() {
             aggregate: event.data.aggregate,
             summaries: event.data.summaries,
             meta: params.meta || {}
-          });
+          }, 'guildTrial');
           setLoading(false);
           stopWorker();
           break;
@@ -295,7 +290,7 @@ export function useSimulation() {
     });
     // Guard the gap before the first shard reports in, too.
     armWatchdog();
-  }, [stopWorker, armWatchdog, failAndReset, publish]);
+  }, [stopWorker, armWatchdog, failAndReset, publish, begin]);
 
   // Stop: kill any in-flight worker/watchdog but keep the last results on
   // screen. `stale` is left as it is, so results from before the abandoned run
@@ -307,15 +302,14 @@ export function useSimulation() {
   }, [stopWorker]);
 
   // Hard reset: kill any in-flight worker/watchdog and wipe results back to a
-  // clean slate; the recovery path if a run ever misbehaves.
+  // clean slate. Bound to the results header's Clear.
   const clearResults = useCallback(() => {
     stopWorker();
-    setResults(null);
-    setStale(false);
+    clear();
     setError(null);
     setProgress(0);
     setLoading(false);
-  }, [stopWorker]);
+  }, [stopWorker, clear]);
 
   return { loading, progress, results, stale, error, runSimulation, runGuildTrial, cancelRun, clearResults, reset: clearResults };
 }
