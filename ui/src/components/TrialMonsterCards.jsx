@@ -7,6 +7,7 @@ import {
   Table,
   Text
 } from '@mantine/core';
+import { usePersistentState } from '../hooks/usePersistentState';
 
 // =============================================================================
 // TrialMonsterCards — a read-only reference of the monsters in the selected
@@ -80,9 +81,9 @@ function MonsterPanel({ monster, abilities }) {
         <Table.Thead>
           <Table.Tr>
             <Table.Th>Style</Table.Th>
-            <Table.Th>Accuracy</Table.Th>
-            <Table.Th>Max dmg</Table.Th>
-            <Table.Th>Evasion</Table.Th>
+            <Table.Th ta="right">Accuracy</Table.Th>
+            <Table.Th ta="right">Max dmg</Table.Th>
+            <Table.Th ta="right">Evasion</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -91,9 +92,9 @@ function MonsterPanel({ monster, abilities }) {
             return (
               <Table.Tr key={key} c={active ? undefined : 'dimmed'}>
                 <Table.Td>{label}</Table.Td>
-                <Table.Td>{num(cd[`${key}AccuracyRating`])}</Table.Td>
-                <Table.Td>{num(cd[`${key}MaxDamage`])}</Table.Td>
-                <Table.Td>{num(cd[`${key}EvasionRating`])}</Table.Td>
+                <Table.Td ta="right">{num(cd[`${key}AccuracyRating`])}</Table.Td>
+                <Table.Td ta="right">{num(cd[`${key}MaxDamage`])}</Table.Td>
+                <Table.Td ta="right">{num(cd[`${key}EvasionRating`])}</Table.Td>
               </Table.Tr>
             );
           })}
@@ -128,20 +129,31 @@ function MonsterPanel({ monster, abilities }) {
 
 export function TrialMonsterCards({ trial, monsters, abilities }) {
   const cards = useMemo(() => dedupe(trial?.monsterHrids), [trial]);
+  // Cards are expanded by default — the reference is meant to be read at a
+  // glance. We remember the monsters a user COLLAPSED (across trials, re-runs
+  // and reloads), so any monster not in that list starts open.
+  const [collapsed, setCollapsed] = usePersistentState(
+    'csim_ui_trial_monsters_collapsed',
+    [],
+    v => Array.isArray(v) && v.every(s => typeof s === 'string'),
+  );
 
   if (!trial || cards.length === 0) return null;
 
-  // All cards expanded by default — the reference is meant to be read at a
-  // glance; users can collapse ones they don't care about.
-  const defaultValue = cards.map(c => c.hrid);
+  const hrids = cards.map(c => c.hrid);
+  const open = hrids.filter(h => !collapsed.includes(h));
+  const onChange = (next) => {
+    const nowOpen = Array.isArray(next) ? next : [];
+    setCollapsed(prev => [
+      ...prev.filter(h => !hrids.includes(h)),
+      ...hrids.filter(h => !nowOpen.includes(h)),
+    ]);
+  };
 
   return (
     <Stack gap="xs">
       <Text size="sm" fw={600}>{trial.name} — monsters</Text>
-      {/* key remounts the (uncontrolled) accordion when the trial changes, so
-          the new trial's cards start expanded rather than inheriting the old
-          open/closed state for unfamiliar item values. */}
-      <Accordion key={trial.hrid} multiple variant="separated" radius="md" defaultValue={defaultValue}>
+      <Accordion multiple variant="separated" radius="md" value={open} onChange={onChange}>
         {cards.map(({ hrid, count }) => {
           const monster = monsters?.[hrid];
           if (!monster) return null; // skip unknown monster hrids gracefully
@@ -152,7 +164,7 @@ export function TrialMonsterCards({ trial, monsters, abilities }) {
                 <Group gap="xs" wrap="wrap">
                   <Text size="sm" fw={600}>{monster.name}</Text>
                   {count > 1 && (
-                    <Badge variant="filled" color="indigo" size="sm">×{count}</Badge>
+                    <Badge variant="light" size="sm">×{count}</Badge>
                   )}
                   {damageType && (
                     <Badge variant="light" color="gray" size="sm">{tailLabel(damageType)}</Badge>

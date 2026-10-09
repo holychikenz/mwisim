@@ -1,5 +1,7 @@
-import { Alert, Badge, Group, Paper, SimpleGrid, Stack, Table, Text, Title, Tooltip } from '@mantine/core';
+import { Alert, Badge, Group, SimpleGrid, Stack, Table, Text, Title, Tooltip } from '@mantine/core';
 import { formatBand, formatSeconds } from '../utils/triggerOptimizer';
+import { nameOf } from '../utils/names';
+import { NumTd, Section, StatCard } from './ResultParts';
 
 // =============================================================================
 // TriggerOptimizerResults — the ranked outcome of a threshold search.
@@ -86,31 +88,6 @@ function formatPct(pct) {
   return `${sign}${(pct * 100).toFixed(2)}%`;
 }
 
-function lastSegment(hrid) {
-  if (!hrid) return '';
-  return String(hrid).split('/').pop().replace(/_/g, ' ');
-}
-
-function KpiCard({ label, value, hint }) {
-  const card = (
-    <Paper p="sm" radius="md" withBorder>
-      <Text size="xs" c="dimmed" tt="uppercase">
-        {label}
-      </Text>
-      <Text size="lg" fw={700}>
-        {value}
-      </Text>
-    </Paper>
-  );
-  return hint ? (
-    <Tooltip label={hint} withArrow multiline w={280}>
-      {card}
-    </Tooltip>
-  ) : (
-    card
-  );
-}
-
 /**
  * Did this row move the objective up? From the relative margin when there is
  * one; from the absolute delta when there is not — a baseline that finishes no
@@ -153,102 +130,96 @@ function Recommendation({ row, labyrinth = false }) {
   const changed = row.triggers.filter((trigger) => trigger.changed);
 
   return (
-    <Paper p="sm" radius="md" withBorder>
-      <Stack gap={6}>
-        <Text size="sm" fw={600}>
-          {row.isBaseline ? 'Your current thresholds' : 'Recommended thresholds'}
+    <Section title={row.isBaseline ? 'Your current thresholds' : 'Recommended thresholds'}>
+      {!row.isBaseline && changed.length === 0 && (
+        <Text size="xs" c="dimmed">
+          No value differs from what you already have.
         </Text>
+      )}
 
-        {!row.isBaseline && changed.length === 0 && (
-          <Text size="xs" c="dimmed">
-            No value differs from what you already have.
-          </Text>
-        )}
-
-        <Table striped highlightOnHover withTableBorder>
-          <Table.Thead>
-            <Table.Tr>
-              {/* A trigger alone does not say whose it is: two party members can
-                  carry the same heal on the same threshold. */}
-              <Table.Th>Player</Table.Th>
-              <Table.Th>Slot</Table.Th>
-              <Table.Th>Condition</Table.Th>
-              <Table.Th ta="right">Value</Table.Th>
-              <Table.Th ta="right">Was</Table.Th>
-              <Table.Th>Equivalent range</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {row.triggers.map((trigger) => {
-              const band = formatBand(trigger.insensitiveValues);
-              return (
-                <Table.Tr
-                  key={`${trigger.playerIndex}-${trigger.slotKind}-${trigger.slotIndex}-${trigger.triggerIndex}`}
-                >
-                  <Table.Td>
-                    <Text size="xs" fw={600}>
-                      {trigger.playerName || playerLabel(trigger.playerHrid)}
-                    </Text>
-                    {trigger.playerName && (
-                      <Text size="xs" c="dimmed">
-                        {playerLabel(trigger.playerHrid)}
-                      </Text>
-                    )}
-                  </Table.Td>
-                  <Table.Td>
-                    <Text size="xs" fw={600}>
-                      {lastSegment(trigger.slotHrid)}
-                    </Text>
+      <Table striped highlightOnHover withTableBorder>
+        <Table.Thead>
+          <Table.Tr>
+            {/* A trigger alone does not say whose it is: two party members can
+                carry the same heal on the same threshold. */}
+            <Table.Th>Player</Table.Th>
+            <Table.Th>Slot</Table.Th>
+            <Table.Th>Condition</Table.Th>
+            <Table.Th ta="right">Value</Table.Th>
+            <Table.Th ta="right">Was</Table.Th>
+            <Table.Th>Equivalent range</Table.Th>
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {row.triggers.map((trigger) => {
+            const band = formatBand(trigger.insensitiveValues);
+            return (
+              <Table.Tr
+                key={`${trigger.playerIndex}-${trigger.slotKind}-${trigger.slotIndex}-${trigger.triggerIndex}`}
+              >
+                <Table.Td>
+                  <Text size="xs" fw={600}>
+                    {trigger.playerName || playerLabel(trigger.playerHrid)}
+                  </Text>
+                  {trigger.playerName && (
                     <Text size="xs" c="dimmed">
-                      {trigger.slotKind}
+                      {playerLabel(trigger.playerHrid)}
                     </Text>
-                  </Table.Td>
-                  <Table.Td>
-                    <Text size="xs">
-                      {trigger.dependencyName} {trigger.conditionName} {trigger.comparatorName}
+                  )}
+                </Table.Td>
+                <Table.Td>
+                  <Text size="xs" fw={600}>
+                    {nameOf(trigger.slotHrid)}
+                  </Text>
+                  <Text size="xs" c="dimmed">
+                    {trigger.slotKind}
+                  </Text>
+                </Table.Td>
+                <Table.Td>
+                  <Text size="xs">
+                    {trigger.dependencyName} {trigger.conditionName} {trigger.comparatorName}
+                  </Text>
+                  {/* A dead trigger is a finding in its own right, and no amount
+                      of threshold searching will rescue it against this target.
+                      Worth watching in a labyrinth, where a room spawns exactly
+                      one monster and every "2+ units" threshold lands here. */}
+                  {trigger.unreachable && (
+                    <Text size="xs" c="orange">
+                      Never fires here — this {labyrinth ? 'room' : 'zone'} never reaches{' '}
+                      {trigger.initialValue}
+                      {trigger.kind === 'percentage' ? '%' : ''} (max {trigger.maxValue})
                     </Text>
-                    {/* A dead trigger is a finding in its own right, and no amount
-                        of threshold searching will rescue it against this target.
-                        Worth watching in a labyrinth, where a room spawns exactly
-                        one monster and every "2+ units" threshold lands here. */}
-                    {trigger.unreachable && (
-                      <Text size="xs" c="orange">
-                        Never fires here — this {labyrinth ? 'room' : 'zone'} never reaches{' '}
-                        {trigger.initialValue}
-                        {trigger.kind === 'percentage' ? '%' : ''} (max {trigger.maxValue})
-                      </Text>
-                    )}
-                  </Table.Td>
-                  <Table.Td ta="right" ff="monospace">
-                    <Text size="sm" fw={trigger.changed ? 700 : 400} c={trigger.changed ? 'teal' : undefined}>
-                      {trigger.value}
+                  )}
+                </Table.Td>
+                <NumTd>
+                  <Text size="sm" fw={trigger.changed ? 700 : 400} c={trigger.changed ? 'teal' : undefined}>
+                    {trigger.value}
+                    {trigger.kind === 'percentage' ? '%' : ''}
+                  </Text>
+                </NumTd>
+                <NumTd c="dimmed" faded={!trigger.changed}>
+                  {trigger.changed ? trigger.initialValue : '—'}
+                </NumTd>
+                <Table.Td>
+                  {/* The most useful single output of the whole search: a bare
+                      number invites false precision, a range does not. */}
+                  {band ? (
+                    <Text size="xs" c="dimmed">
+                      {band}
                       {trigger.kind === 'percentage' ? '%' : ''}
                     </Text>
-                  </Table.Td>
-                  <Table.Td ta="right" ff="monospace" c="dimmed">
-                    {trigger.changed ? trigger.initialValue : '—'}
-                  </Table.Td>
-                  <Table.Td>
-                    {/* The most useful single output of the whole search: a bare
-                        number invites false precision, a range does not. */}
-                    {band ? (
-                      <Text size="xs" c="dimmed" ff="monospace">
-                        {band}
-                        {trigger.kind === 'percentage' ? '%' : ''}
-                      </Text>
-                    ) : (
-                      <Text size="xs" c="dimmed">
-                        —
-                      </Text>
-                    )}
-                  </Table.Td>
-                </Table.Tr>
-              );
-            })}
-          </Table.Tbody>
-        </Table>
-      </Stack>
-    </Paper>
+                  ) : (
+                    <Text size="xs" c="dimmed">
+                      —
+                    </Text>
+                  )}
+                </Table.Td>
+              </Table.Tr>
+            );
+          })}
+        </Table.Tbody>
+      </Table>
+    </Section>
   );
 }
 
@@ -358,19 +329,19 @@ export function TriggerOptimizerResults({ results }) {
 
       <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
         {dungeon ? (
-          <KpiCard
+          <StatCard
             label={costed ? 'Effective completions/h' : 'Best completions/h'}
             value={formatNumber(
               costed ? leader?.metrics?.effectiveCompletionsPerHour : leader?.metrics?.completionsPerHour
             )}
-            hint={
+            tip={
               costed
                 ? 'Full dungeon runs completed per hour of TOTAL time — combat plus the production time owed for everything consumed.'
                 : 'Full dungeon runs completed per hour of combat time, every wave through the last, measured at the verification fidelity. Does not account for consumable production.'
             }
           />
         ) : (
-          <KpiCard
+          <StatCard
             label={labyrinth ? 'Clear rate %' : costed ? 'Effective enc/h' : 'Best enc/h'}
             value={formatNumber(
               labyrinth
@@ -379,7 +350,7 @@ export function TriggerOptimizerResults({ results }) {
                   ? leader?.metrics?.effectiveEncountersPerHour
                   : leader?.metrics?.encountersPerHour
             )}
-            hint={
+            tip={
               labyrinth
                 ? 'Share of room attempts ending in a kill inside the 120-second timer, at the verification fidelity. Unresolved rooms are not counted either way.'
                 : costed
@@ -388,84 +359,79 @@ export function TriggerOptimizerResults({ results }) {
             }
           />
         )}
-        <KpiCard
+        <StatCard
           label="Vs current"
           value={leader?.isBaseline ? '—' : formatPct(leader?.marginPct)}
-          hint="Change against your existing thresholds, both re-simulated on the same pinned seed."
+          tip="Change against your existing thresholds, both re-simulated on the same pinned seed."
         />
-        <KpiCard
+        <StatCard
           label="Noise floor"
           value={cvPct == null ? 'not measured' : `${cvPct.toFixed(2)}%`}
-          hint="Standard deviation of the objective across repeat runs of the same build on different seeds. Differences smaller than this mean nothing."
+          tip="Standard deviation of the objective across repeat runs of the same build on different seeds. Differences smaller than this mean nothing."
         />
         {costed ? (
-          <KpiCard
+          <StatCard
             label="Time on cooking"
             value={`${(timeShare * 100).toFixed(1)}%`}
-            hint={`${formatSeconds(consumableSeconds)} of production owed per hour of combat, for ${formatNumber(leader?.metrics?.consumablesPerHour, 1)} consumables. This is real time you do not spend fighting.`}
+            tip={`${formatSeconds(consumableSeconds)} of production owed per hour of combat, for ${formatNumber(leader?.metrics?.consumablesPerHour, 1)} consumables. This is real time you do not spend fighting.`}
           />
         ) : (
-          <KpiCard
+          <StatCard
             label="Candidates kept"
             value={`${screening?.initial ?? '—'} → ${screening?.coarse ?? '—'} → ${screening?.final ?? '—'}`}
-            hint="Values surviving screening, then combinations after the beam search, then finalists verified."
+            tip="Values surviving screening, then combinations after the beam search, then finalists verified."
           />
         )}
       </SimpleGrid>
 
       <Recommendation labyrinth={labyrinth} row={leader} />
 
-      <Paper p="sm" radius="md" withBorder>
-        <Stack gap={6}>
-          <Text size="sm" fw={600}>
-            All finalists
-          </Text>
-          <Table.ScrollContainer minWidth={620}>
-            <Table striped highlightOnHover withTableBorder>
-              <Table.Thead>
-                <Table.Tr>
-                  <Table.Th>#</Table.Th>
-                  <Table.Th>Verdict</Table.Th>
-                  {columns.map((column) => (
-                    <Table.Th key={column.key} ta="right">
-                      {column.label}
-                    </Table.Th>
-                  ))}
-                  <Table.Th ta="right">Δ vs current</Table.Th>
-                  <Table.Th ta="right">Changed</Table.Th>
-                </Table.Tr>
-              </Table.Thead>
-              <Table.Tbody>
-                {rows.map((row) => (
-                  <Table.Tr key={row.id}>
-                    <Table.Td fw={600}>{row.rank}</Table.Td>
-                    <Table.Td>
-                      <RowBadge row={row} objective={objective} />
-                    </Table.Td>
-                    {columns.map((column) => (
-                      <Table.Td key={column.key} ta="right" ff="monospace">
-                        {formatNumber(row.metrics?.[column.key], column.decimals)}
-                      </Table.Td>
-                    ))}
-                    <Table.Td ta="right" ff="monospace">
-                      {row.isBaseline ? '—' : formatPct(row.marginPct)}
-                    </Table.Td>
-                    <Table.Td ta="right">{row.changedCount}</Table.Td>
-                  </Table.Tr>
+      <Section title="All finalists">
+        <Table.ScrollContainer minWidth={620}>
+          <Table striped highlightOnHover withTableBorder>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th>#</Table.Th>
+                <Table.Th>Verdict</Table.Th>
+                {columns.map((column) => (
+                  <Table.Th key={column.key} ta="right">
+                    {column.label}
+                  </Table.Th>
                 ))}
-              </Table.Tbody>
-            </Table>
-          </Table.ScrollContainer>
+                <Table.Th ta="right">Δ vs current</Table.Th>
+                <Table.Th ta="right">Changed</Table.Th>
+              </Table.Tr>
+            </Table.Thead>
+            <Table.Tbody>
+              {rows.map((row) => (
+                <Table.Tr key={row.id}>
+                  <Table.Td fw={600}>{row.rank}</Table.Td>
+                  <Table.Td>
+                    <RowBadge row={row} objective={objective} />
+                  </Table.Td>
+                  {columns.map((column) => (
+                    <NumTd key={column.key} faded={!Number(row.metrics?.[column.key])}>
+                      {formatNumber(row.metrics?.[column.key], column.decimals)}
+                    </NumTd>
+                  ))}
+                  <NumTd faded={row.isBaseline}>
+                    {row.isBaseline ? '—' : formatPct(row.marginPct)}
+                  </NumTd>
+                  <NumTd faded={!row.changedCount}>{row.changedCount}</NumTd>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
 
-          {rows.some((row) => row.metrics?.ranOutOfMana) && (
-            <Text size="xs" c="orange">
-              At least one configuration ran out of mana during the run. A mana threshold that starves the
-              build can still score well on {dungeon ? 'completions' : 'encounters'} per hour — check the recommended values before adopting
-              them.
-            </Text>
-          )}
-        </Stack>
-      </Paper>
+        {rows.some((row) => row.metrics?.ranOutOfMana) && (
+          <Text size="xs" c="orange">
+            At least one configuration ran out of mana during the run. A mana threshold that starves the
+            build can still score well on {dungeon ? 'completions' : 'encounters'} per hour — check the recommended values before adopting
+            them.
+          </Text>
+        )}
+      </Section>
     </Stack>
   );
 }

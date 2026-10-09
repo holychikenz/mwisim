@@ -1,10 +1,11 @@
-import { Badge, Group, Paper, Progress, SimpleGrid, Stack, Table, Text, Title } from '@mantine/core';
+import { Badge, Group, Progress, SimpleGrid, Stack, Table, Text, Title } from '@mantine/core';
+import { NumTd, Section, ShareBar, StatGroup } from './ResultParts';
 import { formatTier, levelToTierIndex, TIER_BASE_LEVEL } from '../utils/trialTiers';
 
 // =============================================================================
 // GuildTrialResults — renders the aggregate produced by multiWorker's
 // `simulation_result_guildTrial` message (see guildTrialStats.aggregateTrialResults).
-// Three sections: headline KPIs, a tier-ladder table, and a max-tier
+// Sections: three grouped stat cards (Climb · Ending · Rewards), a tier-ladder table, and a max-tier
 // distribution built from Mantine Progress bars (no chart dependency).
 //
 // DIALECT NOTE: every tier value in the aggregate is an engine LEVEL
@@ -27,15 +28,6 @@ function fmtDps(x) {
   const n = Number(x) || 0;
   if (n < 100) return n.toFixed(1);
   return Math.round(n).toLocaleString();
-}
-
-function KpiCard({ label, value }) {
-  return (
-    <Paper p="sm" radius="md" withBorder>
-      <Text size="xs" c="dimmed" tt="uppercase">{label}</Text>
-      <Text size="lg" fw={700}>{value}</Text>
-    </Paper>
-  );
 }
 
 export function GuildTrialResults({ result }) {
@@ -134,22 +126,27 @@ export function GuildTrialResults({ result }) {
       ? `Lv ${expMaxLevel.toFixed(1)} (≈T${levelToTierIndex(expMaxLevel).toFixed(1)})`
       : `Lv ${expMaxLevel.toFixed(1)}`;
 
-  const kpis = [
+  // Three grouped cards; each figure keeps its own row. Party DPS is a newer
+  // aggregate field, so it gets a row only when present.
+  const climb = [
+    { label: 'Expected tiers cleared', value: (agg.expectedTiersCleared || 0).toFixed(2), lead: true },
     { label: 'Expected max cleared', value: expMaxValue },
-    { label: 'Expected tiers cleared', value: (agg.expectedTiersCleared || 0).toFixed(2) },
-    // "completed" = cleared the cap tier (300) and ended the run. There are no
-    // re-clears: completedRate + wipeRate + timeoutRate ≈ 1. completedRate may
-    // be undefined against a pre-amendment engine build ⇒ render as 0.
-    { label: 'Completed rate', value: pct(agg.completedRate) },
-    { label: 'Wipe rate', value: pct(agg.wipeRate) },
-    { label: 'Timeout rate', value: pct(agg.timeoutRate) },
-    { label: 'Guild points (exp.)', value: Math.round(agg.expectedGuildPoints || 0).toLocaleString() },
-    { label: 'Tokens / eligible member', value: (agg.expectedTokensPerEligibleMember || 0).toFixed(1) },
-    { label: 'Tokens / participant (signed up)', value: (agg.expectedTokensPerParticipant || 0).toFixed(1) },
-    // avgPartyDps is a new aggregate field — only card it when present.
     ...(agg.avgPartyDps != null
       ? [{ label: 'Party DPS', value: fmtDps(agg.avgPartyDps) }]
       : []),
+  ];
+  // "completed" = cleared the cap tier (300) and ended the run. There are no
+  // re-clears: completedRate + wipeRate + timeoutRate ≈ 1. completedRate may
+  // be undefined against a pre-amendment engine build ⇒ render as 0.
+  const ending = [
+    { label: 'Completed rate', value: pct(agg.completedRate), lead: true },
+    { label: 'Wipe rate', value: pct(agg.wipeRate) },
+    { label: 'Timeout rate', value: pct(agg.timeoutRate) },
+  ];
+  const rewards = [
+    { label: 'Guild points (exp.)', value: Math.round(agg.expectedGuildPoints || 0).toLocaleString(), lead: true },
+    { label: 'Tokens / eligible member', value: (agg.expectedTokensPerEligibleMember || 0).toFixed(1) },
+    { label: 'Tokens / participant (signed up)', value: (agg.expectedTokensPerParticipant || 0).toFixed(1) },
   ];
 
   return (
@@ -172,10 +169,10 @@ export function GuildTrialResults({ result }) {
         </Group>
       </Group>
 
-      <SimpleGrid cols={{ base: 2, sm: 3, lg: 6 }} spacing="sm">
-        {kpis.map(k => (
-          <KpiCard key={k.label} label={k.label} value={k.value} />
-        ))}
+      <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
+        <StatGroup title="Climb" kpis={climb} />
+        <StatGroup title="Ending" kpis={ending} />
+        <StatGroup title="Rewards" kpis={rewards} />
       </SimpleGrid>
 
       {modalEnd && (
@@ -191,8 +188,7 @@ export function GuildTrialResults({ result }) {
         </Text>
       )}
 
-      <div>
-        <Text size="sm" fw={600} mb={6}>Tier ladder</Text>
+      <Section title="Tier ladder">
         {tiers.length === 0 ? (
           <Text size="sm" c="dimmed">No tiers attempted.</Text>
         ) : (
@@ -221,22 +217,22 @@ export function GuildTrialResults({ result }) {
                     <Table.Td>
                       <Group gap="xs" wrap="nowrap">
                         <Progress value={p * 100} w={120} color={p >= 0.5 ? 'teal' : 'orange'} />
-                        <Text size="xs" ff="monospace">{pct(p)}</Text>
+                        <Text size="xs">{pct(p)}</Text>
                       </Group>
                     </Table.Td>
-                    <Table.Td ta="right">{seconds(agg.avgTimePerTierMs?.[t])}</Table.Td>
-                    <Table.Td ta="right">{agg.deathsByTier?.[t] || 0}</Table.Td>
+                    <NumTd>{seconds(agg.avgTimePerTierMs?.[t])}</NumTd>
+                    <NumTd faded={!agg.deathsByTier?.[t]}>{agg.deathsByTier?.[t] || 0}</NumTd>
                     {hasEndDiagnostics && (
-                      <Table.Td ta="right">
+                      <NumTd faded={!(endedHere > 0 && hpRemoved != null)}>
                         {endedHere > 0 && hpRemoved != null ? (
                           <>
-                            <Text span size="sm" ff="monospace">{pct(hpRemoved)}</Text>{' '}
+                            <Text span size="sm">{pct(hpRemoved)}</Text>{' '}
                             <Text span size="xs" c="dimmed">({endedHere})</Text>
                           </>
                         ) : (
                           '—'
                         )}
-                      </Table.Td>
+                      </NumTd>
                     )}
                   </Table.Tr>
                 );
@@ -244,11 +240,10 @@ export function GuildTrialResults({ result }) {
             </Table.Tbody>
           </Table>
         )}
-      </div>
+      </Section>
 
       {hasDpsByBuild && (
-        <div>
-          <Text size="sm" fw={600} mb={6}>DPS by build</Text>
+        <Section title="DPS by build">
           <Table striped highlightOnHover withTableBorder>
             <Table.Thead>
               <Table.Tr>
@@ -267,30 +262,26 @@ export function GuildTrialResults({ result }) {
                 return (
                   <Table.Tr key={row.key}>
                     <Table.Td fw={600}>{row.name}</Table.Td>
-                    <Table.Td ta="right">{row.copies}</Table.Td>
-                    <Table.Td ta="right" ff="monospace">{fmtDps(row.avgPerCopy)}</Table.Td>
-                    <Table.Td ta="right" ff="monospace">{fmtDps(row.total)}</Table.Td>
+                    <NumTd>{row.copies}</NumTd>
+                    <NumTd>{fmtDps(row.avgPerCopy)}</NumTd>
+                    <NumTd strong>{fmtDps(row.total)}</NumTd>
                     <Table.Td>
-                      <Group gap="xs" wrap="nowrap">
-                        <Progress value={share * 100} w={120} color="indigo" />
-                        <Text size="xs" ff="monospace">{pct(share)}</Text>
-                      </Group>
+                      <ShareBar value={share} w={200} />
                     </Table.Td>
                   </Table.Tr>
                 );
               })}
             </Table.Tbody>
           </Table>
-          <Text size="xs" c="dimmed" mt={6}>
+          <Text size="xs" c="dimmed">
             Σ builds: {fmtDps(dpsGrandTotal)} DPS
             {agg.avgPartyDps != null && <> · party avg: {fmtDps(agg.avgPartyDps)} DPS</>}
             {' '}— per-unit DPS is averaged over iterations (damage ÷ run duration).
           </Text>
-        </div>
+        </Section>
       )}
 
-      <div>
-        <Text size="sm" fw={600} mb={6}>Max tier reached (distribution)</Text>
+      <Section title="Max tier reached (distribution)">
         <Stack gap={4}>
           {distKeys.map(k => {
             const count = agg.maxTierDistribution[k] || 0;
@@ -303,17 +294,17 @@ export function GuildTrialResults({ result }) {
                 <Progress
                   value={(count / maxDistCount) * 100}
                   w={220}
-                  color={k === 0 ? 'red' : 'indigo'}
+                  color={k === 0 ? 'red' : 'sand'}
                 />
-                <Text size="xs" ff="monospace">{count} ({pct(share)})</Text>
+                <Text size="xs">{count} ({pct(share)})</Text>
               </Group>
             );
           })}
         </Stack>
-        <Text size="xs" c="dimmed" mt={6}>
+        <Text size="xs" c="dimmed">
           &quot;None&quot; = runs that never cleared the starting tier.
         </Text>
-      </div>
+      </Section>
     </Stack>
   );
 }

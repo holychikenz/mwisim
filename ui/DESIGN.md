@@ -25,6 +25,9 @@ Decisions for the React UI redesign (agreed 2026-10-09). Theme tokens live in
 - **Run strip**: top of the main pane — zone/tier/hours (or the mode's
   equivalents), All Zones, Run. Mode settings (optimiser slots, fidelity,
   thresholds, trial options) live in a collapsible panel directly under it.
+  The optimiser panels use the main pane's width: two columns from Mantine
+  `lg` (what to search on the left; costs, workload and fidelity on the
+  right), one column below.
 - **One Run**: the run strip's Run (and Stop) is the only one, in every mode.
   The optimisers' panels hold settings only; in Triggers the strip's button
   reads "Optimise N thresholds", in Gear "Run equipment scan", and each is
@@ -73,7 +76,8 @@ opens one searchable picker with the enhancement level; owned items first.
   the run it came from and never shown against another.
 - Key registry: `csim_ui_result_tab`, `csim_ui_sheet_tab`, `csim_ui_sheet_open`,
   `csim_ui_mode_settings_open`, `csim_ui_global_buffs_open`,
-  `csim_ui_drops_credit_mode`.
+  `csim_ui_drops_credit_mode`, `csim_ui_trial_monsters_collapsed`,
+  `csim_ui_trigopt_stages_open`, `csim_ui_equipopt_fidelity_open`.
 
 ## Rule of thumb
 No information is dropped: it may move, group or fade, never vanish.

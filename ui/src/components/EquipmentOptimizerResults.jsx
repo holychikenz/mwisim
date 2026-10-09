@@ -5,7 +5,6 @@ import {
   Button,
   Group,
   NumberInput,
-  Paper,
   SegmentedControl,
   SimpleGrid,
   Stack,
@@ -24,6 +23,7 @@ import {
 } from '../utils/equipmentOptimizer';
 import { formatSeconds } from '../utils/triggerOptimizer';
 import { useEnhancementCosts } from '../hooks/useEnhancementCosts';
+import { NumTd, Section, StatCard } from './ResultParts';
 import {
   PROTECTION_PRICING,
   breakEvenHours,
@@ -106,26 +106,6 @@ function formatNumber(value, decimals = 2) {
   if (Math.abs(number) >= 1e6) return `${(number / 1e6).toFixed(2)}M`;
   if (Math.abs(number) >= 1e4) return `${(number / 1e3).toFixed(1)}K`;
   return number.toFixed(decimals);
-}
-
-function KpiCard({ label, value, hint }) {
-  const body = (
-    <Paper p="sm" radius="md" withBorder>
-      <Text size="10px" c="dimmed" tt="uppercase" fw={700}>
-        {label}
-      </Text>
-      <Text size="lg" fw={700}>
-        {value}
-      </Text>
-    </Paper>
-  );
-  return hint ? (
-    <Tooltip label={hint} withArrow multiline w={280}>
-      {body}
-    </Tooltip>
-  ) : (
-    body
-  );
 }
 
 const VERDICT_STYLE = {
@@ -283,11 +263,9 @@ function ReturnOnInvestment({
   }, [costs, rows, baselineRate, labyrinth]);
 
   return (
-    <Paper p="sm" radius="md" withBorder>
-      <Group justify="space-between" mb={6}>
-        <Text size="sm" fw={600}>
-          Return on investment
-        </Text>
+    <Section
+      title="Return on investment"
+      right={
         <Group gap="sm">
           {stale && (
             <Badge size="xs" color="yellow" variant="light">
@@ -298,7 +276,8 @@ function ReturnOnInvestment({
             {costs ? 'Refetch costs' : 'Cost these levels'}
           </Button>
         </Group>
-      </Group>
+      }
+    >
 
       {/* The two questions a protect poses, and they are not the same question.
           What it COSTS decides how much of the bill is protection; WHERE IT
@@ -307,7 +286,7 @@ function ReturnOnInvestment({
           balances the two and its minimum is a real answer, but a free protect
           makes protecting from +2 unbeatable, and that is a fantasy for anybody
           whose stack is finite. Hence the level input belongs to Free alone. */}
-      <Group gap="xs" mb={8} wrap="wrap">
+      <Group gap="xs" wrap="wrap">
         <Text size="xs" fw={600} c="dimmed">
           Protects
         </Text>
@@ -454,10 +433,10 @@ function ReturnOnInvestment({
                         {row.itemName}
                       </Text>
                     </Table.Td>
-                    <Table.Td ta="right" ff="monospace">
+                    <NumTd>
                       +{row.currentLevel + 1}
-                    </Table.Td>
-                    <Table.Td ta="right" ff="monospace">
+                    </NumTd>
+                    <NumTd>
                       {cost?.seconds != null ? (
                         formatSeconds(cost.seconds)
                       ) : (
@@ -467,30 +446,26 @@ function ReturnOnInvestment({
                           </Text>
                         </Tooltip>
                       )}
-                    </Table.Td>
-                    <Table.Td ta="right" ff="monospace">
+                    </NumTd>
+                    <NumTd>
                       {formatProtects(cost?.protects) ?? (
                         <Text span size="xs" c="dimmed">
                           —
                         </Text>
                       )}
-                    </Table.Td>
+                    </NumTd>
                     {/* Deliberately different denominators. A zone's pay-back is
                         enhancing hours divided by the RELATIVE gain (that is what
                         base/gain reduces to), so the relative figure is what the
                         column is per. A labyrinth's is per percentage POINT, so
                         showing the relative gain beside it would invite the reader
                         to divide two numbers that do not correspond. */}
-                    <Table.Td
-                      ta="right"
-                      ff="monospace"
-                      c={row.perLevel > 0 ? 'teal' : row.perLevel < 0 ? 'red' : undefined}
-                    >
+                    <NumTd c={row.perLevel > 0 ? 'teal' : row.perLevel < 0 ? 'red' : undefined}>
                       {labyrinth
                         ? `${row.perLevel > 0 ? '+' : ''}${formatNumber(row.perLevel, 3)} pp`
                         : formatPerLevel(row)}
-                    </Table.Td>
-                    <Table.Td ta="right" ff="monospace" fw={hours == null ? 400 : 700}>
+                    </NumTd>
+                    <NumTd strong={hours != null}>
                       {hours == null ? (
                         <Text span size="xs" c="dimmed">
                           never
@@ -498,7 +473,7 @@ function ReturnOnInvestment({
                       ) : (
                         formatHours(hours)
                       )}
-                    </Table.Td>
+                    </NumTd>
                   </Table.Tr>
                 ))}
               </Table.Tbody>
@@ -519,7 +494,7 @@ function ReturnOnInvestment({
             {labyrinth ? (
               <>
                 The last column is the enhancing time that buys one percentage point of clear rate:{' '}
-                <Text span ff="monospace">
+                <Text span fs="italic">
                   (cost / 3600) ÷ gain per level
                 </Text>
                 . It is not a pay-back — a completion chance is a proportion and has no horizon to
@@ -530,7 +505,7 @@ function ReturnOnInvestment({
             ) : (
               <>
                 Pay-back is the combat time at which the enhancement has repaid the time it cost:{' '}
-                <Text span ff="monospace">
+                <Text span fs="italic">
                   (cost / 3600) × {EFFECTIVE_OBJECTIVES.has(objective) ? 'effective rate' : 'rate'}{' '}
                   ÷ gain
                 </Text>
@@ -540,7 +515,7 @@ function ReturnOnInvestment({
           </Text>
         </>
       )}
-    </Paper>
+    </Section>
   );
 }
 
@@ -699,7 +674,7 @@ export function EquipmentOptimizerResults({
       )}
 
       <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
-        <KpiCard
+        <StatCard
           label={
             labyrinth
               ? 'Baseline clear rate %'
@@ -712,22 +687,22 @@ export function EquipmentOptimizerResults({
                   : 'Baseline enc/h'
           }
           value={formatNumber(baseline?.metrics?.[objective], 2)}
-          hint={`The unmodified build, averaged over ${replicates} runs of ${hours} simulated hours.`}
+          tip={`The unmodified build, averaged over ${replicates} runs of ${hours} simulated hours.`}
         />
-        <KpiCard
+        <StatCard
           label="Best per +1"
           value={inconclusive ? '—' : formatPerLevel(leader)}
-          hint="Measured over the full probe, then divided by the probe size. The multiplier table is convex, so this slightly flatters the next single level."
+          tip="Measured over the full probe, then divided by the probe size. The multiplier table is convex, so this slightly flatters the next single level."
         />
-        <KpiCard
+        <StatCard
           label="Detection floor"
           value={detectionFloor == null ? '—' : `±${formatPct(detectionFloor, 3)}`}
-          hint="The typical 95% margin per level on this run. A gain smaller than this could not have been told from noise, whatever the ranking says."
+          tip="The typical 95% margin per level on this run. A gain smaller than this could not have been told from noise, whatever the ranking says."
         />
-        <KpiCard
+        <StatCard
           label="Run-to-run noise"
           value={noise?.calibrated ? formatPct(noise.coefficientOfVariation, 3) : '—'}
-          hint={
+          tip={
             `Coefficient of variation of the baseline across ${noise?.samples ?? 0} runs at ${hours}h. ` +
             (pairingEfficiency == null
               ? ''
@@ -736,10 +711,7 @@ export function EquipmentOptimizerResults({
         />
       </SimpleGrid>
 
-      <Paper p="sm" radius="md" withBorder>
-        <Text size="sm" fw={600} mb={6}>
-          Every slot, ranked
-        </Text>
+      <Section title="Every slot, ranked">
         <Table.ScrollContainer minWidth={760}>
           <Table striped highlightOnHover withTableBorder>
             <Table.Thead>
@@ -779,7 +751,7 @@ export function EquipmentOptimizerResults({
                       {row.itemName}
                     </Text>
                   </Table.Td>
-                  <Table.Td ta="right" ff="monospace">
+                  <NumTd>
                     +{row.currentLevel}
                     {row.step !== row.requestedStep && (
                       <Tooltip
@@ -794,25 +766,23 @@ export function EquipmentOptimizerResults({
                         </Text>
                       </Tooltip>
                     )}
-                  </Table.Td>
-                  <Table.Td
-                    ta="right"
-                    ff="monospace"
-                    fw={row.significant ? 700 : 400}
+                  </NumTd>
+                  <NumTd
+                    strong={row.significant}
                     c={row.significant ? (row.perLevel >= 0 ? 'teal' : 'red') : undefined}
                   >
                     {formatPerLevel(row)}
-                  </Table.Td>
-                  <Table.Td ta="right" ff="monospace" c="dimmed">
+                  </NumTd>
+                  <NumTd c="dimmed">
                     {formatPct(row.perLevelMarginPct, 3)}
-                  </Table.Td>
+                  </NumTd>
                   <Table.Td>
                     <VerdictBadge row={row} />
                   </Table.Td>
                   {columns.map((column) => (
-                    <Table.Td key={column.key} ta="right" ff="monospace">
+                    <NumTd key={column.key} faded={!Number(row.metrics?.[column.key])}>
                       {formatNumber(row.metrics?.[column.key], column.decimals)}
-                    </Table.Td>
+                    </NumTd>
                   ))}
                 </Table.Tr>
               ))}
@@ -829,7 +799,7 @@ export function EquipmentOptimizerResults({
             ? `about ${leader.multiplierRatio.toFixed(2)}× for the leading row.`
             : 'see each row for its own ratio.'}
         </Text>
-      </Paper>
+      </Section>
 
       {/* THE COLUMN IS NOT A PAY-BACK IN A LABYRINTH, and the distinction is
           kept rather than papered over. Break-even is
@@ -860,10 +830,7 @@ export function EquipmentOptimizerResults({
       />
 
       {skipped.length > 0 && (
-        <Paper p="sm" radius="md" withBorder>
-          <Text size="sm" fw={600} mb={6}>
-            Not probed ({skipped.length})
-          </Text>
+        <Section title={`Not probed (${skipped.length})`}>
           <Stack gap={2}>
             {skipped.map((row) => (
               <Group key={row.id} gap={6} justify="space-between">
@@ -876,7 +843,7 @@ export function EquipmentOptimizerResults({
               </Group>
             ))}
           </Stack>
-        </Paper>
+        </Section>
       )}
     </Stack>
   );

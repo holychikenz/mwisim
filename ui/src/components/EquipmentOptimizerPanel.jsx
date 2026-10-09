@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { isBool, usePersistentState } from '../hooks/usePersistentState';
 import {
   Accordion,
   Alert,
@@ -12,6 +13,7 @@ import {
   ScrollArea,
   SegmentedControl,
   Select,
+  SimpleGrid,
   Stack,
   Text,
   Tooltip,
@@ -130,6 +132,7 @@ export function EquipmentOptimizerPanel({
 
   const seconds = estimateSeconds(workload, workerCount);
   const setCfg = (patch) => onConfigChange?.({ ...config, ...patch });
+  const [fidelityOpen, setFidelityOpen] = usePersistentState('csim_ui_equipopt_fidelity_open', false, isBool);
 
   const toggle = (row) => {
     const next = selectedIds.has(row.id)
@@ -166,46 +169,115 @@ export function EquipmentOptimizerPanel({
   }
 
   return (
-    <Stack gap="xs">
-      <Group justify="space-between" gap={4}>
-        <Text size="sm" fw={600}>
-          Equipment Optimizer
+    <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="sm">
+      <Stack gap="xs">
+        <Group justify="space-between" gap={4}>
+          <Text size="sm" fw={600}>
+            Equipment Optimizer
+          </Text>
+          {previewing && (
+            <Text size="10px" c="dimmed">
+              checking…
+            </Text>
+          )}
+        </Group>
+
+        <Text size="xs" c="dimmed">
+          Measures what one enhancement level on each piece is worth{labyrinth ? ' in the labyrinth' : ''}.
+          Each slot is probed at +{config.step} — a single level is beneath the simulation noise — and
+          the result divided back down.
         </Text>
-        {previewing && (
-          <Text size="10px" c="dimmed">
-            checking…
-          </Text>
+
+        {/* A labyrinth has no food bill to count — the game confiscates every
+            consumable at the door — so the whole pricing apparatus is inert there
+            and showing it would imply otherwise. See api/lib/target.js. */}
+        {labyrinth ? (
+          <Alert color="grape" variant="light" p="xs" title="Ranking on completion chance">
+            <Text size="xs">
+              Gains are in PERCENTAGE POINTS of clear rate — the share of room attempts that end in a
+              kill inside the 120-second timer. Food, drinks and teas are stripped on entry exactly as
+              the game strips them; the supply crates and lab-shop upgrades set under Supplies are
+              applied instead.
+            </Text>
+            <Text size="xs" mt={4}>
+              Pick a room level you do <b>not</b> already clear every time. Clear rate is pinned at 100%
+              below that and at 0% above it, and a pinned run can only report ties.
+            </Text>
+          </Alert>
+        ) : (
+          <Alert
+            color={costed ? 'teal' : 'yellow'}
+            variant="light"
+            p="xs"
+            title={costed ? `Ranking on effective ${rateShort}/hour` : `Ranking on raw ${rateShort}/hour`}
+          >
+            <Text size="xs">
+              {costed
+                ? `Gains are measured in ${rateNoun} per hour of TOTAL time — combat plus the production owed for every consumable burned.`
+                : 'No production times are loaded, so the food bill is not counted. An enhancement that lets the build eat less will not be rewarded.'}
+            </Text>
+          </Alert>
         )}
-      </Group>
 
-      <Text size="xs" c="dimmed">
-        Measures what one enhancement level on each piece is worth{labyrinth ? ' in the labyrinth' : ''}.
-        Each slot is probed at +{config.step} — a single level is beneath the simulation noise — and
-        the result divided back down.
-      </Text>
+        <Divider label="Slots to probe" labelPosition="center" />
 
-      {/* A labyrinth has no food bill to count — the game confiscates every
-          consumable at the door — so the whole pricing apparatus is inert there
-          and showing it would imply otherwise. See api/lib/target.js. */}
-      {labyrinth ? (
-        <Alert color="grape" variant="light" p="xs" title="Ranking on completion chance">
-          <Text size="xs">
-            Gains are in PERCENTAGE POINTS of clear rate — the share of room attempts that end in a
-            kill inside the 120-second timer. Food, drinks and teas are stripped on entry exactly as
-            the game strips them; the supply crates and lab-shop upgrades set under Supplies are
-            applied instead.
+        <Group gap={4}>
+          <Button
+            variant="default"
+            size="compact-xs"
+            disabled={loading || !scannable.length}
+            onClick={() => onSelectionChange?.(scannable.map((row) => row.id))}
+          >
+            All
+          </Button>
+          <Button
+            variant="default"
+            size="compact-xs"
+            disabled={loading || !selectedIds.size}
+            onClick={() => onSelectionChange?.([])}
+          >
+            None
+          </Button>
+          <Text size="xs" c="dimmed" ml="auto">
+            {selectedIds.size} of {scannable.length}
           </Text>
-          <Text size="xs" mt={4}>
-            Pick a room level you do <b>not</b> already clear every time. Clear rate is pinned at 100%
-            below that and at 0% above it, and a pinned run can only report ties.
-          </Text>
-        </Alert>
-      ) : (
-        <>
+        </Group>
+
+        <ScrollArea.Autosize mah={300}>
+          <Stack gap={4}>
+            {scannable.map((row) => (
+              <SlotRow
+                key={row.id}
+                row={row}
+                checked={selectedIds.has(row.id)}
+                disabled={loading}
+                onToggle={toggle}
+              />
+            ))}
+            {unscannable.length > 0 && (
+              <>
+                <Text size="10px" c="dimmed" mt={4}>
+                  Not probed ({unscannable.length})
+                </Text>
+                {unscannable.map((row) => (
+                  <SlotRow key={row.id} row={row} checked={false} disabled onToggle={toggle} />
+                ))}
+              </>
+            )}
+            {!equipment.length && !previewing && (
+              <Text size="xs" c="dimmed">
+                No equipment found on the selected players.
+              </Text>
+            )}
+          </Stack>
+        </ScrollArea.Autosize>
+      </Stack>
+
+      <Stack gap="xs">
         {/* Price source. Only the Iron source yields production time in seconds, and
             only seconds are commensurable with combat time — so without it the scan
             ranks on raw throughput and cannot see the food bill at all. */}
-        {pricing && (
+        {!labyrinth && pricing && (
           <Paper p="xs" radius="sm" withBorder>
             <Stack gap={6}>
               <Text size="xs" fw={600}>
@@ -271,147 +343,84 @@ export function EquipmentOptimizerPanel({
           </Paper>
         )}
 
-        <Alert
-          color={costed ? 'teal' : 'yellow'}
-          variant="light"
-          p="xs"
-          title={costed ? `Ranking on effective ${rateShort}/hour` : `Ranking on raw ${rateShort}/hour`}
-        >
-          <Text size="xs">
-            {costed
-              ? `Gains are measured in ${rateNoun} per hour of TOTAL time — combat plus the production owed for every consumable burned.`
-              : 'No production times are loaded, so the food bill is not counted. An enhancement that lets the build eat less will not be rewarded.'}
-          </Text>
-        </Alert>
-
-        </>
-      )}
-
-      <Divider label="Slots to probe" labelPosition="center" />
-
-      <Group gap={4}>
-        <Button
-          variant="default"
-          size="compact-xs"
-          disabled={loading || !scannable.length}
-          onClick={() => onSelectionChange?.(scannable.map((row) => row.id))}
-        >
-          All
-        </Button>
-        <Button
-          variant="default"
-          size="compact-xs"
-          disabled={loading || !selectedIds.size}
-          onClick={() => onSelectionChange?.([])}
-        >
-          None
-        </Button>
-        <Text size="xs" c="dimmed" ml="auto">
-          {selectedIds.size} of {scannable.length}
-        </Text>
-      </Group>
-
-      <ScrollArea.Autosize mah={300}>
-        <Stack gap={4}>
-          {scannable.map((row) => (
-            <SlotRow
-              key={row.id}
-              row={row}
-              checked={selectedIds.has(row.id)}
-              disabled={loading}
-              onToggle={toggle}
-            />
-          ))}
-          {unscannable.length > 0 && (
-            <>
-              <Text size="10px" c="dimmed" mt={4}>
-                Not probed ({unscannable.length})
-              </Text>
-              {unscannable.map((row) => (
-                <SlotRow key={row.id} row={row} checked={false} disabled onToggle={toggle} />
-              ))}
-            </>
-          )}
-          {!equipment.length && !previewing && (
-            <Text size="xs" c="dimmed">
-              No equipment found on the selected players.
-            </Text>
-          )}
-        </Stack>
-      </ScrollArea.Autosize>
-
-      <Paper p="xs" radius="sm" withBorder>
-        <Group justify="space-between" gap={4}>
-          <Text size="xs" fw={600}>
-            Workload
-          </Text>
-          <Badge size="xs" variant="light">
-            {workload.total} sims
-          </Badge>
-        </Group>
-        <Text size="xs" c="dimmed" mt={2}>
-          {workload.simulatedHours.toLocaleString()} simulated hours · {formatDuration(seconds)} on{' '}
-          {workerCount} worker{workerCount === 1 ? '' : 's'}
-        </Text>
-      </Paper>
-
-      <Accordion variant="separated" chevronPosition="right">
-        <Accordion.Item value="fidelity">
-          <Accordion.Control>
+        <Paper p="xs" radius="sm" withBorder>
+          <Group justify="space-between" gap={4}>
             <Text size="xs" fw={600}>
-              Fidelity
+              Workload
             </Text>
-          </Accordion.Control>
-          <Accordion.Panel>
-            <Stack gap={8}>
-              <NumberInput
-                size="xs"
-                label="Probe size (+N)"
-                description="A single level is beneath the noise. Six clears it; the result is divided by six."
-                min={1}
-                max={20}
-                value={config.step}
-                onChange={(value) => setCfg({ step: Number(value) || DEFAULT_EQUIPMENT_OPT_CONFIG.step })}
-                disabled={loading}
-              />
-              <NumberInput
-                size="xs"
-                label="Simulated hours"
-                description="Per simulation. Noise falls as 1/sqrt(hours)."
-                min={1}
-                max={1000}
-                value={config.hours}
-                onChange={(value) => setCfg({ hours: Number(value) || DEFAULT_EQUIPMENT_OPT_CONFIG.hours })}
-                disabled={loading}
-              />
-              <NumberInput
-                size="xs"
-                label="Replicates"
-                description="Repeats per slot on shared seeds. This is what buys the error bar — two is the minimum for having one at all."
-                min={2}
-                max={40}
-                value={config.replicates}
-                onChange={(value) =>
-                  setCfg({ replicates: Number(value) || DEFAULT_EQUIPMENT_OPT_CONFIG.replicates })
-                }
-                disabled={loading}
-              />
-              <NumberInput
-                size="xs"
-                label="Significance level"
-                description="0.05 is a 95% confidence interval. Lower demands stronger evidence."
-                min={0.001}
-                max={0.5}
-                step={0.01}
-                decimalScale={3}
-                value={config.alpha}
-                onChange={(value) => setCfg({ alpha: Number(value) || DEFAULT_EQUIPMENT_OPT_CONFIG.alpha })}
-                disabled={loading}
-              />
-            </Stack>
-          </Accordion.Panel>
-        </Accordion.Item>
-      </Accordion>
-    </Stack>
+            <Badge size="xs" variant="light">
+              {workload.total} sims
+            </Badge>
+          </Group>
+          <Text size="xs" c="dimmed" mt={2}>
+            {workload.simulatedHours.toLocaleString()} simulated hours · {formatDuration(seconds)} on{' '}
+            {workerCount} worker{workerCount === 1 ? '' : 's'}
+          </Text>
+        </Paper>
+
+        <Accordion
+          variant="separated"
+          chevronPosition="right"
+          value={fidelityOpen ? 'fidelity' : null}
+          onChange={(value) => setFidelityOpen(value === 'fidelity')}
+        >
+          <Accordion.Item value="fidelity">
+            <Accordion.Control>
+              <Text size="xs" fw={600}>
+                Fidelity
+              </Text>
+            </Accordion.Control>
+            <Accordion.Panel>
+              <Stack gap={8}>
+                <NumberInput
+                  size="xs"
+                  label="Probe size (+N)"
+                  description="A single level is beneath the noise. Six clears it; the result is divided by six."
+                  min={1}
+                  max={20}
+                  value={config.step}
+                  onChange={(value) => setCfg({ step: Number(value) || DEFAULT_EQUIPMENT_OPT_CONFIG.step })}
+                  disabled={loading}
+                />
+                <NumberInput
+                  size="xs"
+                  label="Simulated hours"
+                  description="Per simulation. Noise falls as 1/sqrt(hours)."
+                  min={1}
+                  max={1000}
+                  value={config.hours}
+                  onChange={(value) => setCfg({ hours: Number(value) || DEFAULT_EQUIPMENT_OPT_CONFIG.hours })}
+                  disabled={loading}
+                />
+                <NumberInput
+                  size="xs"
+                  label="Replicates"
+                  description="Repeats per slot on shared seeds. This is what buys the error bar — two is the minimum for having one at all."
+                  min={2}
+                  max={40}
+                  value={config.replicates}
+                  onChange={(value) =>
+                    setCfg({ replicates: Number(value) || DEFAULT_EQUIPMENT_OPT_CONFIG.replicates })
+                  }
+                  disabled={loading}
+                />
+                <NumberInput
+                  size="xs"
+                  label="Significance level"
+                  description="0.05 is a 95% confidence interval. Lower demands stronger evidence."
+                  min={0.001}
+                  max={0.5}
+                  step={0.01}
+                  decimalScale={3}
+                  value={config.alpha}
+                  onChange={(value) => setCfg({ alpha: Number(value) || DEFAULT_EQUIPMENT_OPT_CONFIG.alpha })}
+                  disabled={loading}
+                />
+              </Stack>
+            </Accordion.Panel>
+          </Accordion.Item>
+        </Accordion>
+      </Stack>
+    </SimpleGrid>
   );
 }
