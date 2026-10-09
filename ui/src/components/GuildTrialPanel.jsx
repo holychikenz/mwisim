@@ -8,17 +8,22 @@ import {
   Modal,
   NumberInput,
   Paper,
-  ScrollArea,
   Select,
   Stack,
   Text,
   Textarea,
-  Tooltip
+  Tooltip,
+  UnstyledButton
 } from '@mantine/core';
 import { listRosterEntries, buildSummary, refKey, MAX_ROW_COUNT } from '../utils/roster';
 import { listLoadoutRefs } from '../utils/characterStore';
 import { exportFormatToPlayer } from '../utils/importSet';
 import { describeShrines, ownsShrines } from '../utils/guildBuffs';
+import { combatLevel } from '../utils/combatLevel';
+
+// Combat-trial sign-up roles, shown as a chip only when a roster entry
+// carries one; never inferred.
+const ROLE_LABELS = { tank: 'Tank', damage_dealer: 'Damage', support: 'Support' };
 
 // Group export format = all keys are player IDs ("1".."5") with no `player`
 // key (same detection as ImportExport.isGroupFormat). Values may be nested
@@ -29,10 +34,10 @@ function isGroupFormat(data) {
 }
 
 // =============================================================================
-// GuildTrialPanel — the trial-mode navbar view: a compact, scrollable roster
-// of COUNTED rows (one row per build, "BuildName ×20"), each with an inline
-// ×N count input plus Duplicate / Save-as-new / Delete, a "Duplicate ×N"
-// stamp, affordances to seed seats (from P1–P5, any stored character's
+// GuildTrialPanel — the trial-mode rail view: the roster as rail member cards
+// (the same .member-card as the party rail), one COUNTED card per build
+// ("BuildName ×20"), each with an inline ×N count input plus Duplicate /
+// Save-as-new / Delete, a "Duplicate ×N" stamp, affordances to seed seats (from P1–P5, any stored character's
 // loadout, blank, or an existing one), and roster JSON import/export.
 //
 // A row REFERENCES a (character, loadout) pair; clicking it selects the row so
@@ -190,10 +195,10 @@ export function GuildTrialPanel({
   return (
     <Stack gap="sm">
       <Group justify="space-between" wrap="nowrap">
-        <Text size="sm" fw={600}>Roster</Text>
-        <Badge variant="light" color="grape" title="Participants drive the +1% monster-HP scaling">
+        <Text size="xs" fw={600} tt="uppercase" c="dimmed" style={{ letterSpacing: '0.08em' }}>Roster</Text>
+        <Text size="xs" c="dimmed" title="Participants drive the +1% monster-HP scaling">
           {participantCount} participant{participantCount === 1 ? '' : 's'}
-        </Badge>
+        </Text>
       </Group>
 
       {/* Add / seed builds */}
@@ -298,94 +303,102 @@ export function GuildTrialPanel({
           </Text>
         </Paper>
       ) : (
-        <ScrollArea.Autosize mah={320} type="hover">
-          <Stack gap={4}>
-            {entries.map(entry => {
-              const selected = entry.id === selectedEntryId;
-              return (
-                <Paper
-                  key={entry.id}
-                  p={6}
-                  radius="sm"
-                  withBorder
-                  onClick={() => onSelectEntry(entry.id)}
-                  style={{
-                    cursor: 'pointer',
-                    borderColor: selected ? 'var(--mantine-color-indigo-5)' : undefined,
-                    background: selected ? 'var(--mantine-color-indigo-light)' : undefined
-                  }}
-                >
-                  <Group justify="space-between" wrap="nowrap">
-                    <div style={{ minWidth: 0, flex: 1 }}>
-                      <Text size="xs" fw={600} truncate>{entry.displayName}</Text>
-                      <Text size="xs" c="dimmed" truncate>
-                        {buildSummary(entry.build, items)}
-                      </Text>
-                      {/* The honesty line. The header's shrine knobs govern
-                          every seat EXCEPT one whose build arrived carrying its
-                          own levels; without this the reader would read the
-                          header and believe it.
-                          The gate is `ownsShrines`, the SAME predicate the
-                          resolver uses, and must stay that way: a row that says
-                          "(own)" for a build the resolver fell back on is the
-                          precise lie this line exists to prevent. */}
-                      {ownsShrines(entry.build) && (
-                        <Text size="xs" c="dimmed" truncate>
-                          shrines: {describeShrines(entry.build.guildShrines)} (own)
-                        </Text>
+        <Stack gap={6}>
+          {entries.map(entry => {
+            const selected = entry.id === selectedEntryId;
+            const characterName =
+              characters?.characters?.[entry.characterId]?.name || entry.displayName;
+            const roleLabel = ROLE_LABELS[entry.role];
+            const owns = ownsShrines(entry.build);
+            return (
+              <div key={entry.id} className="member-card" data-active={selected || undefined}>
+                <Stack gap={6} style={{ flex: 1, minWidth: 0 }}>
+                  <UnstyledButton
+                    onClick={() => onSelectEntry(entry.id)}
+                    style={{ minWidth: 0 }}
+                    aria-pressed={selected}
+                  >
+                    <Group justify="space-between" wrap="nowrap" gap={4}>
+                      <Text size="sm" fw={600} truncate>{characterName}</Text>
+                      {entry.build && (
+                        <Badge size="xs" variant="light">CL {combatLevel(entry.build)}</Badge>
                       )}
-                    </div>
-                    {/* Count + actions: clicks here must not toggle row selection. */}
-                    <Group gap={4} wrap="nowrap" onClick={(e) => e.stopPropagation()}>
-                      <NumberInput
-                        value={entry.count}
-                        onChange={(v) => onSetCount(entry.id, v)}
-                        min={1}
-                        max={MAX_ROW_COUNT}
-                        size="xs"
-                        w={64}
-                        prefix="×"
-                        aria-label={`Participant count for ${entry.displayName}`}
-                      />
-                      <Tooltip label="Add one (count +1)" withinPortal={false}>
-                        <ActionIcon
-                          size="sm"
-                          variant="subtle"
-                          onClick={() => onDuplicate(entry.id, 1)}
-                          aria-label="Add one participant"
-                        >
-                          ⧉
-                        </ActionIcon>
-                      </Tooltip>
-                      <Tooltip label="Save as new (detach one into its own build)" withinPortal={false}>
-                        <ActionIcon
-                          size="sm"
-                          variant="subtle"
-                          color="teal"
-                          onClick={() => onSaveAsNew(entry.id)}
-                          aria-label="Save as new build"
-                        >
-                          ✎
-                        </ActionIcon>
-                      </Tooltip>
-                      <Tooltip label="Delete row (all ×N participants)" withinPortal={false}>
-                        <ActionIcon
-                          size="sm"
-                          variant="subtle"
-                          color="red"
-                          onClick={() => onDelete(entry.id)}
-                          aria-label="Delete row"
-                        >
-                          ×
-                        </ActionIcon>
-                      </Tooltip>
                     </Group>
+                    <Text size="xs" c="dimmed" truncate>
+                      {[entry.loadoutName, buildSummary(entry.build, items)].filter(Boolean).join(' · ')}
+                    </Text>
+                    {/* The honesty line. The header's shrine knobs govern
+                        every seat EXCEPT one whose build arrived carrying its
+                        own levels; without this the reader would read the
+                        header and believe it.
+                        The gate is `ownsShrines`, the SAME predicate the
+                        resolver uses, and must stay that way: a row that says
+                        "(own)" for a build the resolver fell back on is the
+                        precise lie this line exists to prevent. */}
+                    {owns && (
+                      <Text size="xs" c="dimmed" truncate>
+                        shrines: {describeShrines(entry.build.guildShrines)} (own)
+                      </Text>
+                    )}
+                    {(roleLabel || !entry.build) && (
+                      <Group gap={4} mt={4}>
+                        {roleLabel && <Badge size="xs" variant="light">{roleLabel}</Badge>}
+                        {!entry.build && (
+                          <Badge size="xs" color="yellow" variant="light">build missing</Badge>
+                        )}
+                      </Group>
+                    )}
+                  </UnstyledButton>
+                  {/* Count + actions: clicks here must not select the card. */}
+                  <Group gap={4} wrap="nowrap" onClick={(e) => e.stopPropagation()}>
+                    <NumberInput
+                      value={entry.count}
+                      onChange={(v) => onSetCount(entry.id, v)}
+                      min={1}
+                      max={MAX_ROW_COUNT}
+                      size="xs"
+                      w={64}
+                      prefix="×"
+                      aria-label={`Participant count for ${entry.displayName}`}
+                    />
+                    <Tooltip label="Add one (count +1)" withinPortal={false}>
+                      <ActionIcon
+                        size="sm"
+                        variant="subtle"
+                        onClick={() => onDuplicate(entry.id, 1)}
+                        aria-label="Add one participant"
+                      >
+                        ⧉
+                      </ActionIcon>
+                    </Tooltip>
+                    <Tooltip label="Save as new (detach one into its own build)" withinPortal={false}>
+                      <ActionIcon
+                        size="sm"
+                        variant="subtle"
+                        color="teal"
+                        onClick={() => onSaveAsNew(entry.id)}
+                        aria-label="Save as new build"
+                      >
+                        ✎
+                      </ActionIcon>
+                    </Tooltip>
+                    <Tooltip label="Delete row (all ×N participants)" withinPortal={false}>
+                      <ActionIcon
+                        size="sm"
+                        variant="subtle"
+                        color="red"
+                        onClick={() => onDelete(entry.id)}
+                        aria-label="Delete row"
+                      >
+                        ×
+                      </ActionIcon>
+                    </Tooltip>
                   </Group>
-                </Paper>
-              );
-            })}
-          </Stack>
-        </ScrollArea.Autosize>
+                </Stack>
+              </div>
+            );
+          })}
+        </Stack>
       )}
 
       {/* Roster JSON import / export */}

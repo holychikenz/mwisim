@@ -15,7 +15,11 @@ Decisions for the React UI redesign (agreed 2026-10-09). Theme tokens live in
 - **Header**: brand, mode tabs (Zone · Lab · Trial · Triggers · Gear · Costs), settings.
 - **Rail** (left, narrow): one card per party member — character, loadout,
   combat level, warnings, in/out of the sim. Trial mode shows the roster as
-  the same cards plus a role chip. Global buffs sit in a card at the rail's foot.
+  the same `.member-card`s: name, CL, loadout · weapon · best skill, the
+  own-shrines line, a role chip only when the roster entry carries one, and
+  ×N with the row actions (+1, save as new, delete). The roster tools (add
+  build, existing loadout, duplicate ×N) sit above the cards and roster
+  import/export below. Global buffs sit in a card at the rail's foot.
 - **Editor sheet**: clicking a card opens it. Tabs: Levels · Gear · Abilities ·
   Buffs · Food. Pinned beside the results at ≥1440 px, overlays below that.
 - **Run strip**: top of the main pane — zone/tier/hours (or the mode's
