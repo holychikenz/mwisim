@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { useState, useCallback, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import {
   AppShell,
   Group,
@@ -17,7 +17,8 @@ import {
   CloseButton,
   Collapse,
   UnstyledButton,
-  Burger
+  Burger,
+  Loader
 } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { useGameData } from './hooks/useGameData';
@@ -39,16 +40,6 @@ import { HeaderControls, GlobalBuffsCard } from './components/HeaderControls';
 import { PartyRail } from './components/PartyRail';
 import { PlayerConfig } from './components/PlayerConfig';
 import { SimulationResults } from './components/SimulationResults';
-import { AllZonesModal } from './components/AllZonesModal';
-import { AllZonesResults } from './components/AllZonesResults';
-import { GuildTrialResults } from './components/GuildTrialResults';
-import { GuildTrialPanel } from './components/GuildTrialPanel';
-import { TriggerOptimizerPanel } from './components/TriggerOptimizerPanel';
-import { TriggerOptimizerResults } from './components/TriggerOptimizerResults';
-import { EquipmentOptimizerPanel } from './components/EquipmentOptimizerPanel';
-import { EquipmentOptimizerResults } from './components/EquipmentOptimizerResults';
-import { ItemCostsView } from './components/ItemCostsView';
-import { TrialMonsterCards } from './components/TrialMonsterCards';
 import { ImportExport } from './components/ImportExport';
 import { ProgressBar } from './components/ProgressBar';
 import { LoadoutManager } from './components/LoadoutManager';
@@ -126,6 +117,27 @@ import {
   defaultWorkerCount,
   DEFAULT_SWEEP_HOURS
 } from './utils/allZones';
+
+// Mode-specific views load on demand: each becomes its own chunk, fetched the
+// first time its mode (or the All Zones picker) is opened. The element types
+// are module-level constants, so a re-run never remounts them.
+const lazyNamed = (load, name) => lazy(() => load().then(m => ({ default: m[name] })));
+const AllZonesModal = lazyNamed(() => import('./components/AllZonesModal'), 'AllZonesModal');
+const AllZonesResults = lazyNamed(() => import('./components/AllZonesResults'), 'AllZonesResults');
+const GuildTrialResults = lazyNamed(() => import('./components/GuildTrialResults'), 'GuildTrialResults');
+const GuildTrialPanel = lazyNamed(() => import('./components/GuildTrialPanel'), 'GuildTrialPanel');
+const TriggerOptimizerPanel = lazyNamed(() => import('./components/TriggerOptimizerPanel'), 'TriggerOptimizerPanel');
+const TriggerOptimizerResults = lazyNamed(() => import('./components/TriggerOptimizerResults'), 'TriggerOptimizerResults');
+const EquipmentOptimizerPanel = lazyNamed(() => import('./components/EquipmentOptimizerPanel'), 'EquipmentOptimizerPanel');
+const EquipmentOptimizerResults = lazyNamed(() => import('./components/EquipmentOptimizerResults'), 'EquipmentOptimizerResults');
+const ItemCostsView = lazyNamed(() => import('./components/ItemCostsView'), 'ItemCostsView');
+const TrialMonsterCards = lazyNamed(() => import('./components/TrialMonsterCards'), 'TrialMonsterCards');
+
+const Pending = (
+  <Center mih={80}>
+    <Loader size="sm" />
+  </Center>
+);
 
 const ONE_HOUR = 60 * 60 * 1e9;
 
@@ -1751,6 +1763,7 @@ function App() {
               </Badge>
             </Group>
             {isTrial ? (
+              <Suspense fallback={Pending}>
               <GuildTrialPanel
                   characters={characters}
                   roster={roster}
@@ -1772,7 +1785,7 @@ function App() {
                   onImportRoster={handleImportRoster}
                   onImportBuild={handleImportBuild}
                 />
-
+              </Suspense>
             ) : (
               <>
                 <PartyRail
@@ -1997,6 +2010,7 @@ function App() {
               </UnstyledButton>
               <Collapse expanded={modeSettingsOpen}>
                 <div className="mode-settings">
+                  <Suspense fallback={Pending}>
                   {isTriggerOpt ? (
                     <TriggerOptimizerPanel
                       preview={triggerOpt.preview}
@@ -2009,7 +2023,8 @@ function App() {
                       loading={triggerOpt.loading}
                       pricing={pricing}
                       consumableCostRows={consumableCostRows}
-                    />                  ) : (
+                    />
+                  ) : (
                     <EquipmentOptimizerPanel
                       preview={equipOpt.preview}
                       previewing={equipOpt.previewing}
@@ -2021,7 +2036,9 @@ function App() {
                       loading={equipOpt.loading}
                       pricing={pricing}
                       consumableCostRows={consumableCostRows}
-                    />                  )}
+                    />
+                  )}
+                  </Suspense>
                 </div>
               </Collapse>
             </Paper>
@@ -2078,11 +2095,13 @@ function App() {
           )}
 
           {simMode === 'guildTrial' && gameData && (
-            <TrialMonsterCards
-              trial={selectedTrialDetail}
-              monsters={gameData.monsters}
-              abilities={gameData.abilities}
-            />
+            <Suspense fallback={Pending}>
+              <TrialMonsterCards
+                trial={selectedTrialDetail}
+                monsters={gameData.monsters}
+                abilities={gameData.abilities}
+              />
+            </Suspense>
           )}
 
           {resultsStale && (
@@ -2094,6 +2113,7 @@ function App() {
           )}
 
           <div className="results-pane" data-stale={resultsStale || undefined}>
+          <Suspense fallback={Pending}>
           {simMode === 'itemCosts' ? (
             <ItemCostsView
               playerDTOs={selectedPlayerDTOs}
@@ -2116,7 +2136,11 @@ function App() {
               focusHrid={`player${activeTab}`}
             />
           ) : activeResults && activeResults.__kind === 'triggerOpt' ? (
-            <TriggerOptimizerResults results={activeResults} />
+            <TriggerOptimizerResults
+              results={activeResults}
+              items={gameData?.items}
+              abilities={gameData?.abilities}
+            />
           ) : activeResults && activeResults.__kind === 'equipOpt' ? (
             <EquipmentOptimizerResults
               results={activeResults}
@@ -2150,6 +2174,7 @@ function App() {
               focusHrid={`player${activeTab}`}
             />
           )}
+          </Suspense>
           </div>
 
           {!activeResults && !activeLoading && !showAllZones && simMode !== 'itemCosts' && (
@@ -2168,19 +2193,25 @@ function App() {
         </Stack>
       </AppShell.Main>
 
-      <AllZonesModal
-        opened={allZonesOpen}
-        onClose={() => setAllZonesOpen(false)}
-        zones={gameData?.zones}
-        selection={allZonesSelection}
-        onSelectionChange={setAllZonesSelection}
-        hours={allZonesHours}
-        onHoursChange={setAllZonesHours}
-        workers={allZonesWorkers}
-        onWorkersChange={setAllZonesWorkers}
-        onRun={handleRunAllZones}
-        running={allZones.running}
-      />
+      {/* Mounted only while open, so its chunk loads on first use rather than at
+          startup. */}
+      {allZonesOpen && (
+        <Suspense fallback={null}>
+          <AllZonesModal
+            opened={allZonesOpen}
+            onClose={() => setAllZonesOpen(false)}
+            zones={gameData?.zones}
+            selection={allZonesSelection}
+            onSelectionChange={setAllZonesSelection}
+            hours={allZonesHours}
+            onHoursChange={setAllZonesHours}
+            workers={allZonesWorkers}
+            onWorkersChange={setAllZonesWorkers}
+            onRun={handleRunAllZones}
+            running={allZones.running}
+          />
+        </Suspense>
+      )}
     </AppShell>
   );
 }

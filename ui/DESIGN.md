@@ -80,5 +80,23 @@ opens one searchable picker with the enhancement level; owned items first.
   `csim_ui_trigopt_stages_open`, `csim_ui_equipopt_fidelity_open`,
   `csim_ui_allzones_sort`.
 
+## Performance
+- **Mode views load lazily.** The trial panel, trial results and monster
+  cards, both optimisers' panels and results, All Zones (picker and table)
+  and Costs are `React.lazy` chunks, fetched the first time their mode is
+  opened. The All Zones picker mounts only while open. Zone/Lab results,
+  Drops, the rail and the editor sheet stay in the entry chunk.
+- One `Suspense` wraps the results pane (plus one each for the trial rail,
+  the mode-settings panel and the trial monster cards). Lazy element types
+  are module-level constants, so a re-run never remounts a view: once its
+  chunk is loaded, a re-run shows the dimmed previous results, not a loader.
+- **Vendor and game data are separate chunks** (`react`, `mantine`,
+  `gamedata`, via `manualChunks` in `vite.config.js`), cached independently of
+  app code. The game data is still needed at start (`useGameData`), so this
+  shrinks the entry chunk and helps caching; it does not reduce what a first
+  visit downloads.
+- The simulation workers are bundled on their own and are untouched by this
+  splitting.
+
 ## Rule of thumb
 No information is dropped: it may move, group or fade, never vanish.

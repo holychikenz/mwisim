@@ -125,7 +125,7 @@ function RowBadge({ row, objective }) {
 }
 
 /** The recommended thresholds, laid out for typing back into the game. */
-function Recommendation({ row, labyrinth = false }) {
+function Recommendation({ row, labyrinth = false, items, abilities }) {
   if (!row) return null;
   const changed = row.triggers.filter((trigger) => trigger.changed);
 
@@ -169,7 +169,7 @@ function Recommendation({ row, labyrinth = false }) {
                 </Table.Td>
                 <Table.Td>
                   <Text size="xs" fw={600}>
-                    {nameOf(trigger.slotHrid)}
+                    {nameOf(trigger.slotHrid, { items, abilities })}
                   </Text>
                   <Text size="xs" c="dimmed">
                     {trigger.slotKind}
@@ -223,7 +223,7 @@ function Recommendation({ row, labyrinth = false }) {
   );
 }
 
-export function TriggerOptimizerResults({ results }) {
+export function TriggerOptimizerResults({ results, items, abilities }) {
   if (!results || !Array.isArray(results.rows)) return null;
 
   const { rows, noise, epsilons, screening, verifyHours, simulationsRun, inconclusive, saturated, objective } =
@@ -384,7 +384,7 @@ export function TriggerOptimizerResults({ results }) {
         )}
       </SimpleGrid>
 
-      <Recommendation labyrinth={labyrinth} row={leader} />
+      <Recommendation labyrinth={labyrinth} row={leader} items={items} abilities={abilities} />
 
       <Section title="All finalists">
         <Table.ScrollContainer minWidth={620}>

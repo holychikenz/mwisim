@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import { Group, Paper, Progress, Stack, Table, Text, Title, Tooltip } from '@mantine/core';
 
 // =============================================================================
@@ -34,15 +35,17 @@ export function StatGroup({ title, kpis }) {
             {lead.hint && <Text size="xs" c="dimmed">{lead.hint}</Text>}
           </div>
         ))}
-        {rest.map(k => withTip(k.tip, (
-          <div key={k.label}>
+        {/* Keyed on the Fragment: withTip may wrap the row in a Tooltip, which
+            would otherwise hide the row's key from the list. */}
+        {rest.map(k => <Fragment key={k.label}>{withTip(k.tip, (
+          <div>
             <Group justify="space-between" wrap="nowrap" gap="xs">
               <Text size="sm" c="dimmed">{k.label}</Text>
               <Text size="sm" fw={600} c={k.color}>{k.value}</Text>
             </Group>
             {k.hint && <Text size="xs" c="dimmed" ta="right">{k.hint}</Text>}
           </div>
-        )))}
+        ))}</Fragment>)}
       </Stack>
     </Paper>
   );
