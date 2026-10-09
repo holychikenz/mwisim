@@ -6,18 +6,11 @@
 // teal/green = good); they are only re-tuned to sit on moss and stone.
 import { createTheme } from '@mantine/core'
 
-// Fonts are self-hosted (no runtime network dependency). Latin subsets only:
-// the sim has no Japanese text, so the CJK glyph files are never needed.
-import '@fontsource/shippori-mincho/latin-500.css'
-import '@fontsource/shippori-mincho/latin-700.css'
-import '@fontsource/zen-kaku-gothic-new/latin-400.css'
-import '@fontsource/zen-kaku-gothic-new/latin-500.css'
-import '@fontsource/zen-kaku-gothic-new/latin-700.css'
-import '@fontsource/ibm-plex-mono/latin-400.css'
-
-const HEAD = "'Shippori Mincho', 'Hiragino Mincho ProN', Georgia, serif"
-const BODY = "'Zen Kaku Gothic New', 'Hiragino Sans', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
-const MONO = "'IBM Plex Mono', ui-monospace, Menlo, monospace"
+// One face everywhere: the platform UI font, which is built for dense small
+// text. Weight, not a second family, sets the heading hierarchy.
+const BODY = "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif"
+const HEAD = BODY
+const MONO = "ui-monospace, Menlo, monospace"
 
 // Accent: moss. Shade 5 is the dark-scheme primary, 7 the light-scheme one.
 const moss = ['#f2f6ec', '#e3ecd6', '#c8dbae', '#abc886', '#93b96c', '#86ab5f', '#6b9148', '#4b7631', '#3b5e26', '#2b451b']
@@ -44,7 +37,7 @@ export const theme = createTheme({
   defaultRadius: 'md',
   fontFamily: BODY,
   fontFamilyMonospace: MONO,
-  headings: { fontFamily: HEAD, fontWeight: '700' },
+  headings: { fontFamily: HEAD, fontWeight: '650' },
 })
 
 // Ground and ink per scheme. Light mode's body is warm sand-white, not #fff.

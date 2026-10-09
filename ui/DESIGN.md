@@ -7,8 +7,9 @@ Decisions for the React UI redesign (agreed 2026-10-09). Theme tokens live in
 - Palette **Moss & Stone**: moss accent, stone grounds, raked-sand data marks.
   Semantic names keep their meaning (red bad, yellow/orange warn, teal good).
 - Scheme follows the OS by default; Auto / Light / Dark switch in the settings cog.
-- Type: Shippori Mincho headings, Zen Kaku Gothic New body, tabular digits in
-  the body face (no monospace figures). No kanji or other decorative glyphs.
+- Type: the system UI font throughout (headings by weight, not a second
+  family), tabular digits. Web fonts were tried and rejected: they rendered
+  poorly at the sidebar's 12–13 px. No kanji or other decorative glyphs.
 
 ## Structure (L2)
 - **Header**: brand, mode tabs (Zone · Lab · Trial · Triggers · Gear · Costs), settings.
