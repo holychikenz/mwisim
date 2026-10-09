@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import {
   Group,
   Select,
@@ -26,6 +26,7 @@ import {
 import { levelToTierIndex, tierIndexToLevel, MAX_TIER_INDEX } from '../utils/trialTiers';
 import { simulableZones, zoneTiers, findZone } from '../utils/zones';
 import { SettingsMenu } from './SettingsMenu';
+import { usePersistentState, isBool } from '../hooks/usePersistentState';
 import { MAX_DUNGEON_RUNS, MIN_RUN_HOURS, MAX_RUN_HOURS, clampRunCount, clampRunHours } from '../../../shared/dungeonRuns.js';
 
 // =============================================================================
@@ -582,7 +583,7 @@ export function HeaderControls({
 // worker sends a neutral extra), so App omits this card in Trial mode.
 // Seals and guild shrines are per-CHARACTER and live in each member's Buffs tab.
 export function GlobalBuffsCard({ extraOptions, onExtraChange }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = usePersistentState('csim_ui_global_buffs_open', false, isBool);
   const parts = [];
   if (extraOptions.comExp > 0) parts.push(`XP ${extraOptions.comExp}`);
   if (extraOptions.comDrop > 0) parts.push(`Drop ${extraOptions.comDrop}`);

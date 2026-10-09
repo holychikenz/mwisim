@@ -32,6 +32,8 @@ export function useEquipmentOptimizer() {
   const [stage, setStage] = useState('');
   const [label, setLabel] = useState('');
   const [results, setResults] = useState(null);
+  // True while `results` belong to an earlier run (see useSimulation).
+  const [stale, setStale] = useState(false);
   const [error, setError] = useState(null);
   const [preview, setPreview] = useState(null);
   const [previewing, setPreviewing] = useState(false);
@@ -111,7 +113,7 @@ export function useEquipmentOptimizer() {
       setProgress(0);
       setStage('');
       setLabel('Starting…');
-      setResults(null);
+      setStale(true);
       setError(null);
 
       const controller = new AbortController();
@@ -180,6 +182,7 @@ export function useEquipmentOptimizer() {
             case 'result':
               // Tagged so App can route it, exactly as the trigger optimiser does.
               setResults({ __kind: 'equipOpt', ...frame.result, meta: payload.meta || {} });
+              setStale(false);
               setProgress(100);
               setStage('done');
               setLabel('');
@@ -245,6 +248,7 @@ export function useEquipmentOptimizer() {
     setStage('');
     setLabel('');
     setResults(null);
+    setStale(false);
     setError(null);
   }, [stop]);
 
@@ -254,6 +258,7 @@ export function useEquipmentOptimizer() {
     stage,
     label,
     results,
+    stale,
     error,
     preview,
     previewing,

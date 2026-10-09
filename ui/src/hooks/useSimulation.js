@@ -63,6 +63,10 @@ export function useSimulation() {
   const [progress, setProgress] = useState(0);
   const [results, setResults] = useState(null);
   const [error, setError] = useState(null);
+  // True while `results` belong to an earlier run: a new run has started (or
+  // the last one failed or was abandoned) and nothing has replaced them yet.
+  // Results stay mounted so the open tab and scroll survive a re-run.
+  const [stale, setStale] = useState(false);
   const workerRef = useRef(null);
   const watchdogRef = useRef(null);
 
@@ -132,6 +136,7 @@ export function useSimulation() {
       if (!current()) return;
       setProgress(100);
       setResults(simResult);
+      setStale(false);
       setLoading(false);
       stopWorker();
     }, (e) => {
@@ -150,7 +155,7 @@ export function useSimulation() {
     setLoading(true);
     setProgress(0);
     setError(null);
-    setResults(null);
+    setStale(true);
 
     const message = {
       players: params.players,
@@ -192,6 +197,7 @@ export function useSimulation() {
         case 'simulation_result':
           setProgress(100);
           setResults(event.data.simResult);
+          setStale(false);
           setLoading(false);
           stopWorker();
           break;
@@ -227,7 +233,7 @@ export function useSimulation() {
     setLoading(true);
     setProgress(0);
     setError(null);
-    setResults(null);
+    setStale(true);
 
     let worker;
     try {
@@ -255,6 +261,7 @@ export function useSimulation() {
             summaries: event.data.summaries,
             meta: params.meta || {}
           });
+          setStale(false);
           setLoading(false);
           stopWorker();
           break;
@@ -293,10 +300,11 @@ export function useSimulation() {
   const clearResults = useCallback(() => {
     stopWorker();
     setResults(null);
+    setStale(false);
     setError(null);
     setProgress(0);
     setLoading(false);
   }, [stopWorker]);
 
-  return { loading, progress, results, error, runSimulation, runGuildTrial, clearResults, reset: clearResults };
+  return { loading, progress, results, stale, error, runSimulation, runGuildTrial, clearResults, reset: clearResults };
 }

@@ -24,6 +24,7 @@ import { useAllZones } from './hooks/useAllZones';
 import { useTriggerOptimizer } from './hooks/useTriggerOptimizer';
 import { useEquipmentOptimizer } from './hooks/useEquipmentOptimizer';
 import { usePrices } from './hooks/usePrices';
+import { usePersistentState, isBool } from './hooks/usePersistentState';
 import { exportFormatToPlayer } from './utils/importSet';
 import { readMwixBridgePayload, clearMwixBridgeHash, partyFromBridgePayload } from './utils/mwixBridge';
 import {
@@ -184,6 +185,7 @@ function App() {
     loading: simLoading,
     progress: simProgress,
     results,
+    stale: simStale,
     error: simError,
     runSimulation,
     runGuildTrial,
@@ -229,10 +231,11 @@ function App() {
   // The member editor sheet (AppShell aside, breakpoint 90em). From 90em up it
   // sits beside the results and starts open; below that Mantine draws it over
   // the results, so it starts closed and opens when a member card is clicked.
-  const [sheetOpen, setSheetOpen] = useState(() => {
+  // Remembered across reloads; the first-visit default follows the screen width.
+  const [sheetOpen, setSheetOpen] = usePersistentState('csim_ui_sheet_open', () => {
     try { return window.matchMedia('(min-width: 90em)').matches; } catch { return true; }
-  });
-  const [modeSettingsOpen, setModeSettingsOpen] = useState(true);
+  }, isBool);
+  const [modeSettingsOpen, setModeSettingsOpen] = usePersistentState('csim_ui_mode_settings_open', true, isBool);
   const [activeTab, setActiveTab] = useState(1);
   const [selectedPlayers, setSelectedPlayers] = useState(
     () => (Array.isArray(savedSession?.selectedPlayers) && savedSession.selectedPlayers.length
@@ -1609,7 +1612,7 @@ function App() {
     }
     setActiveTab(id);
     setSheetOpen(true);
-  }, [sheetOpen, activeTab]);
+  }, [sheetOpen, activeTab, setSheetOpen]);
 
   // Character names for the results tables. Read from the party as it is NOW:
   // re-binding a slot after a run relabels that run's rows.
@@ -1663,6 +1666,13 @@ function App() {
   const isCosts = simMode === 'itemCosts';
   // Costs is a settings view: no party editing, so no sheet.
   const showSheet = sheetOpen && !isCosts;
+  // A new run no longer clears the old results (that unmounted the results
+  // tree and reset its tabs). Until the new figures arrive, the old ones stay
+  // on screen, dimmed and badged as the previous run, so they are never read
+  // as current. Costs and the All Zones sweep are separate views and never
+  // stale in this sense.
+  const resultsStale = !!activeResults && !isCosts && !showAllZones
+    && (isApiOpt ? apiEngine.stale : simStale);
 
   return (
     <AppShell
@@ -2050,6 +2060,15 @@ function App() {
             />
           )}
 
+          {resultsStale && (
+            <Group>
+              <Badge variant="light" color="yellow">
+                {activeLoading ? 'Previous run, new run in progress' : 'Previous run, the last run did not finish'}
+              </Badge>
+            </Group>
+          )}
+
+          <div className="results-pane" data-stale={resultsStale || undefined}>
           {simMode === 'itemCosts' ? (
             <ItemCostsView
               playerDTOs={selectedPlayerDTOs}
@@ -2105,6 +2124,7 @@ function App() {
               focusHrid={`player${activeTab}`}
             />
           )}
+          </div>
 
           {!activeResults && !activeLoading && !showAllZones && simMode !== 'itemCosts' && (
             <Center mih={300}>

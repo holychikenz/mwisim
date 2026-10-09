@@ -209,13 +209,17 @@ function ReturnOnInvestment({
   onProtectionPricingChange,
   onProtectAtChange,
 }) {
-  const { costs, loading, progress, error, fetchCosts } = useEnhancementCosts();
+  const { costs: fetchedCosts, loading, progress, error, fetchCosts, clear: clearCosts } = useEnhancementCosts();
 
   // Which policy the table on screen was actually costed under. Changing the
   // controls does not refetch — thirty requests to a personal Flask server should
   // be asked for, not triggered by a click on a switch — so without this the
   // panel would show yesterday's numbers under today's settings and say nothing.
   const [fetchedUnder, setFetchedUnder] = useState(null);
+  // Results stay mounted across a re-run, so this panel outlives the scan it
+  // costed. Costs are keyed by row id, which a new scan reuses; show them only
+  // against the very rows they were fetched for, never a later scan's.
+  const costs = fetchedCosts && fetchedUnder?.rows === rows ? fetchedCosts : null;
   const forced = forcedProtectLevel({ protectionPricing, protectAt });
   const stale =
     !!costs &&
@@ -223,7 +227,10 @@ function ReturnOnInvestment({
     (fetchedUnder.protectionPricing !== protectionPricing || fetchedUnder.forced !== forced);
 
   const run = () => {
-    setFetchedUnder({ protectionPricing, forced });
+    // A different scan: drop the old table now, so it cannot be paired with
+    // these rows while the new fetch is in flight.
+    if (fetchedUnder?.rows !== rows) clearCosts();
+    setFetchedUnder({ protectionPricing, forced, rows });
     fetchCosts(rows, { gameItems, pricing, protectionPricing, protectAt });
   };
 

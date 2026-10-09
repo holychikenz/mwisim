@@ -1,4 +1,5 @@
 import { useState, useCallback, useMemo } from 'react';
+import { usePersistentState, oneOf } from '../hooks/usePersistentState';
 import {
   ActionIcon,
   Badge,
@@ -465,6 +466,15 @@ export function PlayerConfig({ gameData, player, onPlayerChange, hideConsumables
   const handleAbilityMoveUp = useCallback((index) => handleAbilityMove(index, -1), [handleAbilityMove]);
   const handleAbilityMoveDown = useCallback((index) => handleAbilityMove(index, 1), [handleAbilityMove]);
 
+  // The open sheet tab is remembered across members, re-runs and reloads. Food
+  // is hidden in trial mode; fall back without forgetting the choice.
+  const [storedSheetTab, setStoredSheetTab] = usePersistentState(
+    'csim_ui_sheet_tab',
+    'levels',
+    oneOf(['levels', 'equipment', 'abilities', 'houses', 'consumables'])
+  );
+  const sheetTab = storedSheetTab === 'consumables' && hideConsumables ? 'levels' : storedSheetTab;
+
   const equippedCount = Object.values(player.equipment).filter(Boolean).length;
   const consumablesCount =
     player.food.filter(Boolean).length + player.drinks.filter(Boolean).length;
@@ -480,7 +490,7 @@ export function PlayerConfig({ gameData, player, onPlayerChange, hideConsumables
   const bonusesCount = housesCount + shrineCount + sealCount;
 
   return (
-    <Tabs defaultValue="levels" keepMounted={false} radius="md" styles={{ list: { flexWrap: "nowrap" }, tab: { paddingInline: 10 } }}>
+    <Tabs value={sheetTab} onChange={(v) => v && setStoredSheetTab(v)} keepMounted={false} radius="md" styles={{ list: { flexWrap: "nowrap" }, tab: { paddingInline: 10 } }}>
       <Tabs.List>
         <Tabs.Tab value="levels">Levels</Tabs.Tab>
         <Tabs.Tab value="equipment" rightSection={equippedCount > 0 ? <Badge variant="default" size="xs">{equippedCount}</Badge> : null}>Gear</Tabs.Tab>

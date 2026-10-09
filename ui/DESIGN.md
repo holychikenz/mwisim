@@ -35,5 +35,23 @@ opens one searchable picker with the enhancement level; owned items first.
   share bar.
 - Result tabs stay plain.
 
+## Persistence
+- UI **choices** (open tab, panel open/closed, sort order, view toggles) are
+  remembered across re-runs and reloads through one helper,
+  `usePersistentState(key, default, validate)` in `src/hooks/usePersistentState.js`.
+  Keys start with `csim_ui_`; every stored value is validated against what is
+  allowed, and storage failures fall back to the default silently.
+- Never data or session state: those have their own stores.
+- A remembered choice the current view does not offer (Lab Stats after a zone
+  run) falls back for that view only and is **not** written back, so it
+  returns when it applies again.
+- Re-running keeps the previous results mounted (no reset of tabs or scroll),
+  dimmed and badged "Previous run" until the new results arrive; a failed run
+  leaves them badged "the last run did not finish". Anything a results view
+  derives and holds itself (e.g. Gear's return-on-investment costs) is tied to
+  the run it came from and never shown against another.
+- Key registry: `csim_ui_result_tab`, `csim_ui_sheet_tab`, `csim_ui_sheet_open`,
+  `csim_ui_mode_settings_open`, `csim_ui_global_buffs_open`.
+
 ## Rule of thumb
 No information is dropped: it may move, group or fade, never vanish.

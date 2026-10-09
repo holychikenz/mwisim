@@ -3,6 +3,14 @@ import { Accordion, Badge, Button, Group, Paper, Progress, ScrollArea, SimpleGri
 import { DropsEconomy } from './DropsEconomy';
 import { effectiveRatePerHour, summariseConsumableCost } from '../utils/consumableCosts';
 import { formatSeconds } from '../utils/triggerOptimizer';
+import { usePersistentState } from '../hooks/usePersistentState';
+
+const LAB_TABS = ['labstats', 'outcomes'];
+const COMMON_TABS = ['experience', 'kills', 'drops', 'consumables', 'damage'];
+const RESULT_TABS = [...LAB_TABS, ...COMMON_TABS];
+// null = the user has not picked a tab yet, so each kind of run opens on its
+// own natural first tab.
+const isResultTab = (v) => v === null || RESULT_TABS.includes(v);
 
 const ONE_SECOND = 1e9;
 const ONE_HOUR = 60 * 60 * ONE_SECOND;
@@ -907,6 +915,14 @@ export function SimulationResults({ results, monsters, items, pricing, focusHrid
     URL.revokeObjectURL(url);
   }, [results]);
 
+  // Controlled and remembered, so a re-run (or a reload) keeps the open tab.
+  // A remembered tab this run does not offer (Lab Stats after a zone run)
+  // falls back without being written back, so it returns on the next Lab run.
+  const [storedTab, setStoredTab] = usePersistentState('csim_ui_result_tab', null, isResultTab);
+  const isLab = !!results?.isLabyrinth;
+  const available = isLab ? RESULT_TABS : COMMON_TABS;
+  const tab = available.includes(storedTab) ? storedTab : (isLab ? 'labstats' : 'experience');
+
   if (!results) return null;
 
   return (
@@ -919,7 +935,7 @@ export function SimulationResults({ results, monsters, items, pricing, focusHrid
       </Group>
       <SummaryStats results={results} monsters={monsters} pricing={pricing} zones={zones} />
 
-      <Tabs defaultValue={results.isLabyrinth ? 'labstats' : 'experience'} keepMounted={false}>
+      <Tabs value={tab} onChange={(v) => v && setStoredTab(v)} keepMounted={false}>
         <Tabs.List>
           {results.isLabyrinth && <Tabs.Tab value="labstats">Lab Stats</Tabs.Tab>}
           {results.isLabyrinth && <Tabs.Tab value="outcomes">Outcomes</Tabs.Tab>}

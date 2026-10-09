@@ -88,3 +88,15 @@ body {
   border-radius: var(--mantine-radius-md);
   background: var(--mantine-color-default);
 }
+
+/* Results from an earlier run, kept on screen while a new run is in progress
+   (or after one failed), so the open tab survives. App badges them too. */
+.results-pane[data-stale] {
+  opacity: 0.55;
+  transition: opacity 150ms ease;
+}
+
+/* A zero or empty figure in a results table: still there, but quiet. */
+.num-faded {
+  color: color-mix(in srgb, var(--mantine-color-dimmed) 55%, transparent);
+}
