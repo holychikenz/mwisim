@@ -2138,6 +2138,7 @@ function App() {
               results={activeResults}
               monsters={gameData?.monsters}
               items={gameData?.items}
+              abilities={gameData?.abilities}
               pricing={pricing}
               zones={gameData?.zones}
               playerNames={playerNames}

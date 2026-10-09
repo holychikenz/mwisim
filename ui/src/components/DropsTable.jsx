@@ -1,4 +1,5 @@
-import { Stack, Table, Text, Tooltip } from '@mantine/core';
+import { Table, Text, Tooltip } from '@mantine/core';
+import { NumTd, Section } from './ResultParts';
 import { formatValue } from '../utils/prices';
 
 function formatAmount(num, decimals = 2) {
@@ -24,35 +25,41 @@ function formatAmount(num, decimals = 2) {
  */
 export function DropsTable({ drops, unit = 'coins', creditMode = false }) {
   if (!drops || drops.length === 0) {
-    return <Text size="sm" c="dimmed">No drops recorded.</Text>;
+    return (
+      <Section title="Drops">
+        <Text size="sm" c="dimmed">No drops recorded.</Text>
+      </Section>
+    );
   }
 
   const totalValue = drops.reduce((sum, drop) => sum + (drop.amount * drop.sellPrice), 0);
 
   return (
-    <Stack gap="xs">
-      {!creditMode && (
+    <Section
+      title="Drops"
+      right={!creditMode && (
         <Text size="sm">
           Drop value: <Text span fw={700}>{formatValue(totalValue, unit)}</Text>
         </Text>
       )}
+    >
       <Table striped highlightOnHover withTableBorder>
         <Table.Thead>
           <Table.Tr>
             <Table.Th>Item</Table.Th>
-            <Table.Th>Amount</Table.Th>
-            <Table.Th>Per Hour</Table.Th>
+            <Table.Th ta="right">Amount</Table.Th>
+            <Table.Th ta="right">Per Hour</Table.Th>
             {creditMode ? (
               <>
                 <Table.Th>Credit</Table.Th>
-                <Table.Th>Per Item</Table.Th>
-                <Table.Th>Credits</Table.Th>
-                <Table.Th>Credits/hr</Table.Th>
+                <Table.Th ta="right">Per Item</Table.Th>
+                <Table.Th ta="right">Credits</Table.Th>
+                <Table.Th ta="right">Credits/hr</Table.Th>
               </>
             ) : (
               <>
-                <Table.Th>Unit Price</Table.Th>
-                <Table.Th>Total Value</Table.Th>
+                <Table.Th ta="right">Unit Price</Table.Th>
+                <Table.Th ta="right">Total Value</Table.Th>
               </>
             )}
           </Table.Tr>
@@ -61,8 +68,8 @@ export function DropsTable({ drops, unit = 'coins', creditMode = false }) {
           {drops.map((drop) => (
             <Table.Tr key={drop.itemHrid}>
               <Table.Td>{drop.name}</Table.Td>
-              <Table.Td>{formatAmount(drop.amount)}</Table.Td>
-              <Table.Td>{formatAmount(drop.perHour)}</Table.Td>
+              <NumTd faded={!drop.amount}>{formatAmount(drop.amount)}</NumTd>
+              <NumTd faded={!drop.perHour}>{formatAmount(drop.perHour)}</NumTd>
               {creditMode ? (
                 drop.convertible ? (
                   <>
@@ -80,9 +87,9 @@ export function DropsTable({ drops, unit = 'coins', creditMode = false }) {
                         drop.creditName
                       )}
                     </Table.Td>
-                    <Table.Td>{formatAmount(drop.creditsPerItem)}</Table.Td>
-                    <Table.Td>{formatAmount(drop.creditAmount)}</Table.Td>
-                    <Table.Td>{formatAmount(drop.creditPerHour)}</Table.Td>
+                    <NumTd>{formatAmount(drop.creditsPerItem)}</NumTd>
+                    <NumTd faded={!drop.creditAmount}>{formatAmount(drop.creditAmount)}</NumTd>
+                    <NumTd faded={!drop.creditPerHour}>{formatAmount(drop.creditPerHour)}</NumTd>
                   </>
                 ) : (
                   <>
@@ -93,14 +100,14 @@ export function DropsTable({ drops, unit = 'coins', creditMode = false }) {
                 )
               ) : (
                 <>
-                  <Table.Td>{drop.sellPrice > 0 ? formatValue(drop.sellPrice, unit) : '-'}</Table.Td>
-                  <Table.Td>{drop.sellPrice > 0 ? formatValue(drop.amount * drop.sellPrice, unit) : '-'}</Table.Td>
+                  <NumTd faded={!(drop.sellPrice > 0)}>{drop.sellPrice > 0 ? formatValue(drop.sellPrice, unit) : '—'}</NumTd>
+                  <NumTd faded={!(drop.sellPrice > 0)}>{drop.sellPrice > 0 ? formatValue(drop.amount * drop.sellPrice, unit) : '—'}</NumTd>
                 </>
               )}
             </Table.Tr>
           ))}
         </Table.Tbody>
       </Table>
-    </Stack>
+    </Section>
   );
 }

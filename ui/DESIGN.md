@@ -46,6 +46,15 @@ opens one searchable picker with the enhancement level; owned items first.
 - **Experience (X1)**: character names, zero cells kept but faded, per-player
   share bar.
 - Result tabs stay plain.
+- **Tables**: every result table sits in a `Section` paper (title left,
+  caption or total right). Numbers are right-aligned tabular digits (`NumTd`);
+  zeros and unpriced cells stay but fade (`.num-faded`, "—"). Engine ids are
+  shown as names via `nameOf` (party member, monster, item, ability; else a
+  tidied last segment), never as hrids. Shares are `sand` bars (`ShareBar`).
+  Side-by-side sections (kills | deaths, the four restore/usage tables) wrap
+  to one column on narrow screens. A capped table says so ("Top 30 of N").
+  Shared parts live in `src/components/ResultParts.jsx` (`StatGroup`,
+  `StatCard`, `Section`, `NumTd`, `ShareBar`).
 
 ## Persistence
 - UI **choices** (open tab, panel open/closed, sort order, view toggles) are
@@ -63,7 +72,8 @@ opens one searchable picker with the enhancement level; owned items first.
   derives and holds itself (e.g. Gear's return-on-investment costs) is tied to
   the run it came from and never shown against another.
 - Key registry: `csim_ui_result_tab`, `csim_ui_sheet_tab`, `csim_ui_sheet_open`,
-  `csim_ui_mode_settings_open`, `csim_ui_global_buffs_open`.
+  `csim_ui_mode_settings_open`, `csim_ui_global_buffs_open`,
+  `csim_ui_drops_credit_mode`.
 
 ## Rule of thumb
 No information is dropped: it may move, group or fade, never vanish.

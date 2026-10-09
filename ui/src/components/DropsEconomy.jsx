@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react';
-import { Alert, Badge, Button, Group, Paper, Select, Stack, Switch, Table, Text } from '@mantine/core';
+import { useMemo } from 'react';
+import { Alert, Badge, Button, Group, Select, SimpleGrid, Stack, Switch, Table, Text } from '@mantine/core';
 import { DropsTable } from './DropsTable';
+import { NumTd, Section, StatGroup } from './ResultParts';
+import { usePersistentState, isBool } from '../hooks/usePersistentState';
 import { calculateExpectedDrops, calculateDropsPerHour } from '../utils/drops';
 import { priceOf, formatValue } from '../utils/prices';
 import { convertDropsToCredits } from '../utils/guildCredits';
@@ -42,20 +44,20 @@ function ExpensesTable({ rows, unit, playerName }) {
       <Table.Thead>
         <Table.Tr>
           <Table.Th>Consumable</Table.Th>
-          <Table.Th>Used</Table.Th>
-          <Table.Th>Per Hour</Table.Th>
-          <Table.Th>Unit Cost</Table.Th>
-          <Table.Th>Total Cost</Table.Th>
+          <Table.Th ta="right">Used</Table.Th>
+          <Table.Th ta="right">Per Hour</Table.Th>
+          <Table.Th ta="right">Unit Cost</Table.Th>
+          <Table.Th ta="right">Total Cost</Table.Th>
         </Table.Tr>
       </Table.Thead>
       <Table.Tbody>
         {rows.map((r) => (
           <Table.Tr key={r.hrid}>
             <Table.Td>{r.name}</Table.Td>
-            <Table.Td>{r.count}</Table.Td>
-            <Table.Td>{r.perHour.toFixed(2)}</Table.Td>
-            <Table.Td>{r.price > 0 ? formatValue(r.price, unit) : '-'}</Table.Td>
-            <Table.Td>{r.price > 0 ? formatValue(r.total, unit) : '-'}</Table.Td>
+            <NumTd faded={!r.count}>{r.count}</NumTd>
+            <NumTd faded={!r.perHour}>{r.perHour.toFixed(2)}</NumTd>
+            <NumTd faded={!(r.price > 0)}>{r.price > 0 ? formatValue(r.price, unit) : '—'}</NumTd>
+            <NumTd faded={!(r.price > 0)}>{r.price > 0 ? formatValue(r.total, unit) : '—'}</NumTd>
           </Table.Tr>
         ))}
       </Table.Tbody>
@@ -68,7 +70,7 @@ function playerLabel(hrid) {
   return m ? `P${m[1]}` : String(hrid || 'P?');
 }
 
-export function DropsEconomy({ results, monsters, items, pricing, focusHrid }) {
+export function DropsEconomy({ results, monsters, items, pricing, focusHrid, playerNames }) {
   const {
     source, setSource, prices, unit, fetching, error, fetchedLabel, fetchPrices,
     revenueMode, setRevenueMode, expenseMode, setExpenseMode,
@@ -93,7 +95,9 @@ export function DropsEconomy({ results, monsters, items, pricing, focusHrid }) {
   const focusMissing =
     !!focusHrid && partyHrids.length > 0 && !partyHrids.includes(focusHrid);
   const activeHrid = focusMissing ? partyHrids[0] : focusHrid || partyHrids[0] || 'player1';
-  const activeLabel = playerLabel(activeHrid);
+  // The party member's name where the run's slot has one, else "P1".
+  const nameOfPlayer = (hrid) => playerNames?.[hrid] || playerLabel(hrid);
+  const activeLabel = nameOfPlayer(activeHrid);
 
   // Income: expected drops priced by the active source.
   const drops = useMemo(() => {
@@ -113,7 +117,7 @@ export function DropsEconomy({ results, monsters, items, pricing, focusHrid }) {
   // credits it would donate for, taking the highest-tier option wherever an
   // item offers several. Purely a view over `drops` — it changes nothing about
   // the simulation or the coin economy below.
-  const [creditMode, setCreditMode] = useState(false);
+  const [creditMode, setCreditMode] = usePersistentState('csim_ui_drops_credit_mode', false, isBool);
   const credits = useMemo(
     () => (creditMode ? convertDropsToCredits(drops, items) : null),
     [creditMode, drops, items]
@@ -143,68 +147,70 @@ export function DropsEconomy({ results, monsters, items, pricing, focusHrid }) {
   const profit = income - expenseTotal;
 
   return (
-    <Stack gap="md">
-      <Group gap="xs" align="flex-end" wrap="wrap">
-        <Select
-          label="Price source"
-          data={SOURCE_OPTIONS}
-          value={source}
-          onChange={(v) => v && setSource(v)}
-          allowDeselect={false}
-          size="xs"
-          w={210}
-        />
-        {source === 'iron' && (
+    <Stack gap="sm">
+      <Section title="Pricing">
+        <Group gap="xs" align="flex-end" wrap="wrap">
           <Select
-            label="Character"
-            data={characters}
-            value={ironCharacter}
-            onChange={setIronCharacter}
-            placeholder={characters.length ? 'Character…' : 'webapp offline'}
+            label="Price source"
+            data={SOURCE_OPTIONS}
+            value={source}
+            onChange={(v) => v && setSource(v)}
+            allowDeselect={false}
             size="xs"
-            w={150}
-            searchable
-            disabled={characters.length === 0}
+            w={210}
           />
-        )}
-        {source === 'market' && (
-          <>
+          {source === 'iron' && (
             <Select
-              label="Revenue"
-              data={MODE_OPTIONS}
-              value={revenueMode}
-              onChange={(v) => v && setRevenueMode(v)}
-              allowDeselect={false}
+              label="Character"
+              data={characters}
+              value={ironCharacter}
+              onChange={setIronCharacter}
+              placeholder={characters.length ? 'Character…' : 'webapp offline'}
               size="xs"
-              w={110}
+              w={150}
+              searchable
+              disabled={characters.length === 0}
             />
-            <Select
-              label="Expenses"
-              data={MODE_OPTIONS}
-              value={expenseMode}
-              onChange={(v) => v && setExpenseMode(v)}
-              allowDeselect={false}
-              size="xs"
-              w={110}
-            />
-          </>
-        )}
-        {source !== 'vendor' && (
-          <Button size="xs" variant="light" onClick={fetchPrices} loading={fetching}>
-            Fetch prices
-          </Button>
-        )}
-        {fetchedLabel && (
-          <Badge variant="light" color="teal" size="sm">{fetchedLabel}</Badge>
-        )}
-        <Switch
-          label="Guild credits"
-          description="Show loot as guild credit conversion"
-          size="xs"
-          checked={creditMode}
-          onChange={(e) => setCreditMode(e.currentTarget.checked)}
-        />
-      </Group>
+          )}
+          {source === 'market' && (
+            <>
+              <Select
+                label="Revenue"
+                data={MODE_OPTIONS}
+                value={revenueMode}
+                onChange={(v) => v && setRevenueMode(v)}
+                allowDeselect={false}
+                size="xs"
+                w={110}
+              />
+              <Select
+                label="Expenses"
+                data={MODE_OPTIONS}
+                value={expenseMode}
+                onChange={(v) => v && setExpenseMode(v)}
+                allowDeselect={false}
+                size="xs"
+                w={110}
+              />
+            </>
+          )}
+          {source !== 'vendor' && (
+            <Button size="xs" variant="light" onClick={fetchPrices} loading={fetching}>
+              Fetch prices
+            </Button>
+          )}
+          {fetchedLabel && (
+            <Badge variant="light" color="teal" size="sm">{fetchedLabel}</Badge>
+          )}
+          <Switch
+            label="Guild credits"
+            description="Show loot as guild credit conversion"
+            size="xs"
+            checked={creditMode}
+            onChange={(e) => setCreditMode(e.currentTarget.checked)}
+          />
+        </Group>
+      </Section>
 
       {error && (
         <Alert color="red" variant="light">
@@ -216,64 +222,54 @@ export function DropsEconomy({ results, monsters, items, pricing, focusHrid }) {
       {focusMissing && (
         <Alert color="yellow" variant="light" p="xs">
           <Text size="xs">
-            {playerLabel(focusHrid)} was not in the simulated party (
-            {partyHrids.map(playerLabel).join(', ')}), so these figures read{' '}
-            {activeLabel}. Tick {playerLabel(focusHrid)} into the party and run
+            {nameOfPlayer(focusHrid)} was not in the simulated party (
+            {partyHrids.map(nameOfPlayer).join(', ')}), so these figures read{' '}
+            {activeLabel}. Tick {nameOfPlayer(focusHrid)} into the party and run
             again to see that build's loot.
           </Text>
         </Alert>
       )}
 
-      <Paper p="sm" radius="md" withBorder>
-        <Group gap="xl">
-          <div>
-            <Text size="xs" c="dimmed" tt="uppercase">Income/hr ({activeLabel})</Text>
-            <Text fw={700}>{formatValue(income / hours, unit)}</Text>
-          </div>
-          <div>
-            <Text size="xs" c="dimmed" tt="uppercase">Expenses/hr ({activeLabel})</Text>
-            <Text fw={700}>{formatValue(expenseTotal / hours, unit)}</Text>
-          </div>
-          <div>
-            <Text size="xs" c="dimmed" tt="uppercase">Profit/hr ({activeLabel})</Text>
-            <Text fw={700} c={profit >= 0 ? 'teal' : 'red'}>
-              {formatValue(profit / hours, unit)}
-            </Text>
-          </div>
-          <Text size="xs" c="dimmed" style={{ alignSelf: 'flex-end' }}>
-            unit: {unit === 'seconds' ? 'time-to-acquire' : 'coins'}
-          </Text>
-        </Group>
-      </Paper>
-
-      {creditMode && (
-        <Paper p="sm" radius="md" withBorder>
-          <Group justify="space-between" align="flex-start" wrap="wrap">
-            <Group gap="xl" wrap="wrap">
-              {credits.totals.length === 0 ? (
-                <Text size="sm" c="dimmed">
-                  None of this loot converts into guild credits.
-                </Text>
-              ) : (
-                credits.totals.map((t) => (
-                  <div key={t.creditItemHrid}>
-                    <Text size="xs" c="dimmed" tt="uppercase">{t.name}/hr</Text>
-                    <Text fw={700}>
-                      {t.perHour >= 1000
-                        ? (t.perHour / 1000).toFixed(2) + 'K'
-                        : t.perHour.toFixed(2)}
-                    </Text>
-                  </div>
-                ))
-              )}
-            </Group>
-            <Text size="xs" c="dimmed" style={{ alignSelf: 'flex-end' }}>
+      <SimpleGrid cols={{ base: 1, sm: 2, lg: 3 }} spacing="sm">
+        <StatGroup
+          title={`Economy · ${activeLabel}`}
+          kpis={[
+            {
+              lead: true,
+              label: 'Profit/hr',
+              value: formatValue(profit / hours, unit),
+              color: profit >= 0 ? 'teal' : 'red',
+              hint: `unit: ${unit === 'seconds' ? 'time-to-acquire' : 'coins'}`
+            },
+            { label: 'Income/hr', value: formatValue(income / hours, unit) },
+            { label: 'Expenses/hr', value: formatValue(expenseTotal / hours, unit) }
+          ]}
+        />
+        {creditMode && (
+          <Section title="Guild credits/hr">
+            {credits.totals.length === 0 ? (
+              <Text size="sm" c="dimmed">
+                None of this loot converts into guild credits.
+              </Text>
+            ) : (
+              credits.totals.map((t) => (
+                <Group key={t.creditItemHrid} justify="space-between" wrap="nowrap" gap="xs">
+                  <Text size="sm" c="dimmed">{t.name}/hr</Text>
+                  <Text size="sm" fw={600}>
+                    {t.perHour >= 1000
+                      ? (t.perHour / 1000).toFixed(2) + 'K'
+                      : t.perHour.toFixed(2)}
+                  </Text>
+                </Group>
+              ))
+            )}
+            <Text size="xs" c="dimmed">
               {credits.convertedCount} of {credits.convertedCount + credits.unconvertedCount} drops
               convert · highest tier taken where several are offered
             </Text>
-          </Group>
-        </Paper>
-      )}
+          </Section>
+        )}
+      </SimpleGrid>
 
       <DropsTable
         drops={creditMode ? credits.rows : drops}
@@ -281,10 +277,9 @@ export function DropsEconomy({ results, monsters, items, pricing, focusHrid }) {
         creditMode={creditMode}
       />
 
-      <div>
-        <Text size="sm" fw={600} mb={6}>Consumable expenses ({activeLabel})</Text>
+      <Section title={`Consumable expenses (${activeLabel})`}>
         <ExpensesTable rows={expenseRows} unit={unit} playerName={activeLabel} />
-      </div>
+      </Section>
     </Stack>
   );
 }

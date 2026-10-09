@@ -1,6 +1,8 @@
 import { useMemo, useCallback } from 'react';
-import { Accordion, Badge, Button, Group, Paper, Progress, ScrollArea, SimpleGrid, Stack, Table, Tabs, Text, Title, Tooltip } from '@mantine/core';
+import { Accordion, Badge, Button, Group, Progress, ScrollArea, SimpleGrid, Stack, Table, Tabs, Text, Title } from '@mantine/core';
 import { DropsEconomy } from './DropsEconomy';
+import { NumTd, Section, StatGroup } from './ResultParts';
+import { nameOf } from '../utils/names';
 import { effectiveRatePerHour, summariseConsumableCost } from '../utils/consumableCosts';
 import { formatSeconds } from '../utils/triggerOptimizer';
 import { usePersistentState } from '../hooks/usePersistentState';
@@ -33,48 +35,6 @@ function lastSegment(hrid) {
 
 function fmtCount(n) {
   return Number.isFinite(Number(n)) ? Number(n).toLocaleString('en-US') : n;
-}
-
-// A tooltip only where a number needs a caveat attached — chiefly the
-// effective rate, which is meaningless without knowing what was priced.
-function withTip(tip, node) {
-  if (!tip) return node;
-  return (
-    <Tooltip label={tip} withArrow multiline w={280} position="bottom">
-      {node}
-    </Tooltip>
-  );
-}
-
-// One of the three summary cards (Run · Pace · Outcome). The lead figure is
-// shown large; every other figure keeps its own labelled row beneath it.
-function KpiGroup({ title, kpis }) {
-  if (kpis.length === 0) return null;
-  const lead = kpis.find(k => k.lead) || kpis[0];
-  const rest = kpis.filter(k => k !== lead);
-  return (
-    <Paper p="sm" radius="md" withBorder>
-      <Stack gap={6}>
-        <Title order={6}>{title}</Title>
-        {withTip(lead.tip, (
-          <div>
-            <Text size="xs" c="dimmed" tt="uppercase" style={{ letterSpacing: '0.06em' }}>{lead.label}</Text>
-            <Text fz={22} fw={700} lh={1.2}>{lead.value}</Text>
-            {lead.hint && <Text size="xs" c="dimmed">{lead.hint}</Text>}
-          </div>
-        ))}
-        {rest.map(k => withTip(k.tip, (
-          <div key={k.label}>
-            <Group justify="space-between" wrap="nowrap" gap="xs">
-              <Text size="sm" c="dimmed">{k.label}</Text>
-              <Text size="sm" fw={600}>{k.value}</Text>
-            </Group>
-            {k.hint && <Text size="xs" c="dimmed" ta="right">{k.hint}</Text>}
-          </div>
-        )))}
-      </Stack>
-    </Paper>
-  );
 }
 
 function SummaryStats({ results, monsters, pricing, zones }) {
@@ -237,9 +197,9 @@ function SummaryStats({ results, monsters, pricing, zones }) {
 
   return (
     <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
-      <KpiGroup title="Run" kpis={kpis.filter(k => k.group === 'run')} />
-      <KpiGroup title="Pace" kpis={kpis.filter(k => k.group === 'pace')} />
-      <KpiGroup title="Outcome" kpis={kpis.filter(k => k.group === 'outcome')} />
+      <StatGroup title="Run" kpis={kpis.filter(k => k.group === 'run')} />
+      <StatGroup title="Pace" kpis={kpis.filter(k => k.group === 'pace')} />
+      <StatGroup title="Outcome" kpis={kpis.filter(k => k.group === 'outcome')} />
     </SimpleGrid>
   );
 }
@@ -312,7 +272,7 @@ function ExperienceTable({ experienceGained, simulatedTime, playerNames }) {
   );
 }
 
-function KillsTable({ deaths, monsters, simulatedTime }) {
+function KillsTable({ deaths, monsters, simulatedTime, playerNames }) {
   const hoursSimulated = simulatedTime / ONE_HOUR;
 
   const monsterRows = useMemo(() => {
@@ -320,7 +280,7 @@ function KillsTable({ deaths, monsters, simulatedTime }) {
       .filter(([hrid]) => !PLAYER_HRIDS.includes(hrid))
       .map(([hrid, count]) => ({
         hrid,
-        name: monsters?.[hrid]?.name || lastSegment(hrid),
+        name: nameOf(hrid, { monsters }),
         count,
         perHour: count / hoursSimulated
       }))
@@ -332,9 +292,8 @@ function KillsTable({ deaths, monsters, simulatedTime }) {
     .map(p => ({ hrid: p, count: deaths[p], perHour: deaths[p] / hoursSimulated }));
 
   return (
-    <Stack gap="md">
-      <div>
-        <Text size="sm" fw={600} mb={6}>Monster kills</Text>
+    <SimpleGrid cols={{ base: 1, md: 2 }} spacing="sm">
+      <Section title="Monster kills">
         {monsterRows.length === 0 ? (
           <Text size="sm" c="dimmed">No kills recorded.</Text>
         ) : (
@@ -342,24 +301,23 @@ function KillsTable({ deaths, monsters, simulatedTime }) {
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Monster</Table.Th>
-                <Table.Th>Kills</Table.Th>
-                <Table.Th>Kills/Hour</Table.Th>
+                <Table.Th ta="right">Kills</Table.Th>
+                <Table.Th ta="right">Kills/Hour</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
               {monsterRows.map(r => (
                 <Table.Tr key={r.hrid}>
                   <Table.Td>{r.name}</Table.Td>
-                  <Table.Td>{r.count}</Table.Td>
-                  <Table.Td>{r.perHour.toFixed(1)}</Table.Td>
+                  <NumTd faded={!r.count}>{fmtCount(r.count)}</NumTd>
+                  <NumTd faded={!r.count}>{r.perHour.toFixed(1)}</NumTd>
                 </Table.Tr>
               ))}
             </Table.Tbody>
           </Table>
         )}
-      </div>
-      <div>
-        <Text size="sm" fw={600} mb={6}>Player deaths</Text>
+      </Section>
+      <Section title="Player deaths">
         {playerRows.length === 0 ? (
           <Text size="sm" c="dimmed">No player deaths. A flawless performance.</Text>
         ) : (
@@ -367,41 +325,40 @@ function KillsTable({ deaths, monsters, simulatedTime }) {
             <Table.Thead>
               <Table.Tr>
                 <Table.Th>Player</Table.Th>
-                <Table.Th>Deaths</Table.Th>
-                <Table.Th>Deaths/Hour</Table.Th>
+                <Table.Th ta="right">Deaths</Table.Th>
+                <Table.Th ta="right">Deaths/Hour</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
               {playerRows.map(r => (
                 <Table.Tr key={r.hrid}>
-                  <Table.Td>{r.hrid}</Table.Td>
-                  <Table.Td>{r.count}</Table.Td>
-                  <Table.Td>{r.perHour.toFixed(2)}</Table.Td>
+                  <Table.Td>{nameOf(r.hrid, { playerNames })}</Table.Td>
+                  <NumTd faded={!r.count}>{fmtCount(r.count)}</NumTd>
+                  <NumTd faded={!r.count}>{r.perHour.toFixed(2)}</NumTd>
                 </Table.Tr>
               ))}
             </Table.Tbody>
           </Table>
         )}
-      </div>
-    </Stack>
+      </Section>
+    </SimpleGrid>
   );
 }
 
 /** Generic per-player, per-source rate table for restoration/usage maps. */
-function SourceRateTable({ title, data, simulatedTime, emptyText }) {
+function SourceRateTable({ title, data, simulatedTime, emptyText, names }) {
   const hoursSimulated = simulatedTime / ONE_HOUR;
   const rows = [];
   for (const [player, sources] of Object.entries(data || {})) {
     for (const [source, amount] of Object.entries(sources || {})) {
       if (!amount) continue;
-      rows.push({ player, source: lastSegment(source), amount, perHour: amount / hoursSimulated });
+      rows.push({ player, source, amount, perHour: amount / hoursSimulated });
     }
   }
   rows.sort((a, b) => a.player.localeCompare(b.player) || b.amount - a.amount);
 
   return (
-    <div>
-      <Text size="sm" fw={600} mb={6}>{title}</Text>
+    <Section title={title}>
       {rows.length === 0 ? (
         <Text size="sm" c="dimmed">{emptyText}</Text>
       ) : (
@@ -410,34 +367,34 @@ function SourceRateTable({ title, data, simulatedTime, emptyText }) {
             <Table.Tr>
               <Table.Th>Player</Table.Th>
               <Table.Th>Source</Table.Th>
-              <Table.Th>Total</Table.Th>
-              <Table.Th>Per Hour</Table.Th>
+              <Table.Th ta="right">Total</Table.Th>
+              <Table.Th ta="right">Per Hour</Table.Th>
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
             {rows.map((r, i) => (
               <Table.Tr key={`${r.player}-${r.source}-${i}`}>
-                <Table.Td>{r.player}</Table.Td>
-                <Table.Td>{r.source}</Table.Td>
-                <Table.Td>{formatNumber(r.amount, 0)}</Table.Td>
-                <Table.Td>{formatNumber(r.perHour)}</Table.Td>
+                <Table.Td>{nameOf(r.player, names)}</Table.Td>
+                <Table.Td>{nameOf(r.source, names)}</Table.Td>
+                <NumTd>{formatNumber(r.amount, 0)}</NumTd>
+                <NumTd>{formatNumber(r.perHour)}</NumTd>
               </Table.Tr>
             ))}
           </Table.Tbody>
         </Table>
       )}
-    </div>
+    </Section>
   );
 }
 
-function ConsumablesPanel({ results }) {
+function ConsumablesPanel({ results, items, abilities, playerNames }) {
   const hoursSimulated = results.simulatedTime / ONE_HOUR;
   const players = Object.keys(results.consumablesUsed || {});
+  const names = { items, abilities, playerNames };
 
   return (
-    <Stack gap="md">
-      <div>
-        <Text size="sm" fw={600} mb={6}>Consumables used</Text>
+    <Stack gap="sm">
+      <Section title="Consumables used">
         {players.length === 0 ? (
           <Text size="sm" c="dimmed">No consumables used.</Text>
         ) : (
@@ -446,55 +403,61 @@ function ConsumablesPanel({ results }) {
               <Table.Tr>
                 <Table.Th>Player</Table.Th>
                 <Table.Th>Item</Table.Th>
-                <Table.Th>Total Used</Table.Th>
-                <Table.Th>Per Hour</Table.Th>
+                <Table.Th ta="right">Total Used</Table.Th>
+                <Table.Th ta="right">Per Hour</Table.Th>
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
               {players.flatMap(player =>
                 Object.entries(results.consumablesUsed[player]).map(([item, count]) => (
                   <Table.Tr key={`${player}-${item}`}>
-                    <Table.Td>{player}</Table.Td>
-                    <Table.Td>{lastSegment(item)}</Table.Td>
-                    <Table.Td>{count}</Table.Td>
-                    <Table.Td>{formatNumber(count / hoursSimulated)}</Table.Td>
+                    <Table.Td>{nameOf(player, names)}</Table.Td>
+                    <Table.Td>{nameOf(item, names)}</Table.Td>
+                    <NumTd faded={!count}>{fmtCount(count)}</NumTd>
+                    <NumTd faded={!count}>{formatNumber(count / hoursSimulated)}</NumTd>
                   </Table.Tr>
                 ))
               )}
             </Table.Tbody>
           </Table>
         )}
-      </div>
+      </Section>
 
-      <SourceRateTable
-        title="Health restored"
-        data={results.hitpointsGained}
-        simulatedTime={results.simulatedTime}
-        emptyText="No healing recorded."
-      />
-      <SourceRateTable
-        title="Mana restored"
-        data={results.manapointsGained}
-        simulatedTime={results.simulatedTime}
-        emptyText="No mana restoration recorded."
-      />
-      <SourceRateTable
-        title="Mana used"
-        data={results.manaUsed}
-        simulatedTime={results.simulatedTime}
-        emptyText="No mana usage recorded."
-      />
-      <SourceRateTable
-        title="Hitpoints spent (blood magic etc.)"
-        data={results.hitpointsSpent}
-        simulatedTime={results.simulatedTime}
-        emptyText="No hitpoints spent."
-      />
+      <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="sm">
+        <SourceRateTable
+          title="Health restored"
+          data={results.hitpointsGained}
+          simulatedTime={results.simulatedTime}
+          emptyText="No healing recorded."
+          names={names}
+        />
+        <SourceRateTable
+          title="Mana restored"
+          data={results.manapointsGained}
+          simulatedTime={results.simulatedTime}
+          emptyText="No mana restoration recorded."
+          names={names}
+        />
+        <SourceRateTable
+          title="Mana used"
+          data={results.manaUsed}
+          simulatedTime={results.simulatedTime}
+          emptyText="No mana usage recorded."
+          names={names}
+        />
+        <SourceRateTable
+          title="Hitpoints spent (blood magic etc.)"
+          data={results.hitpointsSpent}
+          simulatedTime={results.simulatedTime}
+          emptyText="No hitpoints spent."
+          names={names}
+        />
+      </SimpleGrid>
     </Stack>
   );
 }
 
-function DamageBreakdown({ attacks }) {
+function DamageBreakdown({ attacks, names }) {
   const breakdown = useMemo(() => {
     if (!attacks) return [];
     const results = [];
@@ -518,7 +481,7 @@ function DamageBreakdown({ attacks }) {
           results.push({
             source,
             target,
-            ability: lastSegment(ability),
+            ability,
             totalDamage,
             totalHits,
             misses,
@@ -536,33 +499,41 @@ function DamageBreakdown({ attacks }) {
     return <Text size="sm" c="dimmed">No damage data.</Text>;
   }
 
+  const CAP = 30;
   return (
-    <Table striped highlightOnHover withTableBorder>
-      <Table.Thead>
-        <Table.Tr>
-          <Table.Th>Source</Table.Th>
-          <Table.Th>Target</Table.Th>
-          <Table.Th>Ability</Table.Th>
-          <Table.Th>Total Damage</Table.Th>
-          <Table.Th>Hits</Table.Th>
-          <Table.Th>Avg Damage</Table.Th>
-          <Table.Th>Hit Rate</Table.Th>
-        </Table.Tr>
-      </Table.Thead>
-      <Table.Tbody>
-        {breakdown.slice(0, 30).map((row, i) => (
-          <Table.Tr key={i}>
-            <Table.Td>{lastSegment(row.source)}</Table.Td>
-            <Table.Td>{lastSegment(row.target)}</Table.Td>
-            <Table.Td>{row.ability}</Table.Td>
-            <Table.Td>{formatNumber(row.totalDamage, 0)}</Table.Td>
-            <Table.Td>{row.totalHits}</Table.Td>
-            <Table.Td>{formatNumber(row.avgDamage, 1)}</Table.Td>
-            <Table.Td>{row.hitRate.toFixed(1)}%</Table.Td>
+    <Section
+      title="Damage by source, target and ability"
+      right={breakdown.length > CAP && (
+        <Text size="xs" c="dimmed">Top {CAP} of {breakdown.length} rows by total damage</Text>
+      )}
+    >
+      <Table striped highlightOnHover withTableBorder>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>Source</Table.Th>
+            <Table.Th>Target</Table.Th>
+            <Table.Th>Ability</Table.Th>
+            <Table.Th ta="right">Total Damage</Table.Th>
+            <Table.Th ta="right">Hits</Table.Th>
+            <Table.Th ta="right">Avg Damage</Table.Th>
+            <Table.Th ta="right">Hit Rate</Table.Th>
           </Table.Tr>
-        ))}
-      </Table.Tbody>
-    </Table>
+        </Table.Thead>
+        <Table.Tbody>
+          {breakdown.slice(0, CAP).map((row, i) => (
+            <Table.Tr key={i}>
+              <Table.Td>{nameOf(row.source, names)}</Table.Td>
+              <Table.Td>{nameOf(row.target, names)}</Table.Td>
+              <Table.Td>{nameOf(row.ability, names)}</Table.Td>
+              <NumTd faded={!row.totalDamage}>{formatNumber(row.totalDamage, 0)}</NumTd>
+              <NumTd faded={!row.totalHits}>{fmtCount(row.totalHits)}</NumTd>
+              <NumTd faded={!row.avgDamage}>{formatNumber(row.avgDamage, 1)}</NumTd>
+              <NumTd faded={!row.hitRate}>{row.hitRate.toFixed(1)}%</NumTd>
+            </Table.Tr>
+          ))}
+        </Table.Tbody>
+      </Table>
+    </Section>
   );
 }
 
@@ -618,7 +589,7 @@ function StatKVTable({ obj }) {
         {entries.map(([k, v]) => (
           <Table.Tr key={k}>
             <Table.Td>{prettyKey(k)}</Table.Td>
-            <Table.Td ta="right" ff="monospace">{fmtStatValue(k, v)}</Table.Td>
+            <NumTd faded={v === 0 || v == null}>{fmtStatValue(k, v)}</NumTd>
           </Table.Tr>
         ))}
       </Table.Tbody>
@@ -635,20 +606,20 @@ function AbilitiesTable({ abilities }) {
       <Table.Thead>
         <Table.Tr>
           <Table.Th>Ability</Table.Th>
-          <Table.Th>Level</Table.Th>
-          <Table.Th>Mana</Table.Th>
-          <Table.Th>Cooldown</Table.Th>
-          <Table.Th>Cast</Table.Th>
+          <Table.Th ta="right">Level</Table.Th>
+          <Table.Th ta="right">Mana</Table.Th>
+          <Table.Th ta="right">Cooldown</Table.Th>
+          <Table.Th ta="right">Cast</Table.Th>
         </Table.Tr>
       </Table.Thead>
       <Table.Tbody>
         {abilities.map((a, i) => (
           <Table.Tr key={`${a.hrid}-${i}`}>
             <Table.Td>{a.name || lastSegment(a.hrid)}</Table.Td>
-            <Table.Td>{a.level}</Table.Td>
-            <Table.Td>{a.manaCost ?? 0}</Table.Td>
-            <Table.Td>{fmtStatValue('cooldownDuration', a.cooldownDuration)}</Table.Td>
-            <Table.Td>{fmtStatValue('castDuration', a.castDuration)}</Table.Td>
+            <NumTd>{a.level}</NumTd>
+            <NumTd faded={!a.manaCost}>{a.manaCost ?? 0}</NumTd>
+            <NumTd faded={!a.cooldownDuration}>{fmtStatValue('cooldownDuration', a.cooldownDuration)}</NumTd>
+            <NumTd faded={!a.castDuration}>{fmtStatValue('castDuration', a.castDuration)}</NumTd>
           </Table.Tr>
         ))}
       </Table.Tbody>
@@ -708,11 +679,11 @@ function PlayerLevelsTable({ baseLevels, combatDetails }) {
           return (
             <Table.Tr key={s}>
               <Table.Td tt="capitalize">{s}</Table.Td>
-              <Table.Td ta="right" ff="monospace">{base}</Table.Td>
-              <Table.Td ta="right" ff="monospace" c={delta ? 'teal' : 'dimmed'}>
+              <NumTd>{base}</NumTd>
+              <NumTd faded={!delta} c={delta ? 'teal' : undefined}>
                 {delta ? `+${delta}` : '—'}
-              </Table.Td>
-              <Table.Td ta="right" ff="monospace" fw={600}>{Number(final.toFixed(2))}</Table.Td>
+              </NumTd>
+              <NumTd strong>{Number(final.toFixed(2))}</NumTd>
             </Table.Tr>
           );
         })}
@@ -741,7 +712,7 @@ function BuffSourcesTable({ buffSources }) {
             <Table.Tr key={`${src.source}-${b.typeHrid}-${i}`}>
               <Table.Td>{i === 0 ? <Text fw={600} size="xs">{src.source}</Text> : null}</Table.Td>
               <Table.Td>{buffStatLabel(b.typeHrid)}</Table.Td>
-              <Table.Td ta="right" ff="monospace">{fmtBuffValue(b)}</Table.Td>
+              <NumTd>{fmtBuffValue(b)}</NumTd>
             </Table.Tr>
           ))
         )}
@@ -750,7 +721,7 @@ function BuffSourcesTable({ buffSources }) {
   );
 }
 
-function LabStatsPanel({ results, monsters }) {
+function LabStatsPanel({ results, monsters, playerNames }) {
   const playerStats = results.playerStats || [];
   const monsterStats = results.monsterStats || [];
 
@@ -780,9 +751,9 @@ function LabStatsPanel({ results, monsters }) {
           <Accordion.Item key={`player-${i}`} value={`player-${i}`}>
             <Accordion.Control>
               <Group gap="xs">
-                <Text fw={600}>{playerLabel(p.hrid)}</Text>
+                <Text fw={600}>{playerNames?.[p.hrid] || playerLabel(p.hrid)}</Text>
                 {p.combatStyleHrid && (
-                  <Badge size="sm" variant="light">{lastSegment(p.combatStyleHrid)}</Badge>
+                  <Badge size="sm" variant="light">{nameOf(p.combatStyleHrid)}</Badge>
                 )}
                 <Badge size="sm" variant="light" color="red">HP {fmtInt(p.combatDetails?.maxHitpoints)}</Badge>
                 <Badge size="sm" variant="light" color="blue">MP {fmtInt(p.combatDetails?.maxManapoints)}</Badge>
@@ -810,7 +781,7 @@ function LabStatsPanel({ results, monsters }) {
           <Accordion.Item key={`monster-${i}`} value={`monster-${i}`}>
             <Accordion.Control>
               <Group gap="xs">
-                <Text fw={600}>{monsters?.[m.hrid]?.name || lastSegment(m.hrid)}</Text>
+                <Text fw={600}>{nameOf(m.hrid, { monsters })}</Text>
                 <Badge size="sm" variant="light" color="grape">Room Lv {m.roomLevel}</Badge>
                 <Badge size="sm" variant="light" color="red">HP {fmtInt(m.combatDetails?.maxHitpoints)}</Badge>
                 <Badge size="sm" variant="light">{(m.abilities?.length || 0)} abilities</Badge>
@@ -838,7 +809,10 @@ function LabStatsPanel({ results, monsters }) {
 // from simResult.labRoomOutcomes, recorded by the engine. The final,
 // window-truncated room is intentionally absent (it never resolved).
 function LabOutcomesPanel({ results }) {
-  const outcomes = Array.isArray(results.labRoomOutcomes) ? results.labRoomOutcomes : [];
+  const outcomes = useMemo(
+    () => (Array.isArray(results.labRoomOutcomes) ? results.labRoomOutcomes : []),
+    [results.labRoomOutcomes]
+  );
 
   const summary = useMemo(() => {
     const c = { win: 0, death: 0, timeout: 0 };
@@ -861,39 +835,49 @@ function LabOutcomesPanel({ results }) {
 
   return (
     <Stack gap="sm">
-      <Group gap="xs">
-        <Badge color="teal" variant="light">{summary.win} clears</Badge>
-        <Badge color="red" variant="light">{summary.death} deaths</Badge>
-        <Badge color="yellow" variant="light">{summary.timeout} timeouts</Badge>
-        <Text size="xs" c="dimmed">{outcomes.length} resolved rooms · mob HP% remaining (0 on a clear)</Text>
-      </Group>
-      <ScrollArea h={420} type="auto">
-        <Table striped highlightOnHover withTableBorder stickyHeader>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>#</Table.Th>
-              <Table.Th>Outcome</Table.Th>
-              <Table.Th ta="right">Mob HP%</Table.Th>
-              <Table.Th ta="right">Room Time (s)</Table.Th>
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {shown.map((o, i) => (
-              <Table.Tr key={i}>
-                <Table.Td>{i + 1}</Table.Td>
-                <Table.Td>
-                  <Badge color={colorOf(o.outcome)} variant="light" size="sm">{labelOf(o.outcome)}</Badge>
-                </Table.Td>
-                <Table.Td ta="right">{(o.monsterHpPct ?? 0).toFixed(1)}%</Table.Td>
-                <Table.Td ta="right">{(((o.time || 0) - (o.startTime || 0)) / ONE_SECOND).toFixed(1)}</Table.Td>
+      <SimpleGrid cols={{ base: 1, sm: 3 }} spacing="sm">
+        <StatGroup
+          title="Rooms"
+          kpis={[
+            { lead: true, label: 'Clears', value: fmtCount(summary.win) },
+            { label: 'Deaths', value: fmtCount(summary.death) },
+            { label: 'Timeouts', value: fmtCount(summary.timeout) },
+            { label: 'Resolved rooms', value: fmtCount(outcomes.length) }
+          ]}
+        />
+      </SimpleGrid>
+      <Section
+        title="Per room"
+        right={<Text size="xs" c="dimmed">mob HP% remaining (0 on a clear)</Text>}
+      >
+        <ScrollArea h={420} type="auto">
+          <Table striped highlightOnHover withTableBorder stickyHeader>
+            <Table.Thead>
+              <Table.Tr>
+                <Table.Th ta="right">#</Table.Th>
+                <Table.Th>Outcome</Table.Th>
+                <Table.Th ta="right">Mob HP%</Table.Th>
+                <Table.Th ta="right">Room Time (s)</Table.Th>
               </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
-      </ScrollArea>
-      {outcomes.length > CAP && (
-        <Text size="xs" c="dimmed">Showing first {CAP} of {outcomes.length} rooms.</Text>
-      )}
+            </Table.Thead>
+            <Table.Tbody>
+              {shown.map((o, i) => (
+                <Table.Tr key={i}>
+                  <NumTd>{i + 1}</NumTd>
+                  <Table.Td>
+                    <Badge color={colorOf(o.outcome)} variant="light" size="sm">{labelOf(o.outcome)}</Badge>
+                  </Table.Td>
+                  <NumTd faded={!o.monsterHpPct}>{(o.monsterHpPct ?? 0).toFixed(1)}%</NumTd>
+                  <NumTd>{(((o.time || 0) - (o.startTime || 0)) / ONE_SECOND).toFixed(1)}</NumTd>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </ScrollArea>
+        {outcomes.length > CAP && (
+          <Text size="xs" c="dimmed">Showing first {CAP} of {outcomes.length} rooms.</Text>
+        )}
+      </Section>
     </Stack>
   );
 }
@@ -901,7 +885,7 @@ function LabOutcomesPanel({ results }) {
 // `focusHrid` names the player the Drops tab answers for — the member whose
 // config is open in the left panel's P-tab. Per-character drop stats (magnetic
 // gloves, lucky coffee) mean the party does not share one loot table.
-export function SimulationResults({ results, monsters, items, pricing, focusHrid, zones, playerNames }) {
+export function SimulationResults({ results, monsters, items, abilities, pricing, focusHrid, zones, playerNames }) {
   const handleDownload = useCallback(() => {
     const blob = new Blob([JSON.stringify(results, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
@@ -948,7 +932,7 @@ export function SimulationResults({ results, monsters, items, pricing, focusHrid
 
         {results.isLabyrinth && (
           <Tabs.Panel value="labstats" pt="sm">
-            <LabStatsPanel results={results} monsters={monsters} />
+            <LabStatsPanel results={results} monsters={monsters} playerNames={playerNames} />
           </Tabs.Panel>
         )}
 
@@ -971,6 +955,7 @@ export function SimulationResults({ results, monsters, items, pricing, focusHrid
             deaths={results.deaths}
             monsters={monsters}
             simulatedTime={results.simulatedTime}
+            playerNames={playerNames}
           />
         </Tabs.Panel>
 
@@ -981,15 +966,16 @@ export function SimulationResults({ results, monsters, items, pricing, focusHrid
             items={items}
             pricing={pricing}
             focusHrid={focusHrid}
+            playerNames={playerNames}
           />
         </Tabs.Panel>
 
         <Tabs.Panel value="consumables" pt="sm">
-          <ConsumablesPanel results={results} />
+          <ConsumablesPanel results={results} items={items} abilities={abilities} playerNames={playerNames} />
         </Tabs.Panel>
 
         <Tabs.Panel value="damage" pt="sm">
-          <DamageBreakdown attacks={results.attacks} />
+          <DamageBreakdown attacks={results.attacks} names={{ monsters, items, abilities, playerNames }} />
         </Tabs.Panel>
       </Tabs>
     </Stack>
