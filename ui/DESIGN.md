@@ -77,7 +77,8 @@ opens one searchable picker with the enhancement level; owned items first.
 - Key registry: `csim_ui_result_tab`, `csim_ui_sheet_tab`, `csim_ui_sheet_open`,
   `csim_ui_mode_settings_open`, `csim_ui_global_buffs_open`,
   `csim_ui_drops_credit_mode`, `csim_ui_trial_monsters_collapsed`,
-  `csim_ui_trigopt_stages_open`, `csim_ui_equipopt_fidelity_open`.
+  `csim_ui_trigopt_stages_open`, `csim_ui_equipopt_fidelity_open`,
+  `csim_ui_allzones_sort`.
 
 ## Rule of thumb
 No information is dropped: it may move, group or fade, never vanish.

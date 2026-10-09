@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { Fragment, useMemo } from 'react';
 import {
   Alert,
   Button,
@@ -48,6 +48,15 @@ export function AllZonesModal({
 }) {
   const list = useMemo(() => simulableZones(zones), [zones]);
   const tiers = useMemo(() => tierColumns(zones), [zones]);
+  // Planets first, then dungeons, each under its own sub-header row — still one
+  // table, so the tier-column checkboxes cover both groups.
+  const groups = useMemo(
+    () => [
+      { label: 'Planets', zones: list.filter(zone => !zone.isDungeon) },
+      { label: 'Dungeons', zones: list.filter(zone => zone.isDungeon) },
+    ].filter(group => group.zones.length > 0),
+    [list]
+  );
 
   // Every combination the game offers — the "select all" target, and the
   // denominator for the header checkboxes' indeterminate state.
@@ -109,15 +118,18 @@ export function AllZonesModal({
           stop at T2, which is where the game stops them.
         </Text>
 
-        <Group gap="xs">
-          <Button size="xs" variant="default" onClick={() => onSelectionChange(new Set(allKeys))}>
+        <Group gap="xs" wrap="wrap">
+          <Text size="xs" fw={600} c="dimmed" tt="uppercase" style={{ letterSpacing: '0.06em' }}>
+            Quick select
+          </Text>
+          <Button size="compact-sm" variant="default" onClick={() => onSelectionChange(new Set(allKeys))}>
             Select all
           </Button>
-          <Button size="xs" variant="default" onClick={() => onSelectionChange(new Set())}>
+          <Button size="compact-sm" variant="default" onClick={() => onSelectionChange(new Set())}>
             Clear
           </Button>
           <Button
-            size="xs"
+            size="compact-sm"
             variant="default"
             onClick={() =>
               onSelectionChange(
@@ -132,7 +144,7 @@ export function AllZonesModal({
             Planets only
           </Button>
           <Button
-            size="xs"
+            size="compact-sm"
             variant="default"
             onClick={() =>
               onSelectionChange(
@@ -170,73 +182,89 @@ export function AllZonesModal({
               </Table.Tr>
             </Table.Thead>
             <Table.Tbody>
-              {list.map(zone => {
-                const state = rowState(zone);
-                return (
-                  <Table.Tr key={zone.hrid}>
-                    <Table.Td>
-                      <Checkbox
-                        size="xs"
-                        label={zone.name}
-                        checked={state.checked}
-                        indeterminate={state.indeterminate}
-                        onChange={(e) => toggleRow(zone, e.currentTarget.checked)}
-                      />
+              {groups.map(group => (
+                <Fragment key={group.label}>
+                  <Table.Tr>
+                    <Table.Td colSpan={tiers.length + 1} py={4}>
+                      <Text size="xs" fw={600} c="dimmed" tt="uppercase" style={{ letterSpacing: '0.06em' }}>
+                        {group.label}
+                      </Text>
                     </Table.Td>
-                    {tiers.map(tier => {
-                      if (tier > maxTierFor(zone)) {
-                        return (
-                          <Table.Td key={tier} style={{ textAlign: 'center' }}>
-                            <Text size="xs" c="dimmed">—</Text>
-                          </Table.Td>
-                        );
-                      }
-                      const key = comboKey(zone.hrid, tier);
-                      return (
-                        <Table.Td key={tier} style={{ textAlign: 'center' }}>
+                  </Table.Tr>
+                  {group.zones.map(zone => {
+                    const state = rowState(zone);
+                    return (
+                      <Table.Tr key={zone.hrid}>
+                        <Table.Td>
                           <Checkbox
                             size="xs"
-                            checked={selection.has(key)}
-                            onChange={(e) => setKeys([key], e.currentTarget.checked)}
-                            aria-label={`${zone.name} T${tier}`}
-                            styles={{ inner: { margin: '0 auto' } }}
+                            label={zone.name}
+                            checked={state.checked}
+                            indeterminate={state.indeterminate}
+                            onChange={(e) => toggleRow(zone, e.currentTarget.checked)}
                           />
                         </Table.Td>
-                      );
-                    })}
-                  </Table.Tr>
-                );
-              })}
+                        {tiers.map(tier => {
+                          if (tier > maxTierFor(zone)) {
+                            return (
+                              <Table.Td key={tier} style={{ textAlign: 'center' }}>
+                                <Text size="xs" className="num-faded">—</Text>
+                              </Table.Td>
+                            );
+                          }
+                          const key = comboKey(zone.hrid, tier);
+                          return (
+                            <Table.Td key={tier} style={{ textAlign: 'center' }}>
+                              <Checkbox
+                                size="xs"
+                                checked={selection.has(key)}
+                                onChange={(e) => setKeys([key], e.currentTarget.checked)}
+                                aria-label={`${zone.name} T${tier}`}
+                                styles={{ inner: { margin: '0 auto' } }}
+                              />
+                            </Table.Td>
+                          );
+                        })}
+                      </Table.Tr>
+                    );
+                  })}
+                </Fragment>
+              ))}
             </Table.Tbody>
           </Table>
         </ScrollArea.Autosize>
 
         <Divider />
 
-        <Group gap="md" align="flex-end">
-          <NumberInput
-            label="Hours per zone"
-            description="Combat simulated for each combination"
-            value={hours}
-            onChange={(v) => onHoursChange(Math.max(1, Math.min(1000, Number(v) || 1)))}
-            min={1}
-            max={1000}
-            w={160}
-            size="xs"
-          />
-          <NumberInput
-            label="Workers"
-            description="Parallel simulations"
-            value={workers}
-            onChange={(v) => onWorkersChange(Math.max(1, Math.min(32, Number(v) || 1)))}
-            min={1}
-            max={32}
-            w={140}
-            size="xs"
-          />
-          <Text size="xs" c="dimmed">
+        <Group justify="space-between" align="flex-end" gap="md" wrap="wrap">
+          <Group gap="md" align="flex-end">
+            <NumberInput
+              label="Hours per zone"
+              description="Combat simulated for each combination"
+              value={hours}
+              onChange={(v) => onHoursChange(Math.max(1, Math.min(1000, Number(v) || 1)))}
+              min={1}
+              max={1000}
+              w={160}
+              size="xs"
+            />
+            <NumberInput
+              label="Workers"
+              description="Parallel simulations"
+              value={workers}
+              onChange={(v) => onWorkersChange(Math.max(1, Math.min(32, Number(v) || 1)))}
+              min={1}
+              max={32}
+              w={140}
+              size="xs"
+            />
+          </Group>
+          <Text size="sm" c="dimmed" ta="right">
             {selectedCount} combination{selectedCount === 1 ? '' : 's'} × {hours} h ={' '}
-            {(selectedCount * hours).toLocaleString()} simulated hours · {formatDuration(estimate)}
+            <Text span fw={600} c="var(--mantine-color-text)">
+              {(selectedCount * hours).toLocaleString()} simulated hours
+            </Text>{' '}
+            · {formatDuration(estimate)}
           </Text>
         </Group>
 

@@ -6,7 +6,6 @@ import {
   Button,
   Group,
   NumberInput,
-  Paper,
   SegmentedControl,
   Select,
   Stack,
@@ -19,6 +18,7 @@ import {
 import { COST_ROLES, describeBuildCosts, searchItemCosts } from '../utils/itemCosts';
 import { formatAge, formatSeconds } from '../utils/triggerOptimizer';
 import { PROTECTION_PRICING } from '../../../shared/enhancementRoi.js';
+import { NumTd, Section } from './ResultParts';
 
 // =============================================================================
 // ItemCostsView — hand-set production times, in seconds, for any item.
@@ -82,16 +82,16 @@ function CostRow({ row, disabled, onChange }) {
           ))}
         </Group>
       </Table.Td>
-      <Table.Td ta="right">
+      <NumTd faded={row.fetched == null}>
         <Text
+          span
           size="xs"
           c="dimmed"
-          ff="monospace"
           style={{ textDecoration: overridden ? 'line-through' : 'none' }}
         >
           {row.fetched != null ? formatSeconds(row.fetched) : '—'}
         </Text>
-      </Table.Td>
+      </NumTd>
       <Table.Td>
         <NumberInput
           size="xs"
@@ -108,9 +108,9 @@ function CostRow({ row, disabled, onChange }) {
           aria-label={`Time cost for ${row.name}, seconds per unit`}
         />
       </Table.Td>
-      <Table.Td ta="right" ff="monospace" fw={overridden ? 700 : 400}>
+      <NumTd strong={overridden}>
         {row.effective != null ? formatSeconds(row.effective) : <Text span c="orange">0s</Text>}
-      </Table.Td>
+      </NumTd>
       <Table.Td>
         <ActionIcon
           size="sm"
@@ -214,55 +214,10 @@ export function ItemCostsView({ playerDTOs, gameItems, pricing, protectionPricin
       {/* The price source lives here as well as on the optimiser panels, because
           this is the tab a user will be on when they discover the times are
           wrong, and sending them elsewhere to switch source would be perverse. */}
-      <Paper p="sm" radius="md" withBorder>
-        <Group justify="space-between" wrap="wrap" gap="sm">
-          <Group gap="sm">
-            <Text size="xs" fw={600}>
-              Source
-            </Text>
-            <SegmentedControl
-              size="xs"
-              value={pricing.source}
-              onChange={pricing.setSource}
-              data={[
-                { value: 'vendor', label: 'None' },
-                { value: 'market', label: 'Coins' },
-                { value: 'iron', label: 'Iron time' },
-              ]}
-            />
-            {pricing.source === 'iron' && (
-              <>
-                <Select
-                  size="xs"
-                  w={160}
-                  placeholder="Character"
-                  data={[
-                    ...new Set(
-                      [...(pricing.characters || []), pricing.ironCharacter].filter(Boolean)
-                    ),
-                  ].map((name) => ({ value: name, label: name }))}
-                  value={pricing.ironCharacter}
-                  onChange={pricing.setIronCharacter}
-                  searchable
-                />
-                <Button
-                  variant="default"
-                  size="compact-xs"
-                  loading={pricing.fetching}
-                  onClick={pricing.fetchPrices}
-                >
-                  {pricing.fetchedLabel ? 'Refetch' : 'Fetch times'}
-                </Button>
-                {pricing.fetchedLabel && (
-                  <Text size="xs" c="dimmed">
-                    {pricing.fetchedLabel}
-                    {formatAge(pricing.fetchedAt) ? ` · ${formatAge(pricing.fetchedAt)}` : ''}
-                  </Text>
-                )}
-              </>
-            )}
-          </Group>
-          {overrideCount > 0 && (
+      <Section
+        title="Source"
+        right={
+          overrideCount > 0 && (
             <Button
               variant="subtle"
               size="compact-xs"
@@ -271,9 +226,53 @@ export function ItemCostsView({ playerDTOs, gameItems, pricing, protectionPricin
             >
               Reset all {overrideCount}
             </Button>
+          )
+        }
+      >
+        <Group gap="sm" wrap="wrap">
+          <SegmentedControl
+            size="xs"
+            value={pricing.source}
+            onChange={pricing.setSource}
+            data={[
+              { value: 'vendor', label: 'None' },
+              { value: 'market', label: 'Coins' },
+              { value: 'iron', label: 'Iron time' },
+            ]}
+          />
+          {pricing.source === 'iron' && (
+            <>
+              <Select
+                size="xs"
+                w={160}
+                placeholder="Character"
+                data={[
+                  ...new Set(
+                    [...(pricing.characters || []), pricing.ironCharacter].filter(Boolean)
+                  ),
+                ].map((name) => ({ value: name, label: name }))}
+                value={pricing.ironCharacter}
+                onChange={pricing.setIronCharacter}
+                searchable
+              />
+              <Button
+                variant="default"
+                size="compact-xs"
+                loading={pricing.fetching}
+                onClick={pricing.fetchPrices}
+              >
+                {pricing.fetchedLabel ? 'Refetch' : 'Fetch times'}
+              </Button>
+              {pricing.fetchedLabel && (
+                <Text size="xs" c="dimmed">
+                  {pricing.fetchedLabel}
+                  {formatAge(pricing.fetchedAt) ? ` · ${formatAge(pricing.fetchedAt)}` : ''}
+                </Text>
+              )}
+            </>
           )}
         </Group>
-      </Paper>
+      </Section>
 
       {!isSeconds && (
         <Alert color="yellow" variant="light" title="Not denominated in time">
@@ -297,34 +296,29 @@ export function ItemCostsView({ playerDTOs, gameItems, pricing, protectionPricin
         </Alert>
       )}
 
-      <Paper p="sm" radius="md" withBorder>
-        <Text size="sm" fw={600} mb={6}>
-          Used by this build ({buildRows.length})
-        </Text>
+      <Section title={`Used by this build (${buildRows.length})`}>
         <CostTable
           rows={buildRows}
           onChange={pricing.setItemCostOverride}
           empty="Nothing slotted or equipped yet — configure a party and these fill in."
         />
-      </Paper>
+      </Section>
 
-      <Paper p="sm" radius="md" withBorder>
-        <Group justify="space-between" mb={6}>
-          <Text size="sm" fw={600}>
-            Any other item
-          </Text>
-          {searchRows.length > 0 && (
+      <Section
+        title="Any other item"
+        right={
+          searchRows.length > 0 && (
             <Text size="10px" c="dimmed">
               showing {searchRows.length}
             </Text>
-          )}
-        </Group>
+          )
+        }
+      >
         <TextInput
           size="xs"
           placeholder="Search all items by name…"
           value={query}
           onChange={(event) => setQuery(event.currentTarget.value)}
-          mb={8}
         />
         <CostTable
           rows={searchRows}
@@ -335,7 +329,7 @@ export function ItemCostsView({ playerDTOs, gameItems, pricing, protectionPricin
               : 'No items match that search.'
           }
         />
-      </Paper>
+      </Section>
     </Stack>
   );
 }

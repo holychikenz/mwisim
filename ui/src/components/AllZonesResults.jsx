@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import {
   Alert,
   Badge,
@@ -10,8 +10,10 @@ import {
   Table,
   Text,
   Title,
-  Tooltip
+  Tooltip,
+  UnstyledButton
 } from '@mantine/core';
+import { usePersistentState } from '../hooks/usePersistentState';
 import { effectiveRatePerHour, summariseConsumableCost } from '../utils/consumableCosts';
 import { formatSeconds } from '../utils/triggerOptimizer';
 
@@ -72,8 +74,15 @@ const COLUMNS = [
 
 const DUNGEON_COLUMN = { key: 'clearsPerHour', label: 'Clears/h', numeric: true };
 
+const DEFAULT_SORT = { key: 'experiencePerHour', dir: 'desc' };
+const isSort = (v) =>
+  !!v &&
+  [...COLUMNS, DUNGEON_COLUMN].some(c => c.key === v.key) &&
+  (v.dir === 'asc' || v.dir === 'desc');
+
 export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPicker, focusHrid }) {
-  const [sort, setSort] = useState({ key: 'experiencePerHour', dir: 'desc' });
+  // Remembered across re-sweeps and reloads (DESIGN.md, "Persistence").
+  const [sort, setSort] = usePersistentState('csim_ui_allzones_sort', DEFAULT_SORT, isSort);
 
   // The party as SWEPT (meta), not as currently ticked — a sweep answers for the
   // characters it simulated, whatever the checkboxes say now.
@@ -175,11 +184,11 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
   }, [rows, zoneNames, costBasis, activeHrid]);
 
   // A sort can outlive its column: sort by Clears/h on a sweep that included
-  // dungeons, re-run with planets only, and the column is gone while `sort` (component
-  // state) still names it — every comparison would return 0 and the table would
+  // dungeons, re-run with planets only, and the column is gone while `sort` (the
+  // remembered choice) still names it — every comparison would return 0 and the table would
   // silently fall back to worker arrival order with no header arrow to say so.
   const activeSort = useMemo(
-    () => (columns.some(col => col.key === sort.key) ? sort : { key: 'experiencePerHour', dir: 'desc' }),
+    () => (columns.some(col => col.key === sort.key) ? sort : DEFAULT_SORT),
     [columns, sort]
   );
 
@@ -284,7 +293,7 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
           </Text>
         </div>
         <Group gap="xs">
-          {running && <Badge color="indigo" variant="light">running</Badge>}
+          {running && <Badge variant="light">running</Badge>}
           {onOpenPicker && (
             <Button size="xs" variant="default" onClick={onOpenPicker}>
               Change selection
@@ -325,12 +334,17 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
               {columns.map(col => (
                 <Table.Th
                   key={col.key}
-                  onClick={() => toggleSort(col.key)}
-                  style={{ cursor: 'pointer', whiteSpace: 'nowrap' }}
-                  title="Sort by this column"
+                  ta={col.numeric ? 'right' : undefined}
+                  style={{ whiteSpace: 'nowrap' }}
                 >
-                  {col.label}
-                  {activeSort.key === col.key ? (activeSort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
+                  <UnstyledButton
+                    onClick={() => toggleSort(col.key)}
+                    title="Sort by this column"
+                    style={{ font: 'inherit', color: 'inherit' }}
+                  >
+                    {col.label}
+                    {activeSort.key === col.key ? (activeSort.dir === 'asc' ? ' ▲' : ' ▼') : ''}
+                  </UnstyledButton>
                 </Table.Th>
               ))}
             </Table.Tr>
@@ -348,7 +362,7 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
                     )}
                   </Group>
                 </Table.Td>
-                <Table.Td>T{row.difficultyTier}</Table.Td>
+                <Table.Td ta="right">T{row.difficultyTier}</Table.Td>
                 {row.failed ? (
                   <Table.Td colSpan={columns.length - 2}>
                     <Text size="xs" c="red">
@@ -364,12 +378,13 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
                         size="sm"
                         fw={isBest ? 700 : 400}
                         c={isBest ? 'teal' : undefined}
+                        className={value == null || value === 0 ? 'num-faded' : undefined}
                       >
                         {value == null ? '—' : formatNumber(value)}
                       </Text>
                     );
                     return (
-                      <Table.Td key={col.key}>
+                      <Table.Td key={col.key} ta="right" style={{ whiteSpace: 'nowrap' }}>
                         {col.effective && row.costKnown && value != null ? (
                           <Tooltip
                             label={
