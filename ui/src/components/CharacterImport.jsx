@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Button, Group, Select, Text } from '@mantine/core';
+import { Button, Group, Text } from '@mantine/core';
+import { Select } from './SearchSelect';
 import { useGameData } from '../hooks/useGameData';
 import { characterToCharacter } from '../utils/characterToStore';
 

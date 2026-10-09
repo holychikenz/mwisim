@@ -1,5 +1,6 @@
 import { useMemo } from 'react';
-import { Alert, Badge, Button, Group, Select, SimpleGrid, Stack, Switch, Table, Text } from '@mantine/core';
+import { Alert, Badge, Button, Group, SimpleGrid, Stack, Switch, Table, Text } from '@mantine/core';
+import { Select } from './SearchSelect';
 import { DropsTable } from './DropsTable';
 import { nameOf } from '../utils/names';
 import { NumTd, Section, StatGroup } from './ResultParts';

@@ -7,14 +7,14 @@ import {
   Group,
   NumberInput,
   SegmentedControl,
-  Select,
   Stack,
   Table,
   Text,
   TextInput,
   Title,
-  Tooltip,
+  Tooltip
 } from '@mantine/core';
+import { Select } from './SearchSelect';
 import { COST_ROLES, describeBuildCosts, searchItemCosts } from '../utils/itemCosts';
 import { formatAge, formatSeconds } from '../utils/triggerOptimizer';
 import { PROTECTION_PRICING } from '../../../shared/enhancementRoi.js';

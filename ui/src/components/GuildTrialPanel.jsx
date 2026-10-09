@@ -8,13 +8,13 @@ import {
   Modal,
   NumberInput,
   Paper,
-  Select,
   Stack,
   Text,
   Textarea,
   Tooltip,
   UnstyledButton
 } from '@mantine/core';
+import { Select } from './SearchSelect';
 import { listRosterEntries, buildSummary, refKey, MAX_ROW_COUNT } from '../utils/roster';
 import { listLoadoutRefs } from '../utils/characterStore';
 import { exportFormatToPlayer } from '../utils/importSet';

@@ -7,13 +7,13 @@ import {
   Collapse,
   Group,
   NumberInput,
-  Select,
   SimpleGrid,
   Stack,
   Tabs,
   Text,
   UnstyledButton
 } from '@mantine/core';
+import { Select } from './SearchSelect';
 import { getFood, getDrinks, getCombatAbilities, getAuras } from '../hooks/useGameData';
 import { TriggerEditor } from './TriggerEditor';
 import { CharacterBonuses } from './CharacterBonuses';

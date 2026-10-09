@@ -8,7 +8,6 @@ import {
   Badge,
   Tabs,
   Checkbox,
-  Select,
   ScrollArea,
   Alert,
   Center,
@@ -21,6 +20,7 @@ import {
   Loader,
   Modal
 } from '@mantine/core';
+import { Select } from './components/SearchSelect';
 import { useDisclosure, useMediaQuery } from '@mantine/hooks';
 import { useGameData } from './hooks/useGameData';
 import { useSimulation } from './hooks/useSimulation';

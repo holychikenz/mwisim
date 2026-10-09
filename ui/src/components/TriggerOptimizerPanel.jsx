@@ -13,13 +13,13 @@ import {
   Paper,
   ScrollArea,
   SegmentedControl,
-  Select,
   SimpleGrid,
   Stack,
   Switch,
   Text,
-  Tooltip,
+  Tooltip
 } from '@mantine/core';
+import { Select } from './SearchSelect';
 import {
   DEFAULT_TRIGGER_OPT_CONFIG,
   estimateSeconds,

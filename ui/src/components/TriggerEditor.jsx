@@ -1,5 +1,6 @@
 import { useMemo, useCallback } from 'react';
-import { ActionIcon, Button, Group, NumberInput, Paper, Select, Stack, Text } from '@mantine/core';
+import { ActionIcon, Button, Group, NumberInput, Paper, Stack, Text } from '@mantine/core';
+import { Select } from './SearchSelect';
 
 function toOptions(map) {
   if (!map) return [];

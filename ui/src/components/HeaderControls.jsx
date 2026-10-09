@@ -1,7 +1,6 @@
 import { useMemo } from 'react';
 import {
   Group,
-  Select,
   NumberInput,
   Button,
   Popover,
@@ -17,6 +16,7 @@ import {
   Collapse,
   UnstyledButton
 } from '@mantine/core';
+import { Select } from './SearchSelect';
 import {
   GUILD_COMBAT_BUFFS,
   MAX_GUILD_BUFF_LEVEL,
