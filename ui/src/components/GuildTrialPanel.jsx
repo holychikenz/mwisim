@@ -21,10 +21,6 @@ import { exportFormatToPlayer } from '../utils/importSet';
 import { describeShrines, ownsShrines } from '../utils/guildBuffs';
 import { combatLevel } from '../utils/combatLevel';
 
-// Combat-trial sign-up roles, shown as a chip only when a roster entry
-// carries one; never inferred.
-const ROLE_LABELS = { tank: 'Tank', damage_dealer: 'Damage', support: 'Support' };
-
 // Group export format = all keys are player IDs ("1".."5") with no `player`
 // key (same detection as ImportExport.isGroupFormat). Values may be nested
 // JSON strings, one per participant.
@@ -306,9 +302,10 @@ export function GuildTrialPanel({
         <Stack gap={6}>
           {entries.map(entry => {
             const selected = entry.id === selectedEntryId;
-            const characterName =
-              characters?.characters?.[entry.characterId]?.name || entry.displayName;
-            const roleLabel = ROLE_LABELS[entry.role];
+            // The character alone: the loadout has its own line below, and
+            // displayName already carries it.
+            const character = characters?.characters?.[entry.characterId];
+            const characterName = character?.name || character?.id || entry.characterId;
             const owns = ownsShrines(entry.build);
             return (
               <div key={entry.id} className="member-card" data-active={selected || undefined}>
@@ -340,12 +337,9 @@ export function GuildTrialPanel({
                         shrines: {describeShrines(entry.build.guildShrines)} (own)
                       </Text>
                     )}
-                    {(roleLabel || !entry.build) && (
+                    {!entry.build && (
                       <Group gap={4} mt={4}>
-                        {roleLabel && <Badge size="xs" variant="light">{roleLabel}</Badge>}
-                        {!entry.build && (
-                          <Badge size="xs" color="yellow" variant="light">build missing</Badge>
-                        )}
+                        <Badge size="xs" color="yellow" variant="light">build missing</Badge>
                       </Group>
                     )}
                   </UnstyledButton>

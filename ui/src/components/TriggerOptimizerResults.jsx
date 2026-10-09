@@ -361,7 +361,7 @@ export function TriggerOptimizerResults({ results, items, abilities }) {
         )}
         <StatCard
           label="Vs current"
-          value={leader?.isBaseline ? '—' : formatPct(leader?.marginPct)}
+          value={leader?.isBaseline ? 'Current is best' : formatPct(leader?.marginPct)}
           tip="Change against your existing thresholds, both re-simulated on the same pinned seed."
         />
         <StatCard

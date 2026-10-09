@@ -44,6 +44,7 @@ import { ImportExport } from './components/ImportExport';
 import { ProgressBar } from './components/ProgressBar';
 import { LoadoutManager } from './components/LoadoutManager';
 import { CharacterImport } from './components/CharacterImport';
+import { ChunkBoundary } from './components/ChunkBoundary';
 import { TextInput } from '@mantine/core';
 import { toPlayerDTO } from './utils/playerDTO';
 import { loadExperimental, saveExperimental } from './utils/experimental';
@@ -203,7 +204,7 @@ function App() {
     error: simError,
     runSimulation,
     runGuildTrial,
-    clearResults
+    cancelRun
   } = useSimulation();
 
   // The trigger optimiser is the only feature that runs on the csim API rather
@@ -247,12 +248,28 @@ function App() {
   // Ignored on wider screens, where the rail is always shown.
   const [navOpened, { toggle: toggleNav, close: closeNav }] = useDisclosure(false);
   // The member editor sheet (AppShell aside, breakpoint 90em). From 90em up it
-  // sits beside the results and starts open; below that Mantine draws it over
-  // the results, so it starts closed and opens when a member card is clicked.
-  // Remembered across reloads; the first-visit default follows the screen width.
-  const [sheetOpen, setSheetOpen] = usePersistentState('csim_ui_sheet_open', () => {
+  // sits beside the results, starts open and is remembered across reloads.
+  // Below that Mantine draws it over the results, so it always starts closed
+  // and opens when a member card is clicked; that state is never stored, so a
+  // narrow visit cannot leave a wide screen's sheet shut (or vice versa).
+  // The width is read once at mount.
+  const [sheetWide] = useState(() => {
     try { return window.matchMedia('(min-width: 90em)').matches; } catch { return true; }
-  }, isBool);
+  });
+  const [storedSheetOpen, setStoredSheetOpen] = usePersistentState('csim_ui_sheet_open', true, isBool);
+  const [narrowSheetOpen, setNarrowSheetOpen] = useState(false);
+  const sheetOpen = sheetWide ? storedSheetOpen : narrowSheetOpen;
+  const setSheetOpen = sheetWide ? setStoredSheetOpen : setNarrowSheetOpen;
+  // Below 90em the sheet overlays everything, rail included: opening the rail
+  // from the burger closes the sheet so the rail is not drawn under it.
+  const handleToggleNav = useCallback(() => {
+    if (!navOpened) {
+      let wideNow = true;
+      try { wideNow = window.matchMedia('(min-width: 90em)').matches; } catch { /* keep the sheet */ }
+      if (!wideNow) setSheetOpen(false);
+    }
+    toggleNav();
+  }, [navOpened, toggleNav, setSheetOpen]);
   const [modeSettingsOpen, setModeSettingsOpen] = usePersistentState('csim_ui_mode_settings_open', true, isBool);
   const [activeTab, setActiveTab] = useState(1);
   const [selectedPlayers, setSelectedPlayers] = useState(
@@ -349,7 +366,13 @@ function App() {
   // the single-zone Run would use. Only the hours are its own — see
   // DEFAULT_SWEEP_HOURS for why they are not the header's.
   const allZones = useAllZones();
-  const [allZonesOpen, setAllZonesOpen] = useState(false);
+  const [allZonesOpen, setAllZonesOpenState] = useState(false);
+  // The picker's chunk loads on first open; it then stays mounted.
+  const [allZonesMounted, setAllZonesMounted] = useState(false);
+  const setAllZonesOpen = useCallback((open) => {
+    if (open) setAllZonesMounted(true);
+    setAllZonesOpenState(open);
+  }, []);
   const [allZonesView, setAllZonesView] = useState(false);
   const storedSweep = useMemo(() => loadAllZonesState(), []);
   const [allZonesSelection, setAllZonesSelection] = useState(
@@ -1513,7 +1536,8 @@ function App() {
     extraOptions,
     experimental,
     labConfig,
-    runAllZones
+    runAllZones,
+    setAllZonesOpen
   ]);
 
   const dungeonRunMode = simMode === 'zone' && !!findZone(gameData?.zones, zone)?.isDungeon;
@@ -1679,7 +1703,7 @@ function App() {
       ? cancelEquipOpt
       : isTriggerOpt
         ? cancelTriggerOpt
-        : clearResults;
+        : cancelRun;
 
   const isTrial = simMode === 'guildTrial';
   const isCosts = simMode === 'itemCosts';
@@ -1713,7 +1737,7 @@ function App() {
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between" wrap="nowrap">
           <Group gap="xs" wrap="nowrap">
-            <Burger opened={navOpened} onClick={toggleNav} hiddenFrom="sm" size="sm" aria-label="Toggle party rail" />
+            <Burger opened={navOpened} onClick={handleToggleNav} hiddenFrom="sm" size="sm" aria-label="Toggle party rail" />
             {/* On phones the brand moves to the top of the rail (below), so
                 the mode tabs have the header to themselves. */}
             <Title order={4} style={{ whiteSpace: 'nowrap' }} visibleFrom="sm">
@@ -1763,6 +1787,7 @@ function App() {
               </Badge>
             </Group>
             {isTrial ? (
+              <ChunkBoundary resetKey={simMode}>
               <Suspense fallback={Pending}>
               <GuildTrialPanel
                   characters={characters}
@@ -1786,6 +1811,7 @@ function App() {
                   onImportBuild={handleImportBuild}
                 />
               </Suspense>
+              </ChunkBoundary>
             ) : (
               <>
                 <PartyRail
@@ -2010,6 +2036,7 @@ function App() {
               </UnstyledButton>
               <Collapse expanded={modeSettingsOpen}>
                 <div className="mode-settings">
+                  <ChunkBoundary resetKey={simMode}>
                   <Suspense fallback={Pending}>
                   {isTriggerOpt ? (
                     <TriggerOptimizerPanel
@@ -2039,6 +2066,7 @@ function App() {
                     />
                   )}
                   </Suspense>
+                  </ChunkBoundary>
                 </div>
               </Collapse>
             </Paper>
@@ -2095,6 +2123,7 @@ function App() {
           )}
 
           {simMode === 'guildTrial' && gameData && (
+            <ChunkBoundary resetKey={simMode}>
             <Suspense fallback={Pending}>
               <TrialMonsterCards
                 trial={selectedTrialDetail}
@@ -2102,17 +2131,23 @@ function App() {
                 abilities={gameData.abilities}
               />
             </Suspense>
+            </ChunkBoundary>
           )}
 
           {resultsStale && (
             <Group>
               <Badge variant="light" color="yellow">
-                {activeLoading ? 'Previous run, new run in progress' : 'Previous run, the last run did not finish'}
+                {/* The engine whose results these are, not the sweep: a sweep
+                    running in the background is not a new run of this mode. */}
+                {(isApiOpt ? apiEngine.loading : simLoading)
+                  ? 'Previous run, new run in progress'
+                  : 'Previous run, the last run did not finish'}
               </Badge>
             </Group>
           )}
 
           <div className="results-pane" data-stale={resultsStale || undefined}>
+          <ChunkBoundary resetKey={simMode}>
           <Suspense fallback={Pending}>
           {simMode === 'itemCosts' ? (
             <ItemCostsView
@@ -2175,6 +2210,7 @@ function App() {
             />
           )}
           </Suspense>
+          </ChunkBoundary>
           </div>
 
           {!activeResults && !activeLoading && !showAllZones && simMode !== 'itemCosts' && (
@@ -2193,9 +2229,10 @@ function App() {
         </Stack>
       </AppShell.Main>
 
-      {/* Mounted only while open, so its chunk loads on first use rather than at
-          startup. */}
-      {allZonesOpen && (
+      {/* Mounted on first open, so its chunk loads on first use rather than at
+          startup, and kept mounted after so its close transition can play. */}
+      {allZonesMounted && (
+        <ChunkBoundary>
         <Suspense fallback={null}>
           <AllZonesModal
             opened={allZonesOpen}
@@ -2211,6 +2248,7 @@ function App() {
             running={allZones.running}
           />
         </Suspense>
+        </ChunkBoundary>
       )}
     </AppShell>
   );

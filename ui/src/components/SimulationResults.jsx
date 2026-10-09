@@ -554,11 +554,6 @@ function prettyKey(key) {
     .trim();
 }
 
-function playerLabel(hrid) {
-  const m = /^player(\d+)$/.exec(String(hrid || ''));
-  return m ? `Player ${m[1]}` : String(hrid || 'Player');
-}
-
 function fmtInt(n) {
   return Math.round(Number(n) || 0).toLocaleString();
 }
@@ -751,7 +746,7 @@ function LabStatsPanel({ results, monsters, playerNames }) {
           <Accordion.Item key={`player-${i}`} value={`player-${i}`}>
             <Accordion.Control>
               <Group gap="xs">
-                <Text fw={600}>{playerNames?.[p.hrid] || playerLabel(p.hrid)}</Text>
+                <Text fw={600}>{nameOf(p.hrid, { playerNames })}</Text>
                 {p.combatStyleHrid && (
                   <Badge size="sm" variant="light">{nameOf(p.combatStyleHrid)}</Badge>
                 )}

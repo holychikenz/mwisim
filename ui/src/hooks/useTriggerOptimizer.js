@@ -42,6 +42,12 @@ export function useTriggerOptimizer() {
   const [previewing, setPreviewing] = useState(false);
   const [apiReachable, setApiReachable] = useState(null); // null = not yet checked
 
+  // The one way a finished run's results are shown: new results are never stale.
+  const publish = useCallback((r) => {
+    setResults(r);
+    setStale(false);
+  }, []);
+
   const abortRef = useRef(null);
   const watchdogRef = useRef(null);
   const lastPaintRef = useRef(0);
@@ -202,8 +208,7 @@ export function useTriggerOptimizer() {
 
             case 'result':
               // Tagged so App can route it, exactly as the guild trial does.
-              setResults({ __kind: 'triggerOpt', ...frame.result, meta: payload.meta || {} });
-              setStale(false);
+              publish({ __kind: 'triggerOpt', ...frame.result, meta: payload.meta || {} });
               setProgress(100);
               setStage('done');
               setLabel('');
@@ -259,7 +264,7 @@ export function useTriggerOptimizer() {
         setLoading(false);
       }
     },
-    [armWatchdog, clearWatchdog, stop]
+    [armWatchdog, clearWatchdog, stop, publish]
   );
 
   /** Cancel an in-flight run. The server sees the socket close and tears down its pool. */

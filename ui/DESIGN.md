@@ -16,12 +16,14 @@ Decisions for the React UI redesign (agreed 2026-10-09). Theme tokens live in
 - **Rail** (left, narrow): one card per party member — character, loadout,
   combat level, warnings, in/out of the sim. Trial mode shows the roster as
   the same `.member-card`s: name, CL, loadout · weapon · best skill, the
-  own-shrines line, a role chip only when the roster entry carries one, and
-  ×N with the row actions (+1, save as new, delete). The roster tools (add
+  own-shrines line, and ×N with the row actions (+1, save as new, delete). The roster tools (add
   build, existing loadout, duplicate ×N) sit above the cards and roster
-  import/export below. Global buffs sit in a card at the rail's foot.
+  import/export below. Roster entries carry no sign-up role yet, so no role
+  chip is shown. Global buffs sit in a card at the rail's foot.
 - **Editor sheet**: clicking a card opens it. Tabs: Levels · Gear · Abilities ·
   Buffs · Food. Pinned beside the results at ≥1440 px, overlays below that.
+  Open/closed is remembered on wide screens only; below 1440 px the sheet
+  always starts closed, and opening the rail from the burger closes it.
 - **Run strip**: top of the main pane — zone/tier/hours (or the mode's
   equivalents), All Zones, Run. Mode settings (optimiser slots, fidelity,
   thresholds, trial options) live in a collapsible panel directly under it.
@@ -70,11 +72,13 @@ opens one searchable picker with the enhancement level; owned items first.
   run) falls back for that view only and is **not** written back, so it
   returns when it applies again.
 - Re-running keeps the previous results mounted (no reset of tabs or scroll),
-  dimmed and badged "Previous run" until the new results arrive; a failed run
-  leaves them badged "the last run did not finish". Anything a results view
+  dimmed and badged "Previous run" until the new results arrive; a failed or
+  stopped run leaves them badged "the last run did not finish". Stop never
+  clears results. Anything a results view
   derives and holds itself (e.g. Gear's return-on-investment costs) is tied to
   the run it came from and never shown against another.
-- Key registry: `csim_ui_result_tab`, `csim_ui_sheet_tab`, `csim_ui_sheet_open`,
+- Key registry: `csim_ui_result_tab`, `csim_ui_sheet_tab`, `csim_ui_sheet_open`
+  (wide screens only),
   `csim_ui_mode_settings_open`, `csim_ui_global_buffs_open`,
   `csim_ui_drops_credit_mode`, `csim_ui_trial_monsters_collapsed`,
   `csim_ui_trigopt_stages_open`, `csim_ui_equipopt_fidelity_open`,
@@ -84,10 +88,14 @@ opens one searchable picker with the enhancement level; owned items first.
 - **Mode views load lazily.** The trial panel, trial results and monster
   cards, both optimisers' panels and results, All Zones (picker and table)
   and Costs are `React.lazy` chunks, fetched the first time their mode is
-  opened. The All Zones picker mounts only while open. Zone/Lab results,
-  Drops, the rail and the editor sheet stay in the entry chunk.
+  opened. The All Zones picker mounts on first open and stays mounted (so
+  its close transition plays). Zone/Lab results, Drops, the rail and the
+  editor sheet stay in the entry chunk.
 - One `Suspense` wraps the results pane (plus one each for the trial rail,
-  the mode-settings panel and the trial monster cards). Lazy element types
+  the mode-settings panel and the trial monster cards). Each sits inside a
+  `ChunkBoundary` (`src/components/ChunkBoundary.jsx`): a chunk that fails to
+  load (usually a rebuild) shows "This view failed to load" with a Reload
+  button instead of blanking the app; switching mode retries. Lazy element types
   are module-level constants, so a re-run never remounts a view: once its
   chunk is loaded, a re-run shows the dimmed previous results, not a loader.
 - **Vendor and game data are separate chunks** (`react`, `mantine`,

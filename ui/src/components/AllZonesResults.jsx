@@ -229,10 +229,12 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
     return out;
   }, [metrics, columns]);
 
+  // Compare against the sort the table is SHOWN in, not the stored one: if the
+  // stored column is gone, clicking the default column's header must flip it.
   const toggleSort = (key) => {
-    setSort(prev =>
-      prev.key === key
-        ? { key, dir: prev.dir === 'desc' ? 'asc' : 'desc' }
+    setSort(
+      activeSort.key === key
+        ? { key, dir: activeSort.dir === 'desc' ? 'asc' : 'desc' }
         : { key, dir: key === 'zoneName' ? 'asc' : 'desc' }
     );
   };

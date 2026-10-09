@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { Alert, Badge, Button, Group, Select, SimpleGrid, Stack, Switch, Table, Text } from '@mantine/core';
 import { DropsTable } from './DropsTable';
+import { nameOf } from '../utils/names';
 import { NumTd, Section, StatGroup } from './ResultParts';
 import { usePersistentState, isBool } from '../hooks/usePersistentState';
 import { calculateExpectedDrops, calculateDropsPerHour } from '../utils/drops';
@@ -65,11 +66,6 @@ function ExpensesTable({ rows, unit, playerName }) {
   );
 }
 
-function playerLabel(hrid) {
-  const m = /^player(\d+)$/.exec(String(hrid || ''));
-  return m ? `P${m[1]}` : String(hrid || 'P?');
-}
-
 export function DropsEconomy({ results, monsters, items, pricing, focusHrid, playerNames }) {
   const {
     source, setSource, prices, unit, fetching, error, fetchedLabel, fetchPrices,
@@ -96,8 +92,7 @@ export function DropsEconomy({ results, monsters, items, pricing, focusHrid, pla
     !!focusHrid && partyHrids.length > 0 && !partyHrids.includes(focusHrid);
   const activeHrid = focusMissing ? partyHrids[0] : focusHrid || partyHrids[0] || 'player1';
   // The party member's name where the run's slot has one, else "P1".
-  const nameOfPlayer = (hrid) => playerNames?.[hrid] || playerLabel(hrid);
-  const activeLabel = nameOfPlayer(activeHrid);
+  const activeLabel = nameOf(activeHrid, { playerNames });
 
   // Income: expected drops priced by the active source.
   const drops = useMemo(() => {
@@ -222,9 +217,9 @@ export function DropsEconomy({ results, monsters, items, pricing, focusHrid, pla
       {focusMissing && (
         <Alert color="yellow" variant="light" p="xs">
           <Text size="xs">
-            {nameOfPlayer(focusHrid)} was not in the simulated party (
-            {partyHrids.map(nameOfPlayer).join(', ')}), so these figures read{' '}
-            {activeLabel}. Tick {nameOfPlayer(focusHrid)} into the party and run
+            {nameOf(focusHrid, { playerNames })} was not in the simulated party (
+            {partyHrids.map(h => nameOf(h, { playerNames })).join(', ')}), so these figures read{' '}
+            {activeLabel}. Tick {nameOf(focusHrid, { playerNames })} into the party and run
             again to see that build's loot.
           </Text>
         </Alert>

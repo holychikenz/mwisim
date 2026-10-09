@@ -39,6 +39,12 @@ export function useEquipmentOptimizer() {
   const [previewing, setPreviewing] = useState(false);
   const [apiReachable, setApiReachable] = useState(null); // null = not yet checked
 
+  // The one way a finished run's results are shown: new results are never stale.
+  const publish = useCallback((r) => {
+    setResults(r);
+    setStale(false);
+  }, []);
+
   const abortRef = useRef(null);
   const watchdogRef = useRef(null);
   const lastPaintRef = useRef(0);
@@ -181,8 +187,7 @@ export function useEquipmentOptimizer() {
 
             case 'result':
               // Tagged so App can route it, exactly as the trigger optimiser does.
-              setResults({ __kind: 'equipOpt', ...frame.result, meta: payload.meta || {} });
-              setStale(false);
+              publish({ __kind: 'equipOpt', ...frame.result, meta: payload.meta || {} });
               setProgress(100);
               setStage('done');
               setLabel('');
@@ -231,7 +236,7 @@ export function useEquipmentOptimizer() {
         setLoading(false);
       }
     },
-    [armWatchdog, clearWatchdog, stop]
+    [armWatchdog, clearWatchdog, stop, publish]
   );
 
   /** Cancel an in-flight run. The server sees the socket close and tears down its pool. */

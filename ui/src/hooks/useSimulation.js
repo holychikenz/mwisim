@@ -70,6 +70,12 @@ export function useSimulation() {
   const workerRef = useRef(null);
   const watchdogRef = useRef(null);
 
+  // The one way a finished run's results are shown: new results are never stale.
+  const publish = useCallback((r) => {
+    setResults(r);
+    setStale(false);
+  }, []);
+
   const clearWatchdog = useCallback(() => {
     if (watchdogRef.current) {
       clearTimeout(watchdogRef.current);
@@ -135,8 +141,7 @@ export function useSimulation() {
     }).then(addRunIdleTime).then((simResult) => {
       if (!current()) return;
       setProgress(100);
-      setResults(simResult);
-      setStale(false);
+      publish(simResult);
       setLoading(false);
       stopWorker();
     }, (e) => {
@@ -146,7 +151,7 @@ export function useSimulation() {
       stopWorker();
     });
     armWatchdog();
-  }, [stopWorker, armWatchdog, failAndReset]);
+  }, [stopWorker, armWatchdog, failAndReset, publish]);
 
   const runSimulation = useCallback((params) => {
     // One worker per run: cheap to spawn, and guarantees no stale engine
@@ -196,8 +201,7 @@ export function useSimulation() {
           break;
         case 'simulation_result':
           setProgress(100);
-          setResults(event.data.simResult);
-          setStale(false);
+          publish(event.data.simResult);
           setLoading(false);
           stopWorker();
           break;
@@ -226,7 +230,7 @@ export function useSimulation() {
     });
     // Guard the gap between dispatch and the first progress tick, too.
     armWatchdog();
-  }, [stopWorker, armWatchdog, failAndReset, runDungeonRunsHere]);
+  }, [stopWorker, armWatchdog, failAndReset, runDungeonRunsHere, publish]);
 
   const runGuildTrial = useCallback((params) => {
     stopWorker();
@@ -255,13 +259,12 @@ export function useSimulation() {
           setProgress(100);
           // Tagged so App can route it to <GuildTrialResults> rather than the
           // zone/lab <SimulationResults>.
-          setResults({
+          publish({
             __kind: 'guildTrial',
             aggregate: event.data.aggregate,
             summaries: event.data.summaries,
             meta: params.meta || {}
           });
-          setStale(false);
           setLoading(false);
           stopWorker();
           break;
@@ -292,11 +295,19 @@ export function useSimulation() {
     });
     // Guard the gap before the first shard reports in, too.
     armWatchdog();
-  }, [stopWorker, armWatchdog, failAndReset]);
+  }, [stopWorker, armWatchdog, failAndReset, publish]);
+
+  // Stop: kill any in-flight worker/watchdog but keep the last results on
+  // screen. `stale` is left as it is, so results from before the abandoned run
+  // stay badged ("the last run did not finish"). Bound to the run strip's Stop.
+  const cancelRun = useCallback(() => {
+    stopWorker();
+    setLoading(false);
+    setProgress(0);
+  }, [stopWorker]);
 
   // Hard reset: kill any in-flight worker/watchdog and wipe results back to a
-  // clean slate. Bound to the header's Stop button; also the recovery path a
-  // user can invoke if a run ever misbehaves.
+  // clean slate; the recovery path if a run ever misbehaves.
   const clearResults = useCallback(() => {
     stopWorker();
     setResults(null);
@@ -306,5 +317,5 @@ export function useSimulation() {
     setLoading(false);
   }, [stopWorker]);
 
-  return { loading, progress, results, stale, error, runSimulation, runGuildTrial, clearResults, reset: clearResults };
+  return { loading, progress, results, stale, error, runSimulation, runGuildTrial, cancelRun, clearResults, reset: clearResults };
 }
