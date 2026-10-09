@@ -2,6 +2,14 @@
 body {
   margin: 0;
   min-width: 320px;
+  /* Figures dominate the sim: digits line up in every column and table. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* The header and navbar sit on a raised stone surface, a step above the body. */
+.mantine-AppShell-header,
+.mantine-AppShell-navbar {
+  background-color: var(--app-surface);
 }
 
 /* Drag-to-resize handle for the AppShell navbar (left column). Pinned to the
@@ -21,8 +29,8 @@ body {
 }
 .nav-resize-handle:hover,
 .nav-resize-handle:active {
-  background-color: var(--mantine-color-indigo-light);
-  border-right-color: var(--mantine-color-indigo-5);
+  background-color: var(--mantine-color-moss-light);
+  border-right-color: var(--mantine-color-moss-5);
 }
 
 /* Below the navbar breakpoint the column collapses, so resizing is moot. */
