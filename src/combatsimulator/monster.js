@@ -144,6 +144,11 @@ class Monster extends CombatUnit {
     // updateCombatDetails) instead of a one-shot mutation the next recompute
     // would wipe.
     trialHpScaleFactor = 1;
+    // Added to the fresh source stats before deriving intervals/cast speed.
+    // Zero for ordinary zone/lab monsters; never written into shared data.
+    trialAttackSpeedBonus = 0;
+    trialCastSpeedBonus = 0;
+    trialAbilityHasteBonus = 0;
 
     constructor(hrid, difficultyTier = 0, roomLevel = 0) {
         super();
@@ -221,6 +226,12 @@ class Monster extends CombatUnit {
         if (this.combatDetails.combatStats.attackInterval == 0) {
             this.combatDetails.combatStats.attackInterval = gameMonster.combatDetails.attackInterval;
         }
+
+        // Source stats are reset above on EVERY recompute. Add the trial
+        // bonuses here so buffs preserve them without compounding them.
+        this.combatDetails.combatStats.attackSpeed += this.trialAttackSpeedBonus;
+        this.combatDetails.combatStats.castSpeed += this.trialCastSpeedBonus;
+        this.combatDetails.combatStats.abilityHaste += this.trialAbilityHasteBonus;
 
         super.updateCombatDetails();
 

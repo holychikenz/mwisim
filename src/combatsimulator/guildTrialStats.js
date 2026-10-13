@@ -154,17 +154,24 @@ export function extractTrialSummary(simResult) {
  * TOKENS_PARTICIPATION_MULTIPLIER (×1.5) as a participation bonus.
  *   tokensPerEligibleMember = TOKENS_BASE_POINTS_SHARE × basePoints × (1 + treasuryBonus)
  *   tokensPerParticipant    = tokensPerEligibleMember × TOKENS_PARTICIPATION_MULTIPLIER
- * Zero tiers cleared ⇒ no reward.
+ * An unfinished tier pays up to 50% of its reward, proportional to HP removed
+ * (2026-08-14 rebalance), including an attempt on the first tier.
  *
  * The trial is a single weekly attempt with no re-clear of any tier (the run
  * completes when the cap tier 300 is cleared), so tiersCleared is always the
  * number of distinct tiers beaten.
  */
-export function computeTrialRewards(tiersCleared, { buildersHallBonus = 0, treasuryBonus = 0 } = {}) {
-    if (!tiersCleared || tiersCleared <= 0) {
+export function computeTrialRewards(tiersCleared, {
+    buildersHallBonus = 0, treasuryBonus = 0, finalTierHpRemovedFrac = 0,
+} = {}) {
+    const cleared = Math.max(0, Number(tiersCleared) || 0);
+    const progress = Number.isFinite(finalTierHpRemovedFrac)
+        ? Math.max(0, Math.min(1, finalTierHpRemovedFrac)) : 0;
+    const basePoints = (cleared > 0 ? 400 + 200 * (cleared - 1) : 0)
+        + 0.5 * progress * (cleared > 0 ? 200 : 400);
+    if (basePoints === 0) {
         return { points: 0, tokensPerEligibleMember: 0, tokensPerParticipant: 0 };
     }
-    const basePoints = 400 + 200 * (tiersCleared - 1);
     const tokensPerEligibleMember = TOKENS_BASE_POINTS_SHARE * basePoints * (1 + treasuryBonus);
     return {
         points: basePoints * (1 + buildersHallBonus),
@@ -316,7 +323,12 @@ export function aggregateTrialResults(summaries, opts = {}) {
         // max tier reached is exact — and robust even if a summary's
         // tiersCleared field were missing.
         const distinctTiersCleared = maxT >= startTier ? (maxT - startTier) / step + 1 : 0;
-        const rw = computeTrialRewards(distinctTiersCleared, opts);
+        const rw = computeTrialRewards(distinctTiersCleared, {
+            ...opts,
+            // Completed cap-tier progress belongs to the tier already paid.
+            finalTierHpRemovedFrac: s.endReason === "completed"
+                ? 0 : (s.finalTierHpRemovedFrac ?? 0),
+        });
         sumPoints += rw.points;
         sumTokensEligible += rw.tokensPerEligibleMember;
         sumTokens += rw.tokensPerParticipant;

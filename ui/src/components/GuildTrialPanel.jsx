@@ -192,7 +192,7 @@ export function GuildTrialPanel({
     <Stack gap="sm">
       <Group justify="space-between" wrap="nowrap">
         <Text size="xs" fw={600} tt="uppercase" c="dimmed" style={{ letterSpacing: '0.08em' }}>Roster</Text>
-        <Text size="xs" c="dimmed" title="Participants drive the +1% monster-HP scaling">
+        <Text size="xs" c="dimmed" title="Each participant adds +1% monster HP, +2% attack/cast speed and +2 ability haste">
           {participantCount} participant{participantCount === 1 ? '' : 's'}
         </Text>
       </Group>

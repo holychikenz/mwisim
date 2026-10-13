@@ -762,7 +762,7 @@ function App() {
     () => resolveRef(characters, selectedEntry),
     [characters, selectedEntry]
   );
-  // Participants = SUM of row counts (each participant adds +1% monster HP),
+  // Participants = SUM of row counts (drives monster HP, speed and haste),
   // unless explicitly overridden in trial options.
   const participantCount = trialConfig.participantCount ?? rosterSize(roster);
   // The selected trial's monster reference (rendered as cards in the viewport).

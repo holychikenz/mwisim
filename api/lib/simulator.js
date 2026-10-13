@@ -187,7 +187,7 @@ async function simulateOnMainThread({ players: playersData, zone: zoneConfig, si
  *   players[]        - player DTOs
  *   trialHrid        - e.g. "/guild_combat/badger"
  *   startTier        - default 100
- *   participantCount - default players.length; drives +1% HP scaling
+ *   participantCount - default players.length; drives monster HP/speed/haste scaling
  *   iterations       - default 100
  *   trialOptions     - { bonusHpRegenRatio?, bonusMpRegenRatio?, enemyScale? }
  *                      enemyScale (default 1, clamped 0.05..5): debug knob that
@@ -218,16 +218,9 @@ export async function runGuildTrialSimulation({
     for (let i = 0; i < playersData.length; i++) {
       const p = Player.createFromDTO(structuredClone(playersData[i]));
       p.zoneBuffs = []; // no labyrinth crates in trials
-      // DELIBERATELY an overwrite, not a concat — the one path in this file
-      // that is not being brought into line with src/worker.js:265. SCLIRoster's
-      // trialRequest.js folds each member's shrines into `guildBuffs` around
-      // this overwrite and pins the behaviour by test
-      // (optimizer/test/trial-request.test.js:356-369); concatenating a DTO's
-      // own `extraBuffs` here as well would double-apply every shrine for that
-      // caller. Unlocking it is a two-repo change and nothing in csim depends
-      // on it: the browser trial path (src/worker.js) already concatenates, and
-      // the headless zone/optimiser paths above now do too.
-      p.extraBuffs = trialExtraBuffs;
+      // Same contract as the browser worker: party-wide buffs plus this
+      // member's own shrine/seal buffs. Callers keep personal buffs on DTOs.
+      p.extraBuffs = trialExtraBuffs.concat(playersData[i].extraBuffs || []);
       players.push(p);
     }
     const pc = participantCount ?? players.length;

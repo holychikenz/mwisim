@@ -11,7 +11,7 @@ Data reference: `milkyway_client_info.json` → `guildTrialDetailMap`, `combatMo
 | Tier ladder | Start at level 100; clear a tier → next tier is +10 levels; cap 300. Climb as high as possible within **1 hour** or until failure. **One attempt per week; no re-clears of any tier.** Clearing the cap tier (300) completes the run. Rewards derive from tiers cleared. | patch notes + Morgan |
 | Terminology | In-game **"Tier N"** is an index: Tier 0 = monster level 100, Tier 1 = Lv 110, … Tier 20 = Lv 300 (cap). **The engine's `tier`/`startTier`/`finalTier` fields hold the LEVEL** (100…300); tierIndex = (level − 100) / 10. UI displays the dual form ("T3 · Lv 130"); worker/API payloads and result fields remain level-valued. | Morgan |
 | Tier scaling | Monster levels scale exactly like labyrinth room levels (`roomLevel / 100` scale factor, already in `Monster`) | Morgan |
-| Participant scaling | **+1% monster HP per participant** (HP only; no damage scaling) | Morgan |
+| Participant scaling | **+1% monster HP, +2% attack speed, +2% cast speed, +2 ability haste per participant**; no increase to damage per hit | Official client v1.20260927.0, August 14 rebalance |
 | Per-encounter timer | **None** (no lab-style 120 s cutoff) | Morgan |
 | Failure | Trial **ends on wipe** (no retry of a tier) | Morgan |
 | Enrage | **No enrage mechanic in trials** (despite `enrageTime: 600s` in monster data — do not schedule `EnrageTickEvent`) | Morgan |
@@ -23,13 +23,13 @@ Data reference: `milkyway_client_info.json` → `guildTrialDetailMap`, `combatMo
 | Buffs that do NOT apply | Scrolls; labyrinth crates/upgrades; anything lab-specific | Morgan |
 | Friendly AoE | No target cap | Morgan |
 | Parry | **Each incoming attack can receive at most 5 parry attempts** (rolls, across all targets of one attack) | official in-game docs |
-| Rewards | Combat base points = **400 first tier + 200 per additional tier** cleared. Guild Points = BasePoints × (1 + BuildersHallBonus). Guild Tokens per participant = (200 first + 100 per additional tier) × (1 + TreasuryBonus). Weekly bonus tokens = 0.5 × TotalBasePoints × (1 + TreasuryBonus) to every eligible member. | official in-game docs |
+| Rewards | Combat base points = **400 first tier + 200 per additional tier** cleared. An unfinished tier pays **50% × progress × that tier's base reward**. Guild Points = BasePoints × (1 + BuildersHallBonus). Eligible-member tokens = 0.5 × TotalBasePoints × (1 + TreasuryBonus); participating members receive an additional 50% of that payout. | official in-game docs and August 14 rebalance |
 
 ## Open questions
 
 - [x] ~~Exact built-in bonus HP/MP regen amount~~ — **resolved: flat +3% HP and MP regen** (official docs)
 - [x] ~~Parry-vs-AoE cap~~ — **resolved: at most 5 parry attempts per incoming attack** (official docs)
-- [x] ~~+1% HP per participant~~ — **confirmed: each signed-up participant increases monster HP by 1%** (official docs)
+- [x] Participant scaling — **+1% HP, +2% attack/cast speed, +2 ability haste per signed-up participant** (official docs).
 - [ ] Participant bounds — min to start, max cap? (assume unbounded; UI targets 40)
 - [~] Between tiers: do players reset to full HP/MP? Do cooldowns/buff stacks reset? Do dead players return for the next tier, or stay dead for the whole trial? **Engine (Phase 1) implements dungeon-wave-like continuation: players KEEP current HP/MP, buffs and cooldowns across tiers (no reset), and dead players stay dead for the whole run — revive is the only way back.** Only the enemy encounter respawns (standard 3 s delay). Confirm against in-game behaviour when available.
 - [ ] Precisely what "scrolls" maps to in sim terms (which buff source to exclude; sim likely does not model them)
@@ -83,7 +83,7 @@ Data reference: `milkyway_client_info.json` → `guildTrialDetailMap`, `combatMo
   - [x] row: derived entry name, linked-build badge, cheap weapon + dominant-combat-level summary (no engine call). (A dedicated combat-style glyph was folded into the weapon/level summary.)
   - [x] per-row **Duplicate** (adds a linked clone), **Save-as-new**, and **Delete** buttons
   - [x] "Duplicate selected × N" for stamping out ~20 clones at once
-  - [x] participant count displayed (badge; drives the +1% HP scaling, labelled in Trial options)
+  - [x] participant count displayed (badge; drives HP, speed and haste scaling, labelled in Trial options)
 - [x] Kept the existing 5-slot tab workflow intact for zone/labyrinth sims; trial mode is its own navbar view; builds can be seeded from P1–P5
 - [x] Trial mode controls (`HeaderControls.jsx`): trial picker (5 combat encounters), starting tier (100–300 step 10), iterations, participant-count override, Builders' Hall / Treasury % bonuses
 - [x] Guild shrine-buff levels input: one guild-wide per-combat-buff level (0 = off) applied to all, resolved to finished buff objects (`ui/src/utils/guildBuffs.js`)
@@ -93,7 +93,27 @@ Data reference: `milkyway_client_info.json` → `guildTrialDetailMap`, `combatMo
 
 ### Phase 4 — Tests & parity
 
-- [ ] Unit tests: HP scaling (+1% per participant), tier ladder progression, 1-hour cutoff, wipe ends trial
+- [x] Unit tests: participant HP/speed/haste scaling, buff recomputation, tier progression, 1-hour cutoff, wipe, personal buffs, and partial-tier rewards
+
+## October 13, 2026 correction
+
+The September 4 catalogue refresh matched the August 14 rebalance's slower
+base monsters, but the trial model omitted its replacement participant speed
+and haste bonuses. The official client's Combat Trials guide and monster
+tooltip document these bonuses; its constants are 0.01 HP, 0.02 speed, and 2
+haste per participant. At 49 participants the bonuses are +49% HP, +98% attack
+and cast speed, and +98 haste. They are added to fresh monster source stats
+before derived intervals, and survive buffs and tier changes without stacking.
+
+Source: [official client v1.20260927.0](https://www.milkywayidle.com/static/js/main.8add56c3.chunk.js),
+checked October 13. The bundled numeric trial monster and ability data matches
+the September 28 client-data capture; missing `isBoss` metadata is not used by
+the simulation. The headless API now preserves each DTO's personal buffs just
+as the browser worker does. Request-level buffs must contain shared buffs only.
+
+This fixes confirmed rules and API behavior. Actual loadouts, trigger choices,
+death timelines, and server counter semantics remain necessary to establish
+accuracy against a particular guild's real outcome.
 - [ ] Unit tests: no consumables consumed, no enrage buffs applied, dead-stay-dead + revive path
 - [ ] Fixture: known 40-clone roster vs expected tier-100 encounter stats
 - [ ] Cross-check vs in-game results once the guild runs its first trials (record actual tier clears as fixtures)

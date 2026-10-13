@@ -183,7 +183,8 @@ export function TrialMonsterCards({ trial, monsters, abilities }) {
       </Accordion>
       <Text size="xs" c="dimmed">
         Base stats at Tier 0 · Lv 100 — higher tiers scale stats and ability
-        levels proportionally; +1% HP per participant.
+        levels proportionally. Each participant adds +1% HP, +2% attack and
+        cast speed, and +2 ability haste.
       </Text>
     </Stack>
   );

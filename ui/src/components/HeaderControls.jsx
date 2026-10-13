@@ -273,8 +273,8 @@ export function HeaderControls({
               <Stack gap="xs">
                 <Text size="sm" fw={600}>Participants</Text>
                 <NumberInput
-                  label="Participant count (+1% monster HP each)"
-                  description={`Auto = roster size (${rosterLength})`}
+                  label="Participant count"
+                  description={`Auto = roster size (${rosterLength}). Each adds +1% monster HP, +2% attack/cast speed and +2 ability haste`}
                   value={effectiveParticipants}
                   onChange={(v) => setCfg({ participantCount: Math.max(1, Number(v) || 1) })}
                   min={1}

@@ -69,7 +69,7 @@ export function clampCount(n) {
   return Math.max(1, Math.min(MAX_ROW_COUNT, Math.round(Number(n) || 1)));
 }
 
-/** Total participants = sum of row counts (drives the +1% HP scaling). */
+/** Total participants = sum of row counts (drives monster HP/speed/haste scaling). */
 export function rosterSize(roster) {
   return (roster || []).reduce((sum, e) => sum + clampCount(e.count ?? 1), 0);
 }

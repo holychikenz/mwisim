@@ -211,17 +211,7 @@ onmessage = async function (event) {
                         // without `extraBuffs` yields the old behaviour exactly;
                         // `Player.createFromDTO` ignores the field, so it reaches
                         // this line only via the DTO object itself.
-                        // NOTE: runGuildTrialSimulation in api/lib/simulator.js
-                        // deliberately still OVERWRITES extraBuffs on the
-                        // headless TRIAL path. SCLIRoster's trialRequest.js
-                        // folds shrines in around that overwrite and pins the
-                        // line by test (optimizer/test/trial-request.test.js:
-                        // 356-369), so changing it would double-apply shrines
-                        // for that caller. Unlocking it is a separate two-repo
-                        // change. The headless ZONE path (runSimulation) and the
-                        // two optimisers DO now concat the per-player tail, as
-                        // this line and start_simulation above do — nothing in
-                        // SCLIRoster goes through those.
+                        // The headless trial API uses this same contract.
                         p.extraBuffs = trialExtraBuffs.concat(playersData[i].extraBuffs || []);
                         players.push(p);
                     }

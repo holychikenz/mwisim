@@ -15,7 +15,8 @@ import { guildTrialDetailMap } from "./dataProvider";
 //
 // Confirmed rules (Guild Expansion patch, see GUILD-TRIALS.md):
 //   - Start tier 100, +10 per clear, cap 300; clearing 300 ends the run.
-//   - Monster max HP × (1 + 0.01 × participantCount) — HP only, no dmg scaling.
+//   - Per participant: +1% monster HP, +2% attack/cast speed, +2 ability haste.
+//     The speed/haste scaling replaces fixed bonuses since 2026-08-14.
 //   - No per-encounter timer, no enrage, no consumables.
 //   - Food/drinks are replaced by a flat +3% HP and MP regen (see below).
 //   - Dead players stay dead (revive is the only way back); players keep HP/MP,
@@ -31,6 +32,11 @@ class GuildTrial {
     // Hard stop: 1 hour of simulated trial time.
     static TRIAL_DURATION_NS = 3600 * 1e9;
 
+    // Official client GuildTrial constants (v1.20260927.0).
+    static HP_RATIO_PER_PARTICIPANT = 0.01;
+    static SPEED_PER_PARTICIPANT = 0.02;
+    static ABILITY_HASTE_PER_PARTICIPANT = 2;
+
     // Official Guild-Expansion rule: in a trial, food & drinks are disabled and
     // replaced by a built-in FLAT +3% HP and +3% MP regeneration, added on top
     // of the unit's own regen on each 10 s regen tick. Named + overridable via
@@ -45,7 +51,7 @@ class GuildTrial {
     /**
      * @param {string} trialHrid   e.g. "/guild_combat/badger"
      * @param {number} startTier   starting room level (default 100)
-     * @param {number} participantCount  drives the +1% HP scaling; the engine
+     * @param {number} participantCount  drives HP, speed and haste scaling; the engine
      *   defaults it to players.length but any caller may override it.
      * @param {object} options     { bonusHpRegenRatio?, bonusMpRegenRatio?,
      *   enemyScale? }. enemyScale (default 1.0, clamped 0.05..5) is a DEBUG
@@ -53,7 +59,7 @@ class GuildTrial {
      *   level on the roomLevel axis: effectiveRoomLevel = max(1, round(tier ×
      *   enemyScale)) — so 0.8 makes a tier-100 encounter fight like level 80
      *   in every respect (HP, damage, accuracy, armor, ability levels).
-     *   Participant HP scaling applies on top, unchanged. The ladder, rewards
+     *   Participant scaling applies on top, unchanged. The ladder, rewards
      *   and all reporting still use the TRUE tier.
      */
     constructor(trialHrid, startTier = GuildTrial.START_TIER, participantCount = 1, options = {}) {
@@ -71,8 +77,9 @@ class GuildTrial {
 
         this.startTier = startTier;
         this.participantCount = participantCount;
-        // +1% monster HP per participant (HP only). Confirmed official.
-        this.hpScaleFactor = 1 + 0.01 * participantCount;
+        this.hpScaleFactor = 1 + GuildTrial.HP_RATIO_PER_PARTICIPANT * participantCount;
+        this.speedBonus = GuildTrial.SPEED_PER_PARTICIPANT * participantCount;
+        this.abilityHasteBonus = GuildTrial.ABILITY_HASTE_PER_PARTICIPANT * participantCount;
 
         this.bonusHpRegenRatio =
             options.bonusHpRegenRatio ?? GuildTrial.DEFAULT_BONUS_HP_REGEN_RATIO;
@@ -97,8 +104,7 @@ class GuildTrial {
      * Build the current tier's encounter. Each monster spawns with
      * difficultyTier 0 and roomLevel = the tier's EFFECTIVE level (true tier ×
      * enemyScale; identical to the true tier at the default enemyScale of 1),
-     * and is tagged with the participant HP scale factor so
-     * Monster.updateCombatDetails grows its max HP on top.
+     * and carries participant bonuses through every stat recomputation.
      * @returns {Monster[]}
      */
     getEncounter() {
@@ -107,6 +113,9 @@ class GuildTrial {
         return this.monsterHrids.map((hrid) => {
             const monster = new Monster(hrid, 0, effectiveRoomLevel);
             monster.trialHpScaleFactor = this.hpScaleFactor;
+            monster.trialAttackSpeedBonus = this.speedBonus;
+            monster.trialCastSpeedBonus = this.speedBonus;
+            monster.trialAbilityHasteBonus = this.abilityHasteBonus;
             return monster;
         });
     }

@@ -4,7 +4,7 @@
 //   (node --import ./register-loader.js --test tests/)
 //
 // Covers (see GUILD-TRIALS.md Phase 4):
-//   - Monster HP scaling: +1% per participant at tier 100, ×T/100 per tier
+//   - Per participant: +1% HP, +2% attack/cast speed, +2 ability haste
 //   - Ladder progression: +10 per clear, cap 300
 //   - Encounter composition from guildTrialDetailMap
 //   - 1-hour simulated cutoff ends the run (timeout)
@@ -40,6 +40,7 @@ const GuildTrial = (await import('../../src/combatsimulator/guildTrial.js')).def
 const CombatSimulator = (await import('../../src/combatsimulator/combatSimulator.js')).default;
 const Player = (await import('../../src/combatsimulator/player.js')).default;
 const Monster = (await import('../../src/combatsimulator/monster.js')).default;
+const Buff = (await import('../../src/combatsimulator/buff.js')).default;
 const { extractTrialSummary, computeTrialRewards, aggregateTrialResults } =
   await import('../../src/combatsimulator/guildTrialStats.js');
 const { runGuildTrialSimulation } = await import('../lib/simulator.js');
@@ -116,6 +117,63 @@ test('participant HP scaling survives a stat recompute (buff re-applies it)', ()
   const first = m.combatDetails.maxHitpoints;
   m.updateCombatDetails(); // recompute — must not drop or double the scaling
   assert.equal(m.combatDetails.maxHitpoints, first);
+});
+
+test('every trial monster scales speed and haste by participants at every tier', () => {
+  const trials = ['/guild_combat/badger', '/guild_combat/chameleon',
+    '/guild_combat/jellyfish', '/guild_combat/hedgehog', '/guild_combat/swarm'];
+  for (const trial of trials) for (const tier of [100, 220]) for (const count of [1, 40, 49]) {
+    const base = new GuildTrial(trial, tier, 0).getEncounter();
+    const scaled = new GuildTrial(trial, tier, count).getEncounter();
+    for (let i = 0; i < base.length; i++) {
+      base[i].reset(); scaled[i].reset();
+      const b = base[i].combatDetails, s = scaled[i].combatDetails;
+      assert.ok(Math.abs(s.combatStats.attackInterval
+        - b.combatStats.attackInterval / (1 + 0.02 * count)) < 1e-5);
+      assert.ok(Math.abs(s.combatStats.castSpeed - b.combatStats.castSpeed - 0.02 * count) < 1e-12);
+      assert.equal(s.combatStats.abilityHaste - b.combatStats.abilityHaste, 2 * count);
+      assert.equal(s.slashMaxDamage, b.slashMaxDamage, 'damage per hit is unchanged');
+      assert.equal(s.totalArmor, b.totalArmor, 'defenses are unchanged');
+    }
+  }
+});
+
+test('participant haste shortens actual ability cooldown eligibility', () => {
+  const monster = new GuildTrial('/guild_combat/badger', 100, 50).getEncounter()[0];
+  monster.reset();
+  const cleave = monster.abilities.find(a => a.hrid === '/abilities/cleave');
+  cleave.triggers = [];
+  cleave.lastUsed = 0;
+  const readyAt = cleave.cooldownDuration / 2; // +100 haste
+  assert.equal(cleave.shouldTrigger(readyAt - 1, monster, null, [], []), false);
+  assert.equal(cleave.shouldTrigger(readyAt, monster, null, [], []), true);
+});
+
+test('trial bonuses survive temporary buffs, expiry and later encounters without compounding', () => {
+  const trial = new GuildTrial('/guild_combat/badger', 100, 49);
+  const monster = trial.getEncounter()[0];
+  const ordinary = new Monster('/monsters/trial_badger', 0, 100);
+  monster.reset(); ordinary.reset();
+  const makeBuff = () => new Buff({ uniqueHrid: '/test/cast_speed',
+    typeHrid: '/buff_types/cast_speed', flatBoost: 0.2, flatBoostLevelBonus: 0,
+    ratioBoost: 0, ratioBoostLevelBonus: 0, duration: 1e9 });
+  const before = monster.combatDetails.combatStats.castSpeed;
+  monster.addBuff(makeBuff(), 0, monster);
+  ordinary.addBuff(makeBuff(), 0, ordinary);
+  for (let i = 0; i < 3; i++) {
+    monster.updateCombatDetails();
+    assert.ok(Math.abs(monster.combatDetails.combatStats.castSpeed - before - 0.2) < 1e-12);
+    assert.equal(monster.combatDetails.combatStats.abilityHaste, 98);
+  }
+  monster.removeExpiredBuffs(2e9);
+  assert.ok(Math.abs(monster.combatDetails.combatStats.castSpeed - before) < 1e-12);
+  ordinary.removeExpiredBuffs(2e9);
+  assert.equal(ordinary.combatDetails.combatStats.abilityHaste, 0, 'non-trial monster is untouched');
+  trial.advanceTier();
+  const next = trial.getEncounter()[0];
+  next.reset();
+  assert.equal(next.combatDetails.combatStats.abilityHaste, 98);
+  assert.equal(next.trialHpScaleFactor, 1.49);
 });
 
 test('tier maps directly to room level and scales stats by T/100', () => {
@@ -266,9 +324,9 @@ test('1-hour simulated cutoff ends the run (stalemate ⇒ timeout)', async () =>
 // --------------------------------------------------------------------------
 test('wipe ends the trial, records outcome, and schedules no forbidden events', async () => {
   const players = makePlayers(2);
-  // Huge participant count ⇒ monster HP is unkillable, so the party cannot
-  // advance; the monster grinds them down. High tier ⇒ big incoming damage.
-  const gt = new GuildTrial('/guild_combat/chameleon', 300, 100000);
+  // A high-tier, 50-participant monster overwhelms this deliberately weak
+  // two-player test party, including its participant speed/haste bonuses.
+  const gt = new GuildTrial('/guild_combat/chameleon', 300, 50);
   const sim = new CombatSimulator(players, null, null, { guildTrial: gt });
 
   const seenTypes = new Set();
@@ -301,15 +359,15 @@ test('wipe ends the trial, records outcome, and schedules no forbidden events', 
   assert.ok(deathTiers.every((t) => t === 300)); // wiped on the (only) tier 300
 
   // Tier progress on a mid-encounter wipe: finalTier is the start tier, and
-  // the HP-removed fraction is strictly between 0 and 1 (players landed hits
-  // — random=0 always hits — but the 100000-participant HP pool is huge) and
+  // the HP-removed fraction is in [0, 1): the players may die before their
+  // first attack once participant speed scaling applies. The fraction must
   // must match the live encounter state exactly. The wipe path does not null
   // sim.enemies, so hand-check against the monster's actual HP.
   const summary = extractTrialSummary(result);
   assert.equal(summary.finalTier, 300);
   const mob = sim.enemies[0].combatDetails;
   const expectedFrac = (mob.maxHitpoints - mob.currentHitpoints) / mob.maxHitpoints;
-  assert.ok(summary.finalTierHpRemovedFrac > 0, 'players removed some HP');
+  assert.ok(summary.finalTierHpRemovedFrac >= 0, 'HP progress is nonnegative');
   assert.ok(summary.finalTierHpRemovedFrac < 1, 'encounter was not cleared');
   assert.ok(Math.abs(summary.finalTierHpRemovedFrac - expectedFrac) < 1e-12,
     'fraction matches the live encounter HP state');
@@ -546,6 +604,46 @@ test('computeTrialRewards: base ladder + multipliers', () => {
   assert.equal(rw.points, 600 * 1.5); // 900 — Builders' Hall boosts POINTS only
   assert.equal(rw.tokensPerEligibleMember, 0.5 * 600 * 2.0); // 600 — Treasury boosts tokens
   assert.equal(rw.tokensPerParticipant, 600 * 1.5); // 900 — +50% participation bonus
+});
+
+test('unfinished tiers pay half their reward proportional to progress, including the first tier', () => {
+  assert.deepEqual(computeTrialRewards(0, { finalTierHpRemovedFrac: 0.5 }), {
+    points: 100, tokensPerEligibleMember: 50, tokensPerParticipant: 75,
+  });
+  assert.deepEqual(computeTrialRewards(2, {
+    finalTierHpRemovedFrac: 0.75, buildersHallBonus: 0.5, treasuryBonus: 1,
+  }), { points: 1012.5, tokensPerEligibleMember: 675, tokensPerParticipant: 1012.5 });
+  const partial = aggregateTrialResults([{ maxTierCleared: 100, tiersCleared: 1,
+    finalTier: 110, finalTierHpRemovedFrac: 0.5, endReason: 'timeout' }]);
+  assert.equal(partial.expectedGuildPoints, 450);
+  const completed = aggregateTrialResults([{ maxTierCleared: 300, tiersCleared: 21,
+    finalTier: 300, finalTierHpRemovedFrac: 1, endReason: 'completed' }]);
+  assert.equal(completed.expectedGuildPoints, 4400, 'cap tier is paid once');
+});
+
+test('headless trial keeps personal buffs separate and applies shared buffs once', async () => {
+  const hpBuff = (name, flatBoost) => ({ uniqueHrid: `/test/${name}`,
+    typeHrid: '/buff_types/max_hitpoints', flatBoost, ratioBoost: 0, duration: 0 });
+  const bare = { ...structuredClone(BASE_DTO), equipment: {}, houseRooms: {}, achievements: {} };
+  const dtos = [100, 300].map((amount, i) => ({ ...structuredClone(bare),
+    hrid: `personal${i}`, extraBuffs: [hpBuff(`personal${i}`, amount)] }));
+  const shared = hpBuff('shared', 50);
+  let captured;
+  const original = CombatSimulator.prototype.simulate;
+  CombatSimulator.prototype.simulate = async function(...args) {
+    const result = await original.apply(this, args);
+    captured = this.players.map(p => p.combatDetails.maxHitpoints);
+    return result;
+  };
+  try {
+    await runGuildTrialSimulation({ players: dtos, trialHrid: '/guild_combat/badger',
+      guildBuffs: [shared], iterations: 1 });
+  } finally { CombatSimulator.prototype.simulate = original; }
+  const plain = Player.createFromDTO(structuredClone(bare));
+  plain.zoneBuffs = []; plain.extraBuffs = []; plain.generatePermanentBuffs(); plain.reset();
+  assert.deepEqual(captured, [plain.combatDetails.maxHitpoints + 150,
+    plain.combatDetails.maxHitpoints + 350]);
+  assert.deepEqual(dtos.map(d => d.extraBuffs.length), [1, 1], 'caller DTOs are not mutated');
 });
 
 test('aggregateTrialResults: per-tier clear probability + distribution', () => {
