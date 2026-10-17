@@ -218,7 +218,9 @@ class CombatSimulator extends EventTarget {
         // Guild Trial: hard cap the run at 1 hour of simulated time regardless
         // of the caller's limit (a wipe ends it sooner via this.trialEnded).
         if (this.guildTrial) {
-            const cap = GuildTrial.TRIAL_DURATION_NS;
+            // MWIX adaptation (late-tier proxy): the trial's own opt-in clock,
+            // the hour unless `durationSeconds` was given (guildTrial.js).
+            const cap = this.guildTrial.durationNs ?? GuildTrial.TRIAL_DURATION_NS;
             simulationTimeLimit = simulationTimeLimit ? Math.min(simulationTimeLimit, cap) : cap;
         }
 

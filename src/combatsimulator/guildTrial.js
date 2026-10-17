@@ -54,7 +54,8 @@ class GuildTrial {
      * @param {number} participantCount  drives HP, speed and haste scaling; the engine
      *   defaults it to players.length but any caller may override it.
      * @param {object} options     { bonusHpRegenRatio?, bonusMpRegenRatio?,
-     *   enemyScale? }. enemyScale (default 1.0, clamped 0.05..5) is a DEBUG
+     *   enemyScale?, durationSeconds? } (durationSeconds: MWIX adaptation,
+     *   an opt-in shorter clock; see below). enemyScale (default 1.0, clamped 0.05..5) is a DEBUG
      *   knob that weakens/strengthens the monsters by scaling their EFFECTIVE
      *   level on the roomLevel axis: effectiveRoomLevel = max(1, round(tier ×
      *   enemyScale)) — so 0.8 makes a tier-100 encounter fight like level 80
@@ -92,6 +93,16 @@ class GuildTrial {
         this.enemyScale = Number.isFinite(rawEnemyScale) && rawEnemyScale > 0
             ? Math.min(GuildTrial.MAX_ENEMY_SCALE, Math.max(GuildTrial.MIN_ENEMY_SCALE, rawEnemyScale))
             : 1;
+
+        // MWIX adaptation (late-tier proxy, 2026-10-17): an OPT-IN shorter
+        // trial clock, `options.durationSeconds` in (0, 3600]. Absent or
+        // invalid -> the full hour, so the default trial is unchanged.
+        // SCLIRoster screens seat moves on a short window started near the
+        // party's endpoint tier (optimizer/src/optimize/proxy.js).
+        const rawDuration = Number(options.durationSeconds);
+        this.durationNs = Number.isFinite(rawDuration) && rawDuration > 0
+            ? Math.min(GuildTrial.TRIAL_DURATION_NS, rawDuration * 1e9)
+            : GuildTrial.TRIAL_DURATION_NS;
 
         // Ladder state. Each tier is fought at most once (the run completes on
         // clearing the cap), so tiersCleared === distinct tiers cleared.

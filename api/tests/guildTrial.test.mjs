@@ -319,6 +319,24 @@ test('1-hour simulated cutoff ends the run (stalemate ⇒ timeout)', async () =>
   assert.equal(summary.finalTierHpRemovedFrac, 0);
 });
 
+// MWIX adaptation (late-tier proxy): an opt-in shorter clock, default unchanged.
+test('durationSeconds: opt-in shorter trial clock; absent or invalid keeps the hour', async () => {
+  assert.equal(new GuildTrial('/guild_combat/chameleon', 100, 5).durationNs, GuildTrial.TRIAL_DURATION_NS);
+  for (const bad of [0, -5, 'x', null, NaN]) {
+    assert.equal(new GuildTrial('/guild_combat/chameleon', 100, 5, { durationSeconds: bad }).durationNs,
+      GuildTrial.TRIAL_DURATION_NS);
+  }
+  assert.equal(new GuildTrial('/guild_combat/chameleon', 100, 5, { durationSeconds: 7200 }).durationNs,
+    GuildTrial.TRIAL_DURATION_NS, 'never longer than the hour');
+  const gt = new GuildTrial('/guild_combat/chameleon', 210, 5, { durationSeconds: 600 });
+  assert.equal(gt.durationNs, 600e9);
+  const sim = new CombatSimulator(makePlayers(2), null, null, { guildTrial: gt });
+  const result = await withRandom(0.9999999999, () => sim.simulate(10 * GuildTrial.TRIAL_DURATION_NS));
+  assert.equal(result.trialEndReason, 'timeout');
+  assert.ok(result.simulatedTime >= 600e9 && result.simulatedTime < 605e9, 'stopped at the short cap');
+  assert.equal(extractTrialSummary(result).finalTier, 210);
+});
+
 // --------------------------------------------------------------------------
 // Integration: wipe + no forbidden events + dead-stay-dead
 // --------------------------------------------------------------------------
