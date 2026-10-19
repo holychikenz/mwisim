@@ -58,6 +58,7 @@ const MAX_PARRY_ATTEMPTS = 5;
 // counted the crates and badly inflated win rates. Crates (carried on
 // `player.zoneBuffs` via Labyrinth.buffs) are now the single source of truth.
 
+// MWIX adaptation: event-loop guard budget (see CombatSimulator.maxTicksAt).
 const MIN_MAX_TICKS = 5_000_000;
 const MAX_TICKS_PER_SIM_HOUR = 100_000;
 
@@ -242,6 +243,10 @@ class CombatSimulator extends EventTarget {
         // a frozen browser tab. MWIX adaptation: the cap grows with elapsed
         // simulated time (see maxTicksAt), so long runs do not trip it.
         let totalTicks = 0;
+        // MWIX adaptation: events since the clock last moved, so a clock that
+        // freezes late in a long run throws at 5 M rather than after its budget.
+        let stalledTicks = 0;
+        let lastSimulationTime = this.simulationTime;
 
         let combatStartEvent = new CombatStartEvent(0);
         this.eventQueue.addEvent(combatStartEvent);
@@ -252,7 +257,14 @@ class CombatSimulator extends EventTarget {
 
             ticks++;
             totalTicks++;
-            if (totalTicks >= MIN_MAX_TICKS && totalTicks >= CombatSimulator.maxTicksAt(this.simulationTime)) {
+            if (this.simulationTime !== lastSimulationTime) {
+                lastSimulationTime = this.simulationTime;
+                stalledTicks = 0;
+            } else {
+                stalledTicks++;
+            }
+            if (stalledTicks >= MIN_MAX_TICKS ||
+                (totalTicks >= MIN_MAX_TICKS && totalTicks >= CombatSimulator.maxTicksAt(this.simulationTime))) {
                 throw new Error(
                     `csim simulate(): exceeded MAX_TICKS=${totalTicks} at simTime=${(this.simulationTime / 1e9).toFixed(2)}s ` +
                     `(limit=${(simulationTimeLimit / 1e9).toFixed(0)}s) — pathological event rate, likely a wiring bug`

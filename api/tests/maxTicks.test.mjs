@@ -25,10 +25,11 @@ test('the tick budget grows with elapsed simulated time', () => {
   assert.equal(CombatSimulator.maxTicksAt(1000 * ONE_HOUR), 105_000_000);
 });
 
-// The reported run, end to end: ~5.17 M events in 1000 h, past the old fixed 5 M.
-test('a 1000 h three-player planet run completes', async () => {
-  const r = await withSeed(1, () => engine.runZone(caseById('floor-party'), 1000));
-  assert.ok(r.simulatedTime >= 1000 * ONE_HOUR);
+// The reported run shape, end to end: ~5.2k events/h for 1500 h is ~7.7 M events,
+// half again past the old fixed 5 M, so a slightly quieter build still exercises it.
+test('a 1500 h three-player planet run completes', async () => {
+  const r = await withSeed(1, () => engine.runZone(caseById('floor-party'), 1500));
+  assert.ok(r.simulatedTime >= 1500 * ONE_HOUR);
 });
 
 // A long limit must not buy a frozen clock a bigger budget.
@@ -40,6 +41,25 @@ test('a loop whose clock never advances throws at 5 M even under a 1000 h limit'
       withSeed(1, () => engine.runZone(caseById('floor-solo'), 1000)),
       /exceeded MAX_TICKS=5000000 at simTime=0\.00s/
     );
+  } finally {
+    CombatSimulator.prototype.processEvent = original;
+  }
+});
+
+// A clock that freezes late must not spend the budget it earned before freezing.
+test('a clock that freezes at 100 h throws within 5 M stalled events', async () => {
+  const original = CombatSimulator.prototype.processEvent;
+  let swallowed = 0;
+  CombatSimulator.prototype.processEvent = function (event) {
+    if (this.simulationTime < 100 * ONE_HOUR) return original.call(this, event);
+    swallowed++; // budget at 100 h is 15 M; only the stall check stops this at 5 M
+  };
+  try {
+    await assert.rejects(
+      withSeed(1, () => engine.runZone(caseById('floor-solo'), 1000)),
+      /exceeded MAX_TICKS=\d+ at simTime=36\d{4}\.\d{2}s/
+    );
+    assert.ok(swallowed <= 5_000_000, `swallowed ${swallowed}`);
   } finally {
     CombatSimulator.prototype.processEvent = original;
   }
