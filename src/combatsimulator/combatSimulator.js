@@ -59,6 +59,18 @@ const MAX_PARRY_ATTEMPTS = 5;
 // `player.zoneBuffs` via Labyrinth.buffs) are now the single source of truth.
 
 class CombatSimulator extends EventTarget {
+    // MWIX adaptation: the event-loop guard's budget. Legitimate runs measure
+    // ~2k (solo planet) to ~16k (5-player dungeon) events per simulated hour,
+    // steady over 100 h, so 100k/h is a ~6× margin; 5 M floors short runs and
+    // a non-finite limit, as the old fixed cap did.
+    static MIN_MAX_TICKS = 5_000_000;
+    static MAX_TICKS_PER_SIM_HOUR = 100_000;
+
+    static maxTicksFor(simulationTimeLimitNs) {
+        const hours = Number.isFinite(simulationTimeLimitNs) ? simulationTimeLimitNs / 3600e9 : 0;
+        return Math.max(CombatSimulator.MIN_MAX_TICKS, Math.ceil(hours * CombatSimulator.MAX_TICKS_PER_SIM_HOUR));
+    }
+
     constructor(players, zone, labyrinth, options = {}) {
         super();
         this.players = players;
@@ -227,10 +239,9 @@ class CombatSimulator extends EventTarget {
         let ticks = 0;
         // Defence in depth: cap total event-loop iterations per simulation
         // so a future wiring bug surfaces as a thrown error rather than
-        // a frozen browser tab. At a sensible 1 ms attack interval, a
-        // 120 s sim is ~120 000 events, so 5 M leaves a safety factor
-        // of ~40×.
-        const MAX_TICKS = 5_000_000;
+        // a frozen browser tab. MWIX adaptation: the cap scales with the
+        // simulated duration (see maxTicksFor), so long runs do not trip it.
+        const MAX_TICKS = CombatSimulator.maxTicksFor(simulationTimeLimit);
         let totalTicks = 0;
 
         let combatStartEvent = new CombatStartEvent(0);
