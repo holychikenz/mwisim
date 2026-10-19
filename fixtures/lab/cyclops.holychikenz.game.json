@@ -3,7 +3,7 @@
   "capturedAt": "2026-06-08T12:56:07.442Z",
   "monster": {
     "hrid": "/monsters/cyclops",
-    "roomLevel": null
+    "roomLevel": 204
   },
   "player": {
     "dto": {
@@ -838,8 +838,7 @@
       "meleeLevel": 137,
       "defenseLevel": 149,
       "rangedLevel": 145,
-      "magicLevel": 169,
-      "attackIntervalSeconds": 3.3657
+      "magicLevel": 169
     },
     "monster": {
       "maxHitpoints": 8560,

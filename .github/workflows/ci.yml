@@ -80,10 +80,11 @@ jobs:
       - name: eval:check — strict and statistical tiers
         run: npm run eval:check
 
-      # Simulator-vs-game parity, ratcheted at the 125 drifts that predate this
-      # workflow. The count is still computed and printed in full; --max-drift
+      # Simulator-vs-game parity, ratcheted at the 20 known drifts (8: game
+      # shows +2% damage over the sim; 12: shadow_archer's DTO gear is not the
+      # gear on its recorded sheet). The count is still computed and printed in full; --max-drift
       # only decides the exit code, so a NEW drift still fails the build.
       # Lower this number as drifts are fixed. Raising it to accommodate a new
       # one is the same act as re-recording a fixture to make a change pass.
-      - name: lab:check — sim-vs-game parity (ratcheted at 125)
-        run: npm run lab:check -- --max-drift=125
+      - name: lab:check — sim-vs-game parity (ratcheted at 20)
+        run: npm run lab:check -- --max-drift=20

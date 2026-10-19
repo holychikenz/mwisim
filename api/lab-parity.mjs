@@ -175,7 +175,7 @@ function cmdCheck(target, maxDrift) {
   }
   // --max-drift=N — a RATCHET, not a mute. The count is still computed, still
   // printed in full above, and still reported here; N only decides the exit
-  // code. It exists so CI can gate on "no NEW sim-vs-game drift" while the 125
+  // code. It exists so CI can gate on "no NEW sim-vs-game drift" while the
   // pre-existing ones are worked through, instead of the choice being between
   // a permanently red pipeline and no parity check at all.
   //

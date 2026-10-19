@@ -26,15 +26,27 @@ function round(v) {
 // it here, but surface the one derived combatStat worth tracking.
 const TRANSIENT = new Set(['currentHitpoints', 'currentManapoints']);
 
-function extractDerived(combatDetails) {
+function extractDerived(unit) {
+  const { combatDetails } = unit;
   const derived = {};
   for (const [k, v] of Object.entries(combatDetails)) {
     if (TRANSIENT.has(k)) continue; // combat state, not a stat-sheet value
     if (v === null || typeof v !== 'object') derived[k] = round(v);
   }
-  // attackInterval is stored in nanoseconds; surface seconds to match the game.
+  // The engine keeps these buffed values inside combatStats; the game's sheet
+  // has them top-level (attackInterval in ns, as the game records it).
+  derived.attackInterval = combatDetails.combatStats.attackInterval;
+  derived.totalCastSpeed = round(combatDetails.combatStats.castSpeed);
   derived.attackIntervalSeconds = round(combatDetails.combatStats.attackInterval / 1e9);
+  derived.combatLevel = round(combatLevel(unit));
   return derived;
+}
+
+// The game's sheet value: from UNBUFFED levels and not floored (e.g. 140.2).
+function combatLevel(u) {
+  const offence = Math.max(u.meleeLevel, u.rangedLevel, u.magicLevel);
+  const best = Math.max(u.attackLevel, u.defenseLevel, offence);
+  return 0.1 * (u.staminaLevel + u.intelligenceLevel + u.attackLevel + u.defenseLevel + offence) + 0.5 * best;
 }
 
 export function computeLabMonsterStats(monsterHrid, roomLevel) {
@@ -43,7 +55,7 @@ export function computeLabMonsterStats(monsterHrid, roomLevel) {
   return {
     monsterHrid,
     roomLevel,
-    derived: extractDerived(m.combatDetails),
+    derived: extractDerived(m),
     abilities: (m.abilities || []).filter(Boolean).map((a) => ({
       hrid: a.hrid,
       name: abilityDetailMap[a.hrid]?.name,
@@ -79,6 +91,6 @@ export function computeLabPlayerStats(dto, { crates = [], labUpgrades = {} } = {
     // weapon). The parity harness compares this to the recorded game style to
     // detect a fixture captured with a mismatched loadout.
     combatStyleHrid: player.combatDetails.combatStats.combatStyleHrid,
-    derived: extractDerived(player.combatDetails),
+    derived: extractDerived(player),
   };
 }
