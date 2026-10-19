@@ -66,6 +66,11 @@ function createMultiWorker() {
 // a spinner (and a wedged tab) forever.
 const STALL_TIMEOUT_MS = 30_000;
 
+// Workers send progress every 1000 ticks — hundreds a second, ×N with parallel
+// shards — and each setProgress re-renders the whole App. Firefox cannot keep
+// up, so the tab, not the engine, sets the pace. Repaint the bar at most this often.
+const PROGRESS_INTERVAL_MS = 100;
+
 export function useSimulation() {
   const [loading, setLoading] = useState(false);
   const [progress, setProgress] = useState(0);
@@ -76,6 +81,15 @@ export function useSimulation() {
   const { results, stale, publish, begin, clear } = useRunResults();
   const workerRef = useRef(null);
   const watchdogRef = useRef(null);
+  const lastProgressAtRef = useRef(0);
+
+  // Throttled progress from a worker message (fraction 0-1); the final 100 is set directly on the result.
+  const reportProgress = useCallback((fraction) => {
+    const now = performance.now();
+    if (now - lastProgressAtRef.current < PROGRESS_INTERVAL_MS) return;
+    lastProgressAtRef.current = now;
+    setProgress(fraction * 100);
+  }, []);
 
   const clearWatchdog = useCallback(() => {
     if (watchdogRef.current) {
@@ -133,7 +147,7 @@ export function useSimulation() {
     job(worker, (p) => {
       if (!current()) return;
       armWatchdog();
-      setProgress(p * 100);
+      reportProgress(p);
     }).then((simResult) => {
       if (!current()) return;
       setProgress(100);
@@ -147,7 +161,7 @@ export function useSimulation() {
       stopWorker();
     });
     armWatchdog();
-  }, [stopWorker, armWatchdog, failAndReset, publish]);
+  }, [stopWorker, armWatchdog, failAndReset, reportProgress, publish]);
 
   // This path is a top level: the idle between runs is added once, here.
   const runDungeonRunsHere = useCallback((message) => runSeriallyHere((worker, onProgress) =>
@@ -215,7 +229,7 @@ export function useSimulation() {
       switch (event.data.type) {
         case 'simulation_progress':
           // Worker reports a 0-1 fraction; UI displays 0-100.
-          setProgress(event.data.progress * 100);
+          reportProgress(event.data.progress);
           break;
         case 'simulation_result':
           setProgress(100);
@@ -251,7 +265,7 @@ export function useSimulation() {
     });
     // Guard the gap between dispatch and the first progress tick, too.
     armWatchdog();
-  }, [stopWorker, armWatchdog, failAndReset, runDungeonRunsHere, runZoneRunsHere, publish, begin]);
+  }, [stopWorker, armWatchdog, failAndReset, runDungeonRunsHere, runZoneRunsHere, reportProgress, publish, begin]);
 
   const runGuildTrial = useCallback((params) => {
     stopWorker();
@@ -274,7 +288,7 @@ export function useSimulation() {
       armWatchdog();
       switch (event.data.type) {
         case 'simulation_progress':
-          setProgress(event.data.progress * 100);
+          reportProgress(event.data.progress);
           break;
         case 'simulation_result_guildTrial':
           setProgress(100);
@@ -316,7 +330,7 @@ export function useSimulation() {
     });
     // Guard the gap before the first shard reports in, too.
     armWatchdog();
-  }, [stopWorker, armWatchdog, failAndReset, publish, begin]);
+  }, [stopWorker, armWatchdog, failAndReset, reportProgress, publish, begin]);
 
   // Stop: kill any in-flight worker/watchdog but keep the last results on
   // screen. `stale` is left as it is, so results from before the abandoned run
