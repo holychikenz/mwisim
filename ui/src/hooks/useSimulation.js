@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { useRunResults } from './useRunResults.js';
-import { runDungeonRunsSerial, workerBatchRunner, addRunIdleTime } from '../../../shared/dungeonRuns.js';
+import { runDungeonRunsSerial, workerBatchRunner, addRunIdleTime, runZoneRepeats } from '../../../shared/dungeonRuns.js';
 
 // =============================================================================
 // useSimulation — runs the combat simulator in a browser Web Worker.
@@ -23,6 +23,13 @@ import { runDungeonRunsSerial, workerBatchRunner, addRunIdleTime } from '../../.
 //   ←  simulation_progress / simulation_result / simulation_error, as above
 //   ←  { type: "dungeon_runs_unsupported" }   no nested workers in this browser:
 //        the same batches then run here over a single worker.js
+//
+// A planet zone given `zoneRuns` > 1 (the Workers field) is that many
+// independent runs of simulationTimeLimit, merged into one result:
+//
+//   →  { type: "start_simulation_zone_runs", ...as start_simulation, zoneRuns }
+//   ←  simulation_progress / simulation_result / simulation_error, as above
+//   ←  { type: "zone_runs_unsupported" }   run here over one worker.js instead
 //
 // Because we never modify worker.js or the engine, upstream rebases pass
 // straight through this seam. The Express API (csim/api) remains available
@@ -108,10 +115,11 @@ export function useSimulation() {
     }, STALL_TIMEOUT_MS);
   }, [clearWatchdog, failAndReset]);
 
-  // Dungeon runs without multiWorker (it could not start, or this browser has
-  // no nested workers): the same batches, one after another, over one
-  // worker.js. Slower, since it uses a single core, but it gives the same answer.
-  const runDungeonRunsHere = useCallback((message) => {
+  // Dungeon runs or zone runs without multiWorker (it could not start, or this
+  // browser has no nested workers): the same work, one simulation after
+  // another, over one worker.js. Slower, since it uses a single core, but it
+  // gives the same answer. `job(worker, onProgress)` resolves to the SimResult.
+  const runSeriallyHere = useCallback((job) => {
     stopWorker();
     let worker;
     try {
@@ -122,17 +130,11 @@ export function useSimulation() {
     }
     workerRef.current = worker;
     const current = () => workerRef.current === worker;
-    // This path is a top level: the idle between runs is added once, here.
-    runDungeonRunsSerial({
-      totalRuns: message.maxRuns,
-      maxRunDurationNs: message.maxRunDurationNs,
-      runBatch: workerBatchRunner(worker, message),
-      onProgress: (p) => {
-        if (!current()) return;
-        armWatchdog();
-        setProgress(p * 100);
-      }
-    }).then(addRunIdleTime).then((simResult) => {
+    job(worker, (p) => {
+      if (!current()) return;
+      armWatchdog();
+      setProgress(p * 100);
+    }).then((simResult) => {
       if (!current()) return;
       setProgress(100);
       publish(simResult, 'zone');
@@ -146,6 +148,20 @@ export function useSimulation() {
     });
     armWatchdog();
   }, [stopWorker, armWatchdog, failAndReset, publish]);
+
+  // This path is a top level: the idle between runs is added once, here.
+  const runDungeonRunsHere = useCallback((message) => runSeriallyHere((worker, onProgress) =>
+    runDungeonRunsSerial({
+      totalRuns: message.maxRuns,
+      maxRunDurationNs: message.maxRunDurationNs,
+      runBatch: workerBatchRunner(worker, message),
+      onProgress
+    }).then(addRunIdleTime)
+  ), [runSeriallyHere]);
+
+  const runZoneRunsHere = useCallback((message) => runSeriallyHere((worker, onProgress) =>
+    runZoneRepeats({ count: message.zoneRuns, workers: [worker], message, onProgress })
+  ), [runSeriallyHere]);
 
   const runSimulation = useCallback((params) => {
     // One worker per run: cheap to spawn, and guarantees no stale engine
@@ -172,13 +188,20 @@ export function useSimulation() {
       message.maxRuns = params.maxRuns;
       message.maxRunDurationNs = params.maxRunDurationNs;
     }
+    // Zone "workers": N independent runs of the duration, merged (zone only).
+    const zoneRuns = !dungeonRuns && kind === 'zone' && params.zoneRuns > 1;
+    if (zoneRuns) message.zoneRuns = params.zoneRuns;
 
     let worker;
     try {
-      worker = dungeonRuns ? createMultiWorker() : createSimWorker();
+      worker = dungeonRuns || zoneRuns ? createMultiWorker() : createSimWorker();
     } catch (e) {
       if (dungeonRuns) {
         runDungeonRunsHere(message);
+        return;
+      }
+      if (zoneRuns) {
+        runZoneRunsHere(message);
         return;
       }
       failAndReset('Could not start the simulation worker: ' + (e?.message || e));
@@ -210,6 +233,9 @@ export function useSimulation() {
         case 'dungeon_runs_unsupported':
           runDungeonRunsHere(message);
           break;
+        case 'zone_runs_unsupported':
+          runZoneRunsHere(message);
+          break;
         default:
           break;
       }
@@ -221,11 +247,11 @@ export function useSimulation() {
 
     worker.postMessage({
       ...message,
-      type: dungeonRuns ? 'start_simulation_dungeon_runs' : 'start_simulation'
+      type: dungeonRuns ? 'start_simulation_dungeon_runs' : zoneRuns ? 'start_simulation_zone_runs' : 'start_simulation'
     });
     // Guard the gap between dispatch and the first progress tick, too.
     armWatchdog();
-  }, [stopWorker, armWatchdog, failAndReset, runDungeonRunsHere, publish, begin]);
+  }, [stopWorker, armWatchdog, failAndReset, runDungeonRunsHere, runZoneRunsHere, publish, begin]);
 
   const runGuildTrial = useCallback((params) => {
     stopWorker();

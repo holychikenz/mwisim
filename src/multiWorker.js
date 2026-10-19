@@ -1,5 +1,5 @@
 import { aggregateTrialResults } from "./combatsimulator/guildTrialStats";
-import { planShards, mergeSimResults, runDungeonRunsSerial, workerBatchRunner, addRunIdleTime } from "../shared/dungeonRuns.js";
+import { planShards, mergeSimResults, runDungeonRunsSerial, workerBatchRunner, addRunIdleTime, runZoneRepeats } from "../shared/dungeonRuns.js";
 
 onmessage = async function (event) {
     switch (event.data.type) {
@@ -120,6 +120,38 @@ onmessage = async function (event) {
             } catch (e) {
                 console.log(e);
                 this.postMessage({ type: "simulation_error", error: e });
+            }
+            break;
+        }
+        case "start_simulation_zone_runs": {
+            // A planet zone run `zoneRuns` times for simulationTimeLimit each,
+            // on a pool of nested worker.js (one per core), merged into one
+            // SimResult laid end to end (runZoneRepeats in shared/dungeonRuns.js).
+            // Payload: { players[], zone, extra, guildBuffs[], simulationTimeLimit, zoneRuns }
+            // Without nested workers the caller is told so and runs them itself.
+            if (typeof Worker !== "function") {
+                this.postMessage({ type: "zone_runs_unsupported" });
+                break;
+            }
+            const pool = [];
+            try {
+                const { zoneRuns: count, type, ...message } = event.data;
+                const size = Math.min(navigator.hardwareConcurrency || 4, count);
+                for (let i = 0; i < size; i++) {
+                    pool.push(new Worker(new URL('worker.js', import.meta.url), { type: 'module' }));
+                }
+                const simResult = await runZoneRepeats({
+                    count,
+                    workers: pool,
+                    message,
+                    onProgress: (progress) => this.postMessage({ type: "simulation_progress", progress }),
+                });
+                this.postMessage({ type: "simulation_result", simResult });
+            } catch (e) {
+                console.log(e);
+                this.postMessage({ type: "simulation_error", error: e });
+            } finally {
+                pool.forEach((w) => w.terminate());
             }
             break;
         }

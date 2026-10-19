@@ -383,3 +383,19 @@ test('F6 timed-out runs: the engine clock is the runs alone, runSimulation adds 
   assert.equal(viaApi.dungeonIdleTime, 3 * gap);
   assert.equal(viaApi.simulatedTime, 3 * (60 * ONE_SECOND + gap));
 });
+
+// -- Z1: planet zone "workers" ----------------------------------------------------
+
+test('Z1 two planet runs merge into one result over their summed time, every key ruled', async () => {
+  const PLANET = '/actions/combat/smelly_planet';
+  const a = await runSeeded(11, makeSim(['melee'], 100, PLANET), ONE_HOUR);
+  const b = await runSeeded(12, makeSim(['melee'], 100, PLANET), ONE_HOUR);
+  for (const k of Object.keys(a)) assert.ok(k in MERGE_RULES, `planet result key ${k} has no merge rule`);
+  const m = mergeSimResults([a, b]);
+  assert.equal(m.simulatedTime, a.simulatedTime + b.simulatedTime);
+  assert.equal(m.encounters, a.encounters + b.encounters);
+  const xp = (r) => r.experienceGained.player1.melee;
+  assert.ok(a.encounters > 0 && xp(a) > 0 && xp(b) > 0, 'both runs fought');
+  assert.equal(xp(m) / m.simulatedTime, (xp(a) + xp(b)) / (a.simulatedTime + b.simulatedTime));
+  assert.equal(m.dungeonIdleTime, undefined);
+});

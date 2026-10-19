@@ -111,7 +111,7 @@ import {
   clampTier,
   findZone
 } from './utils/zones';
-import { clampRunCount, clampRunHours } from '../../shared/dungeonRuns.js';
+import { clampRunCount, clampRunHours, MAX_ZONE_WORKERS } from '../../shared/dungeonRuns.js';
 import {
   comboKey,
   parseComboKey,
@@ -317,6 +317,11 @@ function App() {
   // Clamped on load as well: a session saved under older bounds (a 0.5 h
   // limit) comes back inside the current ones; anything else, the default.
   const [dungeonRuns, setDungeonRuns] = useState(() => clampRunCount(savedSession?.dungeonRuns));
+  // Planet zones: run the duration this many times in parallel and average
+  // (one result over workers × duration hours). 1 = a single run, as before.
+  const [zoneWorkers, setZoneWorkers] = useState(() =>
+    Math.min(MAX_ZONE_WORKERS, Math.max(1, Math.round(Number(savedSession?.zoneWorkers)) || 1))
+  );
   const [maxRunHours, setMaxRunHours] = useState(() => clampRunHours(savedSession?.maxRunHours));
   // Genuinely account- or server-wide only. Seals used to live here and are now
   // a per-character field on each player (see createDefaultPlayer), because a
@@ -1603,6 +1608,7 @@ function App() {
         : null,
       simulationTimeLimit: duration * ONE_HOUR,
       ...(dungeonRunMode ? { maxRuns: runs, maxRunDurationNs: runHours * ONE_HOUR } : {}),
+      ...(!dungeonRunMode && !isLab ? { zoneRuns: zoneWorkers } : {}),
       extra,
       // Shrine buffs are still permanent character buffs that apply to every
       // fight (the game exposes them via
@@ -1614,7 +1620,7 @@ function App() {
       // reader does not have to wonder whether it was forgotten.
       guildBuffs: []
     });
-  }, [resolvedParty, selectedParty, simMode, zone, difficultyTier, labConfig, mazeContext, duration, dungeonRunMode, dungeonRuns, maxRunHours, extraOptions, experimental, runSimulation, handleStartTrial, handleStartTriggerOpt, handleStartEquipOpt]);
+  }, [resolvedParty, selectedParty, simMode, zone, difficultyTier, labConfig, mazeContext, duration, zoneWorkers, dungeonRunMode, dungeonRuns, maxRunHours, extraOptions, experimental, runSimulation, handleStartTrial, handleStartTriggerOpt, handleStartEquipOpt]);
 
   // Pickers for the slot binder, and the label the party checkboxes wear.
   const characterOptions = useMemo(
@@ -1842,6 +1848,7 @@ function App() {
                   setDifficultyTier={setDifficultyTier}
                   duration={duration}
                   setDuration={setDuration}
+                  zoneWorkers={zoneWorkers}
                   dungeonRuns={dungeonRuns}
                   maxRunHours={maxRunHours}
                   onClearSaved={handleClearSaved}
@@ -2008,6 +2015,8 @@ function App() {
                 onLabConfigChange={setLabConfig}
                 duration={duration}
                 onDurationChange={setDuration}
+                zoneWorkers={zoneWorkers}
+                onZoneWorkersChange={setZoneWorkers}
                 dungeonRunMode={dungeonRunMode}
                 dungeonRuns={dungeonRuns}
                 onDungeonRunsChange={setDungeonRuns}
@@ -2105,7 +2114,9 @@ function App() {
                       ? `Running ${trialConfig.iterations} trial iterations… ${activeProgress.toFixed(1)}%`
                       : dungeonRunMode
                         ? `Simulating ${dungeonRuns} dungeon runs (max ${maxRunHours} h each)… ${activeProgress.toFixed(1)}%`
-                        : `Simulating ${duration} hours of combat… ${activeProgress.toFixed(1)}%`
+                        : simMode === 'zone' && zoneWorkers > 1
+                          ? `Simulating ${zoneWorkers} × ${duration} hours of combat… ${activeProgress.toFixed(1)}%`
+                          : `Simulating ${duration} hours of combat… ${activeProgress.toFixed(1)}%`
               }
             />
           )}

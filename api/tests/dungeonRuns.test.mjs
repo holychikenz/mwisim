@@ -27,6 +27,7 @@ import {
   mergeSimResults,
   runDungeonRunsSerial,
   workerBatchRunner,
+  runZoneRepeats,
 } from '../../shared/dungeonRuns.js';
 
 const H = ONE_HOUR_NS;
@@ -292,6 +293,46 @@ test('workerBatchRunner drives a worker.js one start_simulation per batch', asyn
 
   worker.postMessage = function () { queueMicrotask(() => this.onmessage({ data: { type: 'simulation_error', error: 'boom' } })); };
   await assert.rejects(run(1, 1, () => {}), /boom/);
+});
+
+test('runZoneRepeats runs N hours-mode simulations over a pool and merges them end to end', async () => {
+  const posted = [];
+  const fakeWorker = () => ({
+    postMessage(msg) {
+      posted.push(msg);
+      const n = posted.length;
+      queueMicrotask(() => {
+        this.onmessage({ data: { type: 'simulation_progress', progress: 0.5 } });
+        this.onmessage({ data: { type: 'simulation_result', simResult: {
+          simulatedTime: msg.simulationTimeLimit, encounters: 10 * n, deaths: { m: n }, experienceGained: { p: { melee: 100 * n } },
+        } } });
+      });
+    },
+  });
+  const progress = [];
+  const T = 100 * H;
+  const m = await runZoneRepeats({
+    count: 5,
+    workers: [fakeWorker(), fakeWorker()],
+    message: { players: [1], zone: { zoneHrid: 'z' }, simulationTimeLimit: T },
+    onProgress: (p) => progress.push(p),
+  });
+  assert.equal(posted.length, 5);
+  for (const msg of posted) {
+    assert.equal(msg.type, 'start_simulation');
+    assert.equal(msg.maxRuns, undefined, 'hours mode, not dungeon run mode');
+    assert.equal(msg.simulationTimeLimit, T);
+  }
+  // 5 runs of T read as one 5T result: totals add, so per-hour rates average.
+  assert.equal(m.simulatedTime, 5 * T);
+  assert.equal(m.encounters, 10 * (1 + 2 + 3 + 4 + 5));
+  assert.equal(m.deaths.m / (m.simulatedTime / H), (1 + 2 + 3 + 4 + 5) / 500);
+  assert.equal(m.experienceGained.p.melee, 1500);
+  assert.equal(m.dungeonIdleTime, undefined);
+  for (let i = 1; i < progress.length; i++) assert.ok(progress[i] >= progress[i - 1]);
+  assert.equal(progress.at(-1), 1);
+
+  await assert.rejects(runZoneRepeats({ count: 0, workers: [fakeWorker()], message: {} }), RangeError);
 });
 
 // -- the idle between runs -------------------------------------------------------

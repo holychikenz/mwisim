@@ -27,7 +27,7 @@ import { levelToTierIndex, tierIndexToLevel, MAX_TIER_INDEX } from '../utils/tri
 import { simulableZones, zoneTiers, findZone } from '../utils/zones';
 import { SettingsMenu } from './SettingsMenu';
 import { usePersistentState, isBool } from '../hooks/usePersistentState';
-import { MAX_DUNGEON_RUNS, MIN_RUN_HOURS, MAX_RUN_HOURS, clampRunCount, clampRunHours } from '../../../shared/dungeonRuns.js';
+import { MAX_DUNGEON_RUNS, MIN_RUN_HOURS, MAX_RUN_HOURS, MAX_ZONE_WORKERS, clampRunCount, clampRunHours } from '../../../shared/dungeonRuns.js';
 
 // =============================================================================
 // HeaderControls — the sticky simulation bar: mode (zone / labyrinth), the
@@ -84,6 +84,9 @@ export function HeaderControls({
   onLabConfigChange,
   duration,
   onDurationChange,
+  // Planet zones only: run the duration this many times in parallel, averaged.
+  zoneWorkers = 1,
+  onZoneWorkersChange,
   // A dungeon in Zone mode is simulated as a number of runs, each with a time
   // limit, instead of a number of hours (see shared/dungeonRuns.js).
   dungeonRunMode = false,
@@ -540,16 +543,33 @@ export function HeaderControls({
           </Tooltip>
         </>
       ) : (
-        <NumberInput
-          value={duration}
-          onChange={(v) => onDurationChange(Math.max(1, Math.min(1000, Number(v) || 1)))}
-          min={1}
-          max={1000}
-          w={90}
-          size="sm"
-          suffix=" h"
-          aria-label="Duration (hours)"
-        />
+        <>
+          <NumberInput
+            value={duration}
+            onChange={(v) => onDurationChange(Math.max(1, Math.min(1000, Number(v) || 1)))}
+            min={1}
+            max={1000}
+            w={90}
+            size="sm"
+            suffix=" h"
+            aria-label="Duration (hours)"
+          />
+          {simMode === 'zone' && (
+            <Tooltip label="Independent runs of this duration, in parallel, averaged into one result" withArrow>
+              <NumberInput
+                value={zoneWorkers}
+                onChange={(v) => onZoneWorkersChange(Math.max(1, Math.min(MAX_ZONE_WORKERS, Math.round(Number(v)) || 1)))}
+                allowDecimal={false}
+                min={1}
+                max={MAX_ZONE_WORKERS}
+                w={110}
+                size="sm"
+                suffix=" workers"
+                aria-label="Workers"
+              />
+            </Tooltip>
+          )}
+        </>
       )}
 
       {/* One run answers "how good is this zone"; the sweep answers "which

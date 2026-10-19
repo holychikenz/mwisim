@@ -47,6 +47,7 @@ export const MIN_RUNS_PER_SHARD = 10;
 export const MAX_SHARDS = 16;
 export const DEFAULT_CONCURRENCY = 4;
 export const BATCH_BUDGET_HOURS = 100;
+export const MAX_ZONE_WORKERS = 64;
 
 function assertRunCount(totalRuns) {
   if (!Number.isInteger(totalRuns) || totalRuns < 1) {
@@ -310,6 +311,35 @@ export async function runDungeonRunsSerial({ totalRuns, maxRunDurationNs, runBat
     done += n;
     report(done / totalRuns);
   }
+  return mergeSimResults(results);
+}
+
+/**
+ * A planet zone's "workers" field: `count` independent hours-mode simulations
+ * of message.simulationTimeLimit each, spread over `workers` (src/worker.js
+ * instances, each running one simulation at a time), merged end to end — so
+ * 16 runs of 100 h read as one 1600 h result. Every run is a fresh
+ * CombatSimulator; each browser worker has its own Math.random, and runs
+ * sharing a worker continue its stream, so no two runs repeat. No idle is
+ * added: that is dungeon-only (addRunIdleTime). onProgress, if given, gets the
+ * overall fraction.
+ */
+export async function runZoneRepeats({ count, workers, message, onProgress }) {
+  assertRunCount(count);
+  const results = new Array(count);
+  const progress = new Array(count).fill(0);
+  const report = () => onProgress?.(progress.reduce((a, b) => a + b, 0) / count);
+  let next = 0;
+  await Promise.all(workers.slice(0, count).map(async (worker) => {
+    // maxRuns: undefined keeps worker.js in hours mode.
+    const run = workerBatchRunner(worker, message);
+    while (next < count) {
+      const i = next++;
+      results[i] = await run(undefined, i, (p) => { progress[i] = p; report(); });
+      progress[i] = 1;
+      report();
+    }
+  }));
   return mergeSimResults(results);
 }
 
