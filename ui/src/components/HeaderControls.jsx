@@ -27,7 +27,7 @@ import { levelToTierIndex, tierIndexToLevel, MAX_TIER_INDEX } from '../utils/tri
 import { simulableZones, zoneTiers, findZone } from '../utils/zones';
 import { SettingsMenu } from './SettingsMenu';
 import { usePersistentState, isBool } from '../hooks/usePersistentState';
-import { MAX_DUNGEON_RUNS, MIN_RUN_HOURS, MAX_RUN_HOURS, MAX_ZONE_WORKERS, clampRunCount, clampRunHours } from '../../../shared/dungeonRuns.js';
+import { MAX_DUNGEON_RUNS, MIN_RUN_HOURS, MAX_RUN_HOURS, MAX_ZONE_WORKERS, clampRunCount, clampRunHours, clampZoneWorkers } from '../../../shared/dungeonRuns.js';
 
 // =============================================================================
 // HeaderControls — the sticky simulation bar: mode (zone / labyrinth), the
@@ -555,10 +555,12 @@ export function HeaderControls({
             aria-label="Duration (hours)"
           />
           {simMode === 'zone' && (
-            <Tooltip label="Independent runs of this duration, in parallel, averaged into one result" withArrow>
+            <Tooltip label="Independent runs of this duration, averaged into one result; they run in parallel, up to one per CPU core" withArrow>
               <NumberInput
                 value={zoneWorkers}
-                onChange={(v) => onZoneWorkersChange(Math.max(1, Math.min(MAX_ZONE_WORKERS, Math.round(Number(v)) || 1)))}
+                onChange={onZoneWorkersChange}
+                onBlur={() => onZoneWorkersChange(clampZoneWorkers(zoneWorkers))}
+                clampBehavior="none"
                 allowDecimal={false}
                 min={1}
                 max={MAX_ZONE_WORKERS}

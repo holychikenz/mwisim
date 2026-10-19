@@ -28,6 +28,8 @@ import {
   runDungeonRunsSerial,
   workerBatchRunner,
   runZoneRepeats,
+  clampZoneWorkers,
+  MAX_ZONE_WORKERS,
 } from '../../shared/dungeonRuns.js';
 
 const H = ONE_HOUR_NS;
@@ -333,6 +335,31 @@ test('runZoneRepeats runs N hours-mode simulations over a pool and merges them e
   assert.equal(progress.at(-1), 1);
 
   await assert.rejects(runZoneRepeats({ count: 0, workers: [fakeWorker()], message: {} }), RangeError);
+});
+
+test('runZoneRepeats starts no new run after one fails', async () => {
+  let started = 0;
+  const worker = () => ({
+    postMessage() {
+      const n = ++started;
+      queueMicrotask(() => this.onmessage({ data: n === 1
+        ? { type: 'simulation_error', error: 'boom' }
+        : { type: 'simulation_result', simResult: { simulatedTime: 1 } } }));
+    },
+  });
+  await assert.rejects(runZoneRepeats({ count: 10, workers: [worker(), worker()], message: {} }), /boom/);
+  await new Promise((r) => setTimeout(r, 0));
+  assert.ok(started <= 3, `started ${started}`);
+  await assert.rejects(runZoneRepeats({ count: 0, workers: [worker()], message: {} }), /zone runs/);
+});
+
+test('clampZoneWorkers gives a whole number from 1 to the maximum, blank to 1', () => {
+  assert.equal(clampZoneWorkers(''), 1);
+  assert.equal(clampZoneWorkers(undefined), 1);
+  assert.equal(clampZoneWorkers(0), 1);
+  assert.equal(clampZoneWorkers('16'), 16);
+  assert.equal(clampZoneWorkers(2.6), 3);
+  assert.equal(clampZoneWorkers(1e6), MAX_ZONE_WORKERS);
 });
 
 // -- the idle between runs -------------------------------------------------------

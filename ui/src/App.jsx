@@ -111,7 +111,7 @@ import {
   clampTier,
   findZone
 } from './utils/zones';
-import { clampRunCount, clampRunHours, MAX_ZONE_WORKERS } from '../../shared/dungeonRuns.js';
+import { clampRunCount, clampRunHours, clampZoneWorkers } from '../../shared/dungeonRuns.js';
 import {
   comboKey,
   parseComboKey,
@@ -319,9 +319,7 @@ function App() {
   const [dungeonRuns, setDungeonRuns] = useState(() => clampRunCount(savedSession?.dungeonRuns));
   // Planet zones: run the duration this many times in parallel and average
   // (one result over workers × duration hours). 1 = a single run, as before.
-  const [zoneWorkers, setZoneWorkers] = useState(() =>
-    Math.min(MAX_ZONE_WORKERS, Math.max(1, Math.round(Number(savedSession?.zoneWorkers)) || 1))
-  );
+  const [zoneWorkers, setZoneWorkers] = useState(() => clampZoneWorkers(savedSession?.zoneWorkers));
   const [maxRunHours, setMaxRunHours] = useState(() => clampRunHours(savedSession?.maxRunHours));
   // Genuinely account- or server-wide only. Seals used to live here and are now
   // a per-character field on each player (see createDefaultPlayer), because a
@@ -1595,6 +1593,11 @@ function App() {
       setDungeonRuns(runs);
       setMaxRunHours(runHours);
     }
+    // Workers only for a zone known to be a planet: an unloaded or unknown
+    // zone might be a dungeon, which must never be repeated in hours mode.
+    const workers = clampZoneWorkers(zoneWorkers);
+    const planet = !isLab && findZone(gameData?.zones, zone)?.isDungeon === false;
+    if (planet) setZoneWorkers(workers);
 
     runSimulation({
       players: playerDTOs,
@@ -1608,7 +1611,7 @@ function App() {
         : null,
       simulationTimeLimit: duration * ONE_HOUR,
       ...(dungeonRunMode ? { maxRuns: runs, maxRunDurationNs: runHours * ONE_HOUR } : {}),
-      ...(!dungeonRunMode && !isLab ? { zoneRuns: zoneWorkers } : {}),
+      ...(planet ? { zoneRuns: workers } : {}),
       extra,
       // Shrine buffs are still permanent character buffs that apply to every
       // fight (the game exposes them via
@@ -1620,7 +1623,7 @@ function App() {
       // reader does not have to wonder whether it was forgotten.
       guildBuffs: []
     });
-  }, [resolvedParty, selectedParty, simMode, zone, difficultyTier, labConfig, mazeContext, duration, zoneWorkers, dungeonRunMode, dungeonRuns, maxRunHours, extraOptions, experimental, runSimulation, handleStartTrial, handleStartTriggerOpt, handleStartEquipOpt]);
+  }, [resolvedParty, selectedParty, simMode, zone, difficultyTier, labConfig, mazeContext, duration, zoneWorkers, gameData, dungeonRunMode, dungeonRuns, maxRunHours, extraOptions, experimental, runSimulation, handleStartTrial, handleStartTriggerOpt, handleStartEquipOpt]);
 
   // Pickers for the slot binder, and the label the party checkboxes wear.
   const characterOptions = useMemo(

@@ -49,9 +49,9 @@ export const DEFAULT_CONCURRENCY = 4;
 export const BATCH_BUDGET_HOURS = 100;
 export const MAX_ZONE_WORKERS = 64;
 
-function assertRunCount(totalRuns) {
+function assertRunCount(totalRuns, what = 'dungeon runs') {
   if (!Number.isInteger(totalRuns) || totalRuns < 1) {
-    throw new RangeError(`dungeon runs must be a positive integer (got ${totalRuns})`);
+    throw new RangeError(`${what} must be a positive integer (got ${totalRuns})`);
   }
 }
 
@@ -106,6 +106,13 @@ export function clampRunHours(value) {
   const n = value === '' || value == null ? NaN : Number(value);
   if (!Number.isFinite(n)) return DEFAULT_MAX_RUN_HOURS;
   return Math.min(MAX_RUN_HOURS, Math.max(MIN_RUN_HOURS, n));
+}
+
+/** As clampRunCount, for a planet zone's Workers field: a whole number from 1 to MAX_ZONE_WORKERS, blank gives 1. */
+export function clampZoneWorkers(value) {
+  const n = value === '' || value == null ? NaN : Number(value);
+  if (!Number.isFinite(n)) return 1;
+  return Math.min(MAX_ZONE_WORKERS, Math.max(1, Math.round(n)));
 }
 
 /** As clampRunHours, for the Runs field: a whole number from 1 to MAX_DUNGEON_RUNS. */
@@ -325,17 +332,24 @@ export async function runDungeonRunsSerial({ totalRuns, maxRunDurationNs, runBat
  * overall fraction.
  */
 export async function runZoneRepeats({ count, workers, message, onProgress }) {
-  assertRunCount(count);
+  assertRunCount(count, 'zone runs');
   const results = new Array(count);
   const progress = new Array(count).fill(0);
   const report = () => onProgress?.(progress.reduce((a, b) => a + b, 0) / count);
   let next = 0;
+  let failed = false;
   await Promise.all(workers.slice(0, count).map(async (worker) => {
     // maxRuns: undefined keeps worker.js in hours mode.
     const run = workerBatchRunner(worker, message);
-    while (next < count) {
+    // One failure fails the whole: the other workers start nothing new.
+    while (next < count && !failed) {
       const i = next++;
-      results[i] = await run(undefined, i, (p) => { progress[i] = p; report(); });
+      try {
+        results[i] = await run(undefined, i, (p) => { progress[i] = p; report(); });
+      } catch (e) {
+        failed = true;
+        throw e;
+      }
       progress[i] = 1;
       report();
     }
