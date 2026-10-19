@@ -376,9 +376,9 @@ upstream specifically changed the same surface area.
   \`useOfficialParry\` branch; to make the official rule universal later,
   delete the legacy branches in both.
 - **\`MAX_TICKS\` event-loop guard** — \`simulate()\` throws after
-  \`CombatSimulator.maxTicksFor(limit)\` event iterations (5 000 000, or
-  100 000 per simulated hour if more) so a future wiring bug surfaces as an
-  error rather than a frozen browser tab.
+  \`CombatSimulator.maxTicksAt(simulationTime)\` event iterations (5 000 000
+  plus 100 000 per ELAPSED simulated hour) so a future wiring bug surfaces as
+  an error rather than a frozen browser tab.
 - **Labyrinth 120 s hard cutoff** — the ours-only
   \`events/labyrinthTimeoutEvent.js\`, scheduled in \`startNewEncounter\` at
   \`start + Labyrinth.ROOM_DURATION_NS\` and handled by

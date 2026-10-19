@@ -58,17 +58,17 @@ const MAX_PARRY_ATTEMPTS = 5;
 // counted the crates and badly inflated win rates. Crates (carried on
 // `player.zoneBuffs` via Labyrinth.buffs) are now the single source of truth.
 
-class CombatSimulator extends EventTarget {
-    // MWIX adaptation: the event-loop guard's budget. Legitimate runs measure
-    // ~2k (solo planet) to ~16k (5-player dungeon) events per simulated hour,
-    // steady over 100 h, so 100k/h is a ~6× margin; 5 M floors short runs and
-    // a non-finite limit, as the old fixed cap did.
-    static MIN_MAX_TICKS = 5_000_000;
-    static MAX_TICKS_PER_SIM_HOUR = 100_000;
+const MIN_MAX_TICKS = 5_000_000;
+const MAX_TICKS_PER_SIM_HOUR = 100_000;
 
-    static maxTicksFor(simulationTimeLimitNs) {
-        const hours = Number.isFinite(simulationTimeLimitNs) ? simulationTimeLimitNs / 3600e9 : 0;
-        return Math.max(CombatSimulator.MIN_MAX_TICKS, Math.ceil(hours * CombatSimulator.MAX_TICKS_PER_SIM_HOUR));
+class CombatSimulator extends EventTarget {
+    // MWIX adaptation: the event-loop guard's budget after `elapsedNs` of
+    // simulated time. Legitimate runs measure ~2k (solo planet) to ~16k
+    // (5-player dungeon) events per simulated hour, steady over 100 h, so
+    // 100k/h is a ~6x margin. Charging against elapsed time (not the requested
+    // limit) means a clock that stops still throws at the 5 M floor.
+    static maxTicksAt(elapsedNs) {
+        return MIN_MAX_TICKS + Math.ceil(elapsedNs / 3600e9 * MAX_TICKS_PER_SIM_HOUR);
     }
 
     constructor(players, zone, labyrinth, options = {}) {
@@ -239,9 +239,8 @@ class CombatSimulator extends EventTarget {
         let ticks = 0;
         // Defence in depth: cap total event-loop iterations per simulation
         // so a future wiring bug surfaces as a thrown error rather than
-        // a frozen browser tab. MWIX adaptation: the cap scales with the
-        // simulated duration (see maxTicksFor), so long runs do not trip it.
-        const MAX_TICKS = CombatSimulator.maxTicksFor(simulationTimeLimit);
+        // a frozen browser tab. MWIX adaptation: the cap grows with elapsed
+        // simulated time (see maxTicksAt), so long runs do not trip it.
         let totalTicks = 0;
 
         let combatStartEvent = new CombatStartEvent(0);
@@ -253,9 +252,9 @@ class CombatSimulator extends EventTarget {
 
             ticks++;
             totalTicks++;
-            if (totalTicks >= MAX_TICKS) {
+            if (totalTicks >= MIN_MAX_TICKS && totalTicks >= CombatSimulator.maxTicksAt(this.simulationTime)) {
                 throw new Error(
-                    `csim simulate(): exceeded MAX_TICKS=${MAX_TICKS} at simTime=${(this.simulationTime / 1e9).toFixed(2)}s ` +
+                    `csim simulate(): exceeded MAX_TICKS=${totalTicks} at simTime=${(this.simulationTime / 1e9).toFixed(2)}s ` +
                     `(limit=${(simulationTimeLimit / 1e9).toFixed(0)}s) — pathological event rate, likely a wiring bug`
                 );
             }
