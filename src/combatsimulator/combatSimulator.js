@@ -648,9 +648,8 @@ class CombatSimulator extends EventTarget {
     startNewEncounter() {
         if (this.allPlayersDead) {
             this.allPlayersDead = false;
-            // MWIX adaptation: only a dungeon restart fails a run; a planet gap wipe is
-            // not a failed dungeon, nor is a wipe after the boss died (getNextWave completes it).
-            if (this.zone?.isDungeon && this.zone.encountersKilled <= this.zone.dungeonSpawnInfo.maxWaves) {
+            // MWIX adaptation: only a dungeon restart fails a run; a planet gap wipe is not a failed dungeon.
+            if (this.zone?.isDungeon) {
                 this.zone.failWave();
             }
         }

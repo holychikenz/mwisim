@@ -76,20 +76,3 @@ test('audit-1: a planet encounter after a gap wipe is not a failed dungeon run',
   assert.equal(sim.allPlayersDead, false);
   assert.equal(sim.zone.encountersKilled, before + 1, 'the boss counter is not reset');
 });
-
-test('audit-1: a wipe in the gap after the boss died still completes the dungeon', async () => {
-  const sim = makeSim('/actions/combat/pirate_cove', ['magic'], 150);
-  sim.reset();
-  sim.zone.encountersKilled = sim.zone.dungeonSpawnInfo.maxWaves + 1; // boss dead, next run not spawned
-  sim.allPlayersDead = true;
-  await withSeed(1, () => sim.startNewEncounter());
-  assert.equal(sim.zone.dungeonsCompleted, 1);
-  assert.equal(sim.zone.dungeonsFailed, 0);
-  assert.equal(sim.zone.encountersKilled - 1, 1, 'the restart is wave 1');
-
-  // One wave short of the end, the same wipe is a failed run.
-  sim.zone.encountersKilled = sim.zone.dungeonSpawnInfo.maxWaves;
-  sim.allPlayersDead = true;
-  await withSeed(1, () => sim.startNewEncounter());
-  assert.equal(sim.zone.dungeonsFailed, 1);
-});
