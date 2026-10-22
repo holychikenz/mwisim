@@ -15,7 +15,7 @@
 
 import { Router } from 'express';
 import { buildExtraBuffs } from '../lib/simulator.js';
-import { poolSizeFor, sanitiseConsumableCosts, streamPoolRun } from '../lib/optimizerRoute.js';
+import { objectiveError, poolSizeFor, sanitiseConsumableCosts, streamPoolRun } from '../lib/optimizerRoute.js';
 import { markDungeon, normaliseTarget, targetExtraBuffs, targetPlayerDTOs } from '../lib/target.js';
 import { makePoolEvaluator } from '../lib/triggerSearch/pool.js';
 import { defaultObjective, reportedMetricsFor } from '../lib/triggerSearch/score.js';
@@ -41,7 +41,7 @@ function validateBody(body) {
   }
   // `zone` XOR `labyrinth` — same resolver the trigger route uses, so the two
   // cannot drift apart on what a valid target is. See api/lib/target.js.
-  return normaliseTarget(body).error;
+  return objectiveError(body) || normaliseTarget(body).error;
 }
 
 /**

@@ -145,9 +145,18 @@ export function normaliseTarget(body = {}) {
   }
 
   if (zone) {
+    const zoneHrid = String(zone.zoneHrid);
+    const action = actionDetailMap[zoneHrid];
+    if (!action?.combatZoneInfo) {
+      return { kind: 'zone', zone: null, labyrinth: null, error: `Unknown combat zone ${zoneHrid}` };
+    }
+    // Clamped, like the room level: the engine scales monsters by formula, so an
+    // out-of-range tier would return a plausible row for a fight the game lacks.
+    const maxTier = Number.isFinite(action.maxDifficulty) ? action.maxDifficulty : 5;
+    const difficultyTier = Math.min(maxTier, Math.max(0, Math.floor(Number(zone.difficultyTier) || 0)));
     return {
       kind: 'zone',
-      zone: { zoneHrid: String(zone.zoneHrid), difficultyTier: Number(zone.difficultyTier) || 0 },
+      zone: { zoneHrid, difficultyTier },
       labyrinth: null,
       error: null,
     };

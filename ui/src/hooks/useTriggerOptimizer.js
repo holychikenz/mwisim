@@ -37,7 +37,6 @@ export function useTriggerOptimizer() {
   // `stale`: true while `results` belong to an earlier run (see useRunResults).
   const { results, stale, publish, begin, clear } = useRunResults();
   const [error, setError] = useState(null);
-  const [checkpoint, setCheckpoint] = useState(null);
   const [preview, setPreview] = useState(null);
   const [previewing, setPreviewing] = useState(false);
   const [apiReachable, setApiReachable] = useState(null); // null = not yet checked
@@ -130,7 +129,6 @@ export function useTriggerOptimizer() {
       setLabel('Starting…');
       begin();
       setError(null);
-      setCheckpoint(null);
 
       const controller = new AbortController();
       abortRef.current = controller;
@@ -193,12 +191,6 @@ export function useTriggerOptimizer() {
               }
               break;
             }
-
-            case 'checkpoint':
-              // Retained so an interrupted run can be resumed by posting this back
-              // as `resumeCheckpoint`.
-              setCheckpoint(frame.checkpoint);
-              break;
 
             case 'result':
               // Tagged so App can route it, exactly as the guild trial does.
@@ -276,7 +268,6 @@ export function useTriggerOptimizer() {
     setLabel('');
     clear();
     setError(null);
-    setCheckpoint(null);
   }, [stop, clear]);
 
   return {
@@ -287,7 +278,6 @@ export function useTriggerOptimizer() {
     results,
     stale,
     error,
-    checkpoint,
     preview,
     previewing,
     apiReachable,

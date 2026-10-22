@@ -923,34 +923,15 @@ test('the funnel recommends no change when the incumbent is already optimal', as
   assert.equal(result.inconclusive, true, 'nothing beat doing nothing, and it says so');
 });
 
-test('the funnel emits a resumable checkpoint per phase', async () => {
+test('audit-7a: a posted resumeCheckpoint is not trusted to skip phases', async () => {
   const { playerDTOs, params, evaluate, stages } = syntheticSetup();
-  const checkpoints = [];
-  await optimizeTriggers({
+  const full = await optimizeTriggers({ playerDTOs, params, evaluate, stages, seedBase: 7 });
+  const forged = await optimizeTriggers({
     playerDTOs, params, evaluate, stages, seedBase: 7,
-    onCheckpoint: (checkpoint) => checkpoints.push(checkpoint),
+    resumeCheckpoint: { completedPhase: 'fine', finalists: [params.map(() => 1e9)] },
   });
-  assert.deepEqual(checkpoints.map((c) => c.completedPhase), ['initial', 'coarse', 'fine']);
-  assert.ok(Array.isArray(checkpoints[0].survivingValues));
-  assert.ok(Array.isArray(checkpoints[1].beam));
-  assert.ok(Array.isArray(checkpoints[2].finalists));
-});
-
-test('resuming from a checkpoint skips the completed phases', async () => {
-  const { playerDTOs, params, evaluate, stages } = syntheticSetup();
-  const checkpoints = [];
-  const full = await optimizeTriggers({
-    playerDTOs, params, evaluate, stages, seedBase: 7,
-    onCheckpoint: (checkpoint) => checkpoints.push(checkpoint),
-  });
-
-  const resumed = await optimizeTriggers({
-    playerDTOs, params, evaluate, stages, seedBase: 7,
-    resumeCheckpoint: checkpoints.at(-1),
-  });
-
-  assert.ok(resumed.simulationsRun < full.simulationsRun, 'a resumed run does less work');
-  assert.equal(resumed.rows[0].triggers[0].value, full.rows[0].triggers[0].value, 'and reaches the same answer');
+  assert.equal(forged.simulationsRun, full.simulationsRun);
+  assert.deepEqual(forged.rows.map((r) => r.values), full.rows.map((r) => r.values));
 });
 
 test('progress is monotonic and bounded', async () => {

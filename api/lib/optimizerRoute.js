@@ -6,6 +6,7 @@
 
 import { isKnownCost } from '../../shared/consumableCost.js';
 import { createSimulationPool, defaultPoolSize, MAX_WORKERS } from './triggerSearch/pool.js';
+import { ALL_REPORTED_METRICS } from './triggerSearch/score.js';
 
 /** Heartbeat interval. Comfortably inside a 30s client stall timeout. */
 const HEARTBEAT_MS = 10_000;
@@ -36,6 +37,13 @@ export function sanitiseConsumableCosts(input) {
     if (isKnownCost(value)) costs[hrid] = Number(value);
   }
   return Object.keys(costs).length ? costs : null;
+}
+
+/** A posted `objective` must be a metric the scorer produces; absent means the default. */
+export function objectiveError(body) {
+  const objective = body?.objective;
+  if (objective == null || ALL_REPORTED_METRICS.includes(objective)) return null;
+  return `Unknown objective ${String(objective)}`;
 }
 
 /** The caller's `workers`, clamped to [1, MAX_WORKERS]; the default when absent. */

@@ -172,7 +172,8 @@ baseline is simulated at every stage (`il`) so deltas are always like-for-like.
 
 A checkpoint is emitted after each stage (`onCheckpoint`) carrying
 `{completedPhase, candidates, screening, stageBaselines}`, and a run can resume from
-`initial`/`coarse`/`fine` — the phase gate is just `d >= 1|2|3`.
+`initial`/`coarse`/`fine` — the phase gate is just `d >= 1|2|3`. (The peer's. This port has no checkpoint or resume: a client-posted
+checkpoint was trusted to skip phases.)
 
 ---
 

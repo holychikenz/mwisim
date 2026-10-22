@@ -68,8 +68,6 @@ export const DEFAULT_STAGES = {
 /** "Stable mode" — the peer's 120h verification. */
 export const STABLE_VERIFY_HOURS = 120;
 
-const PHASE_ORDER = ['initial', 'coarse', 'fine'];
-
 export class AbortError extends Error {
   constructor(message = 'Trigger optimisation cancelled') {
     super(message);
@@ -151,9 +149,7 @@ export function estimateWorkload(params, stageOverrides = {}) {
  * @param {object}  [args.stages]
  * @param {number}  [args.seedBase]
  * @param {object}  [args.epsilons]              { rank, insensitivity }
- * @param {object}  [args.resumeCheckpoint]
  * @param {(p: object) => void} [args.onProgress]
- * @param {(c: object) => void} [args.onCheckpoint]
  * @param {AbortSignal} [args.signal]
  * @returns {Promise<object>} the result document
  */
@@ -204,9 +200,7 @@ export async function optimizeTriggers({
   stages: stageOverrides = {},
   seedBase = 20260811,
   epsilons = {},
-  resumeCheckpoint = null,
   onProgress = null,
-  onCheckpoint = null,
   signal = null,
 }) {
   const stages = mergeStages(stageOverrides);
@@ -359,33 +353,16 @@ export async function optimizeTriggers({
   const rankAt = (stage, results) =>
     rankResults(results, { objective, epsilon: stageEpsilons[stage].rank });
 
-  // ---------------------------------------------------------------------------
-  // Resume support. The phase gate is an index, exactly as the peer's is.
-  // ---------------------------------------------------------------------------
-  const resumedPhase = resumeCheckpoint?.completedPhase;
-  const resumeIndex = PHASE_ORDER.indexOf(resumedPhase) + 1; // 0 when absent
-  const stageBaselines = { ...(resumeCheckpoint?.stageBaselines || {}) };
-  const screening = { ...(resumeCheckpoint?.screening || {}) };
-  const insensitivity = params.map((_, i) => resumeCheckpoint?.insensitivity?.[i] || null);
-
-  const emitCheckpoint = (phase, payload) => {
-    onCheckpoint?.({
-      completedPhase: phase,
-      screening: { ...screening },
-      stageBaselines: { ...stageBaselines },
-      insensitivity: insensitivity.map((band) => (band ? [...band] : null)),
-      ...payload,
-    });
-  };
+  const stageBaselines = {};
+  const screening = {};
+  const insensitivity = params.map(() => null);
 
   // ---------------------------------------------------------------------------
   // Stage 1 — per-parameter coarse screen. Establishes which values are even
   // worth carrying, and a provisional insensitivity band for each parameter.
   // ---------------------------------------------------------------------------
   let survivingValues;
-  if (resumeIndex >= 1 && Array.isArray(resumeCheckpoint?.survivingValues)) {
-    survivingValues = resumeCheckpoint.survivingValues.map((values) => [...values]);
-  } else if (params.length === 0) {
+  if (params.length === 0) {
     survivingValues = [];
     stageBaselines.initial = await evaluateBaseline({ hours: stages.initial.hours, seed: seedBase, stage: 'initial' });
   } else {
@@ -438,16 +415,13 @@ export async function optimizeTriggers({
     }
 
     screening.initial = survivingValues.reduce((total, values) => total + values.length, 0);
-    emitCheckpoint('initial', { survivingValues: survivingValues.map((v) => [...v]) });
   }
 
   // ---------------------------------------------------------------------------
   // Stage 2 — beam search over the surviving values.
   // ---------------------------------------------------------------------------
   let beam;
-  if (resumeIndex >= 2 && Array.isArray(resumeCheckpoint?.beam)) {
-    beam = resumeCheckpoint.beam.map((values) => [...values]);
-  } else if (params.length === 0) {
+  if (params.length === 0) {
     beam = [baselineValues];
   } else {
     stageBaselines.coarse = await evaluateBaseline({
@@ -487,7 +461,6 @@ export async function optimizeTriggers({
     }
 
     screening.coarse = beam.length;
-    emitCheckpoint('coarse', { survivingValues: survivingValues.map((v) => [...v]), beam: beam.map((v) => [...v]) });
   }
 
   // ---------------------------------------------------------------------------
@@ -497,9 +470,7 @@ export async function optimizeTriggers({
   // pass cannot regress.
   // ---------------------------------------------------------------------------
   let finalists;
-  if (resumeIndex >= 3 && Array.isArray(resumeCheckpoint?.finalists)) {
-    finalists = resumeCheckpoint.finalists.map((values) => [...values]);
-  } else if (params.length === 0) {
+  if (params.length === 0) {
     finalists = [baselineValues];
   } else {
     stageBaselines.fine = await evaluateBaseline({ hours: stages.fine.hours, seed: seedBase + 2, stage: 'fine' });
@@ -555,11 +526,6 @@ export async function optimizeTriggers({
     if (!finalists.length) finalists = [baselineValues];
 
     screening.fine = finalists.length;
-    emitCheckpoint('fine', {
-      survivingValues: survivingValues.map((v) => [...v]),
-      beam: beam.map((v) => [...v]),
-      finalists: finalists.map((v) => [...v]),
-    });
   }
 
   // ---------------------------------------------------------------------------

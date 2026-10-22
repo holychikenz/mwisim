@@ -11,7 +11,7 @@
 //     whose verification stage alone is 72 simulated hours per finalist.
 //
 //   POST /api/optimize-triggers
-//     Server-Sent Events. Frames are `progress`, `checkpoint`, `result`, `error`,
+//     Server-Sent Events. Frames are `start`, `progress`, `result`, `error`, `cancelled`,
 //     matching the shape POST /api/simulate-stream already established.
 //
 // Unlike /api/simulate-stream this route handles `req.on('close')`: an optimiser
@@ -23,7 +23,7 @@
 
 import { Router } from 'express';
 import { buildExtraBuffs } from '../lib/simulator.js';
-import { poolSizeFor, sanitiseConsumableCosts, streamPoolRun } from '../lib/optimizerRoute.js';
+import { objectiveError, poolSizeFor, sanitiseConsumableCosts, streamPoolRun } from '../lib/optimizerRoute.js';
 import { markDungeon, normaliseTarget, targetExtraBuffs, targetPlayerDTOs } from '../lib/target.js';
 import { deriveBounds } from '../lib/triggerSearch/bounds.js';
 import { collectSearchParams, enumerateTriggers } from '../lib/triggerSearch/params.js';
@@ -45,7 +45,7 @@ function validateBody(body) {
   // `zone` XOR `labyrinth`, resolved and validated in one place so this route,
   // the equipment route and the bounds derivation cannot disagree about what
   // was asked for. See api/lib/target.js.
-  return normaliseTarget(body).error;
+  return objectiveError(body) || normaliseTarget(body).error;
 }
 
 /**
@@ -89,6 +89,17 @@ function sanitiseStages(input = {}, { stableMode = false } = {}) {
   };
 }
 
+/** A row named twice would be swept as two parameters fighting over one value. */
+function uniqueSelection(selection) {
+  const seen = new Set();
+  return selection.filter((row) => {
+    const key = `${row?.playerIndex}|${row?.slotKind}|${row?.slotIndex}|${row?.triggerIndex}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 /** Shared setup for both routes: bounds, enumerated triggers, resolved params. */
 function prepare(body) {
   const { players, extra = {}, guildBuffs = [] } = body;
@@ -115,7 +126,7 @@ function prepare(body) {
   // No explicit selection means "sweep everything that can be swept" — the
   // sensible default, and what the preview shows before the user narrows it.
   const selection = Array.isArray(body.selection)
-    ? body.selection.slice(0, MAX_SELECTION)
+    ? uniqueSelection(body.selection).slice(0, MAX_SELECTION)
     : triggers
         .filter((row) => row.searchable)
         .slice(0, MAX_SELECTION)
@@ -252,12 +263,8 @@ router.post('/optimize-triggers', async (req, res) => {
       stages,
       seedBase: Number(req.body.seedBase) || undefined,
       epsilons: req.body.epsilons || {},
-      resumeCheckpoint: req.body.resumeCheckpoint || null,
       signal,
       onProgress: (progress) => send({ type: 'progress', ...progress }),
-      // Forwarded so a client can resume an interrupted run by posting the last
-      // checkpoint back in `resumeCheckpoint`.
-      onCheckpoint: (checkpoint) => send({ type: 'checkpoint', checkpoint }),
     });
 
     // Merged rather than returned by search.js, which is deliberately ignorant of
