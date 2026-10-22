@@ -4,7 +4,7 @@
 // Shared by csim's two products:
 //
 //   api/lib/triggerSearch/score.js        — scores optimiser candidates
-//   ui/src/utils/consumableCosts.js       — the zone results' effective rate
+//   ui/src/utils/consumableCosts.js       — the zone and All Zones effective rates
 //
 // WHY THIS DIRECTORY. It is emphatically NOT in src/combatsimulator/, though
 // that is the other place both products can reach. That directory is
@@ -50,9 +50,9 @@ export function isKnownCost(value) {
 /**
  * Flatten the engine's per-player consumable tally into one per-item total.
  *
- * `simResult.consumablesUsed` is `{ [playerHrid]: { [itemHrid]: count } }`. The
- * party shares a production queue, so the player who ate a thing does not change
- * what it cost to make.
+ * `simResult.consumablesUsed` is `{ [playerHrid]: { [itemHrid]: count } }`. This
+ * merged tally is for COUNTING units; it is not a production bill, because each
+ * character makes their own consumables — see partyConsumableSeconds.
  *
  * @param {Record<string, Record<string, number>>} consumablesUsed
  * @returns {{byItem: Record<string, number>, total: number}}
@@ -98,6 +98,30 @@ export function consumableSecondsUsed(byItem, costs) {
   }
 
   return { seconds, priced, unpriced };
+}
+
+/**
+ * Production time owed by the party, in seconds: each character makes their own
+ * consumables, in parallel, so the party's real clock is set by the slowest
+ * kitchen — the per-player MAXIMUM, not the sum. For one player the two agree.
+ *
+ * The one rule for every effective rate (zone results, All Zones, optimiser).
+ *
+ * @param {Record<string, Record<string, number>>} consumablesUsed  per-player tally
+ * @param {Record<string, number>} costs  itemHrid → seconds each
+ * @returns {{seconds: number, priced: string[], unpriced: string[]}}
+ */
+export function partyConsumableSeconds(consumablesUsed, costs) {
+  let seconds = 0;
+  const priced = new Set();
+  const unpriced = new Set();
+  for (const perItem of Object.values(consumablesUsed || {})) {
+    const own = consumableSecondsUsed(perItem, costs);
+    seconds = Math.max(seconds, own.seconds);
+    own.priced.forEach((hrid) => priced.add(hrid));
+    own.unpriced.forEach((hrid) => unpriced.add(hrid));
+  }
+  return { seconds, priced: [...priced], unpriced: [...unpriced] };
 }
 
 /**

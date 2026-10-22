@@ -267,3 +267,30 @@ test('a run that consumed nothing is free, not unknown', () => {
   assert.equal(genuinelyUnknown.known, false);
   assert.equal(genuinelyUnknown.nothingConsumed, false);
 });
+
+// -----------------------------------------------------------------------------
+// audit-11 — one per-player rule for every effective rate
+// -----------------------------------------------------------------------------
+
+/** One hour: player1 owes 20 × 240 = 4800 s, player2 owes 40 × 30 = 1200 s. */
+const PARTY_USED = {
+  player1: { '/items/peach_gummy': 20 },
+  player2: { '/items/marsberry_donut': 40 },
+};
+
+test('audit-11: each character cooks their own, so the party owes its slowest kitchen', async () => {
+  const { partyConsumableSeconds } = await import('../../shared/consumableCost.js');
+  const costs = { '/items/peach_gummy': 240, '/items/marsberry_donut': 30 };
+  assert.equal(partyConsumableSeconds(PARTY_USED, costs).seconds, 4800, 'max, not the 6000 s sum');
+  assert.equal(partyConsumableSeconds({ player2: PARTY_USED.player2 }, costs).seconds, 1200);
+
+  // The zone results (SimulationResults, All Zones) and the optimiser agree.
+  const summary = summariseConsumableCost({ consumablesUsed: PARTY_USED, hours: 1, pricing: ironPricing() });
+  assert.equal(summary.secondsPerHour, 4800);
+  const { scoreSimResult } = await import('../lib/triggerSearch/score.js');
+  const metrics = scoreSimResult(
+    { simulatedTime: 3600e9, encounters: 100, manaUsed: { player1: {}, player2: {} }, deaths: {}, consumablesUsed: PARTY_USED },
+    { consumableCosts: costs }
+  );
+  assert.equal(metrics.consumableSecondsPerHour, 4800);
+});

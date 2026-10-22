@@ -31,7 +31,7 @@
 // Static, unlike the engine import below: shared/ is plain ESM with no
 // extensionless or JSON imports, so it needs nothing from api/loader.js.
 import {
-  consumableSecondsUsed,
+  partyConsumableSeconds,
   consumableTimeShare,
   effectiveRatePerHour,
   sumConsumablesUsed,
@@ -312,7 +312,7 @@ export function scoreSimResult(simResult, { consumableCosts = null } = {}) {
   for (const [itemHrid, count] of Object.entries(consumablesByItem)) {
     consumablesByItemPerHour[itemHrid] = perHour(count);
   }
-  const { seconds: consumableSeconds } = consumableSecondsUsed(consumablesByItem, consumableCosts);
+  const { seconds: consumableSeconds } = partyConsumableSeconds(simResult?.consumablesUsed, consumableCosts);
   const consumableSecondsPerHour = perHour(consumableSeconds);
 
   // Running dry of mana is invisible in encounters/hour until it is severe, but

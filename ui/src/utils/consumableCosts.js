@@ -19,7 +19,7 @@
 // =============================================================================
 
 import {
-  consumableSecondsUsed,
+  partyConsumableSeconds,
   consumableTimeShare,
   effectiveRatePerHour,
   sumConsumablesUsed,
@@ -181,7 +181,7 @@ export function summariseConsumableCost({ consumablesUsed, hours, pricing }) {
     if (override != null) overrides.push(hrid);
   }
 
-  const { seconds, priced, unpriced } = consumableSecondsUsed(byItem, costs);
+  const { seconds, priced, unpriced } = partyConsumableSeconds(consumablesUsed, costs);
   const secondsPerHour = perHour(seconds);
 
   return {
