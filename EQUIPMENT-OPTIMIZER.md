@@ -79,22 +79,15 @@ Every skipped slot is reported with its reason, following the trigger panel's
 `searchable`/`reason` convention. Silently hiding a slot invites the reader to
 assume it was measured and found wanting.
 
-### The one caveat the data cannot express
+### Task badges are not scanned
 
-`taskDamage` is applied to **every** damage roll in the engine —
-`combatUtilities.js` multiplies by `1 + source.combatDetails.combatStats.taskDamage`
-with no test that the target is on the player's task list. In the game it applies
-only to task monsters. So a task badge reads to the simulator as a flat global
-damage multiplier, and on the first real run an Expert Task Badge duly came out
-**ranked first**, ahead of the weapon.
-
-`src/combatsimulator/` is upstream-tracked, so correcting it here would be a
-divergence to re-resolve on every sync, for a question this feature is not the
-right place to answer. The row is therefore measured and reported like any other
-and carries a caveat saying what the number assumes — it is exactly right for a
-player who is always on task. The caveat fires only when **every** stat an item
-gains is a caveated one; a mixed item is measured fairly enough that a warning
-would be noise.
+The engine no longer applies `taskDamage` at all (`combatUtilities.js`,
+`TASK_DAMAGE_APPLIES = false`): in the game it applies only to task monsters,
+which the simulator does not model. A task-badge probe would therefore equal the
+baseline, so a badge whose only enhancement gain is task damage is listed as
+skipped ("no simulated combat stat gains from enhancing") rather than scanned
+for a guaranteed zero. The table in §7 predates this; its badge row would now
+be absent.
 
 ---
 

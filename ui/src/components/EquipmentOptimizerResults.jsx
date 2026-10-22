@@ -594,7 +594,6 @@ export function EquipmentOptimizerResults({
   const costed = !!results.consumableCostsKnown;
   // The headline names the first significant GAIN, not merely the top row.
   const leader = rows.find((row) => row.significant && row.perLevel > 0) ?? rows[0];
-  const anyCaveat = rows.some((row) => row.caveat);
 
   return (
     <Stack gap="md">
@@ -678,20 +677,6 @@ export function EquipmentOptimizerResults({
         </Alert>
       )}
 
-      {anyCaveat && (
-        <Alert color="orange" variant="light" title="One or more rows carry a caveat">
-          <Stack gap={2}>
-            {rows
-              .filter((row) => row.caveat)
-              .map((row) => (
-                <Text size="xs" key={row.id}>
-                  <b>{row.slotName}</b> — {row.caveat}
-                </Text>
-              ))}
-          </Stack>
-        </Alert>
-      )}
-
       <SimpleGrid cols={{ base: 2, sm: 4 }} spacing="sm">
         <StatCard
           label={
@@ -756,13 +741,6 @@ export function EquipmentOptimizerResults({
                   <Table.Td>
                     <Group gap={4} wrap="nowrap">
                       <Text size="sm">{row.slotName}</Text>
-                      {row.caveat && (
-                        <Tooltip label={row.caveat} withArrow multiline w={260}>
-                          <Text size="xs" c="orange">
-                            ⚠
-                          </Text>
-                        </Tooltip>
-                      )}
                     </Group>
                   </Table.Td>
                   <Table.Td>

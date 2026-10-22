@@ -87,13 +87,6 @@ function SlotRow({ row, checked, disabled, onToggle }) {
           <Text size="10px" c="dimmed" truncate>
             {row.itemName}
           </Text>
-          {row.caveat && (
-            <Tooltip label={row.caveat} withArrow position="right" multiline w={260}>
-              <Text size="10px" c="orange">
-                caveat — hover
-              </Text>
-            </Tooltip>
-          )}
         </Stack>
       </Group>
     </Paper>

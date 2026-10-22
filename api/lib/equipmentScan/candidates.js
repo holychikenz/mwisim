@@ -69,27 +69,12 @@ export const MAX_ENHANCEMENT_LEVEL = Math.max(0, enhancementLevelTotalMultiplier
 export const DEFAULT_STEP = 6;
 
 /**
- * Stats the engine models in a way that flatters an enhancement figure.
- *
- * Only one entry, and it earns its place. `taskDamage` is applied to EVERY damage
- * roll in the engine — combatUtilities.js multiplies by
- * `1 + source.combatDetails.combatStats.taskDamage` unconditionally, with no test
- * that the target is on the player's task list. In the game it applies only to
- * task monsters. So a task badge reads to the simulator as a flat global damage
- * multiplier, and on a first real run an Expert Task Badge duly came out ranked
- * first, at 1.35% per level — ahead of the weapon.
- *
- * That is the engine's behaviour, not this module's, and `src/combatsimulator/`
- * is upstream-tracked: correcting it here would be a divergence to re-resolve on
- * every sync, for a question the scan is not the right place to answer. So the
- * row is measured and reported like any other and carries a caveat saying what
- * the number assumes. A silent exclusion would be worse — the figure is exactly
- * right for a player who is always on task.
+ * Stats the engine does not apply. Task damage is gated off in
+ * combatUtilities.js (TASK_DAMAGE_APPLIES = false), so a task badge probe
+ * would equal the baseline: it is left unscannable rather than scanned for
+ * a guaranteed zero.
  */
-export const CAVEATED_STATS = Object.freeze({
-  taskDamage:
-    'the simulator applies task damage to every encounter, so this figure holds only while you are on task',
-});
+const UNSIMULATED_STATS = new Set(['taskDamage']);
 
 /** Pretty-print `/equipment_types/main_hand` as `Main hand`. */
 function slotLabel(slotKey) {
@@ -112,28 +97,11 @@ export function liveEnhancementStats(gameItem) {
   if (!detail) return [];
   const stats = detail.combatStats || {};
   const bonuses = detail.combatEnhancementBonuses || {};
-  return Object.keys(bonuses).filter((stat) => bonuses[stat] && stats[stat]);
+  return Object.keys(bonuses).filter((stat) => bonuses[stat] && stats[stat] && !UNSIMULATED_STATS.has(stat));
 }
 
 export function hasLiveEnhancementBonus(gameItem) {
   return liveEnhancementStats(gameItem).length > 0;
-}
-
-/**
- * A caveat when EVERY stat this item gains is one the engine overstates.
- *
- * All-or-nothing on purpose. An item that gains task damage alongside four
- * ordinary stats is measured fairly enough that a warning would be noise; an
- * item whose only gain is task damage is measuring something the engine applies
- * more broadly than the game does, and the reader has to be told.
- *
- * @param {string[]} statNames
- * @returns {string|null}
- */
-export function caveatFor(statNames) {
-  if (!statNames.length) return null;
-  if (!statNames.every((stat) => CAVEATED_STATS[stat])) return null;
-  return CAVEATED_STATS[statNames[0]];
 }
 
 /**
@@ -202,7 +170,6 @@ export function enumerateEquipment(playerDTOs, { step = DEFAULT_STEP } = {}) {
         scannable: false,
         reason: null,
         gainedStats: [],
-        caveat: null,
       };
 
       if (!gameItem) {
@@ -222,12 +189,11 @@ export function enumerateEquipment(playerDTOs, { step = DEFAULT_STEP } = {}) {
       }
       const gainedStats = liveEnhancementStats(gameItem);
       if (!gainedStats.length) {
-        row.reason = 'no combat stat gains from enhancing';
+        row.reason = 'no simulated combat stat gains from enhancing';
         rows.push(row);
         continue;
       }
       row.gainedStats = gainedStats;
-      row.caveat = caveatFor(gainedStats);
 
       // Clamped here, not by the caller: an item near the cap gets a shorter
       // probe and the row must carry the step that was actually used, because

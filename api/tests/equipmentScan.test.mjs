@@ -23,11 +23,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  CAVEATED_STATS,
   DEFAULT_STEP,
   MAX_ENHANCEMENT_LEVEL,
   applyEnhancement,
-  caveatFor,
   enumerateEquipment,
   hasLiveEnhancementBonus,
   liveEnhancementStats,
@@ -175,7 +173,7 @@ test('enumerateEquipment skips an item with no combat stat gains from enhancing'
     })
   );
   assert.equal(rows[0].scannable, false);
-  assert.match(rows[0].reason, /no combat stat gains/);
+  assert.match(rows[0].reason, /no simulated combat stat gains/);
 });
 
 test('enumerateEquipment reports an unknown hrid rather than throwing', () => {
@@ -221,34 +219,23 @@ test('hasLiveEnhancementBonus mirrors the engine gate on the BASE stat', () => {
   assert.equal(hasLiveEnhancementBonus({}), false);
 });
 
-test('a task badge is scanned but carries the engine caveat', () => {
-  // The engine multiplies EVERY damage roll by (1 + taskDamage) with no test that
-  // the target is on task, so this row is right only for an always-on-task
-  // player. Measured and flagged rather than excluded — see CAVEATED_STATS.
+test('audit-10: a task badge is unscannable, since task damage is not simulated', () => {
+  // combatUtilities.js TASK_DAMAGE_APPLIES = false: a badge probe would equal the baseline.
   const rows = enumerateEquipment(
     playerWith({
       '/equipment_types/trinket': { hrid: '/items/expert_task_badge', enhancementLevel: 3 },
     })
   );
-  assert.equal(rows[0].scannable, true);
-  assert.deepEqual(rows[0].gainedStats, ['taskDamage']);
-  assert.equal(rows[0].caveat, CAVEATED_STATS.taskDamage);
+  assert.equal(rows[0].scannable, false);
+  assert.match(rows[0].reason, /no simulated combat stat/);
 });
 
-test('an ordinary item gains several stats and carries no caveat', () => {
+test('an ordinary item gains several stats', () => {
   const rows = enumerateEquipment(
     playerWith({ '/equipment_types/head': { hrid: '/items/cheese_helmet', enhancementLevel: 0 } })
   );
   assert.ok(rows[0].gainedStats.includes('armor'));
-  assert.equal(rows[0].caveat, null);
-});
-
-test('caveatFor fires only when every gained stat is caveated', () => {
-  assert.equal(caveatFor(['taskDamage']), CAVEATED_STATS.taskDamage);
-  // Mixed: the item is measured fairly enough that a warning would be noise.
-  assert.equal(caveatFor(['taskDamage', 'armor']), null);
-  assert.equal(caveatFor(['armor']), null);
-  assert.equal(caveatFor([]), null);
+  assert.equal(rows[0].scannable, true);
 });
 
 test('liveEnhancementStats lists exactly the stats the engine will move', () => {
