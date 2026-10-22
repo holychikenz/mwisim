@@ -45,6 +45,17 @@ test('audit-4: a promoted monster is reset, replaces the pawn and is tracked', a
   assert.ok(sim.simResult.timeSpentAlive.some(t => t.name === m.hrid && t.alive && t.spawnedAt === 10e9));
 });
 
+test('audit-4: the promoted monster keeps the pawn\'s room level', async () => {
+  const player = Player.createFromDTO(structuredClone(toCsimPlayer(BUILDS.melee, { level: 90, index: 1, items, abilityData })));
+  const sim = new CombatSimulator([player], new Zone('/actions/combat/enchanted_fortress', 0), null, {});
+  sim.reset();
+  const pawn = new Monster('/monsters/enchanted_pawn', 0, 260);
+  pawn.reset(0);
+  sim.enemies = [pawn];
+  const m = await withSeed(1, () => sim.processAbilityPromoteEffect(pawn));
+  assert.equal(m.roomLevel, 260);
+});
+
 test('audit-4: closing an untracked unit is a no-op, not a throw', () => {
   const r = new SimResult(null, null, 1);
   r.updateTimeSpentAlive('/monsters/nobody', false, 5e9);

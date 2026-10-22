@@ -2374,7 +2374,7 @@ class CombatSimulator extends EventTarget {
         let randomPromotionIndex = Math.floor(Math.random() * promotionHrids.length);
         // MWIX adaptation: the promoted monster was never reset (110 HP, level-1
         // stats) nor put in enemies, and its death crashed updateTimeSpentAlive.
-        const promoted = new Monster(promotionHrids[randomPromotionIndex], source.difficultyTier);
+        const promoted = new Monster(promotionHrids[randomPromotionIndex], source.difficultyTier, source.roomLevel);
         promoted.reset(this.simulationTime);
         const i = this.enemies ? this.enemies.indexOf(source) : -1;
         if (i !== -1) this.enemies[i] = promoted;
