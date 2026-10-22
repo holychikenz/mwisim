@@ -216,6 +216,7 @@ class SimResult {
                 this.timeSpentAlive.push({ name: name, timeSpentAlive: 0, spawnedAt: time, alive: true, count: 0 });
             }
         } else {
+            if (i === -1) return; // MWIX adaptation: as updateDungenonFinish — an untracked unit has no span to close
             const timeAlive = time - this.timeSpentAlive[i].spawnedAt;
             this.timeSpentAlive[i].alive = false;
             this.timeSpentAlive[i].timeSpentAlive += timeAlive;
