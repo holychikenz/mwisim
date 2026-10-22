@@ -64,7 +64,7 @@ Data reference: `milkyway_client_info.json` → `guildTrialDetailMap`, `combatMo
 - [x] `worker.js`: `start_guild_trial` payload `{ players[], guildTrial:{trialHrid,startTier,participantCount,trialOptions}, guildBuffs[], extra, iterations }` → returns `{ summaries[] }`
 - [x] `multiWorker.js`: `start_simulation_guild_trial` shards iterations across workers; aggregates per-tier results via `aggregateTrialResults`
 - [~] Performance pass: profile 40-player, 1-hour ladders; pick default iteration count (deferred; API/worker support arbitrary `iterations`)
-- [x] `api/` route (`POST /api/simulate-guild-trial`) + `runGuildTrialSimulation` for headless trial sims
+- [x] `runGuildTrialSimulation` (api/lib/simulator.js) for headless trial sims, called in-process by SCLIRoster (the `POST /api/simulate-guild-trial` route had no caller and was removed — audit-14)
 
 ### Engine implementation notes (Phase 1/2)
 

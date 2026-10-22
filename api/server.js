@@ -25,6 +25,7 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
 
-app.listen(PORT, () => {
-  console.log(`Combat Simulator API running on http://localhost:${PORT}`);
+// Loopback only: this serves the local UI and nothing else.
+app.listen(PORT, '127.0.0.1', () => {
+  console.log(`Combat Simulator API running on http://127.0.0.1:${PORT}`);
 });

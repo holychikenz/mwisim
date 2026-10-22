@@ -167,8 +167,8 @@ suite that asserts nothing.
   path — added anywhere in `SimResult` — makes every hash noise, and the
   failure looks like a drift rather than like a bug in the harness. Add it to
   `REDACTIONS` in `api/lib/determinism.mjs` and say why.
-- **The worker branch.** The seeded `Math.random` does not reach a worker
-  realm, so nothing here covers `runSimulationWithWorker`.
+- **A worker realm.** The seeded `Math.random` does not reach one, so nothing
+  here covers the optimiser's pool workers (`api/lib/triggerSearch/poolWorker.js`).
 - **A change that only the bench's `hours` would reveal.** Everything here runs
   at exactly one simulated hour (`EVAL_HOURS`).
 - **`api/eval/engine.mjs` drifting from `api/lib/simulator.js`** — guarded by

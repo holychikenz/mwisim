@@ -15,8 +15,7 @@
 //
 // The result lands on the DTO as `extraBuffs`, which its consumers concatenate
 // onto their shared list: src/worker.js (both cases), api/lib/simulator.js
-// `runSimulation`, api/lib/simulationWorker.js, and the trigger search's
-// poolWorker and bounds.
+// `runSimulation`, and the trigger search's poolWorker and bounds.
 //
 // ONE consumer deliberately does not: `runGuildTrialSimulation` in
 // api/lib/simulator.js still OVERWRITES `extraBuffs`, because SCLIRoster folds

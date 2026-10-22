@@ -1,7 +1,6 @@
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import { readFileSync } from 'fs';
-import { Worker } from 'worker_threads';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -72,50 +71,13 @@ export function buildExtraBuffs(extra = {}) {
 }
 
 /**
- * Run a combat simulation using worker thread (supports progress)
- */
-export function runSimulationWithWorker({ players: playersData, zone: zoneConfig, simulationTimeLimit, extra = {}, guildBuffs = [] }, onProgress = null) {
-  return new Promise((resolve, reject) => {
-    // Shrine buffs apply to all combat — see runSimulation / src/worker.js.
-    const extraBuffs = buildExtraBuffs(extra).concat(guildBuffs);
-    const workerPath = join(__dirname, 'simulationWorker.js');
-
-    const worker = new Worker(workerPath, {
-      workerData: {
-        playersData,
-        zoneConfig,
-        simulationTimeLimit,
-        extraBuffs
-      }
-    });
-
-    worker.on('message', (msg) => {
-      if (msg.type === 'progress' && onProgress) {
-        onProgress(msg);
-      } else if (msg.type === 'result') {
-        resolve(msg.result);
-      } else if (msg.type === 'error') {
-        reject(new Error(msg.error));
-      }
-    });
-
-    worker.on('error', reject);
-    worker.on('exit', (code) => {
-      if (code !== 0) {
-        reject(new Error(`Worker stopped with exit code ${code}`));
-      }
-    });
-  });
-}
-
-/**
  * Run a combat simulation (main thread, no progress)
  *
  * With `maxRuns` (a dungeon only), the dungeon is simulated as that many runs,
  * each failed if still going after `maxRunDurationNs` (default 3 h), in
  * batches on the main thread and merged — see shared/dungeonRuns.js — and the
  * idle between runs is added once, to the merged total. Progress, if asked
- * for, is reported as { type: 'progress', progress } like the worker's.
+ * for (runs mode only), is reported as { type: 'progress', progress }.
  */
 export async function runSimulation({ players: playersData, zone: zoneConfig, simulationTimeLimit, extra = {}, guildBuffs = [], maxRuns, maxRunDurationNs }, onProgress = null) {
   const args = { players: playersData, zone: zoneConfig, simulationTimeLimit, extra, guildBuffs };
@@ -129,11 +91,6 @@ export async function runSimulation({ players: playersData, zone: zoneConfig, si
       onProgress: onProgress && ((progress) => onProgress({ type: 'progress', progress })),
     });
     return addRunIdleTime(merged);
-  }
-
-  // If progress callback is provided, use worker thread
-  if (onProgress) {
-    return runSimulationWithWorker(args, onProgress);
   }
 
   return simulateOnMainThread(args);

@@ -1,13 +1,10 @@
 // =============================================================================
 // poolWorker — a reusable simulation worker for the trigger optimiser
 //
-// api/lib/simulationWorker.js is a ONE-SHOT script: it reads workerData, runs a
-// single simulation, posts the result and exits. That is right for
-// POST /api/simulate-stream, but the optimiser runs hundreds of simulations and
-// paying the engine's module-load cost each time would dominate the run.
-//
-// So this is a message loop instead. It loads the engine once, then answers
-// `run` messages until told to stop. Two further differences from the one-shot:
+// The optimiser runs hundreds of simulations, and paying the engine's
+// module-load cost for each would dominate the run. So this is a message loop:
+// it loads the engine once, then answers `run` messages until told to stop.
+// Two further points:
 //
 //   1. Math.random is replaced with a SEEDED generator before every run, so
 //      candidates within a sweep face identical spawns. See rng.js for why this
@@ -40,7 +37,7 @@ const { scoreSimResult } = await import('./score.js');
  * an explicit null: omitting the labyrinth argument puts the options object in
  * its slot, and startNewEncounter() then calls this.labyrinth.getMonster() and
  * throws on the first encounter. Same trap documented in
- * api/lib/simulationWorker.js.
+ * api/lib/simulator.js simulateOnMainThread.
  */
 function buildRun({ playersData, zoneConfig, labyrinthConfig, extraBuffs }) {
   const zone = zoneConfig ? new Zone(zoneConfig.zoneHrid, zoneConfig.difficultyTier) : null;

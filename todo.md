@@ -574,7 +574,7 @@ for §2's per-stage numbers.
   the engine computes and does not put in `SimResult` is not covered.
 - Under a **seeded global `Math.random`**, on the **main-thread branch only**.
   The override does not reach a worker realm, so this says nothing directly
-  about `runSimulationWithWorker`.
+  about a worker path (`runSimulationWithWorker` has since been deleted — audit-14).
 - **`heap-js` held at 2.7.1 for both engines.** `bb4d767` re-pinned it from
   `^2.2.0`; the loader resolves it from the current `node_modules` whichever
   engine is loaded. That is the correct control — it isolates engine source —

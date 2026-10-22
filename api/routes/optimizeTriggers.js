@@ -11,11 +11,10 @@
 //     whose verification stage alone is 72 simulated hours per finalist.
 //
 //   POST /api/optimize-triggers
-//     Server-Sent Events. Frames are `start`, `progress`, `result`, `error`, `cancelled`,
-//     matching the shape POST /api/simulate-stream already established.
+//     Server-Sent Events. Frames are `start`, `progress`, `result`, `error`, `cancelled`.
 //
-// Unlike /api/simulate-stream this route handles `req.on('close')`: an optimiser
-// run holds a whole worker pool, and a user who navigates away must not leave a
+// The run aborts when the client disconnects (api/lib/optimizerRoute.js): an
+// optimiser run holds a whole worker pool, and a user who navigates away must not leave a
 // dozen threads saturating the machine until they finish. It also emits SSE
 // heartbeat comments, because a single 72-hour candidate simulation can outlast a
 // client-side stall timeout with no natural frame to send.
