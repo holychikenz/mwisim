@@ -98,6 +98,22 @@ export function priceOf(prices, hrid, mode = 'bid') {
   return price > 0 ? price : 0;
 }
 
+/** The marketplace keeps 4% of every sale. */
+export const MARKET_TAX = 0.04;
+
+/**
+ * What selling a drop nets on `source`: the market price less the 4% tax. Coin is
+ * not sold, a chest is opened rather than listed, and an item with no listing
+ * falls back to its (untaxed) vendor price.
+ */
+export function saleValue(prices, hrid, mode, source) {
+  const price = priceOf(prices, hrid, mode);
+  const item = prices?.[hrid];
+  const listed = item && (item.bid !== -1 || item.ask !== -1);
+  const taxed = source === 'market' && listed && hrid !== '/items/coin' && !MARKET_CHESTS.includes(hrid);
+  return taxed ? price * (1 - MARKET_TAX) : price;
+}
+
 /** Format a value in the active unit: coins → 1.2M; seconds → 1h 4m. */
 export function formatValue(v, unit) {
   if (unit === 'seconds') {

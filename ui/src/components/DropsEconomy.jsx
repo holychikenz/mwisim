@@ -6,7 +6,7 @@ import { nameOf } from '../utils/names';
 import { NumTd, Section, StatGroup } from './ResultParts';
 import { usePersistentState, isBool } from '../hooks/usePersistentState';
 import { calculateExpectedDrops, calculateDropsPerHour } from '../utils/drops';
-import { priceOf, formatValue } from '../utils/prices';
+import { priceOf, saleValue, formatValue } from '../utils/prices';
 import { convertDropsToCredits } from '../utils/guildCredits';
 
 const ONE_HOUR = 60 * 60 * 1e9;
@@ -101,11 +101,11 @@ export function DropsEconomy({ results, monsters, items, pricing, focusHrid, pla
     const expected = calculateExpectedDrops(results, monsters, items, activeHrid);
     const priced = expected.map((d) => ({
       ...d,
-      sellPrice: prices ? priceOf(prices, d.itemHrid, revenueMode) : d.sellPrice
+      sellPrice: prices ? saleValue(prices, d.itemHrid, revenueMode, source) : d.sellPrice
     }));
     priced.sort((a, b) => (b.amount * b.sellPrice) - (a.amount * a.sellPrice));
     return calculateDropsPerHour(priced, results.simulatedTime);
-  }, [results, monsters, items, prices, revenueMode, activeHrid]);
+  }, [results, monsters, items, prices, revenueMode, source, activeHrid]);
 
   const income = drops.reduce((s, d) => s + d.amount * d.sellPrice, 0);
 
