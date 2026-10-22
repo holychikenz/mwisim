@@ -1223,10 +1223,11 @@ class CombatSimulator extends EventTarget {
                 // encounter's total HP the party had removed), clear the queue
                 // and set the flag so simulate()'s loop exits. maxTier reached
                 // is derived from the ladder state in finalizeGuildTrial().
-                // enemies is null here only when this same check ALSO cleared
-                // the encounter (mutual kill via thorns/retaliation) — the
-                // encounter was then fully removed: 1.0.
-                const hpRemovedFrac = this.enemies ? this._trialEncounterHpRemovedFrac() : 1;
+                // enemies is null when this check ALSO cleared the tier (a
+                // mutual kill, already credited as a clear) or the party died in
+                // the 3 s gap before the next tier spawned: no progress either way.
+                // MWIX adaptation: was 1, which credited half of a tier never fought.
+                const hpRemovedFrac = this.enemies ? this._trialEncounterHpRemovedFrac() : 0;
                 this.simResult.recordTrialWipe(trialTierAtCheck, this.simulationTime, hpRemovedFrac);
                 this.trialEnded = true;
                 this.eventQueue.clear();
