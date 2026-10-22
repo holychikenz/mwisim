@@ -70,6 +70,12 @@ class SimulationPool {
       worker.on('message', (message) => {
         if (message?.type === 'ready') {
           ready = true;
+          // A sibling failed to start and the pool was torn down meanwhile.
+          if (this.destroyed) {
+            worker.terminate();
+            resolve(worker);
+            return;
+          }
           this.workers.push(worker);
           this.idle.push(worker);
           resolve(worker);
@@ -108,8 +114,19 @@ class SimulationPool {
       worker.on('exit', () => {
         this.workers = this.workers.filter((w) => w !== worker);
         this.idle = this.idle.filter((w) => w !== worker);
+        // No worker left to take the queue: fail it rather than hang run().
+        if (ready && this.workers.length === 0) this.#failAll('no workers left');
       });
     });
+  }
+
+  /** Resolve every queued and in-flight job with `{ id, error }`. */
+  #failAll(error) {
+    const queued = this.queue;
+    this.queue = [];
+    for (const task of queued) task.resolve({ id: task.job.id, error });
+    for (const [id, entry] of this.pending.entries()) entry.resolve({ id, error });
+    this.pending.clear();
   }
 
   #drain() {
@@ -157,12 +174,8 @@ class SimulationPool {
   async destroy() {
     if (this.destroyed) return;
     this.destroyed = true;
-    this.queue = [];
     // Resolve anything still outstanding so callers awaiting run() do not hang.
-    for (const [id, entry] of this.pending.entries()) {
-      entry.resolve({ id, error: 'pool destroyed' });
-    }
-    this.pending.clear();
+    this.#failAll('pool destroyed');
     await Promise.all(this.workers.map((worker) => worker.terminate()));
     this.workers = [];
     this.idle = [];
@@ -178,7 +191,13 @@ class SimulationPool {
  */
 export async function createSimulationPool({ size = defaultPoolSize() } = {}) {
   const pool = new SimulationPool(size);
-  await pool.start();
+  try {
+    await pool.start();
+  } catch (error) {
+    // Do not leak the workers that did start; the caller never gets a pool.
+    await pool.destroy();
+    throw error;
+  }
   return pool;
 }
 
@@ -217,12 +236,17 @@ export function makePoolEvaluator({
   signal = null,
   cancelMessage = 'Trigger optimisation cancelled',
 }) {
+  const aborted = () => {
+    const error = new Error(cancelMessage);
+    error.name = 'AbortError';
+    return error;
+  };
+  // Mid-batch abort: tearing the pool down settles the batch at once, instead
+  // of only refusing the next one.
+  signal?.addEventListener('abort', () => pool.destroy(), { once: true });
+
   return async function evaluate(jobs, meta) {
-    if (signal?.aborted) {
-      const error = new Error(cancelMessage);
-      error.name = 'AbortError';
-      throw error;
-    }
+    if (signal?.aborted) throw aborted();
 
     const poolJobs = jobs.map((job) => ({
       id: job.id,
@@ -235,8 +259,10 @@ export function makePoolEvaluator({
       seed: job.seed,
     }));
 
-    return pool.run(poolJobs, {
+    const results = await pool.run(poolJobs, {
       onJobDone: onJobDone ? (done, total) => onJobDone({ done, total, ...meta }) : null,
     });
+    if (signal?.aborted) throw aborted();
+    return results;
   };
 }
