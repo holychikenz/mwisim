@@ -49,6 +49,23 @@ const RUN_GUARD_SLACK_NS = 60 * ONE_SECOND;
 // only (OFFICIAL_PARRY_GATE) — zone/labyrinth keep the legacy checkParry model.
 const MAX_PARRY_ATTEMPTS = 5;
 
+// MWIX adaptation: one threat-weighted pick for the three copies upstream had.
+// Draws Math.random() exactly as they did when total threat is positive (so
+// seeded runs do not move), and picks uniformly instead of throwing at zero.
+export function pickByThreat(units) {
+    let cumulativeThreat = 0;
+    for (const unit of units) cumulativeThreat += unit.combatDetails.combatStats.threat;
+    if (!(cumulativeThreat > 0)) return units[Math.floor(Math.random() * units.length)];
+    const randomValueHit = Math.random() * cumulativeThreat;
+    let rangeEnd = 0;
+    for (const unit of units) {
+        const threat = unit.combatDetails.combatStats.threat;
+        rangeEnd += threat;
+        if (randomValueHit >= rangeEnd - threat && randomValueHit < rangeEnd) return unit;
+    }
+    return units[units.length - 1];
+}
+
 // NOTE: The old labyrinth "maze" player-buff mechanism (MAZE_DEFAULTS /
 // resolveMazeBonuses / Player.applyMazeBonuses) was removed. Those hardcoded
 // bonuses (+15 combat levels, +15% attack speed, +6% regen/crit, +10% crit
@@ -797,19 +814,7 @@ class CombatSimulator extends EventTarget {
         for (let i = 0; i < aliveTargets.length; i++) {
             let target = aliveTargets[i];
             if (!event.source.isPlayer && aliveTargets.length > 1) {
-                let cumulativeThreat = 0;
-                let cumulativeRanges = [];
-                aliveTargets.forEach(player => {
-                    let playerThreat = player.combatDetails.combatStats.threat;
-                    cumulativeThreat += playerThreat;
-                    cumulativeRanges.push({
-                        player: player,
-                        rangeStart: cumulativeThreat - playerThreat,
-                        rangeEnd: cumulativeThreat
-                    });
-                });
-                let randomValueHit = Math.random() * cumulativeThreat;
-                target = cumulativeRanges.find(range => randomValueHit >= range.rangeStart && randomValueHit < range.rangeEnd).player;
+                target = pickByThreat(aliveTargets);
             }
             let source = event.source;
 
@@ -1985,19 +1990,7 @@ class CombatSimulator extends EventTarget {
                     break;
                 }
                 if (!source.isPlayer && abilityEffect.targetType == "enemy") {
-                    let cumulativeThreat = 0;
-                    let cumulativeRanges = [];
-                    targets.forEach(player => {
-                        let playerThreat = player.combatDetails.combatStats.threat;
-                        cumulativeThreat += playerThreat;
-                        cumulativeRanges.push({
-                            player: player,
-                            rangeStart: cumulativeThreat - playerThreat,
-                            rangeEnd: cumulativeThreat
-                        });
-                    });
-                    let randomValueHit = Math.random() * cumulativeThreat;
-                    target = cumulativeRanges.find(range => randomValueHit >= range.rangeStart && randomValueHit < range.rangeEnd).player;
+                    target = pickByThreat(targets);
                     avoidTarget.push(target.hrid);
                     targetPrepicked = true;
                 }
@@ -2063,19 +2056,7 @@ class CombatSimulator extends EventTarget {
                 if (!targetPrepicked) {
                     targets = targets.filter((unit) => unit && !avoidTarget.includes(unit.hrid) && unit.combatDetails.currentHitpoints > 0);
                     if (!source.isPlayer && targets.length > 0 && abilityEffect.targetType == "enemy") {
-                        let cumulativeThreat = 0;
-                        let cumulativeRanges = [];
-                        targets.forEach(player => {
-                            let playerThreat = player.combatDetails.combatStats.threat;
-                            cumulativeThreat += playerThreat;
-                            cumulativeRanges.push({
-                                player: player,
-                                rangeStart: cumulativeThreat - playerThreat,
-                                rangeEnd: cumulativeThreat
-                            });
-                        });
-                        let randomValueHit = Math.random() * cumulativeThreat;
-                        target = cumulativeRanges.find(range => randomValueHit >= range.rangeStart && randomValueHit < range.rangeEnd).player;
+                        target = pickByThreat(targets);
                         avoidTarget.push(target.hrid);
                     }
                     if (targets.length <= 0) {
