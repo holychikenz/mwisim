@@ -76,3 +76,29 @@ test('audit-1: a planet encounter after a gap wipe is not a failed dungeon run',
   assert.equal(sim.allPlayersDead, false);
   assert.equal(sim.zone.encountersKilled, before + 1, 'the boss counter is not reset');
 });
+
+// A wipe on the final wave: during the boss fight it fails the run; in the gap
+// after the boss died it completes it. encountersKilled is already past maxWaves
+// once the final wave spawns, so it cannot tell the two apart on its own.
+async function wipeOnFinalWave({ inGap }) {
+  const sim = makeSim('/actions/combat/pirate_cove', ['magic'], 150);
+  sim.reset();
+  const { maxWaves } = sim.zone.dungeonSpawnInfo;
+  for (let i = 0; i < maxWaves; i++) await withSeed(i + 1, () => sim.startNewEncounter());
+  assert.ok(sim.zone.encountersKilled > maxWaves, 'the final wave is up');
+  if (inGap) sim.enemies = null;
+  else assert.ok(sim.enemies.some((e) => e.combatDetails.currentHitpoints > 0), 'the boss is alive');
+  for (const p of sim.players) p.combatDetails.currentHitpoints = 0;
+  await quiet(() => sim.checkEncounterEnd());
+  assert.equal(sim.allPlayersDead, true);
+  await withSeed(99, () => sim.startNewEncounter());
+  return { failed: sim.zone.dungeonsFailed, completed: sim.zone.dungeonsCompleted };
+}
+
+test('audit-1: a wipe during the final boss fight is a failed run', async () => {
+  assert.deepEqual(await wipeOnFinalWave({ inGap: false }), { failed: 1, completed: 0 });
+});
+
+test('audit-1: a gap wipe after the final boss died is a completed run', async () => {
+  assert.deepEqual(await wipeOnFinalWave({ inGap: true }), { failed: 0, completed: 1 });
+});

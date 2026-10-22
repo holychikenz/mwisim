@@ -648,8 +648,10 @@ class CombatSimulator extends EventTarget {
     startNewEncounter() {
         if (this.allPlayersDead) {
             this.allPlayersDead = false;
-            // MWIX adaptation: only a dungeon restart fails a run; a planet gap wipe is not a failed dungeon.
-            if (this.zone?.isDungeon) {
+            // MWIX adaptation: only a dungeon restart fails a run; a planet gap wipe is not a failed dungeon,
+            // nor is a gap wipe after the final wave was cleared (getNextWave then completes the run).
+            // encountersKilled alone cannot tell: it passes maxWaves when the final wave SPAWNS.
+            if (this.zone?.isDungeon && !(this.wipedInGap && this.zone.encountersKilled > this.zone.dungeonSpawnInfo.maxWaves)) {
                 this.zone.failWave();
             }
         }
@@ -1183,6 +1185,8 @@ class CombatSimulator extends EventTarget {
                     this.eventQueue.clearEventsOfType(AwaitCooldownEvent.type);
                     // MWIX adaptation: a gap wipe left the wave clear's EnemyRespawnEvent, which skipped wave 1 on restart.
                     this.eventQueue.clearEventsOfType(EnemyRespawnEvent.type);
+                    // MWIX adaptation: no live encounter at the wipe means the wave was already cleared.
+                    this.wipedInGap = this.enemies === null;
                     this.enemies = null;
 
                     let combatStartEvent = new CombatStartEvent(this.simulationTime + RESTART_INTERVAL);
