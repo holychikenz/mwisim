@@ -202,8 +202,6 @@ export function characterToCharacter(char, gameData, displayName) {
     }
   }
 
-  character.debuffOnLevelGap = char.characterSetting?.debuffOnLevelGap ? 1 : 0;
-
   // ---- Equipment --------------------------------------------------------
   function recordEquipment(target, slotLocation, itemHrid, enhancementLevel) {
     if (!slotLocation || !itemHrid) return;

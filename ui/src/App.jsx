@@ -49,6 +49,7 @@ import { ChunkBoundary } from './components/ChunkBoundary';
 import { retryableLazy } from './utils/retryableLazy';
 import { TextInput } from '@mantine/core';
 import { toPlayerDTO } from './utils/playerDTO';
+import { withLevelGapDebuff } from './utils/combatLevel';
 import { loadExperimental, saveExperimental } from './utils/experimental';
 import { resolvePlayerExtraBuffs } from './utils/playerBuffs';
 import {
@@ -1157,7 +1158,7 @@ function App() {
     const enemyScale = (trialConfig.enemyScale ?? 100) / 100;
 
     runGuildTrial({
-      players: playerDTOs,
+      players: withLevelGapDebuff(playerDTOs),
       guildTrial: {
         trialHrid: trialConfig.trialHrid,
         startTier: trialConfig.startTier,
@@ -1222,7 +1223,7 @@ function App() {
     // stripping (api/lib/target.js), and it needs to SEE the food and drink
     // triggers in order to list them back with "stripped on labyrinth entry"
     // beside them — a user who set those thresholds is owed the explanation.
-    const playerDTOs = selectedParty.map(playerId => ({
+    const playerDTOs = withLevelGapDebuff(selectedParty.map(playerId => ({
       ...toPlayerDTO(resolvedParty[playerId], { hrid: `player${playerId}` }),
       // Display only — the engine never reads it. The optimiser lists triggers
       // for the whole party, and "player2" does not say whose heal threshold a
@@ -1234,7 +1235,7 @@ function App() {
       // candidate DTOs are deep clones of these (triggerSearch/params.js
       // applyValues), so every candidate is scored on the real character.
       extraBuffs: resolvePlayerExtraBuffs(resolvedParty[playerId])
-    }));
+    })));
     return {
       players: playerDTOs,
       ...toTargetPayload(optTarget, { zone, difficultyTier, labConfig }),
@@ -1344,10 +1345,10 @@ function App() {
     // Same per-unit buffs as the trigger optimiser: the scan's candidate DTOs
     // are structuredClones of these (equipmentScan/candidates.js
     // applyEnhancement), so `extraBuffs` survives into every probe.
-    const playerDTOs = selectedParty.map(playerId => ({
+    const playerDTOs = withLevelGapDebuff(selectedParty.map(playerId => ({
       ...toPlayerDTO(resolvedParty[playerId], { hrid: `player${playerId}` }),
       extraBuffs: resolvePlayerExtraBuffs(resolvedParty[playerId])
-    }));
+    })));
     return {
       players: playerDTOs,
       ...toTargetPayload(optTarget, { zone, difficultyTier, labConfig }),
@@ -1509,7 +1510,7 @@ function App() {
     }));
 
     runAllZones({
-      players: playerDTOs,
+      players: withLevelGapDebuff(playerDTOs),
       combos,
       simulationTimeLimit: allZonesHours * ONE_HOUR,
       hours: allZonesHours,
@@ -1600,7 +1601,7 @@ function App() {
     if (planet) setZoneWorkers(workers);
 
     runSimulation({
-      players: playerDTOs,
+      players: withLevelGapDebuff(playerDTOs),
       zone: isLab ? null : { zoneHrid: zone, difficultyTier },
       labyrinth: isLab
         ? {

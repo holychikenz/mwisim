@@ -123,7 +123,8 @@ test('levels, houses, achievements and settings land on the CHARACTER', () => {
   assert.equal(result.character.magicLevel, 70);
   assert.deepEqual(result.character.houseRooms, { '/house_rooms/dairy_barn': 8 });
   assert.deepEqual(result.character.achievements, { '/achievements/first_blood': true });
-  assert.equal(result.character.debuffOnLevelGap, 1);
+  // The game's flag is a setting, not the debuff: it is computed per party at run time.
+  assert.equal(result.character.debuffOnLevelGap, 0);
 });
 
 test('the WHOLE trained ability list is character-owned', () => {
@@ -418,7 +419,7 @@ test('a re-import updates what it knows and does not rename the character', () =
   assert.deepEqual(stored.houseRooms, incoming.houseRooms);
   assert.deepEqual(stored.achievements, incoming.achievements);
   assert.deepEqual(stored.abilityLevels, incoming.abilityLevels);
-  assert.equal(stored.debuffOnLevelGap, 1);
+  assert.equal(stored.debuffOnLevelGap, 0);
   // patchCharacter's forced name, kept DELIBERATELY: a re-import must not
   // silently rename the character the user renamed.
   assert.equal(stored.name, 'main');

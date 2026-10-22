@@ -8,3 +8,15 @@ export function combatLevel(p) {
   const best = Math.max(lv.attack, lv.defense, lv.melee, lv.ranged, lv.magic);
   return Math.floor(0.1 * (lv.stamina + lv.intelligence + lv.attack + lv.defense + offence) + 0.5 * best);
 }
+
+// The XP/drop debuff for a party member far below the strongest: when
+// maxCL/myCL > 1.2 it is -min(0.9, 3·(ratio - 1.2)), else 0 (as src/main.js).
+// Returns copies of the DTOs with `debuffOnLevelGap` set.
+export function withLevelGapDebuff(dtos) {
+  const levels = dtos.map(combatLevel);
+  const max = Math.max(1, ...levels);
+  return dtos.map((dto, i) => {
+    const ratio = max / levels[i];
+    return { ...dto, debuffOnLevelGap: ratio > 1.2 ? -Math.min(0.9, 3 * (ratio - 1.2)) : 0 };
+  });
+}
