@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRunResults } from './useRunResults.js';
 import { apiUrl, pingApi } from '../utils/apiBase';
+import { createLatestGate } from '../utils/latestRequest';
 
 /** The server heartbeats every 10s, so silence this long means a dead socket. */
 const STALL_TIMEOUT_MS = 60_000;
@@ -40,6 +41,9 @@ export function useEquipmentOptimizer() {
   const [apiReachable, setApiReachable] = useState(null); // null = not yet checked
 
   const abortRef = useRef(null);
+  // A late preview or run must not settle state that belongs to a newer one.
+  const [nextPreview] = useState(createLatestGate);
+  const [nextRun] = useState(createLatestGate);
   const watchdogRef = useRef(null);
   const lastPaintRef = useRef(0);
 
@@ -73,6 +77,7 @@ export function useEquipmentOptimizer() {
 
   /** Which slots can be probed, which cannot and why, and what it will cost. */
   const fetchPreview = useCallback(async (payload) => {
+    const isLatest = nextPreview();
     setPreviewing(true);
     setError(null);
     try {
@@ -85,6 +90,7 @@ export function useEquipmentOptimizer() {
       if (!response.ok || !body.success) {
         throw new Error(body?.error || `Preview failed (HTTP ${response.status})`);
       }
+      if (!isLatest()) return null;
       setPreview(body);
       setApiReachable(true);
       return body;
@@ -92,14 +98,15 @@ export function useEquipmentOptimizer() {
       // "The API is not running" is by far the likelier mistake: every other panel
       // in this UI works without it, so a user has no reason to expect it is needed.
       const reachable = await pingApi();
+      if (!isLatest()) return null;
       setApiReachable(reachable);
       setPreview(null);
       setError(reachable ? caught : new Error(API_DOWN_MESSAGE));
       return null;
     } finally {
-      setPreviewing(false);
+      if (isLatest()) setPreviewing(false);
     }
-  }, []);
+  }, [nextPreview]);
 
   /**
    * Run the scan, streaming progress.
@@ -109,6 +116,7 @@ export function useEquipmentOptimizer() {
   const runOptimizer = useCallback(
     async (payload) => {
       stop();
+      const isLatest = nextRun();
       setLoading(true);
       setProgress(0);
       setStage('');
@@ -225,12 +233,16 @@ export function useEquipmentOptimizer() {
           setError(reachable ? caught : new Error(API_DOWN_MESSAGE));
         }
       } finally {
-        clearWatchdog();
-        abortRef.current = null;
-        setLoading(false);
+        // A superseded run must not clear its successor's controller, watchdog
+        // or loading flag.
+        if (isLatest()) {
+          clearWatchdog();
+          abortRef.current = null;
+          setLoading(false);
+        }
       }
     },
-    [armWatchdog, clearWatchdog, stop, publish, begin]
+    [armWatchdog, clearWatchdog, stop, publish, begin, nextRun]
   );
 
   /** Cancel an in-flight run. The server sees the socket close and tears down its pool. */

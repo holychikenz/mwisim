@@ -16,6 +16,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRunResults } from './useRunResults.js';
 import { apiUrl, pingApi } from '../utils/apiBase';
+import { createLatestGate } from '../utils/latestRequest';
 
 /**
  * Abandon a run that has gone quiet. The server heartbeats every 10s
@@ -42,6 +43,9 @@ export function useTriggerOptimizer() {
   const [apiReachable, setApiReachable] = useState(null); // null = not yet checked
 
   const abortRef = useRef(null);
+  // A late preview or run must not settle state that belongs to a newer one.
+  const [nextPreview] = useState(createLatestGate);
+  const [nextRun] = useState(createLatestGate);
   const watchdogRef = useRef(null);
   const lastPaintRef = useRef(0);
 
@@ -79,6 +83,7 @@ export function useTriggerOptimizer() {
    * synchronous server-side; called on every configuration change.
    */
   const fetchPreview = useCallback(async (payload) => {
+    const isLatest = nextPreview();
     setPreviewing(true);
     setError(null);
     try {
@@ -91,6 +96,7 @@ export function useTriggerOptimizer() {
       if (!response.ok || !body.success) {
         throw new Error(body?.error || `Preview failed (HTTP ${response.status})`);
       }
+      if (!isLatest()) return null;
       setPreview(body);
       setApiReachable(true);
       return body;
@@ -99,6 +105,7 @@ export function useTriggerOptimizer() {
       // by far the likelier mistake, since every other panel in this UI works
       // without the API at all and a user has no reason to expect they need it.
       const reachable = await pingApi();
+      if (!isLatest()) return null;
       setApiReachable(reachable);
       setPreview(null);
       setError(
@@ -111,9 +118,9 @@ export function useTriggerOptimizer() {
       );
       return null;
     } finally {
-      setPreviewing(false);
+      if (isLatest()) setPreviewing(false);
     }
-  }, []);
+  }, [nextPreview]);
 
   /**
    * Run the search, streaming progress.
@@ -123,6 +130,7 @@ export function useTriggerOptimizer() {
   const runOptimizer = useCallback(
     async (payload) => {
       stop();
+      const isLatest = nextRun();
       setLoading(true);
       setProgress(0);
       setStage('');
@@ -245,12 +253,16 @@ export function useTriggerOptimizer() {
           );
         }
       } finally {
-        clearWatchdog();
-        abortRef.current = null;
-        setLoading(false);
+        // A superseded run must not clear its successor's controller, watchdog
+        // or loading flag.
+        if (isLatest()) {
+          clearWatchdog();
+          abortRef.current = null;
+          setLoading(false);
+        }
       }
     },
-    [armWatchdog, clearWatchdog, stop, publish, begin]
+    [armWatchdog, clearWatchdog, stop, publish, begin, nextRun]
   );
 
   /** Cancel an in-flight run. The server sees the socket close and tears down its pool. */
