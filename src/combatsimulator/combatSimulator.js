@@ -1255,6 +1255,10 @@ class CombatSimulator extends EventTarget {
     }
 
     addNextAttackEvent(source) {
+        // MWIX adaptation: a unit killed by thorns, retaliation or a parry counter must not re-arm.
+        if (source.combatDetails.currentHitpoints <= 0) {
+            return;
+        }
         // MWIX adaptation (performance): answered from a per-unit counter the
         // queue maintains, not by scanning the heap. This guard was 56.5% of
         // every heap entry the event queue touched on dungeon-den-600, and it
@@ -1992,6 +1996,10 @@ class CombatSimulator extends EventTarget {
         let isSkipParry = false;
 
         for (let target of targets.filter((unit) => unit && unit.combatDetails.currentHitpoints > 0)) {
+            // MWIX adaptation: a caster killed by one target's reflect strikes no further targets.
+            if (source.combatDetails.currentHitpoints <= 0) {
+                break;
+            }
             let parryTarget = undefined;
             let targetPrepicked = false;
 

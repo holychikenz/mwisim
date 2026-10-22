@@ -4,7 +4,9 @@
 // The promoted monster was never reset() (110 HP, level-1 stats) and never put
 // in this.enemies, yet it got attack events; its death then crashed
 // simResult.updateTimeSpentAlive, which had no entry for its hrid.
-// Repro: enchanted_fortress T0, L90 melee + magic, seed 2 (crashed at ~5920 s).
+// Found by a seeded run (enchanted_fortress T0, L90 melee + magic, seed 2,
+// crash at ~5920 s); tested here on a constructed state so it does not hang
+// on one seed's trajectory.
 // =============================================================================
 
 import test from 'node:test';
@@ -22,34 +24,25 @@ const CombatSimulator = (await import(join(SRC, 'combatSimulator.js'))).default;
 const SimResult = (await import(join(SRC, 'simResult.js'))).default;
 const Player = (await import(join(SRC, 'player.js'))).default;
 const Zone = (await import(join(SRC, 'zone.js'))).default;
+const Monster = (await import(join(SRC, 'monster.js'))).default;
 const engine = await loadEngine(ROOT);
 const { itemDetailMap: items, abilityDetailMap: abilityData } = engine.gameData;
 
 test('audit-4: a promoted monster is reset, replaces the pawn and is tracked', async () => {
-  const zone = new Zone('/actions/combat/enchanted_fortress', 0);
-  const players = ['melee', 'magic'].map((n, i) => {
-    const p = Player.createFromDTO(structuredClone(toCsimPlayer(BUILDS[n], { level: 90, index: i + 1, items, abilityData })));
-    p.zoneBuffs = zone.buffs;
-    p.extraBuffs = [];
-    return p;
-  });
-  const sim = new CombatSimulator(players, zone, null, {});
-  const promoted = [];
-  const orig = sim.processAbilityPromoteEffect.bind(sim);
-  sim.processAbilityPromoteEffect = (source, a, e) => {
-    const m = orig(source, a, e);
-    promoted.push({
-      full: m.combatDetails.currentHitpoints === m.combatDetails.maxHitpoints && m.combatDetails.maxHitpoints > 110,
-      replaced: sim.enemies.includes(m) && !sim.enemies.includes(source),
-      tracked: sim.simResult.timeSpentAlive.some(t => t.name === m.hrid && t.alive && t.spawnedAt === sim.simulationTime),
-    });
-    return m;
-  };
-  const log = console.log;
-  console.log = () => {};
-  try { await withSeed(2, () => sim.simulate(6000e9)); } finally { console.log = log; }
-  assert.ok(promoted.length > 0, 'the seeded run must still promote');
-  assert.deepEqual(promoted.filter(p => !(p.full && p.replaced && p.tracked)), []);
+  const player = Player.createFromDTO(structuredClone(toCsimPlayer(BUILDS.melee, { level: 90, index: 1, items, abilityData })));
+  const sim = new CombatSimulator([player], new Zone('/actions/combat/enchanted_fortress', 0), null, {});
+  sim.reset();
+  const other = new Monster('/monsters/enchanted_pawn', 0);
+  const pawn = new Monster('/monsters/enchanted_pawn', 0);
+  [other, pawn].forEach(m => m.reset(0));
+  sim.enemies = [other, pawn];
+  sim.simulationTime = 10e9;
+  const m = await withSeed(1, () => sim.processAbilityPromoteEffect(pawn));
+  assert.notEqual(m.hrid, pawn.hrid);
+  assert.ok(m.combatDetails.maxHitpoints > 110, `max HP ${m.combatDetails.maxHitpoints}`);
+  assert.equal(m.combatDetails.currentHitpoints, m.combatDetails.maxHitpoints);
+  assert.deepEqual(sim.enemies, [other, m]);
+  assert.ok(sim.simResult.timeSpentAlive.some(t => t.name === m.hrid && t.alive && t.spawnedAt === 10e9));
 });
 
 test('audit-4: closing an untracked unit is a no-op, not a throw', () => {
