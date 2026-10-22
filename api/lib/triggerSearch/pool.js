@@ -113,6 +113,12 @@ class SimulationPool {
       worker.on('exit', () => {
         this.workers = this.workers.filter((w) => w !== worker);
         this.idle = this.idle.filter((w) => w !== worker);
+        // Its own in-flight job dies with it, error event or not.
+        for (const [id, entry] of this.pending.entries()) {
+          if (entry.worker !== worker) continue;
+          this.pending.delete(id);
+          entry.resolve({ id, error: 'worker exited' });
+        }
         // No worker left to take the queue: fail it rather than hang run().
         if (ready && this.workers.length === 0) this.#failAll('no workers left');
       });

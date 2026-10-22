@@ -67,3 +67,16 @@ test('audit-6: losing the last worker fails the queue instead of hanging', async
   assert.ok(results.every((r) => r.error), JSON.stringify(results));
   await pool.destroy();
 });
+
+test('audit-6: a worker that exits mid-job fails its job while others carry on', async (t) => {
+  const pool = await createSimulationPool({ size: 2 });
+  t.after(() => Promise.all(pool.workers.map((w) => w.terminate())));
+  const run = pool.run([job(1), job(2)]);
+  await sleep(300);
+  await pool.workers[0].terminate();
+  await sleep(100);
+  assert.equal([...pool.pending.values()].length, 1, 'only the surviving worker\'s job is still pending');
+  await pool.destroy();
+  const results = await within(2000, run);
+  assert.equal(results.filter((r) => r.error === 'worker exited').length, 1);
+});
