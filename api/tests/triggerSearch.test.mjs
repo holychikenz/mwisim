@@ -61,7 +61,7 @@ import {
   scoreSimResult,
 } from '../lib/triggerSearch/score.js';
 
-import { mulberry32, withSeed } from '../lib/triggerSearch/rng.js';
+import { mulberry32, withSeed } from '../lib/determinism.mjs';
 import { estimateWorkload, optimizeTriggers } from '../lib/triggerSearch/search.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

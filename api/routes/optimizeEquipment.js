@@ -14,10 +14,10 @@
 // =============================================================================
 
 import { Router } from 'express';
-import { isKnownCost } from '../../shared/consumableCost.js';
 import { buildExtraBuffs } from '../lib/simulator.js';
+import { poolSizeFor, sanitiseConsumableCosts, streamPoolRun } from '../lib/optimizerRoute.js';
 import { markDungeon, normaliseTarget, targetExtraBuffs, targetPlayerDTOs } from '../lib/target.js';
-import { createSimulationPool, defaultPoolSize, makePoolEvaluator, MAX_WORKERS } from '../lib/triggerSearch/pool.js';
+import { makePoolEvaluator } from '../lib/triggerSearch/pool.js';
 import { defaultObjective, reportedMetricsFor } from '../lib/triggerSearch/score.js';
 import {
   DEFAULT_STEP,
@@ -28,9 +28,6 @@ import {
 import { DEFAULT_SCAN, DEFAULT_SEED_BASE, estimateWorkload, scanEquipment } from '../lib/equipmentScan/scan.js';
 
 const router = Router();
-
-/** Heartbeat interval. Comfortably inside the client's stall timeout. */
-const HEARTBEAT_MS = 10_000;
 
 /** Guard rails on user-supplied configuration. */
 const MAX_HOURS = 1000;
@@ -73,23 +70,6 @@ function sanitiseScan(input = {}) {
     step: integer(input.step, DEFAULT_STEP, 1, MAX_ENHANCEMENT_LEVEL),
     alpha: number(input.alpha, DEFAULT_SCAN.alpha, 0.0001, 0.5),
   };
-}
-
-/**
- * Sanitise the consumable cost table: itemHrid -> SECONDS of production time.
- *
- * Identical rule to optimizeTriggers.js, and for the same reason: -1 means "no
- * value known" and must be dropped, while an explicit 0 is a claim about the
- * player's situation ("this reaches me free") and must survive, because an empty
- * table flips the objective back to raw throughput.
- */
-function sanitiseConsumableCosts(input) {
-  if (!input || typeof input !== 'object') return null;
-  const costs = {};
-  for (const [hrid, value] of Object.entries(input)) {
-    if (isKnownCost(value)) costs[hrid] = Number(value);
-  }
-  return Object.keys(costs).length ? costs : null;
 }
 
 /**
@@ -186,7 +166,7 @@ router.post('/optimize-equipment/preview', (req, res) => {
       skipped,
       scan,
       workload: estimateWorkload(candidates.length, scan),
-      poolSize: Math.min(MAX_WORKERS, Math.max(1, Math.floor(Number(req.body.workers)) || defaultPoolSize())),
+      poolSize: poolSizeFor(req.body.workers),
     });
   } catch (error) {
     return res.status(500).json({ success: false, error: error.message });
@@ -217,37 +197,7 @@ router.post('/optimize-equipment', async (req, res) => {
     });
   }
 
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no');
-  res.flushHeaders();
-
-  const send = (payload) => {
-    if (res.writableEnded) return;
-    res.write(`data: ${JSON.stringify(payload)}\n\n`);
-  };
-
-  const heartbeat = setInterval(() => {
-    if (!res.writableEnded) res.write(`: keepalive ${Date.now()}\n\n`);
-  }, HEARTBEAT_MS);
-
-  const controller = new AbortController();
-  let pool = null;
-
-  // On `res`, not `req`: req's 'close' fires once the request body has finished
-  // uploading, i.e. on every normal request. See optimizeTriggers.js.
-  res.on('close', () => {
-    if (!res.writableFinished) controller.abort();
-  });
-
-  try {
-    const poolSize = Math.min(
-      MAX_WORKERS,
-      Math.max(1, Math.floor(Number(req.body.workers)) || defaultPoolSize())
-    );
-    pool = await createSimulationPool({ size: poolSize });
-
+  await streamPoolRun(req, res, async ({ pool, poolSize, send, signal }) => {
     send({
       type: 'start',
       poolSize,
@@ -267,7 +217,7 @@ router.post('/optimize-equipment', async (req, res) => {
       labyrinthConfig: prepared.target.labyrinth,
       extraBuffs: prepared.extraBuffs,
       consumableCosts: prepared.consumableCosts,
-      signal: controller.signal,
+      signal,
       cancelMessage: 'Equipment scan cancelled',
     });
 
@@ -283,7 +233,7 @@ router.post('/optimize-equipment', async (req, res) => {
       replicates: prepared.scan.replicates,
       alpha: prepared.scan.alpha,
       seedBase: Number(req.body.seedBase) || DEFAULT_SEED_BASE,
-      signal: controller.signal,
+      signal,
       onProgress: (progress) => send({ type: 'progress', ...progress }),
     });
 
@@ -298,17 +248,7 @@ router.post('/optimize-equipment', async (req, res) => {
         pricedConsumables: prepared.consumableCosts ? Object.keys(prepared.consumableCosts) : [],
       },
     });
-  } catch (error) {
-    if (error?.name === 'AbortError') {
-      send({ type: 'cancelled', error: error.message });
-    } else {
-      send({ type: 'error', error: error.message });
-    }
-  } finally {
-    clearInterval(heartbeat);
-    await pool?.destroy();
-    if (!res.writableEnded) res.end();
-  }
+  });
 });
 
 export { prepare as prepareEquipmentRun };

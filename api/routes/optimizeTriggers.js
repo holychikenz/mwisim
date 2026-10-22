@@ -22,20 +22,16 @@
 // =============================================================================
 
 import { Router } from 'express';
-import { isKnownCost } from '../../shared/consumableCost.js';
 import { buildExtraBuffs } from '../lib/simulator.js';
+import { poolSizeFor, sanitiseConsumableCosts, streamPoolRun } from '../lib/optimizerRoute.js';
 import { markDungeon, normaliseTarget, targetExtraBuffs, targetPlayerDTOs } from '../lib/target.js';
 import { deriveBounds } from '../lib/triggerSearch/bounds.js';
 import { collectSearchParams, enumerateTriggers } from '../lib/triggerSearch/params.js';
-import { createSimulationPool, defaultPoolSize, MAX_WORKERS } from '../lib/triggerSearch/pool.js';
 import { makePoolEvaluator } from '../lib/triggerSearch/pool.js';
 import { defaultObjective, reportedMetricsFor } from '../lib/triggerSearch/score.js';
 import { DEFAULT_STAGES, STABLE_VERIFY_HOURS, estimateWorkload, optimizeTriggers } from '../lib/triggerSearch/search.js';
 
 const router = Router();
-
-/** Heartbeat interval. Comfortably inside a 30s client stall timeout. */
-const HEARTBEAT_MS = 10_000;
 
 /** Reject absurd stage configurations before they cost anybody an afternoon. */
 const MAX_STAGE_HOURS = 1000;
@@ -91,34 +87,6 @@ function sanitiseStages(input = {}, { stableMode = false } = {}) {
       ),
     },
   };
-}
-
-/**
- * Sanitise the consumable cost table: itemHrid → SECONDS of production time.
- *
- * The UI sources these from the cow webapp via buildIronPrices, which uses -1 for
- * "no value known". Dropping NEGATIVE entries here means an unknown item
- * contributes nothing rather than a negative cost, which would make eating it look
- * like a saving.
- *
- * Zero is KEPT, and the distinction is deliberate. A user can override an item's
- * cost to 0 to say "this one reaches me free — a daily, a handout, a stockpile
- * already paid for", which is a fact about their situation that no production time
- * can know. Numerically a zero costs the same as an omission, but it keeps the
- * table non-empty, and an empty table switches the objective back to raw
- * throughput and the UI back to warning that the food bill is not counted. A build
- * whose every consumable is free would otherwise be told its costs are unknown.
- */
-function sanitiseConsumableCosts(input) {
-  if (!input || typeof input !== 'object') return null;
-  const costs = {};
-  for (const [hrid, value] of Object.entries(input)) {
-    // isKnownCost rather than a local `>= 0`, so this surface and the scoring
-    // agree on the -1-vs-0 rule — and so a posted null is rejected rather than
-    // coerced to a cost of nothing.
-    if (isKnownCost(value)) costs[hrid] = Number(value);
-  }
-  return Object.keys(costs).length ? costs : null;
 }
 
 /** Shared setup for both routes: bounds, enumerated triggers, resolved params. */
@@ -218,7 +186,7 @@ router.post('/optimize-triggers/preview', (req, res) => {
       rejected,
       stages,
       workload: estimateWorkload(params, stages),
-      poolSize: Math.min(MAX_WORKERS, Math.max(1, Math.floor(Number(req.body.workers)) || defaultPoolSize())),
+      poolSize: poolSizeFor(req.body.workers),
     });
   } catch (error) {
     return res.status(500).json({ success: false, error: error.message });
@@ -251,46 +219,7 @@ router.post('/optimize-triggers', async (req, res) => {
     });
   }
 
-  res.setHeader('Content-Type', 'text/event-stream');
-  res.setHeader('Cache-Control', 'no-cache');
-  res.setHeader('Connection', 'keep-alive');
-  res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
-  res.flushHeaders();
-
-  const send = (payload) => {
-    if (res.writableEnded) return;
-    res.write(`data: ${JSON.stringify(payload)}\n\n`);
-  };
-
-  // SSE comments are ignored by EventSource and by a manual reader that skips
-  // non-`data:` lines, but they keep the socket and any client stall timer alive
-  // across a long candidate simulation.
-  const heartbeat = setInterval(() => {
-    if (!res.writableEnded) res.write(`: keepalive ${Date.now()}\n\n`);
-  }, HEARTBEAT_MS);
-
-  const controller = new AbortController();
-  let pool = null;
-
-  // The client vanishing is a normal way a long run ends. Without this the pool
-  // keeps every worker busy to completion for a result nobody will read.
-  //
-  // NOTE: this listens on `res`, not `req`. Node emits `req`'s 'close' when the
-  // REQUEST has been fully received — i.e. on every normal request, the moment the
-  // body finishes uploading — so `req.on('close')` aborts the run immediately
-  // rather than on disconnect. `res`'s 'close' fires when the response finishes or
-  // the socket dies, and `writableFinished` distinguishes the two.
-  res.on('close', () => {
-    if (!res.writableFinished) controller.abort();
-  });
-
-  try {
-    const poolSize = Math.min(
-      MAX_WORKERS,
-      Math.max(1, Math.floor(Number(req.body.workers)) || defaultPoolSize())
-    );
-    pool = await createSimulationPool({ size: poolSize });
-
+  await streamPoolRun(req, res, async ({ pool, poolSize, send, signal }) => {
     send({
       type: 'start',
       poolSize,
@@ -310,7 +239,7 @@ router.post('/optimize-triggers', async (req, res) => {
       labyrinthConfig: prepared.target.labyrinth,
       extraBuffs: prepared.extraBuffs,
       consumableCosts: prepared.consumableCosts,
-      signal: controller.signal,
+      signal,
     });
 
     const result = await optimizeTriggers({
@@ -324,7 +253,7 @@ router.post('/optimize-triggers', async (req, res) => {
       seedBase: Number(req.body.seedBase) || undefined,
       epsilons: req.body.epsilons || {},
       resumeCheckpoint: req.body.resumeCheckpoint || null,
-      signal: controller.signal,
+      signal,
       onProgress: (progress) => send({ type: 'progress', ...progress }),
       // Forwarded so a client can resume an interrupted run by posting the last
       // checkpoint back in `resumeCheckpoint`.
@@ -343,17 +272,7 @@ router.post('/optimize-triggers', async (req, res) => {
         pricedConsumables: prepared.consumableCosts ? Object.keys(prepared.consumableCosts) : [],
       },
     });
-  } catch (error) {
-    if (error?.name === 'AbortError') {
-      send({ type: 'cancelled', error: error.message });
-    } else {
-      send({ type: 'error', error: error.message });
-    }
-  } finally {
-    clearInterval(heartbeat);
-    await pool?.destroy();
-    if (!res.writableEnded) res.end();
-  }
+  });
 });
 
 export default router;

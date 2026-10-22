@@ -1,0 +1,98 @@
+// =============================================================================
+// optimizerRoute — what routes/optimizeTriggers.js and routes/optimizeEquipment.js
+// share: the consumable-cost table rule, the pool size, and the SSE run
+// lifecycle (headers, heartbeat, client-disconnect abort, pool teardown).
+// =============================================================================
+
+import { isKnownCost } from '../../shared/consumableCost.js';
+import { createSimulationPool, defaultPoolSize, MAX_WORKERS } from './triggerSearch/pool.js';
+
+/** Heartbeat interval. Comfortably inside a 30s client stall timeout. */
+const HEARTBEAT_MS = 10_000;
+
+/**
+ * Sanitise the consumable cost table: itemHrid → SECONDS of production time.
+ *
+ * The UI sources these from the cow webapp via buildIronPrices, which uses -1 for
+ * "no value known". Dropping NEGATIVE entries here means an unknown item
+ * contributes nothing rather than a negative cost, which would make eating it look
+ * like a saving.
+ *
+ * Zero is KEPT, and the distinction is deliberate. A user can override an item's
+ * cost to 0 to say "this one reaches me free — a daily, a handout, a stockpile
+ * already paid for", which is a fact about their situation that no production time
+ * can know. Numerically a zero costs the same as an omission, but it keeps the
+ * table non-empty, and an empty table switches the objective back to raw
+ * throughput and the UI back to warning that the food bill is not counted. A build
+ * whose every consumable is free would otherwise be told its costs are unknown.
+ */
+export function sanitiseConsumableCosts(input) {
+  if (!input || typeof input !== 'object') return null;
+  const costs = {};
+  for (const [hrid, value] of Object.entries(input)) {
+    // isKnownCost rather than a local `>= 0`, so this surface and the scoring
+    // agree on the -1-vs-0 rule — and so a posted null is rejected rather than
+    // coerced to a cost of nothing.
+    if (isKnownCost(value)) costs[hrid] = Number(value);
+  }
+  return Object.keys(costs).length ? costs : null;
+}
+
+/** The caller's `workers`, clamped to [1, MAX_WORKERS]; the default when absent. */
+export function poolSizeFor(workers) {
+  return Math.min(MAX_WORKERS, Math.max(1, Math.floor(Number(workers)) || defaultPoolSize()));
+}
+
+/**
+ * Run `body({ pool, poolSize, send, signal })` as a Server-Sent Events response.
+ *
+ * SSE comments (the heartbeat) are ignored by EventSource and by a manual reader
+ * that skips non-`data:` lines, but they keep the socket and any client stall
+ * timer alive across a long candidate simulation.
+ *
+ * The client vanishing is a normal way a long run ends. Without the abort the
+ * pool keeps every worker busy to completion for a result nobody will read.
+ * It listens on `res`, not `req`: Node emits `req`'s 'close' when the REQUEST
+ * has been fully received — on every normal request — while `res`'s 'close'
+ * fires when the response finishes or the socket dies, and `writableFinished`
+ * distinguishes the two.
+ */
+export async function streamPoolRun(req, res, body) {
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // Disable nginx buffering
+  res.flushHeaders();
+
+  const send = (payload) => {
+    if (res.writableEnded) return;
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+
+  const heartbeat = setInterval(() => {
+    if (!res.writableEnded) res.write(`: keepalive ${Date.now()}\n\n`);
+  }, HEARTBEAT_MS);
+
+  const controller = new AbortController();
+  let pool = null;
+
+  res.on('close', () => {
+    if (!res.writableFinished) controller.abort();
+  });
+
+  try {
+    const poolSize = poolSizeFor(req.body.workers);
+    pool = await createSimulationPool({ size: poolSize });
+    await body({ pool, poolSize, send, signal: controller.signal });
+  } catch (error) {
+    if (error?.name === 'AbortError') {
+      send({ type: 'cancelled', error: error.message });
+    } else {
+      send({ type: 'error', error: error.message });
+    }
+  } finally {
+    clearInterval(heartbeat);
+    await pool?.destroy();
+    if (!res.writableEnded) res.end();
+  }
+}
