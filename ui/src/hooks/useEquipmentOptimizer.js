@@ -229,6 +229,7 @@ export function useEquipmentOptimizer() {
       } catch (caught) {
         if (caught?.name !== 'AbortError') {
           const reachable = await pingApi();
+          if (!isLatest()) return;
           setApiReachable(reachable);
           setError(reachable ? caught : new Error(API_DOWN_MESSAGE));
         }

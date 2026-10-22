@@ -242,6 +242,7 @@ export function useTriggerOptimizer() {
       } catch (caught) {
         if (caught?.name !== 'AbortError') {
           const reachable = await pingApi();
+          if (!isLatest()) return;
           setApiReachable(reachable);
           setError(
             reachable
