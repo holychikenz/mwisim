@@ -127,8 +127,6 @@ class CombatUnit {
     drinks = [null, null, null];
     houseRooms = [];
     achievements = null;
-    dropTable = [];
-    rareDropTable = [];
     abilityManaCosts = new Map();
 
     // Calculated combat stats including temporary buffs

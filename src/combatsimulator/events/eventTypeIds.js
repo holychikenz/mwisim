@@ -34,7 +34,3 @@ export function eventTypeId(type) {
     return id;
 }
 
-/** Diagnostic only: how many distinct types have been interned so far. */
-export function eventTypeCount() {
-    return ids.size;
-}

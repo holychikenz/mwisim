@@ -1,7 +1,6 @@
 import Ability from "./ability";
 import CombatUnit from "./combatUnit";
 import { combatMonsterDetailMap } from "./dataProvider";
-import Drops from "./drops";
 import { applyMonsterStatSource, buildMonsterStatSource } from "./generated/statSchema";
 
 // =============================================================================
@@ -175,19 +174,7 @@ class Monster extends CombatUnit {
             }
             this.abilities[i] = new Ability(gameMonster.abilities[i].abilityHrid, Math.floor(gameMonster.abilities[i].level * labyrinthScaleFactor));
         }
-        if(gameMonster.dropTable)
-        for (let i = 0; i < gameMonster.dropTable.length; i++) {
-            this.dropTable[i] = new Drops(gameMonster.dropTable[i].itemHrid, gameMonster.dropTable[i].dropRate, gameMonster.dropTable[i].minCount, gameMonster.dropTable[i].maxCount, gameMonster.dropTable[i].difficultyTier);
-        }
-        // Guild trial monsters carry no loot (dropTable / rareDropTable are
-        // null). Guard the rare-drop loop like the drop loop above so they load.
-        if(gameMonster.rareDropTable)
-        for (let i = 0; i < gameMonster.rareDropTable.length; i++) {
-            let dropTableItem = (gameMonster.dropTable && i < gameMonster.dropTable.length) ? gameMonster.dropTable[i] : null;
-            let difficultyTier = dropTableItem?.difficultyTier ?? gameMonster.rareDropTable[i].minDifficultyTier;
-
-            this.rareDropTable[i] = new Drops(gameMonster.rareDropTable[i].itemHrid, gameMonster.rareDropTable[i].dropRate, gameMonster.rareDropTable[i].minCount, difficultyTier);
-        }
+        // MWIX adaptation: upstream's drop-table loops removed; nothing read the unit's tables (drops are computed from game data).
     }
 
     updateCombatDetails() {

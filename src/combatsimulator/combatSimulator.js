@@ -110,32 +110,8 @@ class CombatSimulator extends EventTarget {
         this.wipeLogs.count = Math.min(this.wipeLogs.count + 1, maxSize);
     }
 
-    logAndResetWipeLogs() {
-        const logs = this.getOrderedWipeLogs();
-        
-        // console.log("===== 团灭日志 =====");
-        // console.log(`最后 ${logs.length} 条战斗日志：`);
-        
-        logs.forEach(log => {
-            if (log.error) {
-                console.log(log.error);
-                return;
-            }
-            
-            const time = (log.time / 1e9).toFixed(2);
-            // console.log(
-            //     `[${time}s] [${log.source}] 用 [${log.ability}] ` +
-            //     `对 ${log.target} 造成 ${log.damage} 伤害，` +
-            //     `HP ${log.beforeHp} → ${log.afterHp}。` +
-            //     `队伍生命值：${log.playersHp.map(p => `${p.hrid}: ${p.current}/${p.max}`).join(" | ")}`
-            // );
-        });
+    // MWIX adaptation: upstream's logAndResetWipeLogs removed (never called).
 
-        this.wipeLogs.index = 0;
-        this.wipeLogs.count = 0;
-        // console.log("===== 团灭日志结束 =====");
-    }
-    
     buildCombatLog(source, ability, target, damageDone) {
         try {
             const sourceHrid = source?.hrid || "UNKNOWN_SOURCE";
@@ -1823,11 +1799,7 @@ class CombatSimulator extends EventTarget {
 
         ability.lastUsed = this.simulationTime;
 
-        let haste = source.combatDetails.combatStats.abilityHaste;
-        let cooldownDuration = ability.cooldownDuration;
-        if (haste > 0) {
-            cooldownDuration = cooldownDuration * 100 / (100 + haste);
-        }
+        // MWIX adaptation: upstream's hasted cooldownDuration local removed (never read; haste is applied elsewhere).
 
         /*-if (source.isPlayer) {
             let castDuration = ability.castDuration;
@@ -2258,7 +2230,7 @@ class CombatSimulator extends EventTarget {
 
                 if (target.combatDetails.combatStats.weaken > 0) {
                     const weakenExpireTime = 15000000000;
-                    source.weakenExpireTime = this.simulationTime + weakenExpireTime;
+                    // MWIX adaptation: dropped the never-read source.weakenExpireTime write.
                     let currentWeakenEvent = this.eventQueue.getMatchingTypeAndSource(WeakenExpirationEvent.type, source);
                     let weakenAmount = 0;
                     if (currentWeakenEvent)
