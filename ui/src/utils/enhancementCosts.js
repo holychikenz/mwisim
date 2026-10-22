@@ -299,7 +299,9 @@ export async function fetchMarginalCost({
     target: level,
     config,
     inputs,
-    protectAt,
+    // The level-up's own protection plan, so both totals follow one plan; the
+    // solver's cheapest plan for +N alone may differ and would mix the two.
+    protectAt: target.protectAt,
     signal,
   });
   if (!current) {
