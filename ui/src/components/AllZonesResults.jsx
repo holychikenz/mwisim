@@ -154,6 +154,7 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
         consumablesUsed: eaten,
         hours,
         pricing: costBasis,
+        players: activeHrid ? [activeHrid] : partyHrids,
       });
 
       // A dungeon's encounters are its WAVES, so its Enc/h is waves per hour —
@@ -181,7 +182,7 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
           : null,
       };
     });
-  }, [rows, zoneNames, costBasis, activeHrid]);
+  }, [rows, zoneNames, costBasis, activeHrid, partyHrids]);
 
   // A sort can outlive its column: sort by Clears/h on a sweep that included
   // dungeons, re-run with planets only, and the column is gone while `sort` (the

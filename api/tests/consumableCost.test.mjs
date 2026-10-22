@@ -278,19 +278,34 @@ const PARTY_USED = {
   player2: { '/items/marsberry_donut': 40 },
 };
 
-test('audit-11: each character cooks their own, so the party owes its slowest kitchen', async () => {
+test('audit-11: each character cooks their own; the party rate is the mean of theirs', async () => {
   const { partyConsumableSeconds } = await import('../../shared/consumableCost.js');
   const costs = { '/items/peach_gummy': 240, '/items/marsberry_donut': 30 };
-  assert.equal(partyConsumableSeconds(PARTY_USED, costs).seconds, 4800, 'max, not the 6000 s sum');
-  assert.equal(partyConsumableSeconds({ player2: PARTY_USED.player2 }, costs).seconds, 1200);
+  // Per-player clocks over one hour: 1/(1+4/3) and 1/(1+1/3); their mean ↔ s*.
+  const mean = (1 / (1 + 4800 / 3600) + 1 / (1 + 1200 / 3600)) / 2;
+  const expected = 3600 * (1 / mean - 1);
+  const party = partyConsumableSeconds(PARTY_USED, costs, { hours: 1 }).seconds;
+  assert.ok(Math.abs(party - expected) < 1e-9, `${party} vs ${expected} (sum would be 6000, max 4800)`);
+  // A solo is exactly their own bill, whatever the hours.
+  assert.ok(Math.abs(partyConsumableSeconds({ p: { '/items/peach_gummy': 40 } }, costs, { hours: 2 }).seconds - 9600) < 1e-9);
+  // Every member's eating moves the party figure, not just the slowest kitchen's.
+  const more = { ...PARTY_USED, player2: { '/items/marsberry_donut': 80 } };
+  assert.ok(partyConsumableSeconds(more, costs, { hours: 1 }).seconds > party);
+  // A member who ate nothing still counts, at no cost, when the roster names them.
+  const trio = partyConsumableSeconds(PARTY_USED, costs, { hours: 1, players: ['player1', 'player2', 'player3'] }).seconds;
+  assert.ok(trio < party);
+  // The rule is per hour: twice the eating over twice the hours is the same rate.
+  const twice = { player1: { '/items/peach_gummy': 40 }, player2: { '/items/marsberry_donut': 80 } };
+  assert.ok(Math.abs(partyConsumableSeconds(twice, costs, { hours: 2 }).seconds / 2 - party) < 1e-9);
 
   // The zone results (SimulationResults, All Zones) and the optimiser agree.
   const summary = summariseConsumableCost({ consumablesUsed: PARTY_USED, hours: 1, pricing: ironPricing() });
-  assert.equal(summary.secondsPerHour, 4800);
+  assert.ok(Math.abs(summary.secondsPerHour - expected) < 1e-9);
   const { scoreSimResult } = await import('../lib/triggerSearch/score.js');
   const metrics = scoreSimResult(
-    { simulatedTime: 3600e9, encounters: 100, manaUsed: { player1: {}, player2: {} }, deaths: {}, consumablesUsed: PARTY_USED },
+    { simulatedTime: 3600e9, encounters: 100, manaUsed: { player1: {}, player2: {}, player3: {} }, deaths: {}, consumablesUsed: PARTY_USED },
     { consumableCosts: costs }
   );
-  assert.equal(metrics.consumableSecondsPerHour, 4800);
+  // player3 ate nothing and is absent from the tally; the roster still counts them.
+  assert.ok(Math.abs(metrics.consumableSecondsPerHour - trio) < 1e-9);
 });

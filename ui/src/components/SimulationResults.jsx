@@ -49,9 +49,10 @@ function SummaryStats({ results, monsters, pricing, zones }) {
       summariseConsumableCost({
         consumablesUsed: results.consumablesUsed,
         hours: hoursSimulated,
-        pricing
+        pricing,
+        players: Object.keys(results.manaUsed || {})
       }),
-    [results.consumablesUsed, hoursSimulated, pricing]
+    [results.consumablesUsed, results.manaUsed, hoursSimulated, pricing]
   );
 
   const kpis = [];

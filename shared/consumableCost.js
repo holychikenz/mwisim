@@ -101,26 +101,39 @@ export function consumableSecondsUsed(byItem, costs) {
 }
 
 /**
- * Production time owed by the party, in seconds: each character makes their own
- * consumables, in parallel, so the party's real clock is set by the slowest
- * kitchen — the per-player MAXIMUM, not the sum. For one player the two agree.
+ * Production time owed by the party, in seconds over `hours` of combat, on the
+ * per-player rule: each character makes their own consumables, so each has
+ * their own real clock, E / (1 + s_i/3600). The party figure is the seconds
+ * whose effective rate is the MEAN of the members' — so every member's eating
+ * moves it (a max would hide all but the slowest kitchen from the optimiser),
+ * and for one player it is exactly their own bill.
+ *
+ * `players` is the roster: a member who ate nothing is absent from the tally
+ * but still counts, at no cost. Defaults to the tally's keys.
  *
  * The one rule for every effective rate (zone results, All Zones, optimiser).
  *
  * @param {Record<string, Record<string, number>>} consumablesUsed  per-player tally
  * @param {Record<string, number>} costs  itemHrid → seconds each
+ * @param {{players?: string[], hours?: number}} [opts]
  * @returns {{seconds: number, priced: string[], unpriced: string[]}}
  */
-export function partyConsumableSeconds(consumablesUsed, costs) {
-  let seconds = 0;
+export function partyConsumableSeconds(consumablesUsed, costs, { players, hours = 1 } = {}) {
+  const roster = players?.length ? players : Object.keys(consumablesUsed || {});
+  const span = hours > 0 ? hours : 1;
+  let clockShare = 0;
+  let solo = 0; // a party of one returns its own bill exactly, free of float drift
   const priced = new Set();
   const unpriced = new Set();
-  for (const perItem of Object.values(consumablesUsed || {})) {
-    const own = consumableSecondsUsed(perItem, costs);
-    seconds = Math.max(seconds, own.seconds);
-    own.priced.forEach((hrid) => priced.add(hrid));
-    own.unpriced.forEach((hrid) => unpriced.add(hrid));
+  for (const hrid of roster) {
+    const own = consumableSecondsUsed(consumablesUsed?.[hrid], costs);
+    solo = own.seconds;
+    clockShare += 1 / (1 + own.seconds / span / 3600);
+    own.priced.forEach((item) => priced.add(item));
+    own.unpriced.forEach((item) => unpriced.add(item));
   }
+  const mean = roster.length ? clockShare / roster.length : 1;
+  const seconds = roster.length === 1 ? solo : 3600 * (1 / mean - 1) * span;
   return { seconds, priced: [...priced], unpriced: [...unpriced] };
 }
 

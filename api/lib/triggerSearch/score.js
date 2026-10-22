@@ -312,7 +312,10 @@ export function scoreSimResult(simResult, { consumableCosts = null } = {}) {
   for (const [itemHrid, count] of Object.entries(consumablesByItem)) {
     consumablesByItemPerHour[itemHrid] = perHour(count);
   }
-  const { seconds: consumableSeconds } = partyConsumableSeconds(simResult?.consumablesUsed, consumableCosts);
+  const { seconds: consumableSeconds } = partyConsumableSeconds(simResult?.consumablesUsed, consumableCosts, {
+    players: playerHrids,
+    hours,
+  });
   const consumableSecondsPerHour = perHour(consumableSeconds);
 
   // Running dry of mana is invisible in encounters/hour until it is severe, but

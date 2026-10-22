@@ -164,11 +164,12 @@ export function buildConsumableCosts(playerDTOs, pricing) {
  * @param {Record<string, Record<string, number>>} args.consumablesUsed  simResult tally
  * @param {number} args.hours    simulated hours (of combat time)
  * @param {object} args.pricing
+ * @param {string[]} [args.players]  the roster; see partyConsumableSeconds
  * @returns {{known: boolean, nothingConsumed: boolean, secondsPerHour: number,
  *           timeShare: number, unitsPerHour: number, priced: string[],
  *           unpriced: string[], overrides: string[]}}
  */
-export function summariseConsumableCost({ consumablesUsed, hours, pricing }) {
+export function summariseConsumableCost({ consumablesUsed, hours, pricing, players }) {
   const { byItem, total } = sumConsumablesUsed(consumablesUsed);
   const perHour = (value) => (hours > 0 ? value / hours : 0);
   const nothingConsumed = Object.keys(byItem).length === 0;
@@ -181,7 +182,7 @@ export function summariseConsumableCost({ consumablesUsed, hours, pricing }) {
     if (override != null) overrides.push(hrid);
   }
 
-  const { seconds, priced, unpriced } = partyConsumableSeconds(consumablesUsed, costs);
+  const { seconds, priced, unpriced } = partyConsumableSeconds(consumablesUsed, costs, { players, hours });
   const secondsPerHour = perHour(seconds);
 
   return {
