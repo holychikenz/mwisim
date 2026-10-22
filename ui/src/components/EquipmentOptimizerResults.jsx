@@ -592,7 +592,8 @@ export function EquipmentOptimizerResults({
   } = results;
 
   const costed = !!results.consumableCostsKnown;
-  const leader = rows[0];
+  // The headline names the first significant GAIN, not merely the top row.
+  const leader = rows.find((row) => row.significant && row.perLevel > 0) ?? rows[0];
   const anyCaveat = rows.some((row) => row.caveat);
 
   return (

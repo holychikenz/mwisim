@@ -509,6 +509,27 @@ test('scanEquipment divides by the step actually used, not the one requested', a
   assert.ok(Math.abs(result.rows[0].perLevel - 2) < 1e-9);
 });
 
+test('audit-8: a run whose only significant row is a LOSS is inconclusive', async () => {
+  const candidates = enumerateEquipment(TWO_SLOT_BUILD);
+  const { evaluate } = syntheticEvaluator({
+    base: 100,
+    weights: { '/equipment_types/head': -2, '/equipment_types/main_hand': 0 },
+    pairedNoise: 5,
+  });
+  const result = await scanEquipment({
+    playerDTOs: TWO_SLOT_BUILD,
+    candidates,
+    evaluate,
+    applyCandidate: applyEnhancement,
+    objective: 'encountersPerHour',
+    replicates: 4,
+  });
+  const head = result.rows.find((row) => row.slotKey === '/equipment_types/head');
+  assert.equal(head.significant, true);
+  assert.ok(head.perLevel < 0);
+  assert.equal(result.inconclusive, true);
+});
+
 test('scanEquipment calls a run inconclusive when nothing clears the noise', async () => {
   const candidates = enumerateEquipment(TWO_SLOT_BUILD);
   const { evaluate } = syntheticEvaluator({
