@@ -306,6 +306,15 @@ test('incompleteBeta obeys the reflection identity across the branch boundary', 
   assert.equal(incompleteBeta(2, 3, 1), 1);
 });
 
+test('audit-9: studentTCritical is not capped at 1000', () => {
+  // df = 1 is the Cauchy distribution: the two-sided critical value is tan(π/2·(1−α)).
+  for (const alpha of [1e-4, 1e-3, 0.05]) {
+    const exact = Math.tan((Math.PI / 2) * (1 - alpha));
+    const got = studentTCritical(alpha, 1);
+    assert.ok(Math.abs(got - exact) / exact < 1e-6, `alpha ${alpha}: ${got} vs ${exact}`);
+  }
+});
+
 test('studentTCritical matches published two-sided 95% quantiles', () => {
   // Any statistics table. These are the numbers the confidence intervals rest on.
   const expected = { 1: 12.706, 2: 4.303, 5: 2.571, 10: 2.228, 20: 2.086, 30: 2.042 };

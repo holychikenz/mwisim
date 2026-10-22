@@ -143,8 +143,9 @@ export function studentTTwoSidedP(t, df) {
 /**
  * Critical t value for a two-sided test at significance `alpha`.
  *
- * Bisection on the tail probability, which is monotone in t. Fifty iterations
- * over [0, 1e3] resolves to ~1e-12, far past anything that matters here.
+ * Bisection on the tail probability, which is monotone in t. The upper bound
+ * doubles until it brackets the answer (df=1 at alpha=1e-4 needs ~6366), and
+ * 200 halvings then resolve it far past anything that matters here.
  *
  * @param {number} alpha  e.g. 0.05 for 95% confidence
  * @param {number} df
@@ -154,6 +155,7 @@ export function studentTCritical(alpha, df) {
   if (!(df > 0) || !(alpha > 0) || !(alpha >= Number.EPSILON) || alpha >= 1) return Infinity;
   let low = 0;
   let high = 1e3;
+  while (studentTTwoSidedP(high, df) > alpha) high *= 2;
   for (let i = 0; i < 200; i += 1) {
     const mid = (low + high) / 2;
     if (studentTTwoSidedP(mid, df) > alpha) low = mid;
