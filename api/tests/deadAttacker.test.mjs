@@ -79,3 +79,28 @@ test('audit-5: an area cast stops at the target whose reflect kills the caster',
   }
   assert.equal(struck, 1);
 });
+
+test('audit-5: a caster killed mid-cast applies none of the cast\'s later effects', async () => {
+  const caster = Player.createFromDTO(structuredClone(toCsimPlayer(BUILDS.magic, { level: 100, index: 1, items, abilityData })));
+  caster.zoneBuffs = [];
+  caster.extraBuffs = [];
+  const sim = new CombatSimulator([caster], null, null, {});
+  sim.reset();
+  caster.generatePermanentBuffs();
+  caster.reset();
+  const later = [];
+  sim.canUseAbility = () => true;
+  sim.checkEncounterEnd = () => false;
+  // Stand-in for a lethal reflect off the damage effect; the heal and buff after it must not run.
+  sim.processAbilityDamageEffect = (source) => { source.combatDetails.currentHitpoints = 0; };
+  sim.processAbilityHealEffect = () => later.push('heal');
+  sim.processAbilityBuffEffect = () => later.push('buff');
+  caster.combatDetails.combatStats.ripple = 1;
+  caster.combatDetails.currentManapoints = 0;
+  const mp = 0;
+  const ability = { hrid: '/abilities/test', manaCost: 0, abilityEffects: [{ effectType: '/ability_effect_types/damage' }, { effectType: '/ability_effect_types/heal' }, { effectType: '/ability_effect_types/buff' }] };
+  await withSeed(1, () => sim.tryUseAbility(caster, ability));
+  assert.deepEqual(later, []);
+  assert.equal(caster.combatDetails.currentHitpoints, 0);
+  assert.equal(caster.combatDetails.currentManapoints, mp, 'no ripple mana for the dead');
+});

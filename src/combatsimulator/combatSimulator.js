@@ -1824,6 +1824,8 @@ class CombatSimulator extends EventTarget {
 
         for (const todoAbility of todoAbilities) {
             for (const abilityEffect of todoAbility.abilityEffects) {
+                // MWIX adaptation: a caster killed by a reflect mid-cast applies no further effects (a self-heal would revive it).
+                if (source.combatDetails.currentHitpoints <= 0) break;
                 switch (abilityEffect.effectType) {
                     case "/ability_effect_types/buff":
                         this.processAbilityBuffEffect(source, todoAbility, abilityEffect);
@@ -1851,7 +1853,8 @@ class CombatSimulator extends EventTarget {
             }
         }
 
-        if (source.combatDetails.combatStats.ripple > 0 && Math.random() < source.combatDetails.combatStats.ripple) {
+        // MWIX adaptation: no ripple for a caster the cast killed.
+        if (source.combatDetails.currentHitpoints > 0 && source.combatDetails.combatStats.ripple > 0 && Math.random() < source.combatDetails.combatStats.ripple) {
             let manapointsAdded = source.addManapoints(10);
             this.simResult.addManapointsGained(source, "ripple", manapointsAdded);
             for (const ability of source.abilities) {
