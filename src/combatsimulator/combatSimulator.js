@@ -655,7 +655,8 @@ class CombatSimulator extends EventTarget {
     startNewEncounter() {
         if (this.allPlayersDead) {
             this.allPlayersDead = false;
-            if (this.zone) {
+            // MWIX adaptation: only a dungeon restart fails a run; a planet gap wipe is not a failed dungeon.
+            if (this.zone?.isDungeon) {
                 this.zone.failWave();
             }
         }
@@ -1180,7 +1181,8 @@ class CombatSimulator extends EventTarget {
         ) {
             if (this.zone) {
                 if (this.zone.isDungeon) {
-                    console.log("All Players died at wave #" + (this.zone.encountersKilled - 1) + " with ememies: " + this.enemies.map(enemy => (enemy.hrid+"("+(enemy.combatDetails.currentHitpoints*100/enemy.combatDetails.maxHitpoints).toFixed(2)+"%)")).join(", "));
+                    // MWIX adaptation: a DoT tick can wipe the party in the 3 s gap after a wave clear, when enemies is null.
+                    console.log("All Players died at wave #" + (this.zone.encountersKilled - 1) + " with ememies: " + (this.enemies ?? []).map(enemy => (enemy.hrid+"("+(enemy.combatDetails.currentHitpoints*100/enemy.combatDetails.maxHitpoints).toFixed(2)+"%)")).join(", "));
 
                     this.saveWipeLogsToSimResult(this.zone.encountersKilled - 1);
                     // console.log(this.simResult)
@@ -1198,6 +1200,8 @@ class CombatSimulator extends EventTarget {
                     this.eventQueue.clearEventsOfType(BlindExpirationEvent.type);
                     this.eventQueue.clearEventsOfType(SilenceExpirationEvent.type);
                     this.eventQueue.clearEventsOfType(AwaitCooldownEvent.type);
+                    // MWIX adaptation: a gap wipe left the wave clear's EnemyRespawnEvent, which skipped wave 1 on restart.
+                    this.eventQueue.clearEventsOfType(EnemyRespawnEvent.type);
                     this.enemies = null;
 
                     let combatStartEvent = new CombatStartEvent(this.simulationTime + RESTART_INTERVAL);
