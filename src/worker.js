@@ -5,9 +5,9 @@ import Labyrinth from "./combatsimulator/labyrinth";
 import GuildTrial from "./combatsimulator/guildTrial";
 import { extractTrialSummary } from "./combatsimulator/guildTrialStats";
 import { applySimSettingsFromExtra } from "./combatsimulator/simSettings";
-import { resolveSealBuffs } from "../shared/personalBuffs.js";
 
-// Build the community / pass / personal-seal buffs shared by every sim mode.
+// Build the community / pass buffs shared by every sim mode. Seals are per
+// character, so they ride on each player DTO's own `extraBuffs`.
 // (Labyrinth shop upgrades are appended separately by the labyrinth path only;
 // guild trials append guild shrine buffs instead — see the guildTrial case.)
 function buildCommunityBuffs(extra = {}) {
@@ -47,16 +47,6 @@ function buildCommunityBuffs(extra = {}) {
             "startTime": "0001-01-01T00:00:00Z",
             "duration": 0
         });
-    }
-    // Seals are a per-CHARACTER item, so the new Vite UI resolves them per
-    // player and folds them into each DTO's own `extraBuffs`; it sends
-    // `extra.personalBuffs` empty. This branch therefore exists for the LEGACY
-    // webpack UI (src/main.js), which has only one party-wide seal control and
-    // no per-player state to hang them off. Both read the same definitions
-    // (shared/personalBuffs.js), so the two UIs cannot disagree about what a
-    // seal is worth.
-    if (extra.personalBuffs) {
-        extraBuffs = extraBuffs.concat(resolveSealBuffs(extra.personalBuffs));
     }
     return extraBuffs;
 }
@@ -109,11 +99,9 @@ onmessage = async function (event) {
             // WHERE THEY ARRIVE FROM has since changed. Shrines are bought per
             // MEMBER, so the Vite UI resolves them (and seals) per player and
             // hangs them off each DTO; from that UI `event.data.guildBuffs` is
-            // always empty and the real work happens in the concat below. The
-            // array is still read because the LEGACY webpack UI (src/main.js)
-            // has only party-wide knobs and still fills it. Either way the
-            // objects arrive pre-resolved, level already folded in, from
-            // ui/src/utils/guildBuffs.js.
+            // always empty and the real work happens in the concat below. Any
+            // objects that do arrive here come pre-resolved, level already
+            // folded in, from ui/src/utils/guildBuffs.js.
             //
             // NOTE: guild BUILDING buffs are deliberately NOT included on this
             // path — those apply to guild trials only (see "start_guild_trial").
@@ -193,7 +181,7 @@ onmessage = async function (event) {
 
             applySimSettingsFromExtra(event.data.extra);
 
-            // Buffs that apply in trials: community / seals + guild shrine buffs.
+            // Buffs that apply in trials: community + guild building buffs.
             // Labyrinth crates & lab-shop upgrades are excluded by construction.
             const trialExtraBuffs = buildCommunityBuffs(event.data.extra || {}).concat(guildBuffs);
 

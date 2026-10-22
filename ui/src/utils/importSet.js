@@ -1,6 +1,6 @@
 // =============================================================================
 // importSet — conversions between the UI's internal player state and the
-// import/export "set" format shared with the old webpack UI and upstream
+// import/export "set" format shared with upstream's simulator and its
 // users. Consumed by ImportExport.jsx (clipboard) and mwixBridge.js
 // (in-game "Open in csim" hash payloads).
 // =============================================================================
@@ -81,7 +81,7 @@ export function playerToExportFormat(player, zone, difficultyTier, duration) {
     achievements: player.achievements || {},
     // Per-character fields, carried at the same trust level as houseRooms and
     // achievements above — written back verbatim, validated nowhere. They are
-    // additive keys, so a set exported here still loads in the old webpack UI
+    // additive keys, so a set exported here still loads in upstream's simulator
     // and an older set still loads here (the reader defaults them).
     //
     // `abilityMemory` travels too, even though only five abilities are slotted:

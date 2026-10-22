@@ -23,7 +23,7 @@ class Equipment {
     // The result is a pure function of (hrid, enhancementLevel, combatStat).
     // `hrid` is written only by the constructor. `enhancementLevel` is too, as
     // far as the engine and its callers go — every caller that "changes" gear
-    // builds a NEW Equipment (src/main.js updateEquipmentState) or mutates a
+    // builds a NEW Equipment or mutates a
     // plain DTO before Player.createFromDTO (api/lib/equipmentScan/
     // candidates.js applyEnhancement) — but nothing in the language stops an
     // assignment, and a silently stale stat is unfalsifiable from the outside.

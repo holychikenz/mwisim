@@ -10,7 +10,7 @@ export function combatLevel(p) {
 }
 
 // The XP/drop debuff for a party member far below the strongest: when
-// maxCL/myCL > 1.2 it is -min(0.9, 3·(ratio - 1.2)), else 0 (as src/main.js).
+// maxCL/myCL > 1.2 it is -min(0.9, 3·(ratio - 1.2)), else 0.
 // Returns copies of the DTOs with `debuffOnLevelGap` set.
 export function withLevelGapDebuff(dtos) {
   const levels = dtos.map(combatLevel);

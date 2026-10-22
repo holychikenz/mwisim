@@ -19,7 +19,7 @@
 //  * The JSON data maps are walked STRUCTURALLY — every string value in the
 //    parsed tree is examined — not regex-scraped. A structural walk cannot
 //    have a character-class bug, which is the exact failure recorded above.
-//    Where source text must be scanned (engine literals, the i18n vocabulary)
+//    Where source text must be scanned (engine literals)
 //    the pattern is [A-Za-z0-9_]+ and DIGITS ARE IN THE CLASS; scanHrids is
 //    exported so the test can prove that against a synthetic digit-bearing
 //    name rather than anyone eyeballing the regex.
@@ -101,14 +101,12 @@ export function collect() {
         for (const hrid of scanHrids(fs.readFileSync(file, "utf8"))) found.add(hrid);
     }
 
-    // 3. The game's own buff-type vocabulary, from the localisation table. This
-    //    is a superset source on purpose: a type that exists in the game but
-    //    that no bundled data map happens to mention today would otherwise be
-    //    absent, and an absent type is a THROW at runtime (see buffTypeOrdinal).
-    //    Better to carry a few unused ordinals than to reject a real buff.
-    const i18nPath = path.join(ROOT, "js/i18n.js");
-    if (fs.existsSync(i18nPath)) {
-        for (const hrid of scanHrids(fs.readFileSync(i18nPath, "utf8"))) found.add(hrid);
+    // 3. Real game buff types that no bundled data map mentions today. An
+    //    absent type is a THROW at runtime (see buffTypeOrdinal), so carry a
+    //    few unused ordinals rather than reject a real buff. These came from
+    //    the game's localisation table, which left with the legacy UI.
+    for (const name of ["combat_experience", "essence_find", "mana_leech", "skilling_experience", "task_action_speed"]) {
+        found.add(PREFIX + name);
     }
 
     // 4. The one site that BUILDS a buff-type hrid by concatenation rather than

@@ -12,7 +12,7 @@
  *
  * Since the expectation is chance x quantity, the divisor may sit on the product
  * below — but it belongs to the quantity alone, and must never be applied to a
- * chance (an RNG roll must test the undivided rate; see main.js calcDropMaps).
+ * chance (an RNG roll must test the undivided rate).
  *
  * All figures are what `playerHrid` alone receives, at that player's own stats.
  */

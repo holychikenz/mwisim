@@ -19,7 +19,7 @@
 // dropdown nobody can find anything in.
 //
 // TIERS. `action.maxDifficulty` is the game's own ceiling — 5 for every planet,
-// 2 for every dungeon — and it is what the upstream webpack UI enforces too
+// 2 for every dungeon — and it is what the upstream simulator enforces too
 // (its difficulty select offers T0–T5 and disables T3+ when the dungeon toggle
 // is on). Nothing above it exists in the game, so nothing above it is offered.
 // =============================================================================

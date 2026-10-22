@@ -1,6 +1,6 @@
 // =============================================================================
-// prices — price-map construction and lookup, ported from the old webpack
-// UI (src/main.js fetchPrices / fetchIronPrices / getDropProfit).
+// prices — price-map construction and lookup (originally ported from
+// upstream's fetchPrices / fetchIronPrices / getDropProfit).
 //
 // A price map is { [itemHrid]: { ask, bid, vendor } } where -1 means
 // "no listing". Two sources:

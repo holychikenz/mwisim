@@ -12,7 +12,7 @@
 //
 //   2. NO CONSUMABLES. The game confiscates food, drinks and teas at the door;
 //      supply crates are the only nutrition inside. Both the browser worker and
-//      MWIX's labyrinth-sim enforce this, and the old webpack UI does not —
+//      MWIX's labyrinth-sim enforce this, and upstream's simulator does not —
 //      which is exactly why its predicted clear rates are too high. An API run
 //      that let the build eat would be wrong in the same direction, so the
 //      stripping happens HERE, on the server, rather than being left to the

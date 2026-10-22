@@ -190,11 +190,10 @@ class Player extends CombatUnit {
         // self time in the CPU profile (the .reduce another 3.1%).
         //
         // Equipment is immutable for the duration of a simulation, so the sums
-        // are constant and computing them once is exact, not approximate. The
-        // browser UI is the one place that DOES swap gear on a live Player
-        // (src/main.js updateEquipmentState, then updateCombatStatsUI ->
-        // updateCombatDetails), so the cache is validated against a cheap
-        // allocation-free signature rather than trusted blindly.
+        // are constant and computing them once is exact, not approximate. A
+        // caller can still swap gear on a live Player and recompute, so the
+        // cache is validated against a cheap allocation-free signature rather
+        // than trusted blindly.
         let totals = this._equipmentStatTotals;
         if (totals === undefined || this._equipmentChanged()) {
             totals = this._equipmentStatTotals = this._computeEquipmentStatTotals();

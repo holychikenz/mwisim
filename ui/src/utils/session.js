@@ -32,7 +32,7 @@ export const SESSION_VERSION = 2;
  * store rather than embedded players, which an older blob cannot express — so
  * the version gate (utils/characterStore.js `loadVersioned`) sets an
  * incompatible blob aside at `csim_player_data.v1` and hands back the defaults
- * rather than guessing. Nothing is mangled; see PARITY.md for the recovery.
+ * rather than guessing. Nothing is mangled.
  *
  * @returns {{data: object, status: 'empty'|'ok'|'incompatible'}}
  */

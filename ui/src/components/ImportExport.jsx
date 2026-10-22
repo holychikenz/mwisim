@@ -8,8 +8,8 @@ import { GUILD_TRIAL_KEY } from '../utils/roster';
 // `setSelectedPlayers` is gone from the props: its only reader was the restore
 // effect, and the party selection is now restored in App's own initialiser.
 //
-// The WIRE FORMAT IS UNCHANGED. A set is still exactly what the webpack UI and
-// upstream users paste, in both directions — utils/importSet.js is not edited.
+// The WIRE FORMAT IS UNCHANGED. A set is still exactly what upstream's simulator and
+// its users paste, in both directions — utils/importSet.js is not edited.
 // What it does not carry is the character→loadouts GROUPING added in
 // schemaVersion 2, because there is no such thing in the format: an export is
 // one resolved player, and an import lands as a new character with one loadout.

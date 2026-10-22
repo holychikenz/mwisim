@@ -1,21 +1,12 @@
-# MWICombatSimulator
+# csim — MWI combat simulator
 
-### How to run locally for development purposes
-
-Install dependencies: 
-
-```bash
-npm install
-```
-
-Build webpack bundle:
+Engine in `src/combatsimulator/`, React UI in `ui/`, headless API and tests in
+`api/`. Everything builds through `./build.sh`:
 
 ```bash
-npm run build
+./build.sh            # install, generate, build the UI (ui/dist/)
+./build.sh check      # what CI runs
+cd ui && npm run dev  # http://localhost:5173
 ```
 
-Run locally:
-
-```bash
-npm start
-```
+See `ui/README.md` and `MWIX-RELATIONSHIP.md` for more.

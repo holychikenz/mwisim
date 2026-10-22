@@ -197,8 +197,8 @@ moved, 6.4–9.4%.
 
 ## 3. What was dropped, and why that matters
 
-Four ideas were measured and thrown away; the `upstream-update.sh` ledger has
-them in full.
+Four ideas were measured and thrown away; the former `upstream-update.sh`
+ledger has them in full (`git show 616df4e:upstream-update.sh`).
 
 - **Trigger derived-key precompute.** Correct, `sim:check` 3/3, and four
   interleaved rounds could not separate it from noise.
@@ -514,11 +514,9 @@ never as a target to converge on. Worker-pool reuse (55 ms per spawn — real, b
 candle's slope cancels by design). Rewriting in AssemblyScript or Rust: finish
 this list first, to find out how much of the gap is language at all.
 
-## 8. Fork discipline
+## 8. Commit discipline
 
-Every departure in `src/combatsimulator/` must be listed in the
-`upstream-update.sh` adaptation ledger or the next sync silently reverts it. One
-commit and one ledger entry per stage, in the house voice: the measurement that
+One commit per stage, its message in the house voice: the measurement that
 justifies it and the argument for why it is safe — **including negative
 results**, so nobody re-derives a discarded idea.
 

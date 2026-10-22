@@ -7,7 +7,7 @@ import { runDungeonRunsSerial, workerBatchRunner, addRunIdleTime, runZoneRepeats
 //
 // The worker entry is upstream's own `src/worker.js`, consumed verbatim via
 // Vite's `new Worker(new URL(...))` support. The message protocol is therefore
-// identical to the webpack UI's:
+// identical to upstream's simulator's:
 //
 //   →  { type: "start_simulation", players, zone, labyrinth,
 //        simulationTimeLimit, extra, guildBuffs }

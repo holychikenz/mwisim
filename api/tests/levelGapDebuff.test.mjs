@@ -1,5 +1,5 @@
-// audit-2 — the React UI computes the level-gap XP/drop debuff per party, as the
-// legacy UI (src/main.js) does, instead of importing the game's setting flag.
+// audit-2 — the React UI computes the level-gap XP/drop debuff per party
+// instead of importing the game's setting flag.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 

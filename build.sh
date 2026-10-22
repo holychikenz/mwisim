@@ -2,10 +2,9 @@
 # =============================================================================
 # build.sh — every build in this repository, in one place.
 #
-# Three build products live here and each has its own toolchain:
+# Two build products live here and each has its own toolchain:
 #   1. tools/gen*.mjs -> src/combatsimulator/generated/*.js  (code generation)
-#   2. webpack        -> dist/                               (legacy UI bundle)
-#   3. vite (ui/)     -> ui/dist/                            (React UI)
+#   2. vite (ui/)     -> ui/dist/                            (React UI)
 # plus api/, which has no build step but does own the tests and parity gates.
 #
 # NOTE ON api/: the api npm scripts run with api/ as the working directory,
@@ -14,16 +13,15 @@
 # works from anywhere.
 #
 # Usage:  ./build.sh [target ...]
-#   (no target)  same as: install gen web ui
-#   install      npm ci/install in root, ui/ and api/
+#   (no target)  same as: install gen ui
+#   install      npm ci/install in ui/ and api/
 #   gen          regenerate src/combatsimulator/generated/*
-#   web          webpack bundle -> dist/
 #   ui           vite build      -> ui/dist/
 #   lint         eslint in ui/
 #   test         api unit tests
 #   check        api test + sim:check + eval:check (what CI runs)
 #   all          everything above
-#   clean        remove dist/, ui/dist/
+#   clean        remove ui/dist/
 # =============================================================================
 set -euo pipefail
 
@@ -43,7 +41,7 @@ install_deps() {
   fi
 }
 
-t_install() { install_deps .; install_deps ui; install_deps api; }
+t_install() { install_deps ui; install_deps api; }
 
 t_gen() {
   say "generate: src/combatsimulator/generated"
@@ -53,7 +51,6 @@ t_gen() {
   done
 }
 
-t_web()  { say "webpack -> dist/";     npm run build; }
 t_ui()   { say "vite -> ui/dist/";     (cd ui && npm run build); }
 t_lint() { say "eslint (ui)";          (cd ui && npm run lint); }
 t_test() { say "api tests";            (cd api && npm test); }
@@ -64,16 +61,16 @@ t_check() {
   say "api eval:check"; (cd api && npm run eval:check)
 }
 
-t_clean() { say "clean"; rm -rf dist ui/dist; }
+t_clean() { say "clean"; rm -rf ui/dist; }
 
-t_all() { t_install; t_gen; t_web; t_ui; t_lint; t_check; }
+t_all() { t_install; t_gen; t_ui; t_lint; t_check; }
 
 targets=("$@")
-[ ${#targets[@]} -eq 0 ] && targets=(install gen web ui)
+[ ${#targets[@]} -eq 0 ] && targets=(install gen ui)
 
 for t in "${targets[@]}"; do
   case "$t" in
-    install|gen|web|ui|lint|test|check|clean|all) "t_${t}" ;;
+    install|gen|ui|lint|test|check|clean|all) "t_${t}" ;;
     *) echo "unknown target: $t" >&2; sed -n '/^# Usage:/,/^# ===/p' "$0" >&2; exit 2 ;;
   esac
 done

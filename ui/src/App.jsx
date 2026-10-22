@@ -1179,7 +1179,6 @@ function App() {
         comExp: 0,
         comDrop: 0,
         mooPass: false,
-        personalBuffs: [],
         // Experimental knobs are not buffs — they are which engine you are
         // running, so they travel even on the otherwise-neutral trial extra.
         experimental
@@ -1567,7 +1566,7 @@ function App() {
     // entry — the player walks in with gear and abilities only; the supply
     // crates are the sole nutrition inside. MWIX's labyrinth-sim enforces
     // the same rule (tampermonkey/src/modules/labyrinth-sim). NOTE: the old
-    // webpack UI does NOT strip consumables for lab sims, which inflates
+    // upstream's simulator does NOT strip consumables for lab sims, which inflates
     // its predicted clear rates — we deliberately match the game instead.
     const stripConsumables = isLab || mazeContext;
 

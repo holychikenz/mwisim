@@ -4,7 +4,7 @@ Answers the question a single simulation cannot: **where should this build
 actually fight?** One click runs every zone/tier combination the game offers in
 a pool of web workers and reports them in one sortable table.
 
-Shipped 2026-08-17. Closes gap #1 in [`ui/PARITY.md`](./ui/PARITY.md).
+Shipped 2026-08-17.
 
 ## What counts as a zone
 
@@ -35,7 +35,7 @@ default zone. Every route that writes `zone` goes through `handleZoneChange`.
 ceiling: 5 on every planet, 2 on every dungeon. The header's tier select is
 derived from the selected zone and the value is clamped when the zone changes.
 The previous fixed T0–T8 list offered four tiers that exist on no zone at all,
-and three more that exist on no dungeon. (The upstream webpack UI agrees: its
+and three more that exist on no dungeon. (Upstream's simulator agrees: its
 select is T0–T5 and it disables T3+ when the dungeon toggle is on.)
 
 ## The sweep

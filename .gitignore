@@ -4,13 +4,12 @@ node_modules/
 # Local prettier override
 .prettierrc
 
-# upstream-update.sh's clone of shykai/MWICombatSimulatorTest
+# Local-only peer-fork analysis cited by TRIGGER-OPTIMIZER.md
 .upstream/
 
-# Build artefacts (webpack root build + Vite ui build)
+# Build artefacts (Vite ui build)
 dist/
 dist-ssr/
-ui/dist/
 
 # Logs
 *.log

@@ -221,7 +221,7 @@ function labyrinthMetrics(simResult, perHour) {
  *
  * Divided by the full simulated time, like every other rate here and like the
  * All Zones sweep's Clears/h — not by the time of the last finished run as the
- * legacy webpack page does. Over the whole window a partial run in progress is
+ * upstream's simulator does. Over the whole window a partial run in progress is
  * time spent and not yet paid for, which is the honest accounting for a
  * comparison between candidates run on the same clock.
  *

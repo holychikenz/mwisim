@@ -15,7 +15,7 @@
 // the other, and nothing held them together. `shared/` is the established home
 // for things both products must agree on (see shared/consumableCost.js's own
 // header for why it is emphatically not src/combatsimulator/): it is reachable
-// from the Vite build, from the webpack bundle and from api/ alike.
+// from the Vite build and from api/ alike.
 //
 // The buff objects below are lifted VERBATIM from the map that used to live in
 // src/worker.js — same uniqueHrid, typeHrid, ratioBoost/flatBoost, startTime and
@@ -24,10 +24,8 @@
 // guild shrines (ui/src/utils/guildBuffs.js) seals have no level, so there is
 // nothing to fold in.
 //
-// `extra.personalBuffs` still exists on the worker's side and still works: the
-// LEGACY webpack UI (src/main.js) sends seals party-wide and has no per-player
-// notion to send them with. That branch reads these same definitions, so the
-// two UIs cannot disagree about what a seal is worth.
+// The worker no longer reads `extra.personalBuffs`: party-wide seals existed
+// only for the removed legacy UI.
 // =============================================================================
 
 export const SEAL_DEFS = {

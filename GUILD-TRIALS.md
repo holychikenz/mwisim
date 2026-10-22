@@ -117,4 +117,3 @@ accuracy against a particular guild's real outcome.
 - [ ] Unit tests: no consumables consumed, no enrage buffs applied, dead-stay-dead + revive path
 - [ ] Fixture: known 40-clone roster vs expected tier-100 encounter stats
 - [ ] Cross-check vs in-game results once the guild runs its first trials (record actual tier clears as fixtures)
-- [ ] Parity note in `ui/PARITY.md` / `MWIX-RELATIONSHIP.md` if upstream adds trial support later

@@ -544,8 +544,8 @@ The game confiscates food, drinks and teas at the door; supply crates are the on
 nutrition inside. The **server** strips them (`api/lib/target.js`), not the caller —
 an unstripped API run would let the build eat its way through rooms the game would
 not, and every row would be measured against a baseline the player cannot field. This
-is the same correction the UI already applies to ordinary lab sims, and which the old
-webpack UI does not, which is why its predicted clear rates are too high.
+is the same correction the UI already applies to ordinary lab sims, and which
+upstream's simulator does not, which is why its predicted clear rates are too high.
 
 Consequently:
 

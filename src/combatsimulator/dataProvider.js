@@ -3,7 +3,7 @@
 // -----------------------------------------------------------------------------
 // Two callers need this data:
 //
-//   1. csim standalone (React UI / Express API / webpack bundle).
+//   1. csim standalone (React UI / Express API).
 //      Wants bundled `./data/*.json` baked in — works offline, never
 //      out of sync with the simulator code.
 //

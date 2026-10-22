@@ -98,8 +98,7 @@ test('swapping a worn item invalidates the cache (the browser equip path)', () =
   player.updateCombatDetails();
   const before = player.combatDetails.combatStats.armor;
 
-  // src/main.js updateEquipmentState() does exactly this to a live Player and
-  // then calls updateCombatDetails() again via updateCombatStatsUI().
+  // Swap gear on a live Player, then recompute: the cache must notice.
   player.equipment['/equipment_types/body'] = null;
   player.updateCombatDetails();
   assert.notEqual(player.combatDetails.combatStats.armor, before,
