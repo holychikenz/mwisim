@@ -22,3 +22,16 @@ test('audit-13: a market sale nets 96%, except coin, chests and vendor-only item
   assert.equal(saleValue(PRICES, '/items/rainbow_milk', 'bid', 'vendor'), 80);
   assert.equal(saleValue(PRICES, '/items/rainbow_milk', 'bid', 'iron'), 80);
 });
+
+test('audit-18: formatValue rounds the total before splitting it', async () => {
+  const { formatValue } = await import('../../ui/src/utils/prices.js');
+  assert.equal(formatValue(119.6, 'seconds'), '2m 0s');
+  assert.equal(formatValue(3599.6, 'seconds'), '1h 0m');
+  assert.equal(formatValue(7170, 'seconds'), '2h 0m');
+  assert.equal(formatValue(59.97, 'seconds'), '1m 0s');
+  assert.equal(formatValue(59.9, 'seconds'), '59.9s');
+  assert.equal(formatValue(-90, 'seconds'), '-1m 30s');
+  assert.equal(formatValue(3661, 'seconds'), '1h 1m');
+  assert.equal(formatValue(Infinity, 'seconds'), '∞');
+  assert.equal(formatValue(Infinity, 'coins'), '∞');
+});

@@ -116,12 +116,17 @@ export function saleValue(prices, hrid, mode, source) {
 
 /** Format a value in the active unit: coins → 1.2M; seconds → 1h 4m. */
 export function formatValue(v, unit) {
+  if (!Number.isFinite(v)) return v < 0 ? '-∞' : '∞';
   if (unit === 'seconds') {
     const sign = v < 0 ? '-' : '';
-    let s = Math.abs(v);
-    if (s < 60) return sign + s.toFixed(1) + 's';
-    if (s < 3600) return sign + Math.floor(s / 60) + 'm ' + Math.round(s % 60) + 's';
-    return sign + Math.floor(s / 3600) + 'h ' + Math.round((s % 3600) / 60) + 'm';
+    const s = Math.abs(v);
+    if (s < 59.95) return sign + s.toFixed(1) + 's';
+    // Round the total to the shown unit first, then split, so 119.6 s is
+    // "2m 0s" rather than "1m 60s".
+    const secs = Math.round(s);
+    if (secs < 3600) return sign + Math.floor(secs / 60) + 'm ' + (secs % 60) + 's';
+    const mins = Math.round(s / 60);
+    return sign + Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm';
   }
   // coins
   const sign = v < 0 ? '-' : '';
