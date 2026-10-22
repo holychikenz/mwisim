@@ -8,9 +8,10 @@
 #   3. vite (ui/)     -> ui/dist/                            (React UI)
 # plus api/, which has no build step but does own the tests and parity gates.
 #
-# NOTE ON api/: every api npm script MUST run with api/ as the working
-# directory — api/register-loader.js resolves the loader's base URL against
-# the cwd, so bare engine imports fail from the repo root.
+# NOTE ON api/: the api npm scripts run with api/ as the working directory,
+# where package.json and their relative paths live. The loader registers
+# against its own URL, so a plain `node --import ./api/register-loader.js …`
+# works from anywhere.
 #
 # Usage:  ./build.sh [target ...]
 #   (no target)  same as: install gen web ui

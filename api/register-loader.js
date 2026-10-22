@@ -1,4 +1,5 @@
 import { register } from 'node:module';
-import { pathToFileURL } from 'node:url';
 
-register('./loader.js', pathToFileURL('./'));
+// Resolved against this file, not the cwd, so `--import <path>/register-loader.js`
+// works from any directory.
+register('./loader.js', import.meta.url);

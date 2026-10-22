@@ -9,7 +9,7 @@
  *   node cli.js --list-zones
  */
 
-import { runSimulation, getZones, loadGameData } from './lib/simulator.js';
+import { runSimulation, getZones } from './lib/simulator.js';
 
 const ONE_HOUR = 60 * 60 * 1e9;
 
@@ -35,7 +35,7 @@ function parseArgs() {
         options.tier = parseInt(args[++i], 10);
         break;
       case '--time':
-        options.time = parseInt(args[++i], 10);
+        options.time = Number(args[++i]);
         break;
       case '--level':
       case '-l':
@@ -63,7 +63,7 @@ Usage:
 
 Options:
   --zone, -z <hrid>     Zone HRID (default: /actions/combat/fly)
-  --tier, -t <number>   Difficulty tier 0-8 (default: 0)
+  --tier, -t <number>   Difficulty tier 0-5 (default: 0)
   --time <hours>        Simulation time in hours (default: 100)
   --level, -l <number>  Player level for all skills (default: 50)
   --list-zones          List all available zones

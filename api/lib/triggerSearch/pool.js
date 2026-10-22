@@ -55,8 +55,7 @@ class SimulationPool {
   #spawn() {
     return new Promise((resolve, reject) => {
       // execArgv is inherited, so the worker gets --import ./register-loader.js
-      // and can resolve the engine's extensionless and JSON imports. cwd is
-      // inherited too, which register-loader.js depends on.
+      // and can resolve the engine's extensionless and JSON imports.
       //
       // stdout/stderr: true means "expose as a stream on the Worker" rather than
       // "pipe into the parent's". The engine console.logs on notable events —

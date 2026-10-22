@@ -12,10 +12,11 @@
 # push to main). Do not just let the wall clock grow — a gate nobody waits for
 # is a gate nobody reads.
 #
-# working-directory: api is MANDATORY, not tidiness. api/register-loader.js
-# calls register('./loader.js', pathToFileURL('./')), so the loader's base URL
-# is resolved against the CURRENT WORKING DIRECTORY. Every npm script here
-# fails to resolve the engine's bare imports if run from the repo root.
+# working-directory: api is still needed, for npm: package.json and every
+# script's relative paths (`--import ./register-loader.js`, `tests/*.test.mjs`)
+# live there. The loader itself no longer cares: api/register-loader.js
+# registers against its own URL, so `node --import ./api/register-loader.js
+# api/cli.js` works from the repo root too.
 #
 # NODE VERSION IS PINNED TO THE RECORDING MAJOR (26). fixtures/eval hashes were
 # recorded on node v26.8.2 / darwin-arm64, and each fixture carries the node
