@@ -1210,7 +1210,9 @@ class CombatSimulator extends EventTarget {
                 // the 3 s gap before the next tier spawned: no progress either way.
                 // MWIX adaptation: was 1, which credited half of a tier never fought.
                 const hpRemovedFrac = this.enemies ? this._trialEncounterHpRemovedFrac() : 0;
-                this.simResult.recordTrialWipe(trialTierAtCheck, this.simulationTime, hpRemovedFrac);
+                // MWIX adaptation: with no live encounter the run ended on the NEXT tier (the
+                // ladder already advanced), not on the one this same check just cleared.
+                this.simResult.recordTrialWipe(this.enemies ? trialTierAtCheck : this.guildTrial.currentTier, this.simulationTime, hpRemovedFrac);
                 this.trialEnded = true;
                 this.eventQueue.clear();
                 return encounterEnded;

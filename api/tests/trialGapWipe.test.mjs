@@ -46,3 +46,25 @@ test('audit-3: a DoT wipe in the gap after a tier clear scores 0 of the next tie
   assert.equal(s.finalTierHpRemovedFrac, 0);
   assert.equal(aggregateTrialResults([s]).expectedGuildPoints, 400);
 });
+
+test('audit-3: a mutual kill that clears a tier ends the run on the next tier, at 0', () => {
+  const player = Player.createFromDTO(structuredClone(toCsimPlayer(BUILDS.melee, { level: 400, index: 1, items, abilityData })));
+  player.zoneBuffs = [];
+  player.extraBuffs = [];
+  const gt = new GuildTrial('/guild_combat/badger', 100, 1, {});
+  const sim = new CombatSimulator([player], null, null, { guildTrial: gt });
+  sim.reset();
+  player.generatePermanentBuffs();
+  player.reset();
+  sim.enemies = gt.getEncounter();
+  sim.enemies.forEach((e) => { e.reset(0); e.combatDetails.currentHitpoints = 0; });
+  player.combatDetails.currentHitpoints = 0; // thorns killed the player on the killing blow
+  sim.simulationTime = 30e9;
+  sim.checkEncounterEnd();
+  sim.simResult.finalizeGuildTrial(gt, { endReason: 'timeout', endTime: sim.simulationTime, hpRemovedFrac: 0 });
+  const s = extractTrialSummary(sim.simResult);
+  assert.equal(s.endReason, 'wipe');
+  assert.equal(s.tiersCleared, 1);
+  assert.equal(s.finalTier, 110);
+  assert.equal(s.finalTierHpRemovedFrac, 0);
+});
