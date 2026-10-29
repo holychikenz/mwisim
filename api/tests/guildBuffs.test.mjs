@@ -264,3 +264,30 @@ test('empty drops convert to an empty result', () => {
   assert.deepEqual(rows, []);
   assert.deepEqual(totals, []);
 });
+
+// audit2-3: the inlined shrine buffs must match the game dump. It lives in the
+// sibling cowstuff repo (found from any ancestor, so a worktree works too), and
+// the check is skipped where that is not checked out.
+const { existsSync, readFileSync } = await import('node:fs');
+const { dirname: dirOf, join: joinPath } = await import('node:path');
+let DUMP = null;
+for (let dir = dirOf(new URL(import.meta.url).pathname); dir !== dirOf(dir) && !DUMP; dir = dirOf(dir)) {
+  const candidate = joinPath(dir, 'cowstuff', 'milkyway_client_info.json');
+  if (existsSync(candidate)) DUMP = candidate;
+}
+const dumpSkip = DUMP ? false : 'cowstuff/milkyway_client_info.json not found in any parent directory';
+
+test('audit2-3: every inlined shrine buff matches guildBuffDetailMap', { skip: dumpSkip }, () => {
+  const map = JSON.parse(readFileSync(DUMP, 'utf8')).guildBuffDetailMap;
+  const fields = ['typeHrid', 'ratioBoost', 'ratioBoostLevelBonus', 'flatBoost', 'flatBoostLevelBonus'];
+  for (const shrine of GUILD_COMBAT_BUFFS) {
+    const game = map[shrine.hrid];
+    assert.ok(game, `${shrine.hrid} missing from the dump`);
+    assert.equal(shrine.buffs.length, game.buffs.length, shrine.hrid);
+    for (const buff of shrine.buffs) {
+      const g = game.buffs.find((b) => b.uniqueHrid === buff.uniqueHrid);
+      assert.ok(g, `${shrine.hrid} ${buff.uniqueHrid} missing from the dump`);
+      for (const f of fields) assert.equal(buff[f], g[f], `${shrine.hrid} ${buff.uniqueHrid} ${f}`);
+    }
+  }
+});
