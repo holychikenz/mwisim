@@ -63,9 +63,9 @@ Usage:
 
 Options:
   --zone, -z <hrid>     Zone HRID (default: /actions/combat/fly)
-  --tier, -t <number>   Difficulty tier 0-5 (default: 0)
+  --tier, -t <number>   Difficulty tier 0-5, dungeons 0-2 (default: 0)
   --time <hours>        Simulation time in hours (default: 100)
-  --level, -l <number>  Player level for all skills (default: 50)
+  --level, -l <number>  Player level for all skills, 1-200 (default: 50)
   --list-zones          List all available zones
   --help, -h            Show this help message
 
@@ -104,12 +104,14 @@ async function main() {
     process.exit(0);
   }
 
-  if (!getZones().some((z) => z.hrid === options.zone)) {
+  const zone = getZones().find((z) => z.hrid === options.zone);
+  if (!zone) {
     console.error(`Unknown zone: ${options.zone} (see --list-zones)`);
     process.exit(1);
   }
   if (![options.tier, options.level, options.time].every(Number.isFinite) ||
-      options.tier < 0 || options.tier > 5 || options.time <= 0) {
+      options.tier < 0 || options.tier > zone.maxDifficulty ||
+      options.level < 1 || options.level > 200 || options.time <= 0) {
     printHelp();
     process.exit(1);
   }

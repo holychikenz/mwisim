@@ -186,6 +186,7 @@ export function getZones() {
         hrid: hrid,
         name: action.name,
         isDungeon: action.combatZoneInfo.isDungeon || false,
+        maxDifficulty: action.maxDifficulty ?? 5,
         combatLevel: action.levelRequirement?.level || 1
       });
     }

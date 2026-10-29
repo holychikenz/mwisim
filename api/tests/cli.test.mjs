@@ -32,11 +32,23 @@ test('audit2-19: a non-numeric --tier, --level or --time exits 1 with the help',
   }
 });
 
-test('audit2-19: a tier outside 0-5 or a time that is not positive exits 1', () => {
-  for (const args of [['--tier', '9'], ['--tier', '-1'], ['--time', '0'], ['--time', '-5']]) {
-    const run = cli('--zone', '/actions/combat/fly', ...args);
-    assert.equal(run.status, 1, args.join(' '));
+test('audit2-19: a tier above the zone ceiling, a bad level or a non-positive time exits 1 with the help', () => {
+  const cases = [
+    ['/actions/combat/fly', '--tier', '9'], ['/actions/combat/fly', '--tier', '-1'],
+    ['/actions/combat/chimerical_den', '--tier', '3'], // dungeons stop at T2
+    ['/actions/combat/fly', '--level', '0'], ['/actions/combat/fly', '--level', '201'],
+    ['/actions/combat/fly', '--time', '0'], ['/actions/combat/fly', '--time', '-5'],
+  ];
+  for (const [zone, ...args] of cases) {
+    const run = cli('--zone', zone, ...args);
+    assert.equal(run.status, 1, `${zone} ${args.join(' ')}`);
+    assert.match(run.stdout, /Usage:/, `${zone} ${args.join(' ')}`);
   }
+});
+
+test('audit2-19: a dungeon at its top tier still runs', () => {
+  const run = cli('--zone', '/actions/combat/chimerical_den', '--tier', '2', '--time', '0.01');
+  assert.equal(run.status, 0, run.stderr);
 });
 
 test('audit2-19: an unknown --zone exits 1', () => {
