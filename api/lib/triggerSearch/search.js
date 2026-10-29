@@ -219,50 +219,68 @@ export async function optimizeTriggers({
   const estimate = estimateWorkload(params, stageOverrides);
 
   let completed = 0;
+  // Cache hits: never simulated, but counted toward progress so the bar still
+  // reaches the estimate, which assumes every vector runs.
+  let reused = 0;
   const report = (stage, label) => {
     onProgress?.({
       stage,
       label,
       completed,
       total: estimate.total,
-      progress: estimate.total > 0 ? Math.min(1, completed / estimate.total) : 0,
+      progress: estimate.total > 0 ? Math.min(1, (completed + reused) / estimate.total) : 0,
     });
   };
 
+  // Every scored vector of this call, keyed `${hours}|${seed}|${vectorKey}`.
+  // The stages revisit the same vector at the same fidelity (the baseline and
+  // each stage's survivors), and a seeded run gives the same answer twice.
+  const scoredCache = new Map();
+
   /**
-   * Simulate a set of value-vectors, de-duplicating identical ones.
+   * Simulate a set of value-vectors, de-duplicating identical ones, within
+   * this call and against every earlier call at the same hours and seed.
    * Returns entries in the same order as `vectors`, each `{ id, values,
    * metrics, conditionCount }`.
    */
   async function evaluateVectors(vectors, { hours, seed, stage, label, idPrefix }) {
     throwIfAborted(signal);
 
+    const cacheKey = (key) => `${hours}|${seed}|${key}`;
     const unique = new Map();
+    let hits = 0;
     for (const values of vectors) {
       const key = vectorKey(values);
-      if (!unique.has(key)) unique.set(key, { key, values, id: `${idPrefix}:${unique.size}` });
+      if (unique.has(key)) continue;
+      if (scoredCache.has(cacheKey(key))) {
+        unique.set(key, null);
+        hits += 1;
+      } else {
+        unique.set(key, { key, values, id: `${idPrefix}:${unique.size}` });
+      }
     }
+    const misses = [...unique.values()].filter(Boolean);
 
-    const jobs = [...unique.values()].map((entry) => ({
+    const jobs = misses.map((entry) => ({
       id: entry.id,
       playerDTOs: applyValues(playerDTOs, params, entry.values),
       simulationTimeLimit: hours * ONE_HOUR_NS,
       seed,
     }));
 
+    reused += hits;
     report(stage, label);
-    const raw = await evaluate(jobs, { stage, label, hours, seed });
+    const raw = jobs.length ? await evaluate(jobs, { stage, label, hours, seed }) : [];
     throwIfAborted(signal);
 
     completed += jobs.length;
     report(stage, label);
 
     const byId = new Map((raw || []).filter(Boolean).map((entry) => [entry.id, entry]));
-    const byKey = new Map();
-    for (const entry of unique.values()) {
+    for (const entry of misses) {
       const scored = byId.get(entry.id);
       if (!scored?.metrics) continue; // a failed simulation simply does not compete
-      byKey.set(entry.key, {
+      scoredCache.set(cacheKey(entry.key), {
         id: entry.id,
         values: entry.values,
         metrics: scored.metrics,
@@ -278,7 +296,11 @@ export async function optimizeTriggers({
       });
     }
 
-    return vectors.map((values) => byKey.get(vectorKey(values)) || null).filter(Boolean);
+    // Shallow copies, so a stage that annotates its entries cannot reach another's.
+    return vectors
+      .map((values) => scoredCache.get(cacheKey(vectorKey(values))))
+      .filter(Boolean)
+      .map((entry) => ({ ...entry }));
   }
 
   /** Baseline at a given fidelity, so deltas are always like-for-like. */

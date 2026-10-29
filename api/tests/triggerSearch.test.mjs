@@ -1013,3 +1013,38 @@ test('noise calibration widens the epsilons it derives', async () => {
     'the derived epsilon is wider than the floor'
   );
 });
+
+// audit2-8: the stages revisit vectors (the baseline, each stage's survivors) at
+// the same hours and seed; one optimizeTriggers call simulates each only once.
+test('audit2-8: optimizeTriggers never simulates the same (hours, seed, vector) twice', async () => {
+  const { optimizeTriggers } = await import('../lib/triggerSearch/search.js');
+  const { readValues } = await import('../lib/triggerSearch/params.js');
+  const mk = (value) => ({
+    hrid: '/abilities/x',
+    triggers: [{
+      dependencyHrid: '/combat_trigger_dependencies/self',
+      conditionHrid: '/combat_trigger_conditions/missing_hp',
+      comparatorHrid: '/combat_trigger_comparators/greater_than_equal',
+      value,
+    }],
+  });
+  const playerDTOs = [{ hrid: 'player1', abilities: [mk(400), mk(30), mk(2)], food: [], drinks: [] }];
+  const params = [
+    { playerIndex: 0, slotKind: 'abilities', slotIndex: 0, triggerIndex: 0, kind: 'absolute', maxValue: 3000, initialValue: 400 },
+    { playerIndex: 0, slotKind: 'abilities', slotIndex: 1, triggerIndex: 0, kind: 'percentage', maxValue: 100, initialValue: 30 },
+    { playerIndex: 0, slotKind: 'abilities', slotIndex: 2, triggerIndex: 0, kind: 'count', maxValue: 4, initialValue: 2 },
+  ];
+  const seen = new Map();
+  const evaluate = async (jobs) => jobs.map((job) => {
+    const v = readValues(job.playerDTOs, params);
+    const key = `${job.simulationTimeLimit}|${job.seed}|${v.join(',')}`;
+    seen.set(key, (seen.get(key) || 0) + 1);
+    const noise = ((job.seed * 9301 + 49297) % 233280) / 233280 * 0.01;
+    const m = 100 - Math.abs(v[0] - 1200) / 100 - Math.abs(v[1] - 60) / 20 - Math.abs(v[2] - 1) + noise;
+    return { id: job.id, metrics: { encountersPerHour: m, deathsPerHour: 0, consumablesPerHour: 0 } };
+  });
+  const result = await optimizeTriggers({ playerDTOs, params, evaluate });
+  const repeats = [...seen.entries()].filter(([, n]) => n > 1);
+  assert.deepEqual(repeats, []);
+  assert.equal(result.simulationsRun, [...seen.values()].reduce((a, b) => a + b, 0));
+});
