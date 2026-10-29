@@ -101,6 +101,7 @@ onmessage = async function (event) {
                 this.postMessage({ type: "dungeon_runs_unsupported" });
                 break;
             }
+            const shardWorkers = [];
             try {
                 const { maxRuns, maxRunDurationNs } = event.data;
                 const message = {
@@ -113,28 +114,29 @@ onmessage = async function (event) {
                 };
                 const shards = planShards(maxRuns, navigator.hardwareConcurrency);
                 const runsDone = shards.map(() => 0);
-                const runShard = async (runs, i) => {
+                const runShard = (runs, i) => {
                     const simulationWorker = new Worker(new URL('worker.js', import.meta.url), { type: 'module' });
-                    try {
-                        return await runDungeonRunsSerial({
-                            totalRuns: runs,
-                            maxRunDurationNs,
-                            runBatch: workerBatchRunner(simulationWorker, message),
-                            onProgress: (p) => {
-                                runsDone[i] = p * runs;
-                                const progress = runsDone.reduce((a, b) => a + b, 0) / maxRuns;
-                                this.postMessage({ type: "simulation_progress", progress });
-                            },
-                        });
-                    } finally {
-                        simulationWorker.terminate();
-                    }
+                    shardWorkers.push(simulationWorker);
+                    return runDungeonRunsSerial({
+                        totalRuns: runs,
+                        maxRunDurationNs,
+                        runBatch: workerBatchRunner(simulationWorker, message),
+                        onProgress: (p) => {
+                            runsDone[i] = p * runs;
+                            const progress = runsDone.reduce((a, b) => a + b, 0) / maxRuns;
+                            this.postMessage({ type: "simulation_progress", progress });
+                        },
+                    });
                 };
                 const results = await Promise.all(shards.map(runShard));
                 this.postMessage({ type: "simulation_result", simResult: addRunIdleTime(mergeSimResults(results)) });
             } catch (e) {
                 console.log(e);
                 this.postMessage({ type: "simulation_error", error: e });
+            } finally {
+                // On success every shard is done; on failure this stops the siblings
+                // of the shard that failed, which would otherwise run to the end.
+                shardWorkers.forEach((w) => w.terminate());
             }
             break;
         }
