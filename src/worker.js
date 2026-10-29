@@ -2,54 +2,9 @@ import CombatSimulator from "./combatsimulator/combatSimulator";
 import Player from "./combatsimulator/player";
 import Zone from "./combatsimulator/zone";
 import Labyrinth from "./combatsimulator/labyrinth";
-import GuildTrial from "./combatsimulator/guildTrial";
-import { extractTrialSummary } from "./combatsimulator/guildTrialStats";
 import { applySimSettingsFromExtra } from "./combatsimulator/simSettings";
-
-// Build the community / pass buffs shared by every sim mode. Seals are per
-// character, so they ride on each player DTO's own `extraBuffs`.
-// (Labyrinth shop upgrades are appended separately by the labyrinth path only;
-// guild trials append guild shrine buffs instead — see the guildTrial case.)
-function buildCommunityBuffs(extra = {}) {
-    let extraBuffs = [];
-    if (extra.mooPass) {
-        extraBuffs.push({
-            "uniqueHrid": "/buff_uniques/experience_moo_pass_buff",
-            "typeHrid": "/buff_types/wisdom",
-            "ratioBoost": 0,
-            "ratioBoostLevelBonus": 0,
-            "flatBoost": 0.05,
-            "flatBoostLevelBonus": 0,
-            "startTime": "0001-01-01T00:00:00Z",
-            "duration": 0
-        });
-    }
-    if (extra.comExp > 0) {
-        extraBuffs.push({
-            "uniqueHrid": "/buff_uniques/experience_community_buff",
-            "typeHrid": "/buff_types/wisdom",
-            "ratioBoost": 0,
-            "ratioBoostLevelBonus": 0,
-            "flatBoost": 0.005 * (extra.comExp - 1) + 0.2,
-            "flatBoostLevelBonus": 0,
-            "startTime": "0001-01-01T00:00:00Z",
-            "duration": 0
-        });
-    }
-    if (extra.comDrop > 0) {
-        extraBuffs.push({
-            "uniqueHrid": "/buff_uniques/combat_community_buff",
-            "typeHrid": "/buff_types/combat_drop_quantity",
-            "ratioBoost": 0,
-            "ratioBoostLevelBonus": 0,
-            "flatBoost": 0.005 * (extra.comDrop - 1) + 0.2,
-            "flatBoostLevelBonus": 0,
-            "startTime": "0001-01-01T00:00:00Z",
-            "duration": 0
-        });
-    }
-    return extraBuffs;
-}
+import { buildCommunityBuffs } from "../shared/communityBuffs.js";
+import { runTrialIterations } from "../shared/guildTrialRuns.js";
 
 // MWIX adaptation: labyrinth shop-upgrade extraBuffs (labyrinth-only). Mirrors
 // tampermonkey/src/modules/labyrinth-sim/index.js's LAB_UPGRADE_DEFS. The four
@@ -185,40 +140,17 @@ onmessage = async function (event) {
             // Labyrinth crates & lab-shop upgrades are excluded by construction.
             const trialExtraBuffs = buildCommunityBuffs(event.data.extra || {}).concat(guildBuffs);
 
-            const summaries = [];
             try {
-                for (let it = 0; it < iterations; it++) {
-                    const players = [];
-                    for (let i = 0; i < playersData.length; i++) {
-                        const p = Player.createFromDTO(structuredClone(playersData[i]));
-                        p.zoneBuffs = []; // no labyrinth crates in trials
-                        // MWIX adaptation (per-member shrines, 2026-09-18):
-                        // guild SHRINES are bought per member, not per guild, so
-                        // the UI now attaches each unit's own resolved shrine
-                        // buffs to its DTO and they are concatenated here. A DTO
-                        // without `extraBuffs` yields the old behaviour exactly;
-                        // `Player.createFromDTO` ignores the field, so it reaches
-                        // this line only via the DTO object itself.
-                        // The headless trial API uses this same contract.
-                        p.extraBuffs = trialExtraBuffs.concat(playersData[i].extraBuffs || []);
-                        players.push(p);
-                    }
-                    const participantCount = cfg.participantCount ?? players.length;
-                    const guildTrial = new GuildTrial(
-                        cfg.trialHrid,
-                        cfg.startTier ?? GuildTrial.START_TIER,
-                        participantCount,
-                        cfg.trialOptions || {}
-                    );
-                    const combatSimulator = new CombatSimulator(players, null, null, { guildTrial });
-                    const simResult = await combatSimulator.simulate(GuildTrial.TRIAL_DURATION_NS);
-                    summaries.push(extractTrialSummary(simResult));
-
-                    this.postMessage({
-                        type: "simulation_progress",
-                        progress: (it + 1) / iterations,
-                    });
-                }
+                const summaries = await runTrialIterations({
+                    players: playersData,
+                    partyBuffs: trialExtraBuffs,
+                    trialHrid: cfg.trialHrid,
+                    startTier: cfg.startTier ?? undefined,
+                    participantCount: cfg.participantCount,
+                    trialOptions: cfg.trialOptions || {},
+                    iterations,
+                    onIteration: (done) => this.postMessage({ type: "simulation_progress", progress: done / iterations }),
+                });
                 this.postMessage({ type: "guild_trial_result", summaries });
             } catch (e) {
                 console.log(e);

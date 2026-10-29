@@ -13,9 +13,10 @@ const CombatSimulator = (await import('../../src/combatsimulator/combatSimulator
 const Player = (await import('../../src/combatsimulator/player.js')).default;
 const Zone = (await import('../../src/combatsimulator/zone.js')).default;
 const GuildTrial = (await import('../../src/combatsimulator/guildTrial.js')).default;
-const { extractTrialSummary, aggregateTrialResults } =
-  await import('../../src/combatsimulator/guildTrialStats.js');
+const { aggregateTrialResults } = await import('../../src/combatsimulator/guildTrialStats.js');
 const { runDungeonRunsSerial, addRunIdleTime, DEFAULT_MAX_RUN_HOURS, ONE_HOUR_NS } = await import('../../shared/dungeonRuns.js');
+const { buildCommunityBuffs } = await import('../../shared/communityBuffs.js');
+const { runTrialIterations } = await import('../../shared/guildTrialRuns.js');
 
 /**
  * Build extra buffs based on options
@@ -25,50 +26,7 @@ const { runDungeonRunsSerial, addRunIdleTime, DEFAULT_MAX_RUN_HOURS, ONE_HOUR_NS
  * candidate simulation — rather than re-deriving it per run, or worse, deriving
  * it differently and scoring candidates against a subtly different build.
  */
-export function buildExtraBuffs(extra = {}) {
-  const extraBuffs = [];
-
-  if (extra.mooPass) {
-    extraBuffs.push({
-      "uniqueHrid": "/buff_uniques/experience_moo_pass_buff",
-      "typeHrid": "/buff_types/wisdom",
-      "ratioBoost": 0,
-      "ratioBoostLevelBonus": 0,
-      "flatBoost": 0.05,
-      "flatBoostLevelBonus": 0,
-      "startTime": "0001-01-01T00:00:00Z",
-      "duration": 0
-    });
-  }
-
-  if (extra.comExp > 0) {
-    extraBuffs.push({
-      "uniqueHrid": "/buff_uniques/experience_community_buff",
-      "typeHrid": "/buff_types/wisdom",
-      "ratioBoost": 0,
-      "ratioBoostLevelBonus": 0,
-      "flatBoost": 0.005 * (extra.comExp - 1) + 0.2,
-      "flatBoostLevelBonus": 0,
-      "startTime": "0001-01-01T00:00:00Z",
-      "duration": 0
-    });
-  }
-
-  if (extra.comDrop > 0) {
-    extraBuffs.push({
-      "uniqueHrid": "/buff_uniques/combat_community_buff",
-      "typeHrid": "/buff_types/combat_drop_quantity",
-      "ratioBoost": 0,
-      "ratioBoostLevelBonus": 0,
-      "flatBoost": 0.005 * (extra.comDrop - 1) + 0.2,
-      "flatBoostLevelBonus": 0,
-      "startTime": "0001-01-01T00:00:00Z",
-      "duration": 0
-    });
-  }
-
-  return extraBuffs;
-}
+export const buildExtraBuffs = buildCommunityBuffs;
 
 /**
  * Run a combat simulation (main thread, no progress)
@@ -170,26 +128,17 @@ export async function runGuildTrialSimulation({
   if (!Number.isInteger(iterations) || iterations <= 0) {
     throw new RangeError(`iterations must be a positive integer, got ${iterations}`);
   }
-  const communityBuffs = buildExtraBuffs(extra);
-  const trialExtraBuffs = communityBuffs.concat(guildBuffs);
-
-  const summaries = [];
-  for (let it = 0; it < iterations; it++) {
-    const players = [];
-    for (let i = 0; i < playersData.length; i++) {
-      const p = Player.createFromDTO(structuredClone(playersData[i]));
-      p.zoneBuffs = []; // no labyrinth crates in trials
-      // Same contract as the browser worker: party-wide buffs plus this
-      // member's own shrine/seal buffs. Callers keep personal buffs on DTOs.
-      p.extraBuffs = trialExtraBuffs.concat(playersData[i].extraBuffs || []);
-      players.push(p);
-    }
-    const pc = participantCount ?? players.length;
-    const guildTrial = new GuildTrial(trialHrid, startTier, pc, trialOptions);
-    const combatSimulator = new CombatSimulator(players, null, null, { guildTrial });
-    const simResult = await combatSimulator.simulate(GuildTrial.TRIAL_DURATION_NS);
-    summaries.push(extractTrialSummary(simResult));
-  }
+  const summaries = await runTrialIterations({
+    players: playersData,
+    // Same contract as the browser worker: party-wide buffs plus each member's
+    // own shrine/seal buffs, which callers keep on the DTOs.
+    partyBuffs: buildExtraBuffs(extra).concat(guildBuffs),
+    trialHrid,
+    startTier,
+    participantCount,
+    trialOptions,
+    iterations,
+  });
 
   const aggregate = aggregateTrialResults(summaries, { startTier, ...aggregateOptions });
   return { aggregate, summaries };
