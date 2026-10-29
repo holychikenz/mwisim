@@ -493,11 +493,12 @@ function App() {
       const characterName = payload.loadout?.name || 'MWIX import';
       const characterId = makeCharacterId(`mwix ${characterName}`);
       const split = splitPlayer(player);
+      // Merge, as the party path above does: the character's other loadouts stay.
       setCharacters(prev => upsertCharacter(prev, {
         ...split.character,
         id: characterId,
         name: characterName,
-        loadouts: { bridge: split.loadout }
+        loadouts: { ...(prev.characters?.[characterId]?.loadouts || {}), bridge: split.loadout }
       }));
       setParty(prev => ({ ...prev, 1: { characterId, loadoutName: 'bridge' } }));
       setSelectedPlayers([1]);
