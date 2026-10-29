@@ -420,3 +420,26 @@ test('runDungeonRunsSerial returns the raw merge: the idle is for the caller to 
   assert.equal('dungeonIdleTime' in r, false);
   assert.equal(r.simulatedTime, 5);
 });
+
+// audit2-13: a result field with no rule silently merges as 'first', which is
+// wrong for anything that accumulates. Every field a real run emits needs one.
+test('audit2-13: every field of a real dungeon result has a merge rule', async () => {
+  const { runSimulation } = await import('../lib/simulator.js');
+  const { loadEngine } = await import('../eval/engine.mjs');
+  const { BUILDS, toCsimPlayer } = await import('../bench/builds.mjs');
+  const { dirname, join } = await import('path');
+  const { fileURLToPath } = await import('url');
+  const engine = await loadEngine(join(dirname(fileURLToPath(import.meta.url)), '..', '..'));
+  const { itemDetailMap: items, abilityDetailMap: abilityData } = engine.gameData;
+  const players = [toCsimPlayer(BUILDS.melee, { level: 150, index: 1, items, abilityData })];
+  const result = await runSimulation({
+    players,
+    zone: { zoneHrid: '/actions/combat/chimerical_den', difficultyTier: 0 },
+    simulationTimeLimit: ONE_HOUR_NS,
+    maxRuns: 2,
+    maxRunDurationNs: ONE_HOUR_NS,
+  });
+  // dungeonIdleTime is added once, after the merge (addRunIdleTime).
+  const missing = Object.keys(result).filter((k) => k !== 'dungeonIdleTime' && !(k in MERGE_RULES));
+  assert.deepEqual(missing, []);
+});
