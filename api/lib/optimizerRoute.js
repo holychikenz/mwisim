@@ -5,9 +5,9 @@
 // =============================================================================
 
 import { isKnownCost } from '../../shared/consumableCost.js';
-import { normaliseTarget } from './target.js';
+import { markDungeon, normaliseTarget } from './target.js';
 import { createSimulationPool, defaultPoolSize, MAX_WORKERS } from './triggerSearch/pool.js';
-import { ALL_REPORTED_METRICS } from './triggerSearch/score.js';
+import { reportedMetricsFor } from './triggerSearch/score.js';
 
 /** Heartbeat interval. Comfortably inside a 30s client stall timeout. */
 const HEARTBEAT_MS = 10_000;
@@ -40,11 +40,25 @@ export function sanitiseConsumableCosts(input) {
   return Object.keys(costs).length ? costs : null;
 }
 
-/** A posted `objective` must be a metric the scorer produces; absent means the default. */
-export function objectiveError(body) {
+/**
+ * Reported metrics where lower is better. The ranking and the equipment scan
+ * always maximise, so as an objective each would put the worst build first.
+ * attemptsPerHour is here too: it rises with every quick death.
+ */
+const NOT_OBJECTIVES = new Set([
+  'deathsPerHour', 'consumableSecondsPerHour', 'consumablesPerHour', 'dungeonFailuresPerHour',
+  'timeoutsPerHour', 'roomDeathsPerHour', 'attemptsPerHour', 'outOfManaSecondsPerHour',
+]);
+
+/**
+ * A posted `objective` must be a higher-is-better metric that this target
+ * reports; absent means the default.
+ */
+export function objectiveError(body, target) {
   const objective = body?.objective;
-  if (objective == null || ALL_REPORTED_METRICS.includes(objective)) return null;
-  return `Unknown objective ${String(objective)}`;
+  if (objective == null) return null;
+  if (reportedMetricsFor(target).includes(objective) && !NOT_OBJECTIVES.has(objective)) return null;
+  return `Unknown objective ${String(objective)} for this target (it must be a higher-is-better metric the target reports)`;
 }
 
 /** The first problem with an optimiser request body, or null when it is usable. */
@@ -56,7 +70,8 @@ export function validateBody(body) {
   // `zone` XOR `labyrinth`, resolved and validated in one place so the two
   // routes and the bounds derivation cannot disagree about what was asked for.
   // See api/lib/target.js.
-  return objectiveError(body) || normaliseTarget(body).error;
+  const target = normaliseTarget(body);
+  return target.error || objectiveError(body, markDungeon(target));
 }
 
 /** The caller's `workers`, clamped to [1, MAX_WORKERS]; the default when absent. */

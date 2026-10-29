@@ -55,6 +55,26 @@ test('audit-7c: both routes answer 400 to an unknown objective and accept a know
   }
 });
 
+test('audit2-7: an objective must be higher-is-better and reported by the target', async () => {
+  const { objectiveError } = await import('../lib/optimizerRoute.js');
+  const zone = { kind: 'zone', dungeon: false };
+  const dungeon = { kind: 'zone', dungeon: true };
+  const lab = { kind: 'labyrinth' };
+  for (const objective of ['deathsPerHour', 'consumableSecondsPerHour', 'consumablesPerHour', 'outOfManaSecondsPerHour']) {
+    assert.ok(objectiveError({ objective }, zone), objective);
+  }
+  assert.ok(objectiveError({ objective: 'dungeonFailuresPerHour' }, dungeon));
+  for (const objective of ['timeoutsPerHour', 'roomDeathsPerHour', 'attemptsPerHour']) assert.ok(objectiveError({ objective }, lab), objective);
+  assert.ok(objectiveError({ objective: 'clearRatePercent' }, zone), 'a zone reports no clear rate');
+  assert.ok(objectiveError({ objective: 'encountersPerHour' }, dungeon), 'a dungeon ranks on completions');
+  assert.equal(objectiveError({ objective: 'experiencePerHour' }, zone), null);
+  assert.equal(objectiveError({ objective: 'completionsPerHour' }, dungeon), null);
+  assert.equal(objectiveError({ objective: 'clearRatePercent' }, lab), null);
+  assert.equal(objectiveError({}, zone), null);
+  const res = await post(triggers, '/optimize-triggers/preview', { players, zone: fly, objective: 'deathsPerHour' });
+  assert.equal(res.statusCode, 400);
+});
+
 test('audit-7d: a trigger named twice in the selection is swept once', async () => {
   const all = await post(triggers, '/optimize-triggers/preview', { players, zone: fly });
   const row = all.body.selection[0];
