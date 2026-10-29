@@ -37,9 +37,10 @@ import { resolveSealBuffs } from '../../../shared/personalBuffs.js';
  *   none" and must NOT fall back). Omit it on the zone / labyrinth / sweep /
  *   optimiser paths, where shrines are strictly per-player and there is no
  *   party-wide knob left to fall back to.
- * @param {boolean} [opts.includeSeals=true]  false for guild trials: the game
- *   grants neither community buffs nor seals inside a trial, which is why the
- *   header hides the Buffs control in trial mode.
+ * @param {boolean} [opts.includeSeals=true]  false for guild trials and the
+ *   labyrinth (see sealsApply): the game grants neither community buffs nor
+ *   seals inside a trial, which is why the header hides the Buffs control in
+ *   trial mode.
  * @returns {Array<object>} finished buff objects for the DTO's `extraBuffs`
  */
 export function resolvePlayerExtraBuffs(
@@ -50,4 +51,20 @@ export function resolvePlayerExtraBuffs(
     ? resolveUnitShrineBuffs(player, partyShrineLevels)
     : resolveGuildBuffs(player?.guildShrines || {});
   return includeSeals ? shrines.concat(resolveSealBuffs(player?.personalBuffs)) : shrines;
+}
+
+/**
+ * Whether seals apply to a run: every seal's description reads "Only effective
+ * outside of Labyrinth and Guild Trial". The maze context runs a zone under
+ * labyrinth rules, and an optimiser aimed at a labyrinth is a labyrinth run.
+ *
+ * @param {object} ctx
+ * @param {string} ctx.simMode
+ * @param {'zone'|'labyrinth'} [ctx.optTarget]  read only in the optimiser modes
+ * @param {boolean} [ctx.mazeContext]
+ */
+export function sealsApply({ simMode, optTarget = 'zone', mazeContext = false }) {
+  if (simMode === 'guildTrial' || simMode === 'labyrinth') return false;
+  if (simMode === 'triggerOpt' || simMode === 'equipOpt') return optTarget !== 'labyrinth';
+  return !mazeContext;
 }

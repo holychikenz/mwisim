@@ -230,3 +230,18 @@ test('a shared extraBuffs list still reaches every player', () => {
   assert.ok(withShared.players[0].maxHitpoints > without.players[0].maxHitpoints);
   assert.equal(withShared.players[0].maxHitpoints, withShared.players[1].maxHitpoints);
 });
+
+// audit2-4: seals are "Only effective outside of Labyrinth and Guild Trial".
+test('audit2-4: seals apply on a zone run and nowhere labyrinth- or trial-shaped', async () => {
+  const { sealsApply } = await import('../../ui/src/utils/playerBuffs.js');
+  assert.equal(sealsApply({ simMode: 'zone' }), true);
+  assert.equal(sealsApply({ simMode: 'zone', mazeContext: true }), false);
+  assert.equal(sealsApply({ mazeContext: false }), true, 'All Zones sweep');
+  assert.equal(sealsApply({ mazeContext: true }), false, 'All Zones sweep in the maze');
+  assert.equal(sealsApply({ simMode: 'labyrinth' }), false);
+  assert.equal(sealsApply({ simMode: 'guildTrial' }), false);
+  for (const simMode of ['triggerOpt', 'equipOpt']) {
+    assert.equal(sealsApply({ simMode, optTarget: 'zone' }), true, simMode);
+    assert.equal(sealsApply({ simMode, optTarget: 'labyrinth' }), false, simMode);
+  }
+});

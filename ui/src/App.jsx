@@ -51,7 +51,7 @@ import { TextInput } from '@mantine/core';
 import { toPlayerDTO } from './utils/playerDTO';
 import { withLevelGapDebuff } from './utils/combatLevel';
 import { loadExperimental, saveExperimental } from './utils/experimental';
-import { resolvePlayerExtraBuffs } from './utils/playerBuffs';
+import { resolvePlayerExtraBuffs, sealsApply } from './utils/playerBuffs';
 import {
   resolveGuildBuildingBuffs,
   GUILD_COMBAT_BUFFS,
@@ -1233,7 +1233,7 @@ function App() {
       // list in api/lib/triggerSearch/poolWorker.js and bounds.js, and the
       // candidate DTOs are deep clones of these (triggerSearch/params.js
       // applyValues), so every candidate is scored on the real character.
-      extraBuffs: resolvePlayerExtraBuffs(resolvedParty[playerId])
+      extraBuffs: resolvePlayerExtraBuffs(resolvedParty[playerId], { includeSeals: sealsApply({ simMode, optTarget }) })
     })));
     return {
       players: playerDTOs,
@@ -1346,7 +1346,7 @@ function App() {
     // applyEnhancement), so `extraBuffs` survives into every probe.
     const playerDTOs = withLevelGapDebuff(selectedParty.map(playerId => ({
       ...toPlayerDTO(resolvedParty[playerId], { hrid: `player${playerId}` }),
-      extraBuffs: resolvePlayerExtraBuffs(resolvedParty[playerId])
+      extraBuffs: resolvePlayerExtraBuffs(resolvedParty[playerId], { includeSeals: sealsApply({ simMode, optTarget }) })
     })));
     return {
       players: playerDTOs,
@@ -1505,7 +1505,7 @@ function App() {
         hrid: `player${playerId}`,
         stripConsumables: mazeContext
       }),
-      extraBuffs: resolvePlayerExtraBuffs(resolvedParty[playerId])
+      extraBuffs: resolvePlayerExtraBuffs(resolvedParty[playerId], { includeSeals: sealsApply({ mazeContext }) })
     }));
 
     runAllZones({
@@ -1574,7 +1574,7 @@ function App() {
     // utils/playerDTO.js — so zone/lab and trials never drift apart).
     const playerDTOs = selectedParty.map(playerId => ({
       ...toPlayerDTO(resolvedParty[playerId], { hrid: `player${playerId}`, stripConsumables }),
-      extraBuffs: resolvePlayerExtraBuffs(resolvedParty[playerId])
+      extraBuffs: resolvePlayerExtraBuffs(resolvedParty[playerId], { includeSeals: sealsApply({ simMode, mazeContext }) })
     }));
     const extra = {
       ...extraOptions,
