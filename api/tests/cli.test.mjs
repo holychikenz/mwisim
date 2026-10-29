@@ -23,3 +23,17 @@ test('audit-19: the help text gives the game tier range', () => {
   assert.equal(run.status, 0, run.stderr);
   assert.match(run.stdout, /Difficulty tier 0-5/);
 });
+
+test('audit2-19: a non-numeric --tier, --level or --time exits 1 with the help', () => {
+  for (const flag of ['--tier', '--level', '--time']) {
+    const run = cli('--zone', '/actions/combat/fly', flag, 'abc');
+    assert.equal(run.status, 1, flag);
+    assert.match(run.stdout, /Usage:/, flag);
+  }
+});
+
+test('audit2-19: an unknown --zone exits 1', () => {
+  const run = cli('--zone', '/actions/combat/nope', '--tier', 'abc');
+  assert.equal(run.status, 1);
+  assert.match(run.stderr, /Unknown zone: \/actions\/combat\/nope/);
+});

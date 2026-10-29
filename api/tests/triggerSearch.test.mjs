@@ -1048,3 +1048,18 @@ test('audit2-8: optimizeTriggers never simulates the same (hours, seed, vector) 
   assert.deepEqual(repeats, []);
   assert.equal(result.simulationsRun, [...seen.values()].reduce((a, b) => a + b, 0));
 });
+
+test('audit2-19: caller epsilon floors are clamped to [0, MAX_DERIVED_EPSILON]', async () => {
+  const { optimizeTriggers } = await import('../lib/triggerSearch/search.js');
+  const { MAX_DERIVED_EPSILON } = await import('../lib/triggerSearch/score.js');
+  const playerDTOs = [{ hrid: 'player1', abilities: [{ hrid: '/abilities/x', triggers: [{
+    dependencyHrid: '/combat_trigger_dependencies/self',
+    conditionHrid: '/combat_trigger_conditions/missing_hp',
+    comparatorHrid: '/combat_trigger_comparators/greater_than_equal',
+    value: 2,
+  }] }], food: [], drinks: [] }];
+  const params = [{ playerIndex: 0, slotKind: 'abilities', slotIndex: 0, triggerIndex: 0, kind: 'count', maxValue: 4, initialValue: 2 }];
+  const evaluate = async (jobs) => jobs.map((job) => ({ id: job.id, metrics: { encountersPerHour: 100, deathsPerHour: 0, consumablesPerHour: 0 } }));
+  const result = await optimizeTriggers({ playerDTOs, params, evaluate, epsilons: { rank: -1, insensitivity: 7 } });
+  assert.deepEqual(result.epsilons.floors, { rank: 0, insensitivity: MAX_DERIVED_EPSILON });
+});

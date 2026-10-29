@@ -104,6 +104,15 @@ async function main() {
     process.exit(0);
   }
 
+  if (!getZones().some((z) => z.hrid === options.zone)) {
+    console.error(`Unknown zone: ${options.zone} (see --list-zones)`);
+    process.exit(1);
+  }
+  if (![options.tier, options.level, options.time].every(Number.isFinite)) {
+    printHelp();
+    process.exit(1);
+  }
+
   console.log(`\nRunning simulation...`);
   console.log(`  Zone: ${options.zone}`);
   console.log(`  Tier: T${options.tier}`);

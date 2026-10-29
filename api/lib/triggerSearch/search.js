@@ -41,6 +41,7 @@ import { applyValues, countConditions, readValues } from './params.js';
 import {
   DEFAULT_INSENSITIVITY_EPSILON,
   DEFAULT_RANK_EPSILON,
+  MAX_DERIVED_EPSILON,
   COMPLETION_OBJECTIVES,
   ONE_HOUR_NS,
   coefficientOfVariation,
@@ -209,10 +210,11 @@ export async function optimizeTriggers({
   // stage is derived from measured noise (see calibrateNoise below) and can only
   // ever be wider than the floor — never narrower, so we are never less
   // discriminating than the peer on a zone quiet enough for their numbers to hold.
-  const rankFloor = Number.isFinite(epsilons.rank) ? epsilons.rank : DEFAULT_RANK_EPSILON;
-  const insensitivityFloor = Number.isFinite(epsilons.insensitivity)
-    ? epsilons.insensitivity
-    : DEFAULT_INSENSITIVITY_EPSILON;
+  // Caller data, so clamped: a negative rank floor made every row "significant".
+  const floorOf = (value, fallback) =>
+    Number.isFinite(value) ? Math.min(MAX_DERIVED_EPSILON, Math.max(0, value)) : fallback;
+  const rankFloor = floorOf(epsilons.rank, DEFAULT_RANK_EPSILON);
+  const insensitivityFloor = floorOf(epsilons.insensitivity, DEFAULT_INSENSITIVITY_EPSILON);
 
   const baselineValues = readValues(playerDTOs, params);
   const conditionCount = countConditions(playerDTOs);
