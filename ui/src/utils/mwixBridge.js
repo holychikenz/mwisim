@@ -32,7 +32,7 @@
 // =============================================================================
 
 import { exportFormatToPlayer } from './importSet.js';
-import { GUILD_COMBAT_BUFFS, MAX_GUILD_BUFF_LEVEL } from './guildBuffs.js';
+import { shrineLevelsFrom } from './characterToStore.js';
 
 const PARAM = 'mwiLabBridge';
 
@@ -95,17 +95,6 @@ export function clearMwixBridgeHash() {
   }
 }
 
-/** A shrine-level map clamped to the known combat shrines (unknown keys dropped). */
-export function clampShrineLevels(raw) {
-  const levels = {};
-  if (!raw || typeof raw !== 'object') return levels;
-  for (const def of GUILD_COMBAT_BUFFS) {
-    const level = Math.max(0, Math.min(MAX_GUILD_BUFF_LEVEL, Math.floor(Number(raw[def.hrid]) || 0)));
-    if (level > 0) levels[def.hrid] = level;
-  }
-  return levels;
-}
-
 /**
  * The party carried by a "Sim Party" payload, as flat players for slots 1..5,
  * or null when the payload is a single loadout. Each entry:
@@ -118,7 +107,8 @@ export function partyFromBridgePayload(payload) {
   if (!members.length) return null;
   return members.map((m, i) => {
     const player = exportFormatToPlayer(m.importSet || {}, i + 1);
-    player.guildShrines = clampShrineLevels(m.mwixContext?.guildShrines);
+    // {} when absent: a party member's missing shrines mean none, not someone else's.
+    player.guildShrines = shrineLevelsFrom(m.mwixContext?.guildShrines) ?? {};
     return {
       slot: i + 1,
       name: String(m.name || `MWIX party ${i + 1}`),

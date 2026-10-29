@@ -42,11 +42,9 @@ import {
   computeDeltas,
   COMPLETION_OBJECTIVES,
   objectiveSaturation,
+  ONE_HOUR_NS,
 } from '../triggerSearch/score.js';
 import { pairedComparison } from './stats.js';
-
-/** One simulated hour, in the nanoseconds the engine counts in. */
-const ONE_HOUR_NS = 60 * 60 * 1e9;
 
 /**
  * Defaults.

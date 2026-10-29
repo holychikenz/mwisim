@@ -52,11 +52,8 @@ import { toPlayerDTO } from './utils/playerDTO';
 import { withLevelGapDebuff } from './utils/combatLevel';
 import { loadExperimental, saveExperimental } from './utils/experimental';
 import { resolvePlayerExtraBuffs, sealsApply } from './utils/playerBuffs';
-import {
-  resolveGuildBuildingBuffs,
-  GUILD_COMBAT_BUFFS,
-  MAX_GUILD_BUFF_LEVEL
-} from './utils/guildBuffs';
+import { resolveGuildBuildingBuffs, GUILD_COMBAT_BUFFS } from './utils/guildBuffs';
+import { shrineLevelsFrom } from './utils/characterToStore';
 import {
   makeId,
   loadGuildTrialState,
@@ -466,13 +463,9 @@ function App() {
       const shrineLevels = ctx?.guildShrines;
       const shrineBits = [];
       if (shrineLevels && typeof shrineLevels === 'object') {
-        const levels = {};
+        const levels = shrineLevelsFrom(shrineLevels);
         for (const def of GUILD_COMBAT_BUFFS) {
-          const raw = Math.floor(Number(shrineLevels[def.hrid]) || 0);
-          const level = Math.max(0, Math.min(MAX_GUILD_BUFF_LEVEL, raw));
-          if (level <= 0) continue;
-          levels[def.hrid] = level;
-          shrineBits.push(`${def.name} ${level}`);
+          if (levels[def.hrid]) shrineBits.push(`${def.name} ${levels[def.hrid]}`);
         }
         player.guildShrines = levels;
         setTrialConfig(prev => ({ ...prev, guildBuffLevels: levels }));

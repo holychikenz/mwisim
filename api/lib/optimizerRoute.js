@@ -1,10 +1,11 @@
 // =============================================================================
 // optimizerRoute — what routes/optimizeTriggers.js and routes/optimizeEquipment.js
-// share: the consumable-cost table rule, the pool size, and the SSE run
+// share: body validation, the consumable-cost table rule, the pool size, and the SSE run
 // lifecycle (headers, heartbeat, client-disconnect abort, pool teardown).
 // =============================================================================
 
 import { isKnownCost } from '../../shared/consumableCost.js';
+import { normaliseTarget } from './target.js';
 import { createSimulationPool, defaultPoolSize, MAX_WORKERS } from './triggerSearch/pool.js';
 import { ALL_REPORTED_METRICS } from './triggerSearch/score.js';
 
@@ -44,6 +45,18 @@ export function objectiveError(body) {
   const objective = body?.objective;
   if (objective == null || ALL_REPORTED_METRICS.includes(objective)) return null;
   return `Unknown objective ${String(objective)}`;
+}
+
+/** The first problem with an optimiser request body, or null when it is usable. */
+export function validateBody(body) {
+  const { players } = body || {};
+  if (!players || !Array.isArray(players) || players.length === 0) {
+    return 'Players array is required';
+  }
+  // `zone` XOR `labyrinth`, resolved and validated in one place so the two
+  // routes and the bounds derivation cannot disagree about what was asked for.
+  // See api/lib/target.js.
+  return objectiveError(body) || normaliseTarget(body).error;
 }
 
 /** The caller's `workers`, clamped to [1, MAX_WORKERS]; the default when absent. */

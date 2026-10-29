@@ -22,7 +22,7 @@
 
 import { Router } from 'express';
 import { buildExtraBuffs } from '../lib/simulator.js';
-import { objectiveError, poolSizeFor, sanitiseConsumableCosts, streamPoolRun } from '../lib/optimizerRoute.js';
+import { poolSizeFor, sanitiseConsumableCosts, streamPoolRun, validateBody } from '../lib/optimizerRoute.js';
 import { markDungeon, normaliseTarget, targetExtraBuffs, targetPlayerDTOs } from '../lib/target.js';
 import { deriveBounds } from '../lib/triggerSearch/bounds.js';
 import { collectSearchParams, enumerateTriggers } from '../lib/triggerSearch/params.js';
@@ -35,17 +35,6 @@ const router = Router();
 /** Reject absurd stage configurations before they cost anybody an afternoon. */
 const MAX_STAGE_HOURS = 1000;
 const MAX_SELECTION = 24;
-
-function validateBody(body) {
-  const { players } = body || {};
-  if (!players || !Array.isArray(players) || players.length === 0) {
-    return 'Players array is required';
-  }
-  // `zone` XOR `labyrinth`, resolved and validated in one place so this route,
-  // the equipment route and the bounds derivation cannot disagree about what
-  // was asked for. See api/lib/target.js.
-  return objectiveError(body) || normaliseTarget(body).error;
-}
 
 /**
  * Clamp the caller's stage overrides. The UI offers these as inputs, so they are

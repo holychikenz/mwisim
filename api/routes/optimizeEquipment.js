@@ -15,7 +15,7 @@
 
 import { Router } from 'express';
 import { buildExtraBuffs } from '../lib/simulator.js';
-import { objectiveError, poolSizeFor, sanitiseConsumableCosts, streamPoolRun } from '../lib/optimizerRoute.js';
+import { poolSizeFor, sanitiseConsumableCosts, streamPoolRun, validateBody } from '../lib/optimizerRoute.js';
 import { markDungeon, normaliseTarget, targetExtraBuffs, targetPlayerDTOs } from '../lib/target.js';
 import { makePoolEvaluator } from '../lib/triggerSearch/pool.js';
 import { defaultObjective, reportedMetricsFor } from '../lib/triggerSearch/score.js';
@@ -33,16 +33,6 @@ const router = Router();
 const MAX_HOURS = 1000;
 const MAX_REPLICATES = 40;
 const MAX_CANDIDATES = 40;
-
-function validateBody(body) {
-  const { players } = body || {};
-  if (!players || !Array.isArray(players) || players.length === 0) {
-    return 'Players array is required';
-  }
-  // `zone` XOR `labyrinth` — same resolver the trigger route uses, so the two
-  // cannot drift apart on what a valid target is. See api/lib/target.js.
-  return objectiveError(body) || normaliseTarget(body).error;
-}
 
 /**
  * Clamp the scan configuration. These arrive from NumberInputs, so they are user
