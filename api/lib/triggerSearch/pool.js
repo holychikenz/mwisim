@@ -55,15 +55,9 @@ class SimulationPool {
   #spawn() {
     return new Promise((resolve, reject) => {
       // execArgv is inherited, so the worker gets --import ./register-loader.js
-      // and can resolve the engine's extensionless and JSON imports.
-      //
-      // stdout/stderr: true means "expose as a stream on the Worker" rather than
-      // "pipe into the parent's". The engine console.logs on notable events —
-      // wipes, dungeon failures — and a single optimisation run is hundreds of
-      // simulations, so leaving the default would bury the API server's own log
-      // under thousands of lines. We never read these streams; the point is that
-      // nothing is forwarded. Worker errors still arrive via the 'error' event.
-      const worker = new Worker(WORKER_PATH, { stdout: true, stderr: true });
+      // and can resolve the engine's extensionless and JSON imports. Its
+      // stdout/stderr go to the server's (the engine no longer logs, audit2-16).
+      const worker = new Worker(WORKER_PATH);
       let ready = false;
 
       worker.on('message', (message) => {

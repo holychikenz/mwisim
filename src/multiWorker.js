@@ -11,6 +11,7 @@ onmessage = async function (event) {
             //   trialOptions}, guildBuffs[], extra, iterations, aggregateOptions }
             const totalIterations = event.data.iterations ?? 1000;
             const aggregateOptions = event.data.aggregateOptions || {};
+            const shardWorkers = [];
 
             try {
                 // Same rule as the API's runGuildTrialSimulation: no silent substitute for 0.
@@ -31,6 +32,7 @@ onmessage = async function (event) {
                 const runShard = (shardIndex, shardIterations) =>
                     new Promise((resolve, reject) => {
                         const simulationWorker = new Worker(new URL('worker.js', import.meta.url), { type: 'module' });
+                        shardWorkers.push(simulationWorker);
                         simulationWorker.postMessage({
                             type: "start_guild_trial",
                             players: event.data.players,
@@ -75,6 +77,8 @@ onmessage = async function (event) {
                     summaries,
                 });
             } catch (e) {
+                // One failed shard fails the run: stop its siblings too.
+                shardWorkers.forEach((w) => w.terminate());
                 console.log(e);
                 this.postMessage({ type: "simulation_error", error: e });
             }

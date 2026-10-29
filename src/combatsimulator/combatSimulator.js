@@ -557,6 +557,7 @@ class CombatSimulator extends EventTarget {
                 // console.log('wave at #' + (this.zone.encountersKilled - 1) +' completed:' + this.zone.dungeonsCompleted + ' failed:'+ this.zone.dungeonsFailed + ' temp:'+ this.tempDungeonCount);
                 if (currentDungeonCount > this.tempDungeonCount) {
                     this.tempDungeonCount = currentDungeonCount;
+                    this.countedDeadPlayers.clear(); // everyone is refilled below
                     for (let i = 0; i < this.players.length; i++) {
                         this.players[i].combatDetails.currentHitpoints = this.players[i].combatDetails.maxHitpoints;
                         this.players[i].combatDetails.currentManapoints = this.players[i].combatDetails.maxManapoints;

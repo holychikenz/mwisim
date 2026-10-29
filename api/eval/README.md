@@ -74,8 +74,10 @@ one bound without recomputing anything.
 
 Any field carrying wall-clock time, a UUID, a process identity, an absolute
 path or a memory address would have to be redacted before hashing, or the hash
-stops being a statement about behaviour. The engine emits none today: the only
-one, `wipeEvents[*].timestamp`, went with `wipeEvents` itself (audit2-5).
+stops being a statement about behaviour. The current engine emits none: the
+only one, `wipeEvents[*].timestamp`, went with `wipeEvents` itself (audit2-5).
+`canonical()` still redacts it, keyed on the containing field, because
+`backrun` loads older engines that emit it.
 
 ## Why the harness duplicates `runSimulation`'s body
 

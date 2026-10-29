@@ -72,3 +72,21 @@ test('audit2-1: a dead dungeon party member is not re-counted by later checks', 
   assert.equal(sim.simResult.deaths.player1, 1);
   assert.equal(sim.simResult.deaths.player2, undefined);
 });
+
+test('audit2-1: a player dead at the end of a completed dungeon run counts again next run', () => {
+  const zone = new Zone('/actions/combat/chimerical_den', 0);
+  const [a, b] = [player(150, 1, zone.buffs), player(150, 2, zone.buffs)];
+  const sim = new CombatSimulator([a, b], zone, null, {});
+  sim.reset();
+  for (const p of [a, b]) { p.generatePermanentBuffs(); p.reset(); }
+  withSeed(1, () => sim.startNewEncounter());
+  a.combatDetails.currentHitpoints = 5;
+  sim.processEvent(dot(1e9, a));
+  // B finishes the run; the next run's first wave refills the party.
+  sim.zone.dungeonsCompleted += 1;
+  withSeed(2, () => sim.startNewEncounter());
+  assert.ok(a.combatDetails.currentHitpoints > 0, 'the completed run refilled player1');
+  a.combatDetails.currentHitpoints = 5;
+  sim.processEvent(dot(2e9, a));
+  assert.equal(sim.simResult.deaths.player1, 2);
+});

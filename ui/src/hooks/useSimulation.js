@@ -325,7 +325,7 @@ export function useSimulation() {
       guildTrial: params.guildTrial,
       guildBuffs: params.guildBuffs || [],
       extra: params.extra || {},
-      iterations: params.iterations || 1000,
+      iterations: params.iterations ?? 1000,
       aggregateOptions: params.aggregateOptions || {}
     });
     // Guard the gap before the first shard reports in, too.

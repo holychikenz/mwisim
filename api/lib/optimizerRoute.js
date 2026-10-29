@@ -7,7 +7,7 @@
 import { isKnownCost } from '../../shared/consumableCost.js';
 import { markDungeon, normaliseTarget } from './target.js';
 import { createSimulationPool, defaultPoolSize, MAX_WORKERS } from './triggerSearch/pool.js';
-import { reportedMetricsFor } from './triggerSearch/score.js';
+import { OBJECTIVE_METRICS, reportedMetricsFor } from './triggerSearch/score.js';
 
 /** Heartbeat interval. Comfortably inside a 30s client stall timeout. */
 const HEARTBEAT_MS = 10_000;
@@ -41,23 +41,13 @@ export function sanitiseConsumableCosts(input) {
 }
 
 /**
- * Reported metrics where lower is better. The ranking and the equipment scan
- * always maximise, so as an objective each would put the worst build first.
- * attemptsPerHour is here too: it rises with every quick death.
- */
-const NOT_OBJECTIVES = new Set([
-  'deathsPerHour', 'consumableSecondsPerHour', 'consumablesPerHour', 'dungeonFailuresPerHour',
-  'timeoutsPerHour', 'roomDeathsPerHour', 'attemptsPerHour', 'outOfManaSecondsPerHour',
-]);
-
-/**
  * A posted `objective` must be a higher-is-better metric that this target
  * reports; absent means the default.
  */
 export function objectiveError(body, target) {
   const objective = body?.objective;
   if (objective == null) return null;
-  if (reportedMetricsFor(target).includes(objective) && !NOT_OBJECTIVES.has(objective)) return null;
+  if (OBJECTIVE_METRICS.has(objective) && reportedMetricsFor(target).includes(objective)) return null;
   return `Unknown objective ${String(objective)} for this target (it must be a higher-is-better metric the target reports)`;
 }
 

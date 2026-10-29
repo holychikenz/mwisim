@@ -8,8 +8,10 @@
 // can reconstruct.
 //
 // Any field carrying wall-clock time, a UUID, a process identity, an absolute
-// path or a memory address would have to be redacted before hashing, or the
-// hash stops being a statement about behaviour. The engine emits none today.
+// path or a memory address must be redacted before hashing, or the hash stops
+// being a statement about behaviour. The current engine emits none; engines
+// before audit2-5, which eval/backrun.mjs still loads, stamped each
+// wipeEvents entry with new Date().toISOString().
 // =============================================================================
 
 import { createHash } from 'crypto';
@@ -48,10 +50,16 @@ export async function withSeed(seed, fn) {
 
 // ---- canonical serialisation -----------------------------------------------
 
+// Keyed by the CONTAINING field, so the redaction cannot reach an unrelated leaf
+// of the same name.
+const REDACTIONS = { wipeEvents: ['timestamp'] };
+
+export const REDACTED = '@wallclock';
+
 // Key-sorted, with the JSON-hostile values the engine can produce spelled out
 // rather than silently coerced (JSON.stringify turns NaN/Infinity into null,
 // which would hide exactly the kind of drift we are looking for).
-export function canonical(value, seen = new Set()) {
+export function canonical(value, seen = new Set(), redactKeys = null) {
   if (value === null) return null;
   const t = typeof value;
   if (t === 'number') {
@@ -67,7 +75,8 @@ export function canonical(value, seen = new Set()) {
   if (seen.has(value)) return '@circular';
   seen.add(value);
   try {
-    if (Array.isArray(value)) return value.map((v) => canonical(v, seen));
+    // An array inherits its parent's redaction list.
+    if (Array.isArray(value)) return value.map((v) => canonical(v, seen, redactKeys));
     if (value instanceof Map) {
       return { '@map': [...value.entries()].map(([k, v]) => [canonical(k, seen), canonical(v, seen)]).sort() };
     }
@@ -75,7 +84,9 @@ export function canonical(value, seen = new Set()) {
       return { '@set': [...value].map((v) => canonical(v, seen)).sort() };
     }
     const out = {};
-    for (const key of Object.keys(value).sort()) out[key] = canonical(value[key], seen);
+    for (const key of Object.keys(value).sort()) {
+      out[key] = redactKeys?.includes(key) ? REDACTED : canonical(value[key], seen, REDACTIONS[key] || null);
+    }
     return out;
   } finally {
     seen.delete(value);

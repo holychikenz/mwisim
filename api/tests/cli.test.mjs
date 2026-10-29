@@ -32,6 +32,13 @@ test('audit2-19: a non-numeric --tier, --level or --time exits 1 with the help',
   }
 });
 
+test('audit2-19: a tier outside 0-5 or a time that is not positive exits 1', () => {
+  for (const args of [['--tier', '9'], ['--tier', '-1'], ['--time', '0'], ['--time', '-5']]) {
+    const run = cli('--zone', '/actions/combat/fly', ...args);
+    assert.equal(run.status, 1, args.join(' '));
+  }
+});
+
 test('audit2-19: an unknown --zone exits 1', () => {
   const run = cli('--zone', '/actions/combat/nope', '--tier', 'abc');
   assert.equal(run.status, 1);

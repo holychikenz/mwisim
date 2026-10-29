@@ -414,6 +414,18 @@ export const DUNGEON_REPORTED_METRICS = [
   'outOfManaSecondsPerHour',
 ];
 
+/**
+ * The reported metrics that may be an objective: higher is better on each, and
+ * the ranking and the equipment scan always maximise. An allowlist, so a new
+ * metric (lower-is-better ones like deaths or failures included) is refused as
+ * an objective until someone decides its direction here.
+ */
+export const OBJECTIVE_METRICS = new Set([
+  'effectiveEncountersPerHour', 'encountersPerHour', 'enemyKillsPerHour', 'experiencePerHour',
+  'damagePerSecond', 'effectiveCompletionsPerHour', 'completionsPerHour', 'clearRatePercent',
+  'clearsPerHour',
+]);
+
 /** Every metric any kind of run can produce. Used where the kind is unknown. */
 export const ALL_REPORTED_METRICS = [
   ...new Set([...LABYRINTH_REPORTED_METRICS, ...REPORTED_METRICS, ...DUNGEON_REPORTED_METRICS]),

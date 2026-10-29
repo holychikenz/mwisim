@@ -108,7 +108,8 @@ async function main() {
     console.error(`Unknown zone: ${options.zone} (see --list-zones)`);
     process.exit(1);
   }
-  if (![options.tier, options.level, options.time].every(Number.isFinite)) {
+  if (![options.tier, options.level, options.time].every(Number.isFinite) ||
+      options.tier < 0 || options.tier > 5 || options.time <= 0) {
     printHelp();
     process.exit(1);
   }
