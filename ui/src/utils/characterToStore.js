@@ -222,8 +222,8 @@ export function characterToCharacter(char, gameData, displayName) {
   // enhance the item afterwards and the ref still says the old number. The
   // game does not equip that number — unless the loadout sets
   // useExactEnhancement it equips the best copy you own — so neither may we.
-  // Same rule as lab-crr.js buildMaxEnhancementByItem /
-  // resolveWearableEnhancement.
+  // Same rule as buildMaxEnhancementByItem / resolveWearableEnhancement in
+  // dakonglong's Labyrinth Clear Rate Calculator (https://greasyfork.org/scripts/566829).
   const maxEnhancementByItem = new Map();
   for (const item of char.characterItems || []) {
     if (!item?.itemHrid || !(Number(item.count) > 0)) continue;

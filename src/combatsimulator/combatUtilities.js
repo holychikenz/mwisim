@@ -25,9 +25,9 @@
 // match. It simply never multiplies damage. Flip TASK_DAMAGE_APPLIES to true to
 // restore upstream behaviour.
 //
-// NOTE: the vendored third-party userscript at csim/lab-crr.js (dakonglong's
-// Labyrinth Clear Rate Calculator) carries the same unconditional multiplier at
-// its own lines ~10317/10354/10376. It is not ours and is left untouched.
+// NOTE: dakonglong's Labyrinth Clear Rate Calculator userscript
+// (https://greasyfork.org/scripts/566829) carries the same unconditional
+// multiplier in its simulateAutoAttack. It is not ours.
 // =============================================================================
 const TASK_DAMAGE_APPLIES = false;
 

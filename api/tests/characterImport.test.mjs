@@ -161,7 +161,8 @@ test('the loadouts genuinely differ, and no slot carries a level', () => {
 // item afterwards and the ref goes stale — the real holychikenz payload has 161
 // of 317 combat refs pointing at an enhancement level no owned item has any
 // more. The game resolves them to the highest-enhanced copy you own unless the
-// loadout sets useExactEnhancement (lab-crr.js resolveWearableEnhancement);
+// loadout sets useExactEnhancement (resolveWearableEnhancement in the Labyrinth
+// Clear Rate Calculator userscript, https://greasyfork.org/scripts/566829);
 // the importer must do the same, reading the truth from characterItems.
 const staleChar = {
   name: 'stale',
