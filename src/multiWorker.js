@@ -9,10 +9,14 @@ onmessage = async function (event) {
             // pattern but the unit of work is a chunk of iterations, not a zone.
             // Payload: { players[], guildTrial:{trialHrid,startTier,participantCount,
             //   trialOptions}, guildBuffs[], extra, iterations, aggregateOptions }
-            const totalIterations = Math.max(1, event.data.iterations || 1000);
+            const totalIterations = event.data.iterations ?? 1000;
             const aggregateOptions = event.data.aggregateOptions || {};
 
             try {
+                // Same rule as the API's runGuildTrialSimulation: no silent substitute for 0.
+                if (!Number.isInteger(totalIterations) || totalIterations <= 0) {
+                    throw new RangeError(`iterations must be a positive integer, got ${totalIterations}`);
+                }
                 const maxWorkers = navigator.hardwareConcurrency || 4;
                 const numWorkers = Math.min(maxWorkers, totalIterations);
                 const outer_worker = this;

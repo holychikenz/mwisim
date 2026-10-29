@@ -756,6 +756,16 @@ test('runGuildTrialSimulation aggregates multiple iterations', async () => {
   assert.equal(result.aggregate.expectedMaxTierCleared, 0);
 });
 
+test('audit2-14: runGuildTrialSimulation refuses a non-positive or fractional iteration count', async () => {
+  for (const iterations of [0, -1, 1.5, NaN]) {
+    await assert.rejects(
+      runGuildTrialSimulation({ players: [structuredClone(BASE_DTO)], trialHrid: '/guild_combat/chameleon', iterations }),
+      RangeError,
+      String(iterations)
+    );
+  }
+});
+
 // --------------------------------------------------------------------------
 // Healing attribution: healingDone is keyed by the HEALER, hitpointsGained by
 // the RECEIVER. These are different questions and must give different answers.

@@ -166,6 +166,10 @@ export async function runGuildTrialSimulation({
   extra = {},
   aggregateOptions = {},
 } = {}) {
+  // 0 used to return an all-zero aggregate here while the browser ran 1000.
+  if (!Number.isInteger(iterations) || iterations <= 0) {
+    throw new RangeError(`iterations must be a positive integer, got ${iterations}`);
+  }
   const communityBuffs = buildExtraBuffs(extra);
   const trialExtraBuffs = communityBuffs.concat(guildBuffs);
 
