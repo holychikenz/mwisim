@@ -189,8 +189,6 @@ class CombatSimulator extends EventTarget {
 
         this.simResult.isDungeon = this.zone?.isDungeon ?? false;
         if (this.zone && this.simResult.isDungeon) {
-            console.log("Timeout now at wave #" + (this.zone.encountersKilled - 1));
-
             this.simResult.dungeonsCompleted = this.zone.dungeonsCompleted;
             this.simResult.dungeonsFailed = this.zone.dungeonsFailed;
             if (this.simResult.dungeonsCompleted < 1) {
@@ -948,10 +946,6 @@ class CombatSimulator extends EventTarget {
             // Trial combat grants NO experience — skip the XP calc/grant entirely.
             if (!this.guildTrial) {
                 //calc exp before clear
-                if (this.enemies.some(enemy => enemy.experienceRate <= 0)) {
-                    console.log("WARN: Some enemies have no experience rate");
-                }
-
                 let totalExp = this.enemies.map(enemy => enemy.experience * enemy.experienceRate).reduce((a, b) => a + b, 0);
                 this.players.forEach(player => {
                     this.simResult.addExperienceGain(player, totalExp / this.players.length);
@@ -1031,10 +1025,6 @@ class CombatSimulator extends EventTarget {
         ) {
             if (this.zone) {
                 if (this.zone.isDungeon) {
-                    // MWIX adaptation: a DoT tick can wipe the party in the 3 s gap after a wave clear, when enemies is null.
-                    console.log("All Players died at wave #" + (this.zone.encountersKilled - 1) + " with ememies: " + (this.enemies ?? []).map(enemy => (enemy.hrid+"("+(enemy.combatDetails.currentHitpoints*100/enemy.combatDetails.maxHitpoints).toFixed(2)+"%)")).join(", "));
-
-
                     // 地下城团灭：只清除战斗相关事件，保留buff过期检查和CD事件
                     this.eventQueue.clearEventsOfType(AutoAttackEvent.type);
                     this.eventQueue.clearEventsOfType(AbilityCastEndEvent.type);
@@ -1376,7 +1366,6 @@ class CombatSimulator extends EventTarget {
 
     processFuryExpirationEvent(event) {
         event.source.removeExpiredBuffs(this.simulationTime);
-        console.log("Fury Timeout");
     }
 
     processEnrageTickEvent(event) {
@@ -1388,8 +1377,6 @@ class CombatSimulator extends EventTarget {
             if (nowStack <= 0) {
                 return;
             }
-
-            console.log(enemy.hrid, nowStack, " stack Enrage at ", (event.encounterTime / ONE_SECOND));
 
             const enrageDamageBuff = {
                     "uniqueHrid": "/buff_uniques/enrage_damage",

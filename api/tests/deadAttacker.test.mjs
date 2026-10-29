@@ -44,12 +44,9 @@ test('audit-5: no auto-attack, cast or ability hit comes from a dead unit', asyn
     if (effect && isDead(source)) dead.hit++;
     return processAttack(source, target, effect);
   };
-  const log = console.log;
-  console.log = () => {};
   try {
     await withSeed(3, () => sim.simulate(2 * 3600e9));
   } finally {
-    console.log = log;
     CombatUtilities.processAttack = processAttack;
   }
   assert.deepEqual(dead, { auto: 0, cast: 0, hit: 0 });

@@ -105,22 +105,13 @@ async function csimEngine() {
       return { players, zone: { zoneHrid: `/actions/combat/${kase.zone}`, difficultyTier: kase.tier } };
     },
     async run(job, hours) {
-      // The engine logs progress to stdout; silence it so a 21-case run is
-      // readable, and so console formatting is not part of what we time.
-      const real = console.log;
-      console.log = () => {};
       const t0 = performance.now();
-      let result;
-      try {
-        result = await runSimulation({
-          players: job.players,
-          zone: job.zone,
-          simulationTimeLimit: hours * 3600e9,
-          extra: {},
-        });
-      } finally {
-        console.log = real;
-      }
+      const result = await runSimulation({
+        players: job.players,
+        zone: job.zone,
+        simulationTimeLimit: hours * 3600e9,
+        extra: {},
+      });
       return { ms: performance.now() - t0, encounters: result.encounters ?? result.enc ?? 0 };
     },
   };

@@ -37,12 +37,6 @@ function makeSim(zoneHrid, builds, level) {
   return new CombatSimulator(players, zone, null, {});
 }
 
-async function quiet(fn) {
-  const log = console.log;
-  console.log = () => {};
-  try { return await fn(); } finally { console.log = log; }
-}
-
 test('audit-1: a gap wipe in a dungeon neither throws nor skips wave 1', async () => {
   const sim = makeSim('/actions/combat/pirate_cove', ['magic'], 150);
   const spawns = [];
@@ -56,7 +50,7 @@ test('audit-1: a gap wipe in a dungeon neither throws nor skips wave 1', async (
     if (gap && sim.allPlayersDead && wipeAt === null) wipeAt = sim.simulationTime;
     return r;
   };
-  await quiet(() => withSeed(5, () => sim.simulate(2 * 3600e9)));
+  await withSeed(5, () => sim.simulate(2 * 3600e9));
   assert.ok(wipeAt !== null, 'the seeded run must still hit a gap wipe');
   // Nothing spawns until the restart 3 s later, and the restart is wave 1. A
   // leftover EnemyRespawnEvent spawned wave 1 onto the dead party first, so
@@ -89,7 +83,7 @@ async function wipeOnFinalWave({ inGap }) {
   if (inGap) sim.enemies = null;
   else assert.ok(sim.enemies.some((e) => e.combatDetails.currentHitpoints > 0), 'the boss is alive');
   for (const p of sim.players) p.combatDetails.currentHitpoints = 0;
-  await quiet(() => sim.checkEncounterEnd());
+  sim.checkEncounterEnd();
   assert.equal(sim.allPlayersDead, true);
   await withSeed(99, () => sim.startNewEncounter());
   return { failed: sim.zone.dungeonsFailed, completed: sim.zone.dungeonsCompleted };

@@ -59,21 +59,14 @@ test('eval/engine.mjs reproduces runSimulation() bit for bit', async () => {
     const players = partyBuilds(kase).map((name, i) =>
       toCsimPlayer(BUILDS[name], { level: kase.level, index: i + 1, items, abilityData })
     );
-    const realLog = console.log;
-    console.log = () => {};
-    let viaProduct;
-    try {
-      viaProduct = await withSeed(seed, () =>
-        runSimulation({
-          players,
-          zone: { zoneHrid: `/actions/combat/${kase.zone}`, difficultyTier: kase.tier },
-          simulationTimeLimit: EVAL_HOURS * 3600e9,
-          extra: {},
-        })
-      );
-    } finally {
-      console.log = realLog;
-    }
+    const viaProduct = await withSeed(seed, () =>
+      runSimulation({
+        players,
+        zone: { zoneHrid: `/actions/combat/${kase.zone}`, difficultyTier: kase.tier },
+        simulationTimeLimit: EVAL_HOURS * 3600e9,
+        extra: {},
+      })
+    );
 
     assert.equal(
       digest(canonical(viaHarness)),

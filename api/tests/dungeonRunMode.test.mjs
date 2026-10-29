@@ -58,17 +58,7 @@ function makeSim(builds, level, zoneHrid = DEN) {
   return new CombatSimulator(players, zone, null, {});
 }
 
-async function quietly(fn) {
-  const real = console.log;
-  console.log = () => {};
-  try {
-    return await fn();
-  } finally {
-    console.log = real;
-  }
-}
-
-const runSeeded = (seed, sim, limit, runLimits) => withSeed(seed, () => quietly(() => sim.simulate(limit, runLimits)));
+const runSeeded = (seed, sim, limit, runLimits) => withSeed(seed, () => sim.simulate(limit, runLimits));
 
 // -- E1–E4: whole runs --------------------------------------------------------
 
@@ -203,11 +193,9 @@ const { MIXED_PARTY } = await import('../bench/builds.mjs');
 
 const apiRun = (seed, builds, level, runLimits, onProgress) =>
   withSeed(seed, () =>
-    quietly(() =>
-      runSimulation(
-        { players: dtos(builds, level), zone: { zoneHrid: DEN, difficultyTier: 0 }, extra: {}, ...runLimits },
-        onProgress
-      )
+    runSimulation(
+      { players: dtos(builds, level), zone: { zoneHrid: DEN, difficultyTier: 0 }, extra: {}, ...runLimits },
+      onProgress
     )
   );
 

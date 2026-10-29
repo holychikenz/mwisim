@@ -77,7 +77,8 @@ export async function loadEngine(root) {
       })
     );
 
-  // The engine chatters to stdout on the dungeon and trial paths.
+  // Engines before audit2-16 chattered to stdout on the dungeon and trial
+  // paths; backrun still loads those, so their output stays silenced here.
   const quietly = async (fn) => {
     const real = console.log;
     console.log = () => {};

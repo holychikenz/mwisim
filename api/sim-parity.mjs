@@ -157,14 +157,7 @@ async function runFixture(fx) {
   // unseeded and every fixture would be pure noise that never reproduces.
   // If you ever add an onProgress argument here, the harness silently stops
   // proving anything.
-  const log = console.log;
-  console.log = () => {}; // the engine chatters on the dungeon path
-  try {
-    return await withSeed(fx.seed, () =>
-      runSimulation(structuredClone(fx.request)));
-  } finally {
-    console.log = log;
-  }
+  return withSeed(fx.seed, () => runSimulation(structuredClone(fx.request)));
 }
 
 function listFixtures() {
