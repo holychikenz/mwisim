@@ -11,7 +11,10 @@ const __dirname = dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-app.use(cors());
+// Only the UI's own origins may drive this API from a browser: the Pages site,
+// and the Vite dev server (:5173) or cowstuff start-server.py (:17645) on loopback.
+// Any other website gets no CORS headers, so the browser blocks its requests.
+app.use(cors({ origin: /^(https:\/\/holychikenz\.github\.io|http:\/\/(localhost|127\.0\.0\.1)(:\d+)?)$/ }));
 app.use(express.json({ limit: '10mb' }));
 
 // API routes
