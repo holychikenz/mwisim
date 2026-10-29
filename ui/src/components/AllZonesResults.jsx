@@ -206,9 +206,11 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
         const cmp = String(av ?? '').localeCompare(String(bv ?? ''));
         return dir === 'asc' ? cmp : -cmp;
       }
-      const an = Number.isFinite(av) ? av : -Infinity;
-      const bn = Number.isFinite(bv) ? bv : -Infinity;
-      return dir === 'asc' ? an - bn : bn - an;
+      // A missing number sorts last in both directions, like a failed row.
+      const aMissing = !Number.isFinite(av);
+      const bMissing = !Number.isFinite(bv);
+      if (aMissing || bMissing) return aMissing - bMissing;
+      return dir === 'asc' ? av - bv : bv - av;
     });
     return list;
   }, [metrics, activeSort]);
