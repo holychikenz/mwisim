@@ -198,12 +198,19 @@ class SimResult {
         });
     }
     
+    // Kill sites call this for every unit; players are counted once per death
+    // by checkEncounterEnd through addPlayerDeath instead.
     addDeath(unit) {
+        if (unit.isPlayer) return;
         if (!this.deaths[unit.hrid]) {
             this.deaths[unit.hrid] = 0;
         }
 
         this.deaths[unit.hrid] += 1;
+    }
+
+    addPlayerDeath(player) {
+        this.deaths[player.hrid] = (this.deaths[player.hrid] ?? 0) + 1;
     }
 
     updateTimeSpentAlive(name, alive, time) {

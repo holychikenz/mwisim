@@ -378,7 +378,7 @@ class CombatSimulator extends EventTarget {
         // Guild Trial run state.
         this.trialEnded = false;
         this.trialTierStartTime = 0;
-        this.trialDeadPlayers = new Set(); // hrids already counted as dead this run
+        this.countedDeadPlayers = new Set(); // player hrids whose current death is already counted
     }
 
     // MWIX adaptation (performance): synchronous.
@@ -473,6 +473,7 @@ class CombatSimulator extends EventTarget {
         // console.log("Combat Start " + (this.simulationTime / 1000000000));
         // MWIX adaptation (dungeon run mode)
         if (this._freshRunPending) this._startFreshRun();
+        this.countedDeadPlayers.clear();
         for (let i = 0; i < this.players.length; i++) {
             if (event.time == 0) { // First combat start event
                 this.players[i].generatePermanentBuffs();
@@ -492,6 +493,7 @@ class CombatSimulator extends EventTarget {
     processPlayerRespawnEvent(event) {
         // console.log("Player " + event.hrid + " respawn at " + + (this.simulationTime / 1000000000));
         let respawningPlayer = this.players.find(player => player.hrid === event.hrid);
+        this.countedDeadPlayers.delete(respawningPlayer.hrid);
         respawningPlayer.combatDetails.currentHitpoints = respawningPlayer.combatDetails.maxHitpoints;
         respawningPlayer.combatDetails.currentManapoints = respawningPlayer.combatDetails.maxManapoints;
         respawningPlayer.clearBuffs();
@@ -1122,40 +1124,20 @@ class CombatSimulator extends EventTarget {
             // console.log("encounter end " + (this.simulationTime / 1000000000))
         }
 
+        // The one place a player death is counted (SimResult.addDeath skips
+        // players). countedDeadPlayers holds each dead player once until a
+        // respawn, revive or combat restart brings them back, so a dead party
+        // member is not re-counted by every later checkEncounterEnd.
         this.players.forEach(player => {
+            if (player.combatDetails.currentHitpoints > 0 || this.countedDeadPlayers.has(player.hrid)) return;
+            this.countedDeadPlayers.add(player.hrid);
+            this.simResult.addPlayerDeath(player);
+            this.simResult.addRanOutOfManaCount(player, false, this.simulationTime);
             if (this.guildTrial) {
-                // Trial: dead players STAY DEAD (no PlayerRespawnEvent ever). The
-                // zone/lab re-count guard is a pending respawn event, which never
-                // exists here, so gate on a per-run "already counted dead" set to
-                // avoid re-recording the same death on every checkEncounterEnd.
-                // The set entry is cleared by processAbilityReviveEffect so a
-                // revive→re-death counts as a second death.
-                if (player.combatDetails.currentHitpoints <= 0 && !this.trialDeadPlayers.has(player.hrid)) {
-                    this.trialDeadPlayers.add(player.hrid);
-                    this.simResult.addDeath(player);
-                    this.simResult.recordTrialPlayerDeath(player.hrid, trialTierAtCheck, this.simulationTime);
-                    this.simResult.addRanOutOfManaCount(player, false, this.simulationTime);
-                }
-                return;
-            }
-            if ((player.combatDetails.currentHitpoints <= 0) && !this.eventQueue.containsEventOfTypeAndHrid(PlayerRespawnEvent.type, player.hrid)) {
-                if (this.zone && !this.zone.isDungeon) {
-                    let playerRespawnEvent = new PlayerRespawnEvent(this.simulationTime + PLAYER_RESPAWN_INTERVAL, player.hrid);
-                    this.eventQueue.addEvent(playerRespawnEvent);
-                }
-                // MWIX adaptation: csim records monster deaths via
-                // addDeath() but skips it for players. Callers that read
-                // simResult.deaths to compute win/loss (labyrinth attempt
-                // success rate, dungeon attempt rate, single-trial zone
-                // win rate) had no signal. Record player death here.
-                // Safe against double-counting: the !contains check above
-                // gates zone re-entry until respawn fires; for labyrinth
-                // the event queue is cleared at L799 and the player is
-                // reset by the next CombatStartEvent, so checkEncounterEnd
-                // cannot re-observe HP <= 0 for the same player.
-                this.simResult.addDeath(player);
-                this.simResult.addRanOutOfManaCount(player, false, this.simulationTime);
-                // console.log(player.hrid + " died at " + (this.simulationTime / 1000000000) + 'in wave #' + (this.zone.encountersKilled - 1) + ' with ememies: ' + this.enemies?.map(enemy => (enemy.hrid+"("+(enemy.combatDetails.currentHitpoints*100/enemy.combatDetails.maxHitpoints).toFixed(2)+"%)")).join(", "));
+                // Trial: dead players STAY DEAD (no PlayerRespawnEvent ever).
+                this.simResult.recordTrialPlayerDeath(player.hrid, trialTierAtCheck, this.simulationTime);
+            } else if (this.zone && !this.zone.isDungeon) {
+                this.eventQueue.addEvent(new PlayerRespawnEvent(this.simulationTime + PLAYER_RESPAWN_INTERVAL, player.hrid));
             }
         });
 
@@ -2353,7 +2335,7 @@ class CombatSimulator extends EventTarget {
             // "already counted dead" mark so a later re-death is counted again.
             // (The /abilities/revive path does not depend on PlayerRespawnEvent,
             // so dead-stay-dead in trial mode does not break revive.)
-            this.trialDeadPlayers?.delete(reviveTarget.hrid);
+            this.countedDeadPlayers?.delete(reviveTarget.hrid);
 
             reviveTarget.removeExpiredBuffs(this.simulationTime);
 

@@ -16,7 +16,7 @@
     ],
     "metric": "labyAttemptCount"
   },
-  "recordedAt": "2026-09-21T07:54:38.291Z",
+  "recordedAt": "2026-10-29T12:29:27.065Z",
   "node": "v26.8.2",
   "platform": "darwin/arm64",
   "seeds": 16,
@@ -37,21 +37,21 @@
     "boundBy": "statistical"
   },
   "runs": [
-    {"seed":3237302334,"sha256":"6bcabba06ba1f2bf3882b5a43dcdae15a4cd8b1a6580d96f544fbc2a6723dea9","value":53,"deaths":104,"dungeons":0},
-    {"seed":3237310253,"sha256":"6f9c868cdfacf8dbc66f6465776b05e6cef8db08fc266fcd3eab276e29d0c1fe","value":51,"deaths":100,"dungeons":0},
-    {"seed":3237318172,"sha256":"3eb1493e50b57d01f12ea3b83c62545ec8996eff61b4e6abc0793f40a1e68d3f","value":53,"deaths":104,"dungeons":0},
-    {"seed":3237326091,"sha256":"0f5608fbc90d0c629ae332c671905b0ade37afc3244e8d7b4e4a0b2a1c31f78a","value":51,"deaths":96,"dungeons":0},
-    {"seed":3237334010,"sha256":"44c4bd464300bfd117c743e69f3c21db1e3c097459a5757580710d28c3d1decf","value":51,"deaths":100,"dungeons":0},
-    {"seed":3237341929,"sha256":"b006d6977a4db876542e5fb310617aa7c3b6fe4d46f2a5773c6cbbf18673fca4","value":51,"deaths":100,"dungeons":0},
-    {"seed":3237349848,"sha256":"ae9a2969e0aa4ff61556d372066b7cd5df8a28f22f9ab45d9fa31fa0c244358d","value":52,"deaths":102,"dungeons":0},
-    {"seed":3237357767,"sha256":"086e7416667ab8acd1b588332eec91df7775387b5cd883b7d9c73cb7c3b40b64","value":53,"deaths":102,"dungeons":0},
-    {"seed":3237365686,"sha256":"49433425e68292823a11f79dd6718e000c6a2ffb1384ae4080ec39684a460a87","value":53,"deaths":104,"dungeons":0},
-    {"seed":3237373605,"sha256":"f96ef16792c384b05c0ac79e49c1dca9d54af808aecf67750a87407481fb9424","value":49,"deaths":96,"dungeons":0},
-    {"seed":3237381524,"sha256":"a1fb2bbe000089613822331913e644b09a52a4717508a98d00d0ed4bccf41be5","value":53,"deaths":104,"dungeons":0},
-    {"seed":3237389443,"sha256":"3b110cddc14ae09e7b1eca10ac3718357f15aaf5ee603a3a3bfcd13ec8450090","value":56,"deaths":110,"dungeons":0},
-    {"seed":3237397362,"sha256":"6768785595619f4aa740c806ae2add11f3f44fb14815aad46ce0588d9509e932","value":50,"deaths":96,"dungeons":0},
-    {"seed":3237405281,"sha256":"f027e776d4dac6431fd4f98cc104f9c882cee05df52c35f034e41de9e257134f","value":52,"deaths":102,"dungeons":0},
-    {"seed":3237413200,"sha256":"394cf132eb418d54f531b61c698d6fb1ee66a3dd296b56cec7d7001d55a16e6b","value":52,"deaths":102,"dungeons":0},
-    {"seed":3237421119,"sha256":"869eb5990199251e0b9a7c4e6ca53492735e28c6b271620d63d19151b918850f","value":52,"deaths":102,"dungeons":0}
+    {"seed":3237302334,"sha256":"d016bcf7f7eaffa0f015b85e4e02d48eb5681e5dfcf63b9464abb347e1f73922","value":53,"deaths":52,"dungeons":0},
+    {"seed":3237310253,"sha256":"d8c97412470e8e80f74b6f3f465f34be01bf9f02a4f08e139d9f6c00a31f5292","value":51,"deaths":50,"dungeons":0},
+    {"seed":3237318172,"sha256":"03f4bb650ec8e89aef8da4f448e2449fc3cb4d1d4942e4ab9b7691e056e8c144","value":53,"deaths":52,"dungeons":0},
+    {"seed":3237326091,"sha256":"570757692c2c7af2b598a3a33d83167da7e5cddbf27f7a339b628bb19ebff80b","value":51,"deaths":48,"dungeons":0},
+    {"seed":3237334010,"sha256":"b79dc15c7f0c1a181c39637fc6d5b6986f22d7192810cee7e7e8d8e4ee0f1e9a","value":51,"deaths":50,"dungeons":0},
+    {"seed":3237341929,"sha256":"49db9e7958df3ac7b9d1e55a384aadd816365b2ce0c274711d15cb5e25702754","value":51,"deaths":50,"dungeons":0},
+    {"seed":3237349848,"sha256":"8672b315f03c64a5d81ca67ccac8a6f110d1b0bfa49e46fc6fc0d551da2f12ef","value":52,"deaths":51,"dungeons":0},
+    {"seed":3237357767,"sha256":"1b2ecadd1a617b6e94df6b549ed71fd640ace77b117726dfb73e1f75eaf5a71f","value":53,"deaths":51,"dungeons":0},
+    {"seed":3237365686,"sha256":"c60da3739c46cd3929ad0a478a4ebfb1c80cddc359a59d435f654a2735fd9cfd","value":53,"deaths":52,"dungeons":0},
+    {"seed":3237373605,"sha256":"09590464b5b736874da9eb5a1d25c022bbfab86a95055dfaa76cf4d3b4e4d05f","value":49,"deaths":48,"dungeons":0},
+    {"seed":3237381524,"sha256":"1c048d04670e772e73196e02372b4d226faec644fd01aba11df90c2c6e6ff9d6","value":53,"deaths":52,"dungeons":0},
+    {"seed":3237389443,"sha256":"5fb7184123bd090ef683d7478f23a62f865bb1e7e94c2b9d3bcd2939695b56a8","value":56,"deaths":55,"dungeons":0},
+    {"seed":3237397362,"sha256":"9170c896b22053f2108571a535a1f81e6d0cde7ed5d5aadeeba6f936432b2a02","value":50,"deaths":48,"dungeons":0},
+    {"seed":3237405281,"sha256":"c4e4ec746f06f10968a4c0c16314e185c9c816917d8633804ac247e305a81ba9","value":52,"deaths":51,"dungeons":0},
+    {"seed":3237413200,"sha256":"c048ef79d2537f09a015004da3001f2104c8d49bf0b690a783005efb063e237b","value":52,"deaths":51,"dungeons":0},
+    {"seed":3237421119,"sha256":"ac40e5c773fdfc8b5aecb7f0cd91023701a0e7162d3a49f595bd0e478d6ce245","value":52,"deaths":51,"dungeons":0}
   ]
 }
