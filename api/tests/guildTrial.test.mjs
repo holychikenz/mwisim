@@ -766,6 +766,14 @@ test('audit2-14: runGuildTrialSimulation refuses a non-positive or fractional it
   }
 });
 
+test('audit2-14: the UI cleans a saved or imported iteration count before running', async () => {
+  const { trialIterations, DEFAULT_TRIAL_CONFIG } = await import('../../ui/src/utils/roster.js');
+  for (const iterations of ['', 0, -3, 1.5, NaN, null, undefined, '50']) {
+    assert.equal(trialIterations({ iterations }), DEFAULT_TRIAL_CONFIG.iterations, String(iterations));
+  }
+  assert.equal(trialIterations({ iterations: 250 }), 250);
+});
+
 // --------------------------------------------------------------------------
 // Healing attribution: healingDone is keyed by the HEALER, hitpointsGained by
 // the RECEIVER. These are different questions and must give different answers.

@@ -50,6 +50,17 @@ export const DEFAULT_TRIAL_CONFIG = {
   enemyScale: 100,
 };
 
+/**
+ * The trial iteration count to run: a saved or imported config may carry ''
+ * (a cleared field), 0 or NaN, which the engine refuses (audit2-14). Anything
+ * that is not a positive integer falls back to the default.
+ */
+export function trialIterations(config) {
+  const n = config?.iterations;
+  return Number.isInteger(n) && n > 0 ? n : DEFAULT_TRIAL_CONFIG.iterations;
+}
+
+
 let __seq = 0;
 /** Collision-resistant id without leaning on any specific browser global. */
 export function makeId(prefix = 'id') {

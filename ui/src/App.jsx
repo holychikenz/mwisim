@@ -62,7 +62,8 @@ import {
   refKey,
   rosterSize,
   clampCount,
-  DEFAULT_TRIAL_CONFIG
+  DEFAULT_TRIAL_CONFIG,
+  trialIterations
 } from './utils/roster';
 import {
   createCharacter,
@@ -1177,7 +1178,7 @@ function App() {
         // running, so they travel even on the otherwise-neutral trial extra.
         experimental
       },
-      iterations: trialConfig.iterations,
+      iterations: trialIterations(trialConfig),
       aggregateOptions: {
         buildersHallBonus: (trialConfig.buildersHallBonus || 0) / 100,
         treasuryBonus: (trialConfig.treasuryBonus || 0) / 100
@@ -1187,7 +1188,7 @@ function App() {
         trialHrid: trialConfig.trialHrid,
         participantCount: effectiveParticipants,
         startTier: trialConfig.startTier,
-        iterations: trialConfig.iterations,
+        iterations: trialIterations(trialConfig),
         // Captured at run time so the results view can flag debugging runs
         // even after the knob is changed back.
         enemyScale,
