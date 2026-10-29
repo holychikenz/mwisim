@@ -25,7 +25,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { canonical, digest, withSeed, REDACTED } from '../lib/determinism.mjs';
+import { canonical, digest, withSeed } from '../lib/determinism.mjs';
 import { allEvalCases, seedsFor, validateEvalCases, fnv1a32, EVAL_HOURS } from '../eval/cases.mjs';
 import { loadEngine } from '../eval/engine.mjs';
 import { runSimulation } from '../lib/simulator.js';
@@ -82,49 +82,6 @@ test('eval/engine.mjs reproduces runSimulation() bit for bit', async () => {
         `how the engine is called, and every fixture in fixtures/eval was recorded through the former.`
     );
   }
-});
-
-// -- 2. the redaction works --------------------------------------------------
-
-test('canonical() redacts the wall-clock stamp on wipeEvents', () => {
-  // src/combatsimulator/simResult.js:197 stamps each wipe with
-  // new Date().toISOString(). Two runs identical in every other respect must
-  // hash the same, or a wipe-heavy case can never be a fixture.
-  const make = (stamp) => ({
-    encounters: 7,
-    wipeEvents: [
-      { simulationTime: 1000, wave: 3, logs: ['a'], timestamp: stamp },
-      { simulationTime: 2000, wave: 4, logs: ['b'], timestamp: stamp },
-    ],
-  });
-
-  const a = canonical(make('2026-09-21T07:00:00.000Z'));
-  const b = canonical(make('2026-09-21T09:30:11.921Z'));
-
-  assert.equal(digest(a), digest(b));
-  assert.equal(a.wipeEvents[0].timestamp, REDACTED);
-  // Everything else in the wipe survives — the redaction replaces one field,
-  // it does not blank the event.
-  assert.equal(a.wipeEvents[0].wave, 3);
-  assert.equal(a.wipeEvents[1].simulationTime, 2000);
-});
-
-// -- 3. the redaction is not over-broad --------------------------------------
-
-test('canonical() redacts only wipeEvents timestamps, and only that field', () => {
-  // A real difference inside a wipe event must still reach the hash.
-  const wipes = (wave) => ({ wipeEvents: [{ wave, timestamp: 'x' }] });
-  assert.notEqual(digest(canonical(wipes(3))), digest(canonical(wipes(4))));
-
-  // A `timestamp` that is NOT inside wipeEvents is ordinary data. The redaction
-  // is keyed on the containing field for exactly this reason: a leaf-name rule
-  // would blank a field that carries real information somewhere else.
-  const elsewhere = (t) => ({ auctions: [{ timestamp: t }], timestamp: t });
-  const c1 = canonical(elsewhere('2026-01-01T00:00:00Z'));
-  const c2 = canonical(elsewhere('2026-01-02T00:00:00Z'));
-  assert.notEqual(digest(c1), digest(c2));
-  assert.notEqual(c1.timestamp, REDACTED);
-  assert.notEqual(c1.auctions[0].timestamp, REDACTED);
 });
 
 // -- 4. seeds are stable, and independent of catalogue order -----------------

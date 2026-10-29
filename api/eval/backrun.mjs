@@ -281,7 +281,7 @@ if (recordPath) {
         seeds: seedCount,
         kinds: kinds ? [...kinds] : 'all',
         caveats: [
-          'Bit-identity is of the CANONICAL SimResult tree, with wipeEvents[*].timestamp redacted (src/combatsimulator/simResult.js:197).',
+          'Bit-identity is of the CANONICAL SimResult tree. An engine older than audit2-5 also emits wipeEvents, whose wall-clock timestamp makes its wipe-heavy cases mismatch.',
           'Under a seeded global Math.random (mulberry32), on the MAIN-THREAD branch only — a worker realm does not see the override.',
           'heap-js held at 2.7.1 for both engines: the loader resolves it from the current node_modules whichever engine is loaded.',
           'Game data asserted byte-identical across the span before running; the comparison is refused otherwise.',

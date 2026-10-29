@@ -222,7 +222,7 @@
     "extra": {}
   },
   "expected": {
-    "sha256": "638976f93a083de514571294bf6c88b298a1b8bcb6de584395a18d11f2252248",
+    "sha256": "d0fed860c605306f84dd67c69704f6f0b423b1fa08a104cefad3759e63f72c58",
     "headline": {
       "encounters": 8,
       "elapsedTime": null,
@@ -799,7 +799,6 @@
       "trialTierStartTimes": {},
       "trialTierTimes": {},
       "trialTiersCleared": 0,
-      "wipeEvents": [],
       "zoneName": "/actions/combat/infernal_abyss"
     }
   }

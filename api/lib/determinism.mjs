@@ -7,24 +7,9 @@
 // hash function is two hashes that will eventually disagree for a reason nobody
 // can reconstruct.
 //
-// WALL-CLOCK REDACTION — WHY canonical() SCRUBS wipeEvents[*].timestamp
-// ---------------------------------------------------------------------
-// src/combatsimulator/simResult.js:197 — addWipeEvent() stamps each wipe with
-// `new Date().toISOString()`. That is wall-clock time: it is not a function of
-// the inputs or the seed, so it changes between two runs that are otherwise
-// bit-identical, and a hash taken over it is noise rather than evidence.
-//
-// This never fired before, only because it had never been exercised: all three
-// fixtures/sim scenarios record `wipeEvents: []`. A wipe-heavy case (five bare
-// L10 players in chimerical_den — 62 wipe events) hashes differently on two
-// runs at the SAME seed; scrubbing the timestamp restores bit-identity.
-//
-// THE GENERAL RULE, of which this is one instance: any field carrying
-// WALL-CLOCK TIME, a UUID, a process identity, an absolute path or a memory
-// address must be redacted before hashing, or the hash stops being a statement
-// about behaviour. Redact narrowly — key the redaction on the containing field,
-// never on the leaf name — so that a real field that happens to be called
-// `timestamp` somewhere else still participates in the hash.
+// Any field carrying wall-clock time, a UUID, a process identity, an absolute
+// path or a memory address would have to be redacted before hashing, or the
+// hash stops being a statement about behaviour. The engine emits none today.
 // =============================================================================
 
 import { createHash } from 'crypto';
@@ -63,20 +48,10 @@ export async function withSeed(seed, fn) {
 
 // ---- canonical serialisation -----------------------------------------------
 
-// Fields whose value is non-deterministic and must not reach the hash. Keyed by
-// the CONTAINING array/object field, so the redaction cannot spread to an
-// unrelated leaf of the same name.
-const REDACTIONS = {
-  // simResult.js:197 — new Date().toISOString() per wipe.
-  wipeEvents: ['timestamp'],
-};
-
-export const REDACTED = '@wallclock';
-
 // Key-sorted, with the JSON-hostile values the engine can produce spelled out
 // rather than silently coerced (JSON.stringify turns NaN/Infinity into null,
 // which would hide exactly the kind of drift we are looking for).
-export function canonical(value, seen = new Set(), redactKeys = null) {
+export function canonical(value, seen = new Set()) {
   if (value === null) return null;
   const t = typeof value;
   if (t === 'number') {
@@ -92,9 +67,7 @@ export function canonical(value, seen = new Set(), redactKeys = null) {
   if (seen.has(value)) return '@circular';
   seen.add(value);
   try {
-    // An array inherits its parent's redaction list, so `wipeEvents` reaches
-    // each element of the array rather than stopping at the array itself.
-    if (Array.isArray(value)) return value.map((v) => canonical(v, seen, redactKeys));
+    if (Array.isArray(value)) return value.map((v) => canonical(v, seen));
     if (value instanceof Map) {
       return { '@map': [...value.entries()].map(([k, v]) => [canonical(k, seen), canonical(v, seen)]).sort() };
     }
@@ -102,13 +75,7 @@ export function canonical(value, seen = new Set(), redactKeys = null) {
       return { '@set': [...value].map((v) => canonical(v, seen)).sort() };
     }
     const out = {};
-    for (const key of Object.keys(value).sort()) {
-      if (redactKeys && redactKeys.includes(key)) {
-        out[key] = REDACTED;
-        continue;
-      }
-      out[key] = canonical(value[key], seen, REDACTIONS[key] || null);
-    }
+    for (const key of Object.keys(value).sort()) out[key] = canonical(value[key], seen);
     return out;
   } finally {
     seen.delete(value);

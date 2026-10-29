@@ -144,7 +144,7 @@ export const MERGE_RULES = {
   timeSpentAlive: 'timeSpentAlive',
   lastDungeonFinishTime: 'lastOnClock', lastEncounterFinishTime: 'lastOnClock',
   firstEncounterFinishTime: 'firstOnClock',
-  wipeEvents: 'concatOnClock', labRoomOutcomes: 'concatOnClock',
+  labRoomOutcomes: 'concatOnClock',
   dungeonRunGapNs: 'first',
   zoneName: 'first', difficultyTier: 'first', labyrinthName: 'first', roomLevel: 'first',
   isDungeon: 'first', isLabyrinth: 'first', numberOfPlayers: 'first', dropRateMultiplier: 'first',
@@ -161,7 +161,7 @@ function sumTree(a, b) {
 }
 
 /** Each timed entry of every shard, moved onto the one clock. */
-const ON_CLOCK_FIELDS = { wipeEvents: ['simulationTime'], labRoomOutcomes: ['time', 'startTime'] };
+const ON_CLOCK_FIELDS = { labRoomOutcomes: ['time', 'startTime'] };
 
 const STRATEGIES = {
   sum: (vals) => vals.reduce((a, v) => a + (v || 0), 0),

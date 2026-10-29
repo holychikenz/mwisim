@@ -1058,7 +1058,7 @@
     "extra": {}
   },
   "expected": {
-    "sha256": "67d9ba66502a21d30b59f443e7fbe207f8891988523e7ee4d137927cfa8823d1",
+    "sha256": "f6087f05746d909eb4d1545c36656abcf53759b78e0dc65c41e7cf1b5eb9503b",
     "headline": {
       "encounters": 70,
       "elapsedTime": null,
@@ -4914,7 +4914,6 @@
       "trialTierStartTimes": {},
       "trialTierTimes": {},
       "trialTiersCleared": 0,
-      "wipeEvents": [],
       "zoneName": "/actions/combat/chimerical_den"
     }
   }

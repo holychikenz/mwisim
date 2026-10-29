@@ -137,8 +137,7 @@ function shardA() {
       { name: 'boss', timeSpentAlive: 8, spawnedAt: 50, alive: true, count: 1 },
     ],
     lastDungeonFinishTime: 80, lastEncounterFinishTime: 95, firstEncounterFinishTime: 4,
-    wipeEvents: [{ simulationTime: 70, logs: [], wave: 3, timestamp: 'x' }],
-    labRoomOutcomes: [],
+    labRoomOutcomes: [{ outcome: 'death', time: 70, startTime: 60 }],
     zoneName: '/actions/combat/chimerical_den', difficultyTier: 0, isDungeon: true, numberOfPlayers: 1,
     bossSpawns: ['#50,boss'], isGuildTrial: false, trialHrid: null,
   };
@@ -162,8 +161,7 @@ function shardB() {
       { name: 'adds', timeSpentAlive: 3, spawnedAt: 10, alive: false, count: 3 },
     ],
     lastDungeonFinishTime: 0, lastEncounterFinishTime: 45, firstEncounterFinishTime: 2,
-    wipeEvents: [{ simulationTime: 20, logs: [], wave: 7, timestamp: 'y' }],
-    labRoomOutcomes: [],
+    labRoomOutcomes: [{ outcome: 'win', time: 20, startTime: 10 }],
     zoneName: '/actions/combat/chimerical_den', difficultyTier: 0, isDungeon: true, numberOfPlayers: 1,
     bossSpawns: ['#50,boss'], isGuildTrial: false, trialHrid: null,
   };
@@ -204,7 +202,7 @@ test('mergeSimResults sums time alive by name and puts later shards on one clock
   assert.equal(m.lastDungeonFinishTime, 80); // B never finished one
   assert.equal(m.lastEncounterFinishTime, 145);
   assert.equal(m.firstEncounterFinishTime, 4);
-  assert.deepEqual(m.wipeEvents.map((w) => [w.simulationTime, w.wave]), [[70, 3], [120, 7]]);
+  assert.deepEqual(m.labRoomOutcomes.map((o) => [o.outcome, o.time, o.startTime]), [['death', 70, 60], ['win', 120, 110]]);
   assert.equal(m.zoneName, '/actions/combat/chimerical_den');
   assert.deepEqual(m.bossSpawns, ['#50,boss']);
 });

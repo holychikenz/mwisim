@@ -33,8 +33,7 @@ import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 import { runSimulation, loadGameData } from './lib/simulator.js';
 // The seeded-replay kit lives in one place so this harness and api/eval/ cannot
-// drift apart on what "the same run" means. canonical() there also redacts the
-// wall-clock stamp on wipeEvents — see api/lib/determinism.mjs for why.
+// drift apart on what "the same run" means.
 import { withSeed, canonical, digest, headline } from './lib/determinism.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

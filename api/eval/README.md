@@ -70,25 +70,12 @@ floor also absorbs cross-platform float noise. Both terms are written into each
 fixture (`bandStatistical`, `bandFloor`, `boundBy`), so a reader can see which
 one bound without recomputing anything.
 
-## The wall-clock redaction
+## Wall-clock fields
 
-`src/combatsimulator/simResult.js:197` — `addWipeEvent()` stamps every wipe with
-`new Date().toISOString()`. That is wall-clock time. It is not a function of the
-inputs or the seed, so a hash taken over it is noise.
-
-This had never fired, only because it had never been exercised: all three
-`fixtures/sim` scenarios record `wipeEvents: []`. Measured on five bare L10
-players in `chimerical_den` — **255 wipe events in a simulated hour** — two runs
-*at the same seed* hash differently, with timestamps 9 ms apart. Scrubbing the
-field restores bit-identity. `canonical()` in `api/lib/determinism.mjs` does
-that, and two of the guard tests pin it: one that the redaction works, one that
-it is not over-broad (a `timestamp` that is not inside `wipeEvents` still
-reaches the hash).
-
-The general rule, of which this is one instance: **any field carrying
-wall-clock time, a UUID, a process identity, an absolute path or a memory
-address must be redacted or the hash stops being a statement about behaviour.**
-Redact narrowly, keyed on the containing field, never on the leaf name.
+Any field carrying wall-clock time, a UUID, a process identity, an absolute
+path or a memory address would have to be redacted before hashing, or the hash
+stops being a statement about behaviour. The engine emits none today: the only
+one, `wipeEvents[*].timestamp`, went with `wipeEvents` itself (audit2-5).
 
 ## Why the harness duplicates `runSimulation`'s body
 

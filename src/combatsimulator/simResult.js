@@ -103,8 +103,6 @@ class SimResult {
         // (it never resolved).
         this.labRoomOutcomes = [];
 
-        this.wipeEvents = [];
-
         // ---- Guild Trial results (populated only for trial runs) ------------
         // Per-iteration trial outcome. isGuildTrial gates everything; the rest
         // is written incrementally during the run and finalised in
@@ -189,15 +187,6 @@ class SimResult {
         }));
     }
 
-    addWipeEvent(logs, simulationTime, wave) {
-        this.wipeEvents.push({
-            simulationTime: simulationTime,
-            logs: logs,
-            wave: wave,
-            timestamp: new Date().toISOString()
-        });
-    }
-    
     // Kill sites call this for every unit; players are counted once per death
     // by checkEncounterEnd through addPlayerDeath instead.
     addDeath(unit) {
