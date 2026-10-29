@@ -153,6 +153,8 @@ class SimulationPool {
    */
   async run(jobs, { onJobDone = null } = {}) {
     if (this.destroyed) throw new Error('pool has been destroyed');
+    // Nothing would ever drain the queue: the exit handler failed only the batch in flight.
+    if (!this.workers.length) throw new Error('no workers left');
     if (!jobs.length) return [];
 
     let done = 0;
