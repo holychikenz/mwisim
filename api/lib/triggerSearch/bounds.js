@@ -332,8 +332,3 @@ export function deriveBounds({ playerDTOs, target, extraBuffs = [] }) {
     enemies: deriveEnemyBounds(zone.zoneHrid, Number(zone.difficultyTier) || 0),
   };
 }
-
-/** Testing seam — the monster cache is process-lifetime by design. */
-export function clearMonsterCache() {
-  monsterCache.clear();
-}

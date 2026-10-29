@@ -93,38 +93,6 @@ export function useGameData() {
   return { data, loading: false, error: null };
 }
 
-// Helper to filter items by type
-export function filterItems(items, typeHrid) {
-  if (!items) return [];
-  return Object.values(items).filter(item => item.itemLocationHrid === typeHrid);
-}
-
-// Get equipment items
-export function getEquipment(items) {
-  if (!items) return {};
-  const equipment = {};
-  const equipmentTypes = [
-    '/equipment_types/head',
-    '/equipment_types/body',
-    '/equipment_types/legs',
-    '/equipment_types/feet',
-    '/equipment_types/hands',
-    '/equipment_types/main_hand',
-    '/equipment_types/two_hand',
-    '/equipment_types/off_hand',
-    '/equipment_types/pouch',
-    '/equipment_types/back'
-  ];
-
-  equipmentTypes.forEach(type => {
-    equipment[type] = Object.values(items).filter(
-      item => item.equipmentDetail?.type === type
-    );
-  });
-
-  return equipment;
-}
-
 // Get food items
 export function getFood(items) {
   if (!items) return [];

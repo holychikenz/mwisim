@@ -60,7 +60,7 @@ function buildRun({ playersData, zoneConfig, labyrinthConfig, extraBuffs }) {
     players.push(player);
   }
 
-  return new CombatSimulator(players, zone, labyrinth, { enableHpMpVisualization: false });
+  return new CombatSimulator(players, zone, labyrinth);
 }
 
 async function runOne(job) {

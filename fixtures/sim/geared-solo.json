@@ -222,7 +222,7 @@
     "extra": {}
   },
   "expected": {
-    "sha256": "d0fed860c605306f84dd67c69704f6f0b423b1fa08a104cefad3759e63f72c58",
+    "sha256": "8c0593c53c6c81acf8bf280de2ec1e6a90bc017f4efe3fa757784ccb1570261b",
     "headline": {
       "encounters": 8,
       "elapsedTime": null,
@@ -760,10 +760,6 @@
       },
       "roomLevel": "@undefined",
       "simulatedTime": 600000000000,
-      "timeSeriesData": {
-        "players": {},
-        "timestamps": []
-      },
       "timeSpentAlive": [
         {
           "alive": true,

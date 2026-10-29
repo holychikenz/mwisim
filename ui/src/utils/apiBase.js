@@ -55,16 +55,6 @@ export function getApiBase() {
   return DEFAULT_API_BASE;
 }
 
-/** Persist a base URL override, or clear it when given a falsy value. */
-export function setApiBase(base) {
-  try {
-    if (base) localStorage.setItem(API_BASE_KEY, String(base).replace(/\/+$/, ''));
-    else localStorage.removeItem(API_BASE_KEY);
-  } catch {
-    // Nothing sensible to do; the in-memory default still applies.
-  }
-}
-
 /**
  * Build a full URL for an API path.
  *

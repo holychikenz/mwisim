@@ -136,12 +136,6 @@ class SimResult {
         // labyrinth runs for now.
         this.playerStats = [];
         this.monsterStats = [];
-
-        // 时间序列数据用于图表显示
-        this.timeSeriesData = {
-            timestamps: [],
-            players: {}
-        };
     }
 
     // MWIX adaptation: capture the live combat-stat objects in use, once.
@@ -511,27 +505,7 @@ class SimResult {
         }
     }
 
-    // 添加时间序列数据点
-    addTimeSeriesSnapshot(time, players) {
-        this.timeSeriesData.timestamps.push(time);
-        
-        players.forEach(player => {
-            if (!this.timeSeriesData.players[player.hrid]) {
-                this.timeSeriesData.players[player.hrid] = {
-                    hp: [],
-                    mp: [],
-                    maxHp: [],
-                    maxMp: []
-                };
-            }
-            
-            const playerData = this.timeSeriesData.players[player.hrid];
-            playerData.hp.push(player.combatDetails.currentHitpoints);
-            playerData.mp.push(player.combatDetails.currentManapoints);
-            playerData.maxHp.push(player.combatDetails.maxHitpoints);
-            playerData.maxMp.push(player.combatDetails.maxManapoints);
-        });
-    }
+
 }
 
 export default SimResult;

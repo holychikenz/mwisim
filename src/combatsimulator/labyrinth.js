@@ -3,9 +3,8 @@ import { labyrinthCrateDetailMap } from "./dataProvider";
 
 class Labyrinth{
     // In-game labyrinth room timer: each room must be cleared within 120 s or
-    // it counts as a failed attempt. Single source of truth — consumed both by
-    // checkTimeout() and by CombatSimulator when it schedules the hard-cutoff
-    // LabyrinthTimeoutEvent.
+    // it counts as a failed attempt. CombatSimulator schedules the hard-cutoff
+    // LabyrinthTimeoutEvent from it.
     static ROOM_DURATION_NS = 120 * 1e9;
 
     constructor(monsterHrid, roomLevel, crates=[]) {
@@ -29,10 +28,6 @@ class Labyrinth{
 
     updateEnconterStartTime (enconterStartTime) {
         this.enconterStartTime = enconterStartTime;
-    }
-    
-    checkTimeout (currentTime) {
-        return currentTime - this.enconterStartTime > Labyrinth.ROOM_DURATION_NS;
     }
 
 }

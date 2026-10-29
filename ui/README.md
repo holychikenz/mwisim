@@ -48,9 +48,8 @@ npm run lint
 1. **Simulate all labyrinths** — every lab monster × room level 40…220. Copy
    the pool in `src/workers/allZonesWorker.js`, with `labyrinth` in place of
    `zone` in the shard payload.
-2. **HP/MP chart** — the worker already supports
-   `extra.enableHpMpVisualization` and emits `timeSeriesData` progress events.
-3. **Wipe-events log** — per-death diagnostics.
+2. **HP/MP chart** — no engine support (the unused time-series was deleted in audit2-17).
+3. **Wipe-events log** — per-death diagnostics (the unread `wipeEvents` was deleted in audit2-5).
 4. **Simulate from an uploaded JSON.**
 5. **Dungeon start-wave override** — no engine wiring exists yet.
 6. **i18n** — the UI is English-only.

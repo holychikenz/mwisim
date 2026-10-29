@@ -88,9 +88,7 @@ onmessage = async function (event) {
                 players.push(currentPlayer);
             }
             let simulationTimeLimit = event.data.simulationTimeLimit;
-            let enableHpMpVisualization = event.data.extra.enableHpMpVisualization || false;
-            const simOpts = { enableHpMpVisualization };
-            let combatSimulator = new CombatSimulator(players, zone, labyrinth, simOpts);
+            let combatSimulator = new CombatSimulator(players, zone, labyrinth);
             combatSimulator.addEventListener("progress", (event) => {
                 this.postMessage({
                     type: "simulation_progress",
@@ -99,7 +97,6 @@ onmessage = async function (event) {
                     difficultyTier: event.detail.difficultyTier,
                     labyrinth: event.detail.labyrinth,
                     roomLevel: event.detail.roomLevel,
-                    timeSeriesData: event.detail.timeSeriesData
                 });
             });
 

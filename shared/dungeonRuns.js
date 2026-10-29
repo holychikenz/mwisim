@@ -149,7 +149,7 @@ export const MERGE_RULES = {
   zoneName: 'first', difficultyTier: 'first', labyrinthName: 'first', roomLevel: 'first',
   isDungeon: 'first', isLabyrinth: 'first', numberOfPlayers: 'first', dropRateMultiplier: 'first',
   rareFindMultiplier: 'first', combatDropQuantity: 'first', debuffOnLevelGap: 'first',
-  bossSpawns: 'first', playerStats: 'first', monsterStats: 'first', timeSeriesData: 'first',
+  bossSpawns: 'first', playerStats: 'first', monsterStats: 'first',
   ...Object.fromEntries(TRIAL_KEYS.map((k) => [k, 'first'])),
 };
 

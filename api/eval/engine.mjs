@@ -110,7 +110,7 @@ export async function loadEngine(root) {
     /** An open zone or a dungeon. Mirrors runSimulation()'s main-thread branch. */
     async runZone(kase, hours) {
       const zone = new Zone(`/actions/combat/${kase.zone}`, kase.tier);
-      const simulator = instantiate(dtosFor(kase), zone, null, { enableHpMpVisualization: false });
+      const simulator = instantiate(dtosFor(kase), zone, null, {});
       return quietly(() => simulator.simulate(hours * 3600e9));
     },
 
@@ -126,7 +126,7 @@ export async function loadEngine(root) {
     async runLab(kase, hours) {
       const labyrinth = new Labyrinth(kase.monster, kase.roomLevel, kase.crates || []);
       const dtos = dtosFor(kase).map((dto) => ({ ...dto, food: [null, null, null], drinks: [null, null, null] }));
-      const simulator = instantiate(dtos, null, labyrinth, { enableHpMpVisualization: false });
+      const simulator = instantiate(dtos, null, labyrinth, {});
       return quietly(() => simulator.simulate(hours * 3600e9));
     },
 

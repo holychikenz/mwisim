@@ -59,11 +59,6 @@ export function makeId(prefix = 'id') {
     .slice(2, 7)}`;
 }
 
-/** Deep clone of plain JSON-serialisable state (builds carry no functions). */
-export function deepClone(obj) {
-  return JSON.parse(JSON.stringify(obj));
-}
-
 /** Clamp a roster-row count into [1, MAX_ROW_COUNT]. */
 export function clampCount(n) {
   return Math.max(1, Math.min(MAX_ROW_COUNT, Math.round(Number(n) || 1)));

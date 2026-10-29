@@ -81,13 +81,10 @@ async function simulateOnMainThread({ players: playersData, zone: zoneConfig, si
     players.push(currentPlayer);
   }
 
-  // Create simulator
-  const enableHpMpVisualization = extra.enableHpMpVisualization || false;
-  // `labyrinth` is the third positional arg — pass null explicitly so the
-  // options object lands in the options slot. Omitting it made `this.labyrinth`
-  // truthy, and startNewEncounter() calls this.labyrinth.getMonster()
-  // unconditionally, throwing on the first encounter.
-  const combatSimulator = new CombatSimulator(players, zone, null, { enableHpMpVisualization });
+  // `labyrinth` is the third positional arg: pass null explicitly. Omitting it
+  // made `this.labyrinth` truthy, and startNewEncounter() calls
+  // this.labyrinth.getMonster() unconditionally, throwing on the first encounter.
+  const combatSimulator = new CombatSimulator(players, zone, null);
 
   // Run simulation
   const simResult = await combatSimulator.simulate(simulationTimeLimit, runLimits);

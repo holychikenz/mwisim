@@ -14,7 +14,6 @@ import CombatUtilities from '../../src/combatsimulator/combatUtilities.js';
 function unit({ hp, thorns = 0, retaliation = 0, maxDamage = 100 }) {
     return {
         isPlayer: false,
-        isWeakened: false,
         combatDetails: {
             currentHitpoints: hp,
             maxHitpoints: hp,

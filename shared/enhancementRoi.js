@@ -293,28 +293,6 @@ export function enhancingHoursPerUnit({ costSeconds, gainPerLevel }) {
 }
 
 /**
- * Effective rate actually achieved over a finite grinding horizon, counting the
- * enhancing time as part of it.
- *
- * The figure that makes break-even concrete: at exactly the break-even horizon
- * this equals the baseline, below it you are behind, above it ahead.
- *
- * @param {object} args
- * @param {number} args.costSeconds
- * @param {number} args.improvedRate  effective encounters/hour after the level
- * @param {number} args.horizonHours  how long you intend to keep fighting
- * @returns {number|null}
- */
-export function amortisedRate({ costSeconds, improvedRate, horizonHours }) {
-  const rate = Number(improvedRate);
-  const hours = Number(horizonHours);
-  const cost = Number(costSeconds);
-  if (!Number.isFinite(rate) || !Number.isFinite(hours) || !(hours > 0)) return null;
-  if (!Number.isFinite(cost) || cost < 0) return null;
-  return (rate * hours) / (hours + cost / SECONDS_PER_HOUR);
-}
-
-/**
  * Marginal cost of one level, from two whole-programme costs.
  *
  * The cow webapp's Markov solver always starts a fresh item at +0 and reports the

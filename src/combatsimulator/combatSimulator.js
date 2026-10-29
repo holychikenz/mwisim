@@ -109,7 +109,6 @@ class CombatSimulator extends EventTarget {
         this.allPlayersDead = false;
         // Trial run terminates the moment the party wipes (no retry of a tier).
         this.trialEnded = false;
-        this.enableHpMpVisualization = options.enableHpMpVisualization || false;
     }
 
     async simulate(simulationTimeLimit, runLimits) {
@@ -162,10 +161,6 @@ class CombatSimulator extends EventTarget {
             }
             if (ticks == 1000) {
                 ticks = 0;
-                // 收集HP/MP时序数据
-                if (this.enableHpMpVisualization) {
-                    this.simResult.addTimeSeriesSnapshot(this.simulationTime, this.players);
-                }
                 let progressEvent = new CustomEvent("progress", {
                     detail: {
                         zone: this.zone?.hrid,
@@ -174,7 +169,6 @@ class CombatSimulator extends EventTarget {
                         roomLevel: this.labyrinth?.roomLevel,
                         // MWIX adaptation (dungeon run mode): progress in runs
                         progress: this.runLimits ? this._runProgress() : Math.min(this.simulationTime / simulationTimeLimit, 1),
-                        timeSeriesData: this.enableHpMpVisualization ? this.simResult.timeSeriesData : null
                     },
                 });
                 this.dispatchEvent(progressEvent);
@@ -1083,7 +1077,7 @@ class CombatSimulator extends EventTarget {
             }
         }
 
-        if (this.labyrinth && (this.labyrinth.checkTimeout(this.simulationTime) || encounterEnded)) {
+        if (this.labyrinth && encounterEnded) {
             this.enemies = null;
             encounterEnded = true;
             this.eventQueue.clear();

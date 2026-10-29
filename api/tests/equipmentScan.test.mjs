@@ -47,7 +47,6 @@ import { DEFAULT_SCAN, estimateWorkload, scanEquipment } from '../lib/equipmentS
 import {
   MIRROR_OF_PROTECTION,
   PROTECTION_PRICING,
-  amortisedRate,
   breakEvenHours,
   chooseProtection,
   forcedProtectLevel,
@@ -716,12 +715,13 @@ test('breakEvenHours solves the amortisation identity', () => {
   const hours = breakEvenHours({ costSeconds: 3600, baselineRate: 100, gainPerHour: 1 });
   assert.ok(Math.abs(hours - 100) < 1e-9);
 
-  // The defining property: at exactly break-even the amortised rate equals the
-  // old one. Below it you are behind, above it ahead.
-  const at = amortisedRate({ costSeconds: 3600, improvedRate: 101, horizonHours: hours });
-  assert.ok(Math.abs(at - 100) < 1e-9);
-  assert.ok(amortisedRate({ costSeconds: 3600, improvedRate: 101, horizonHours: hours / 2 }) < 100);
-  assert.ok(amortisedRate({ costSeconds: 3600, improvedRate: 101, horizonHours: hours * 2 }) > 100);
+  // The defining property: at exactly break-even the amortised rate (the rate
+  // over a horizon that also pays for the enhancing hour) equals the old one.
+  // Below it you are behind, above it ahead.
+  const amortised = (horizon) => (101 * horizon) / (horizon + 3600 / 3600);
+  assert.ok(Math.abs(amortised(hours) - 100) < 1e-9);
+  assert.ok(amortised(hours / 2) < 100);
+  assert.ok(amortised(hours * 2) > 100);
 });
 
 test('breakEvenHours ranks a cheap small gain above a dear large one', () => {
@@ -742,13 +742,6 @@ test('breakEvenHours returns null for a level that never repays', () => {
   // invites arithmetic that quietly produces NaN downstream.
   assert.equal(breakEvenHours({ costSeconds: 0, baselineRate: 610, gainPerHour: 1 }), null);
   assert.equal(breakEvenHours({ costSeconds: 5000, baselineRate: 0, gainPerHour: 1 }), null);
-});
-
-test('amortisedRate guards a zero or absent horizon', () => {
-  assert.equal(amortisedRate({ costSeconds: 100, improvedRate: 10, horizonHours: 0 }), null);
-  assert.equal(amortisedRate({ costSeconds: -1, improvedRate: 10, horizonHours: 5 }), null);
-  // No cost at all: the rate is simply the improved one.
-  assert.equal(amortisedRate({ costSeconds: 0, improvedRate: 10, horizonHours: 5 }), 10);
 });
 
 // ---------------------------------------------------------------------------
