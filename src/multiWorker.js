@@ -35,6 +35,13 @@ onmessage = async function (event) {
                             extra: event.data.extra || {},
                             iterations: shardIterations,
                         });
+                        // A crash (a module that fails to load, an uncaught throw)
+                        // posts nothing; without this the shard would never settle.
+                        simulationWorker.onerror = (e) => {
+                            e?.preventDefault?.();
+                            simulationWorker.terminate();
+                            reject(e?.message || 'Trial shard worker crashed');
+                        };
                         simulationWorker.onmessage = function (msg) {
                             if (msg.data.type === "guild_trial_result") {
                                 simulationWorker.terminate();
