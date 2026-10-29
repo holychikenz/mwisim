@@ -565,10 +565,9 @@ for §2's per-stage numbers.
 
 **Caveats, all of which would falsify or narrow the claim:**
 
-- Bit-identity is of the **canonical `SimResult` tree**, with
-  `wipeEvents[*].timestamp` redacted. `src/combatsimulator/simResult.js:197`
-  stamps each wipe with `new Date().toISOString()`; a wipe-heavy case hashes
-  differently on two runs at the *same* seed until that is scrubbed. Anything
+- Bit-identity is of the **canonical `SimResult` tree**, with `wipeEvents`
+  and `timeSeriesData` dropped: engines before audit2-5/audit2-17 emit them
+  (and `wipeEvents` carried a wall-clock stamp), the current one does not. Anything
   the engine computes and does not put in `SimResult` is not covered.
 - Under a **seeded global `Math.random`**, on the **main-thread branch only**.
   The override does not reach a worker realm, so this says nothing directly

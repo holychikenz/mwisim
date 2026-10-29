@@ -8,8 +8,8 @@
 // because it would be recorded through them.
 //
 //   1. the duplicated calling convention still calls the engine the same way
-//   2. the wall-clock redaction works
-//   3. the wall-clock redaction is not over-broad
+//   2. fields only older engines emit are dropped
+//   3. ...and nothing else is
 //   4. seeds are stable and independent of catalogue order
 //   5. the case validator reports every violation, not the first
 //
@@ -25,7 +25,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { canonical, digest, withSeed, REDACTED } from '../lib/determinism.mjs';
+import { canonical, digest, withSeed } from '../lib/determinism.mjs';
 import { allEvalCases, seedsFor, validateEvalCases, fnv1a32, EVAL_HOURS } from '../eval/cases.mjs';
 import { loadEngine } from '../eval/engine.mjs';
 import { runSimulation } from '../lib/simulator.js';
@@ -77,17 +77,15 @@ test('eval/engine.mjs reproduces runSimulation() bit for bit', async () => {
   }
 });
 
-// -- 2. the old engines' wall-clock stamp is redacted, and only that ---------
+// -- 2. fields only older engines emit are dropped, and nothing else -------
 
-test('canonical() redacts wipeEvents[*].timestamp and nothing else', () => {
-  // Engines before audit2-5 (still loaded by eval/backrun.mjs) stamp each wipe
-  // with new Date().toISOString(); two otherwise identical runs must hash alike.
-  const make = (stamp, wave = 3) => ({ wipeEvents: [{ wave, timestamp: stamp }], timestamp: stamp });
-  const a = canonical(make('2026-09-21T07:00:00.000Z'));
-  assert.equal(a.wipeEvents[0].timestamp, REDACTED);
-  assert.equal(digest(canonical({ wipeEvents: make('x').wipeEvents })), digest(canonical({ wipeEvents: make('y').wipeEvents })));
-  assert.notEqual(digest(canonical(make('x', 3))), digest(canonical(make('x', 4))));
-  assert.notEqual(a.timestamp, REDACTED, 'a timestamp outside wipeEvents is data');
+test('canonical() drops wipeEvents and timeSeriesData, and nothing else', () => {
+  // Engines before audit2-5/audit2-17 (still loaded by eval/backrun.mjs) emit
+  // both; an old run must hash like the same run on the current engine.
+  const current = { deaths: { player1: 2 }, timestamp: 't' };
+  const old = { ...current, wipeEvents: [{ wave: 3, timestamp: 'x' }], timeSeriesData: { timestamps: [] } };
+  assert.equal(digest(canonical(old)), digest(canonical(current)));
+  assert.notEqual(digest(canonical(current)), digest(canonical({ ...current, timestamp: 'u' })), 'other fields are data');
 });
 
 // -- 4. seeds are stable, and independent of catalogue order -----------------

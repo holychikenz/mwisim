@@ -9,9 +9,7 @@
 //
 // Any field carrying wall-clock time, a UUID, a process identity, an absolute
 // path or a memory address must be redacted before hashing, or the hash stops
-// being a statement about behaviour. The current engine emits none; engines
-// before audit2-5, which eval/backrun.mjs still loads, stamped each
-// wipeEvents entry with new Date().toISOString().
+// being a statement about behaviour. The current engine emits none.
 // =============================================================================
 
 import { createHash } from 'crypto';
@@ -50,16 +48,16 @@ export async function withSeed(seed, fn) {
 
 // ---- canonical serialisation -----------------------------------------------
 
-// Keyed by the CONTAINING field, so the redaction cannot reach an unrelated leaf
-// of the same name.
-const REDACTIONS = { wipeEvents: ['timestamp'] };
-
-export const REDACTED = '@wallclock';
+// Fields older engines emit and the current one no longer does (audit2-5,
+// audit2-17). eval/backrun.mjs still loads those engines, so they are dropped
+// before hashing; otherwise every pre-audit2 ref mismatches on their presence
+// alone (wipeEvents also carried a wall-clock timestamp).
+const DROPPED_KEYS = new Set(['wipeEvents', 'timeSeriesData']);
 
 // Key-sorted, with the JSON-hostile values the engine can produce spelled out
 // rather than silently coerced (JSON.stringify turns NaN/Infinity into null,
 // which would hide exactly the kind of drift we are looking for).
-export function canonical(value, seen = new Set(), redactKeys = null) {
+export function canonical(value, seen = new Set()) {
   if (value === null) return null;
   const t = typeof value;
   if (t === 'number') {
@@ -75,8 +73,7 @@ export function canonical(value, seen = new Set(), redactKeys = null) {
   if (seen.has(value)) return '@circular';
   seen.add(value);
   try {
-    // An array inherits its parent's redaction list.
-    if (Array.isArray(value)) return value.map((v) => canonical(v, seen, redactKeys));
+    if (Array.isArray(value)) return value.map((v) => canonical(v, seen));
     if (value instanceof Map) {
       return { '@map': [...value.entries()].map(([k, v]) => [canonical(k, seen), canonical(v, seen)]).sort() };
     }
@@ -85,7 +82,7 @@ export function canonical(value, seen = new Set(), redactKeys = null) {
     }
     const out = {};
     for (const key of Object.keys(value).sort()) {
-      out[key] = redactKeys?.includes(key) ? REDACTED : canonical(value[key], seen, REDACTIONS[key] || null);
+      if (!DROPPED_KEYS.has(key)) out[key] = canonical(value[key], seen);
     }
     return out;
   } finally {

@@ -281,7 +281,7 @@ if (recordPath) {
         seeds: seedCount,
         kinds: kinds ? [...kinds] : 'all',
         caveats: [
-          'Bit-identity is of the CANONICAL SimResult tree, with wipeEvents[*].timestamp redacted (engines before audit2-5 stamp each wipe with wall-clock time).',
+          'Bit-identity is of the CANONICAL SimResult tree, with wipeEvents and timeSeriesData dropped (engines before audit2-5/audit2-17 emit them; wipeEvents carried wall-clock time).',
           'Under a seeded global Math.random (mulberry32), on the MAIN-THREAD branch only — a worker realm does not see the override.',
           'heap-js held at 2.7.1 for both engines: the loader resolves it from the current node_modules whichever engine is loaded.',
           'Game data asserted byte-identical across the span before running; the comparison is refused otherwise.',
