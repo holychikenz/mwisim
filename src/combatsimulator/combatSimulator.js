@@ -965,9 +965,11 @@ class CombatSimulator extends EventTarget {
             }
             if (this.guildTrial) {
                 // Tier cleared. Record clear time for the tier just beaten, then
-                // step the ladder so the EnemyRespawnEvent (3 s) spawns the NEXT
-                // tier. Players are NOT reset between tiers — HP/MP, buffs and
-                // cooldowns carry over (dungeon-wave-like continuation).
+                // step the ladder. In game a new tier is a dungeon-style reset
+                // (Morgan, 2026-10-30): the next tier starts after the 3 s
+                // respawn delay from a full player reset — HP/MP full, buffs
+                // back to permanent ones, cooldowns cleared, the dead back up —
+                // via the same _startFreshRun path dungeon run mode uses.
                 const timeSpent = this.simulationTime - this.trialTierStartTime;
                 const clearedCapTier = this.guildTrial.currentTier >= GuildTrial.MAX_TIER;
                 this.simResult.recordTrialTierClear(this.guildTrial.currentTier, timeSpent, this.simulationTime);
@@ -983,6 +985,10 @@ class CombatSimulator extends EventTarget {
                     this.simResult.recordTrialCompleted(this.simulationTime);
                     this.trialEnded = true;
                     this.eventQueue.clear();
+                } else {
+                    this.eventQueue.clear();
+                    this._freshRunPending = true;
+                    this.eventQueue.addEvent(new CombatStartEvent(this.simulationTime + ENEMY_RESPAWN_INTERVAL));
                 }
             }
             this.simResult.lastEncounterFinishTime = this.simulationTime;

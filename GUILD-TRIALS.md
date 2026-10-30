@@ -31,7 +31,7 @@ Data reference: `milkyway_client_info.json` → `guildTrialDetailMap`, `combatMo
 - [x] ~~Parry-vs-AoE cap~~ — **resolved: at most 5 parry attempts per incoming attack** (official docs)
 - [x] Participant scaling — **+1% HP, +2% attack/cast speed, +2 ability haste per signed-up participant** (official docs).
 - [ ] Participant bounds — min to start, max cap? (assume unbounded; UI targets 40)
-- [~] Between tiers: do players reset to full HP/MP? Do cooldowns/buff stacks reset? Do dead players return for the next tier, or stay dead for the whole trial? **Engine (Phase 1) implements dungeon-wave-like continuation: players KEEP current HP/MP, buffs and cooldowns across tiers (no reset), and dead players stay dead for the whole run — revive is the only way back.** Only the enemy encounter respawns (standard 3 s delay). Confirm against in-game behaviour when available.
+- [x] Between tiers — **resolved (Morgan, 2026-10-30): a new tier is a dungeon-style reset.** After the 3 s respawn delay every player starts the next tier from a full reset: HP/MP full, buffs back to permanent ones, cooldowns cleared, the dead back up. Within a tier the dead stay dead (revive is the only way back). Before this fix the engine carried HP/MP, buffs, cooldowns and deaths across tiers.
 - [ ] Precisely what "scrolls" maps to in sim terms (which buff source to exclude; sim likely does not model them)
 - [ ] Monster targeting among 40 players — standard threat mechanics unchanged? Enemy AoE hits all players?
 - [ ] BuildersHallBonus / TreasuryBonus values for reward projections (accepted as inputs, default 0)
