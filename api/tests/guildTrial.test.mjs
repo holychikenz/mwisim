@@ -41,6 +41,7 @@ const CombatSimulator = (await import('../../src/combatsimulator/combatSimulator
 const Player = (await import('../../src/combatsimulator/player.js')).default;
 const Monster = (await import('../../src/combatsimulator/monster.js')).default;
 const Buff = (await import('../../src/combatsimulator/buff.js')).default;
+const SimResult = (await import('../../src/combatsimulator/simResult.js')).default;
 const { extractTrialSummary, computeTrialRewards, aggregateTrialResults } =
   await import('../../src/combatsimulator/guildTrialStats.js');
 const { runGuildTrialSimulation } = await import('../lib/simulator.js');
@@ -919,4 +920,37 @@ test('non-regression: the new fields do not disturb the pre-existing ones', () =
   // A summary with no playerHealingDone at all (an older/partial record) is
   // tolerated rather than throwing.
   assert.ok(Math.abs(agg.avgPlayerHealing.a - 7 / 2) < 1e-12);
+});
+
+// A new tier is a dungeon-style full reset (Morgan, 2026-10-30): whatever the
+// party ended the last tier with — drained MP, a dead member — the next tier
+// starts from full HP/MP with everyone up.
+test('each new tier starts from a full player reset', async () => {
+  const players = makeSuperPlayers(2);
+  const gt = new GuildTrial('/guild_combat/chameleon', 100, 5, { durationSeconds: 120 });
+  const sim = new CombatSimulator(players, null, null, { guildTrial: gt });
+  // simulate() builds a fresh SimResult, so the probes go on the prototype.
+  const proto = SimResult.prototype;
+  const clear = proto.recordTrialTierClear, start = proto.recordTrialTierStart;
+  proto.recordTrialTierClear = function (...a) {
+    for (const p of players) p.combatDetails.currentManapoints = 0;
+    players[1].combatDetails.currentHitpoints = 0;
+    return clear.apply(this, a);
+  };
+  let starts = 0;
+  proto.recordTrialTierStart = function (tier, t) {
+    if (tier > 100) {
+      starts++;
+      for (const p of players) {
+        assert.equal(p.combatDetails.currentHitpoints, p.combatDetails.maxHitpoints, `${p.hrid} HP at tier ${tier}`);
+        assert.equal(p.combatDetails.currentManapoints, p.combatDetails.maxManapoints, `${p.hrid} MP at tier ${tier}`);
+      }
+    }
+    return start.call(this, tier, t);
+  };
+  let result;
+  try { result = await sim.simulate(10 * GuildTrial.TRIAL_DURATION_NS); }
+  finally { proto.recordTrialTierClear = clear; proto.recordTrialTierStart = start; }
+  assert.ok(starts >= 2, `cleared enough tiers to test (${starts})`);
+  assert.ok(result.trialMaxTierCleared > 100);
 });

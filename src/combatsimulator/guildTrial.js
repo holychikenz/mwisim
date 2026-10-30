@@ -19,8 +19,8 @@ import { guildTrialDetailMap } from "./dataProvider";
 //     The speed/haste scaling replaces fixed bonuses since 2026-08-14.
 //   - No per-encounter timer, no enrage, no consumables.
 //   - Food/drinks are replaced by a flat +3% HP and MP regen (see below).
-//   - Dead players stay dead (revive is the only way back); players keep HP/MP,
-//     buffs and cooldowns between tiers (dungeon-wave-like continuation).
+//   - Dead players stay dead within a tier (revive is the only way back). A new
+//     tier is a dungeon-style full reset: HP/MP, buffs, cooldowns, the dead.
 // The engine (CombatSimulator) owns those combat-loop behaviours; this class
 // owns encounter composition and ladder state.
 // =============================================================================
