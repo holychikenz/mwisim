@@ -970,6 +970,15 @@ test('a candidate whose simulation fails does not sink the run', async () => {
   assert.equal(result.rows[0].triggers[0].value, 60);
 });
 
+test('audit3-5: a search where every simulation fails throws, naming the first error', async () => {
+  const { playerDTOs, params, stages } = syntheticSetup();
+  const evaluate = async (jobs) => jobs.map((job) => ({ id: job.id, error: 'unknown dependency /combat_trigger_dependencies/bogus' }));
+  await assert.rejects(
+    optimizeTriggers({ playerDTOs, params, evaluate, stages, seedBase: 7 }),
+    /Every simulation failed: unknown dependency \/combat_trigger_dependencies\/bogus/
+  );
+});
+
 test('no searchable parameters still yields a baseline row', async () => {
   const { playerDTOs, evaluate, stages } = syntheticSetup();
   const result = await optimizeTriggers({ playerDTOs, params: [], evaluate, stages, seedBase: 7 });
