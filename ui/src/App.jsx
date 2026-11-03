@@ -1559,6 +1559,18 @@ function App() {
 
   const dungeonRunMode = simMode === 'zone' && !!findZone(gameData?.zones, zone)?.isDungeon;
 
+  // Character names for the party as it is NOW. A run snapshots these into its
+  // meta at start, and its results are labelled from that snapshot.
+  const playerNames = useMemo(() => {
+    const out = {};
+    for (const id of [1, 2, 3, 4, 5]) {
+      const ref = party[id];
+      const character = ref && characters.characters?.[ref.characterId];
+      if (character) out[`player${id}`] = `${character.name || character.id} · ${ref.loadoutName}`;
+    }
+    return out;
+  }, [characters, party]);
+
   const handleStartSimulation = useCallback(() => {
     // A single run replaces the sweep table with its own results — two answers
     // in one pane, one of them stale, helps nobody.
@@ -1637,9 +1649,11 @@ function App() {
       // src/worker.js concatenates onto this list. This field now carries
       // nothing on the zone/labyrinth path, and is kept explicit so that a
       // reader does not have to wonder whether it was forgotten.
-      guildBuffs: []
+      guildBuffs: [],
+      // Labels as of this run, so re-binding a slot later does not relabel it.
+      meta: { playerNames }
     });
-  }, [resolvedParty, selectedParty, simMode, zone, difficultyTier, labConfig, mazeContext, duration, zoneWorkers, gameData, dungeonRunMode, dungeonRuns, maxRunHours, extraOptions, experimental, runSimulation, handleStartTrial, handleStartTriggerOpt, handleStartEquipOpt]);
+  }, [resolvedParty, selectedParty, simMode, zone, difficultyTier, labConfig, mazeContext, duration, zoneWorkers, gameData, dungeonRunMode, dungeonRuns, maxRunHours, extraOptions, experimental, runSimulation, handleStartTrial, handleStartTriggerOpt, handleStartEquipOpt, playerNames]);
 
   // Pickers for the slot binder, and the label the party checkboxes wear.
   const characterOptions = useMemo(
@@ -1679,18 +1693,6 @@ function App() {
     setSheetOpen(true);
     closeNav();
   }, [sheetOpen, activeTab, setSheetOpen, closeNav]);
-
-  // Character names for the results tables. Read from the party as it is NOW:
-  // re-binding a slot after a run relabels that run's rows.
-  const playerNames = useMemo(() => {
-    const out = {};
-    for (const id of [1, 2, 3, 4, 5]) {
-      const ref = party[id];
-      const character = ref && characters.characters?.[ref.characterId];
-      if (character) out[`player${id}`] = `${character.name || character.id} · ${ref.loadoutName}`;
-    }
-    return out;
-  }, [characters, party]);
 
   // The header, progress bar and results pane read from whichever engine the
   // current mode uses. Both optimisers go through an API hook; every other mode
@@ -2237,7 +2239,7 @@ function App() {
               abilities={gameData?.abilities}
               pricing={pricing}
               zones={gameData?.zones}
-              playerNames={playerNames}
+              playerNames={activeResults.meta?.playerNames ?? playerNames}
               onClear={clearActiveResults}
               // Whose loot the Drops tab shows. Same convention as the All Zones
               // table: the party's members do not share a drop table — drop

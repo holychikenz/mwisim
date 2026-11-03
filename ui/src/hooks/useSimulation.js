@@ -79,6 +79,9 @@ export function useSimulation() {
   // (zone, labyrinth or guild trial) — see useRunResults. Results stay mounted
   // so the open tab and scroll survive a re-run.
   const { results, stale, publish, begin, clear } = useRunResults();
+  // The run's `meta` (e.g. the player names at start), attached to its zone/lab
+  // result so the result is labelled as it was run, not as the party is now.
+  const metaRef = useRef(null);
   const workerRef = useRef(null);
   const watchdogRef = useRef(null);
   const lastProgressAtRef = useRef(0);
@@ -151,7 +154,7 @@ export function useSimulation() {
     }).then((simResult) => {
       if (!current()) return;
       setProgress(100);
-      publish(simResult, 'zone');
+      publish({ ...simResult, meta: metaRef.current }, 'zone');
       setLoading(false);
       stopWorker();
     }, (e) => {
@@ -185,6 +188,7 @@ export function useSimulation() {
     setProgress(0);
     setError(null);
     const kind = params.labyrinth ? 'labyrinth' : 'zone';
+    metaRef.current = params.meta ?? null;
     begin(kind);
 
     const message = {
@@ -233,7 +237,7 @@ export function useSimulation() {
           break;
         case 'simulation_result':
           setProgress(100);
-          publish(event.data.simResult, kind);
+          publish({ ...event.data.simResult, meta: metaRef.current }, kind);
           setLoading(false);
           stopWorker();
           break;
