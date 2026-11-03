@@ -33,6 +33,7 @@
 
 import { exportFormatToPlayer } from './importSet.js';
 import { shrineLevelsFrom } from './characterToStore.js';
+import { makeCharacterId } from './characterStore.js';
 
 const PARAM = 'mwiLabBridge';
 
@@ -96,9 +97,21 @@ export function clearMwixBridgeHash() {
 }
 
 /**
+ * The csim character an MWIX import lands on. Keyed by the game's characterId
+ * when the payload carries a numeric one — players rename, and two alts can
+ * share a loadout name, but the id is permanent (farm CLAUDE.md). Without one,
+ * the old name key, so characters stored by earlier imports still match.
+ */
+export function mwixStoreId(gameCharacterId, fallbackName) {
+  const id = Number(gameCharacterId);
+  const numeric = gameCharacterId != null && gameCharacterId !== '' && Number.isInteger(id) && id > 0;
+  return makeCharacterId(numeric ? `mwix ${id}` : `mwix ${fallbackName}`);
+}
+
+/**
  * The party carried by a "Sim Party" payload, as flat players for slots 1..5,
  * or null when the payload is a single loadout. Each entry:
- *   { slot, name, loadoutName, player }
+ *   { slot, characterId (the game's, or null), name, loadoutName, player }
  * where `player` already carries its own `guildShrines` — shrines are a
  * per-member purchase, so one member's must never stand in for another's.
  */
@@ -111,6 +124,7 @@ export function partyFromBridgePayload(payload) {
     player.guildShrines = shrineLevelsFrom(m.mwixContext?.guildShrines) ?? {};
     return {
       slot: i + 1,
+      characterId: m.characterId ?? null,
       name: String(m.name || `MWIX party ${i + 1}`),
       loadoutName: String(m.loadout?.name || 'bridge'),
       player

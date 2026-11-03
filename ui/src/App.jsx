@@ -30,7 +30,7 @@ import { useEquipmentOptimizer } from './hooks/useEquipmentOptimizer';
 import { usePrices } from './hooks/usePrices';
 import { usePersistentState, isBool } from './hooks/usePersistentState';
 import { exportFormatToPlayer } from './utils/importSet';
-import { readMwixBridgePayload, clearMwixBridgeHash, partyFromBridgePayload } from './utils/mwixBridge';
+import { readMwixBridgePayload, clearMwixBridgeHash, partyFromBridgePayload, mwixStoreId } from './utils/mwixBridge';
 import {
   readRosterLinkValue,
   decodeRosterLinkValue,
@@ -400,12 +400,12 @@ function App() {
       // "Sim Party" (MWIX modules/party-sim-launch): every member into its own
       // slot, in the game's order, each with its OWN shrines — so the shared
       // trial knobs are not touched. A member's loadout is filed under its
-      // in-game name beside any loadouts that character already has here.
+      // game characterId (its name if absent) beside its other loadouts here.
       const partyMembers = partyFromBridgePayload(payload);
       if (partyMembers) {
         const refs = {};
         for (const m of partyMembers) {
-          refs[m.slot] = { characterId: makeCharacterId(`mwix ${m.name}`), loadoutName: m.loadoutName };
+          refs[m.slot] = { characterId: mwixStoreId(m.characterId, m.name), loadoutName: m.loadoutName };
         }
         setCharacters(prev => {
           let next = prev;
@@ -484,8 +484,10 @@ function App() {
       // character grouping to begin with, so there is nothing richer upstream
       // to carry and no reason to break tampermonkey/src/kernel/sim-launch.js:
       // it becomes a character with a single loadout named `bridge`.
-      const characterName = payload.loadout?.name || 'MWIX import';
-      const characterId = makeCharacterId(`mwix ${characterName}`);
+      const characterName = payload.character?.name || payload.loadout?.name || 'MWIX import';
+      // By the game's characterId when the payload has one: two alts with a
+      // loadout called "Combat" used to collapse into one character.
+      const characterId = mwixStoreId(payload.characterId ?? payload.character?.id, payload.loadout?.name || 'MWIX import');
       const split = splitPlayer(player);
       // Merge, as the party path above does: the character's other loadouts stay.
       setCharacters(prev => upsertCharacter(prev, {

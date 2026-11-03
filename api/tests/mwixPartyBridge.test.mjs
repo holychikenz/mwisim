@@ -6,7 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const { partyFromBridgePayload } = await import('../../ui/src/utils/mwixBridge.js');
+const { partyFromBridgePayload, mwixStoreId } = await import('../../ui/src/utils/mwixBridge.js');
 
 const member = (name, attack, shrines) => ({
   name,
@@ -44,4 +44,15 @@ test('members keep their order, names, loadouts and their own shrines', () => {
 test('more than five members are cut to the five slots', () => {
   const out = partyFromBridgePayload({ party: Array.from({ length: 7 }, (_, i) => member(`M${i}`, 50, {})) });
   assert.equal(out.length, 5);
+});
+
+test('audit3-2: MWIX characters are keyed by game characterId, by name only without one', () => {
+  const [a, b] = partyFromBridgePayload({ party: [{ ...member('Alpha', 1, {}), characterId: 28337 }, member('Beta', 1, {})] });
+  assert.equal(a.characterId, 28337);
+  assert.equal(b.characterId, null);
+  assert.equal(mwixStoreId(a.characterId, a.name), 'mwix_28337');
+  assert.equal(mwixStoreId('28337', 'Renamed'), 'mwix_28337', 'a rename does not move the character');
+  assert.equal(mwixStoreId(b.characterId, b.name), 'mwix_beta', 'the old key, so stored characters still match');
+  // Two alts with the same loadout name stay two characters.
+  assert.notEqual(mwixStoreId(1, 'Combat'), mwixStoreId(2, 'Combat'));
 });
