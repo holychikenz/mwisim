@@ -199,6 +199,18 @@ const apiRun = (seed, builds, level, runLimits, onProgress) =>
     )
   );
 
+test('audit3-j: runSimulation refuses a non-positive time limit or run duration', async () => {
+  const players = dtos(MIXED_PARTY.slice(0, 1), 100);
+  const zone = { zoneHrid: DEN, difficultyTier: 0 };
+  for (const simulationTimeLimit of [0, -1, undefined, NaN]) {
+    await assert.rejects(runSimulation({ players, zone, simulationTimeLimit }), RangeError, String(simulationTimeLimit));
+  }
+  for (const maxRunDurationNs of [0, -5]) {
+    await assert.rejects(runSimulation({ players, zone, maxRuns: 1, maxRunDurationNs }), RangeError, String(maxRunDurationNs));
+  }
+  await assert.rejects(runSimulation({ players, zone, maxRuns: 0 }), RangeError);
+});
+
 test('E8 runSimulation runs long-limit runs in batches and reports progress to 1', async () => {
   const progress = [];
   const r = await apiRun(3, ['melee'], 600, { maxRuns: 5, maxRunDurationNs: 40 * ONE_HOUR }, (m) => {
