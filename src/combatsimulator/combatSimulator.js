@@ -383,16 +383,26 @@ class CombatSimulator extends EventTarget {
         // console.log("Player " + event.hrid + " respawn at " + + (this.simulationTime / 1000000000));
         let respawningPlayer = this.players.find(player => player.hrid === event.hrid);
         this.countedDeadPlayers.delete(respawningPlayer.hrid);
-        respawningPlayer.combatDetails.currentHitpoints = respawningPlayer.combatDetails.maxHitpoints;
-        respawningPlayer.combatDetails.currentManapoints = respawningPlayer.combatDetails.maxManapoints;
-        respawningPlayer.clearBuffs();
-        respawningPlayer.clearCCs();
+        this._refillPlayer(respawningPlayer);
         if (this.allPlayersDead) {
             this.allPlayersDead = false;
             this.startAttacks();
         } else {
             this.addNextAttackEvent(respawningPlayer);
         }
+    }
+
+    // MWIX adaptation: HP/MP to max. A DEAD player first loses its buffs and
+    // CCs — their expiry events went with clearEventsForUnit at death, so a
+    // stun would never end — and only then is refilled, so a max-HP buff that
+    // died with it cannot leave HP above the new max. Live players keep buffs.
+    _refillPlayer(player) {
+        if (player.combatDetails.currentHitpoints <= 0) {
+            player.clearBuffs();
+            player.clearCCs();
+        }
+        player.combatDetails.currentHitpoints = player.combatDetails.maxHitpoints;
+        player.combatDetails.currentManapoints = player.combatDetails.maxManapoints;
     }
 
     processEnemyRespawnEvent(event) {
@@ -559,9 +569,7 @@ class CombatSimulator extends EventTarget {
                     this.tempDungeonCount = currentDungeonCount;
                     this.countedDeadPlayers.clear(); // everyone is refilled below
                     for (let i = 0; i < this.players.length; i++) {
-                        this.players[i].combatDetails.currentHitpoints = this.players[i].combatDetails.maxHitpoints;
-                        this.players[i].combatDetails.currentManapoints = this.players[i].combatDetails.maxManapoints;
-                        // this.simResult.playerRanOutOfMana[this.players[i].hrid] = false;
+                        this._refillPlayer(this.players[i]);
                     }
                 }
                 // MWIX adaptation (dungeon run mode)
