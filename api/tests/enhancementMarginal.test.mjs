@@ -4,7 +4,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const { fetchMarginalCost } = await import('../../ui/src/utils/enhancementCosts.js');
+const { fetchMarginalCost, costScanRows } = await import('../../ui/src/utils/enhancementCosts.js');
 
 // +3 → +4. Cheapest plan for +4 protects from 3 (900); for +3 alone it protects
 // from 2 (500), but under the +4 plan (protect at 3) +3 costs 600.
@@ -26,4 +26,26 @@ test('audit-12: both totals of a marginal cost use the level-up\'s protection pl
   } finally {
     globalThis.fetch = real;
   }
+});
+
+test('audit3-h: a scan stopped mid-request reports no progress afterwards', async () => {
+  const real = globalThis.fetch;
+  const controller = new AbortController();
+  globalThis.fetch = async (_url, init) => {
+    controller.abort(); // the user presses Stop while this row is in flight
+    const { target } = JSON.parse(init.body);
+    return { ok: true, json: async () => ({ rows: ROWS[target], base_price: 0 }) };
+  };
+  const progress = [];
+  try {
+    await costScanRows([{ id: 'a', itemHrid: '/items/x', currentLevel: 3 }], {}, {
+      signal: controller.signal,
+      onProgress: (done, total) => progress.push([done, total]),
+    });
+  } catch {
+    // an abort may surface as a rejection; either way, no progress after it
+  } finally {
+    globalThis.fetch = real;
+  }
+  assert.deepEqual(progress, []);
 });

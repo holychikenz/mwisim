@@ -401,7 +401,8 @@ export async function costScanRows(
       );
     }
     out[row.id] = memo.get(key);
-    onProgress?.(i + 1, list.length);
+    // A stop during the await must not report progress after the run ended.
+    if (!signal?.aborted) onProgress?.(i + 1, list.length);
   }
   return out;
 }
