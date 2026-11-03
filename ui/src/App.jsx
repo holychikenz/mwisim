@@ -776,8 +776,11 @@ function App() {
     [characters, selectedEntry]
   );
   // Participants = SUM of row counts (drives monster HP, speed and haste),
-  // unless explicitly overridden in trial options.
-  const participantCount = trialConfig.participantCount ?? rosterSize(roster);
+  // unless explicitly overridden in trial options. Rows whose character or
+  // loadout is gone are not simulated (handleStartTrial skips them), so they
+  // are not counted either.
+  const participantCount = trialConfig.participantCount
+    ?? rosterSize(roster.filter(entry => resolveRef(characters, entry)));
   // The selected trial's monster reference (rendered as cards in the viewport).
   const selectedTrialDetail = (gameData?.guildTrials || []).find(t => t.hrid === trialConfig.trialHrid) || null;
 
