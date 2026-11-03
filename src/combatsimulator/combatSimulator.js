@@ -1108,6 +1108,11 @@ class CombatSimulator extends EventTarget {
         if (source.combatDetails.currentHitpoints <= 0) {
             return;
         }
+        // MWIX adaptation: a stunned unit does not re-arm (a regen tick or a
+        // cooldown wake-up used to); stun expiry, respawn and revive re-arm it.
+        if (source.isStunned) {
+            return;
+        }
         // MWIX adaptation (performance): answered from a per-unit counter the
         // queue maintains, not by scanning the heap. This guard was 56.5% of
         // every heap entry the event queue touched on dungeon-den-600, and it
