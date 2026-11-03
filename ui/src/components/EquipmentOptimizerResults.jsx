@@ -592,8 +592,8 @@ export function EquipmentOptimizerResults({
   } = results;
 
   const costed = !!results.consumableCostsKnown;
-  // The headline names the first significant GAIN, not merely the top row.
-  const leader = rows.find((row) => row.significant && row.perLevel > 0) ?? rows[0];
+  // The headline names the first family-wise significant GAIN (as scan.js), not merely the top row.
+  const leader = rows.find((row) => row.significantFamilywise && row.perLevel > 0) ?? rows[0];
 
   return (
     <Stack gap="md">
