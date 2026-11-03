@@ -231,6 +231,17 @@ test('constructor defaults + guards', () => {
   assert.throws(() => new GuildTrial('/guild_skilling/cooking')); // skilling trial has no monsters
 });
 
+test('audit3-14: a start tier off the 100..300 ladder is a RangeError', async () => {
+  for (const bad of ['100', 105, 90, 310, 100.5, null]) {
+    assert.throws(() => new GuildTrial('/guild_combat/jellyfish', bad), RangeError, String(bad));
+  }
+  for (const ok of [100, 200, 300]) new GuildTrial('/guild_combat/jellyfish', ok);
+  await assert.rejects(
+    runGuildTrialSimulation({ players: [], trialHrid: '/guild_combat/jellyfish', startTier: '100', iterations: 1 }),
+    RangeError
+  );
+});
+
 test('bonus regen constants default to 0.03 and are overridable', () => {
   const def = new GuildTrial('/guild_combat/badger', 100, 5);
   assert.equal(def.bonusHpRegenRatio, 0.03);
