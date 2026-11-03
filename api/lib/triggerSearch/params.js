@@ -248,6 +248,12 @@ export function collectSearchParams(playerDTOs, selection, bounds, { labyrinth =
       rejected.push({ ...address, reason: 'derived ceiling was zero' });
       continue;
     }
+    // An Infinity ceiling (e.g. from an unbounded stat) makes coarseAbsoluteGrid
+    // walk to a 16M-entry Set.
+    if (!Number.isFinite(maxValue)) {
+      rejected.push({ ...address, reason: 'derived ceiling was not finite' });
+      continue;
+    }
 
     params.push({
       playerIndex,
