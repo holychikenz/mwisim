@@ -168,11 +168,12 @@ router.post('/optimize-equipment/preview', (req, res) => {
  * Run the scan, streaming progress over SSE.
  */
 router.post('/optimize-equipment', async (req, res) => {
-  const invalid = validateBody(req.body);
-  if (invalid) return res.status(400).json({ success: false, error: invalid });
-
   let prepared;
   try {
+    // Inside the try: a hostile body can make validation itself throw, and an
+    // async Express 4 handler's rejection is unhandled and kills the process.
+    const invalid = validateBody(req.body);
+    if (invalid) return res.status(400).json({ success: false, error: invalid });
     prepared = prepare(req.body);
   } catch (error) {
     // Nothing flushed yet, so JSON is still available.
