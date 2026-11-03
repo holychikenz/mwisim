@@ -318,6 +318,8 @@ export function enhancingHoursPerUnit({ costSeconds, gainPerLevel }) {
  * @returns {number|null} seconds, or null when either side is unavailable
  */
 export function marginalCostFromTargets(costToTarget, costToCurrent) {
+  // As pickProtectionRow: Number(null) and Number('') are 0, a "cost" of free.
+  if (costToTarget == null || costToTarget === '' || costToCurrent == null || costToCurrent === '') return null;
   const to = Number(costToTarget);
   const from = Number(costToCurrent);
   if (!Number.isFinite(to) || !Number.isFinite(from)) return null;

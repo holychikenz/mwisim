@@ -707,6 +707,10 @@ test('marginalCostFromTargets refuses a non-positive or unavailable difference',
   assert.equal(marginalCostFromTargets(300, 300), null);
   assert.equal(marginalCostFromTargets(null, 300), null);
   assert.equal(marginalCostFromTargets(300, undefined), null);
+  // audit3-d: Number(null) and Number('') are 0, which is not a free +0.
+  assert.equal(marginalCostFromTargets(300, null), null);
+  assert.equal(marginalCostFromTargets(300, ''), null);
+  assert.equal(marginalCostFromTargets('', 300), null);
 });
 
 test('breakEvenHours solves the amortisation identity', () => {
