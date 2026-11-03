@@ -99,9 +99,12 @@ export function digest(obj) {
 export function headline(result) {
   return {
     encounters: result?.encounters ?? null,
-    elapsedTime: result?.elapsedTime ?? null,
+    simulatedTime: result?.simulatedTime ?? null,
     dungeonsCompleted: result?.dungeonsCompleted ?? null,
-    deathCount: result?.deaths ? Object.keys(result.deaths).length : null,
+    // `deaths` also counts monster kills; the headline is player deaths.
+    deathCount: result?.deaths
+      ? Object.entries(result.deaths).reduce((a, [hrid, n]) => a + (hrid.startsWith('player') ? n : 0), 0)
+      : null,
     experienceKeys: result?.experienceGained ? Object.keys(result.experienceGained).length : null,
   };
 }

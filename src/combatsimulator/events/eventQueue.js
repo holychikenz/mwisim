@@ -1,4 +1,4 @@
-import Heap from "heap-js";
+import MinHeap from "./minHeap";
 import { eventTypeId } from "./eventTypeIds";
 import AutoAttackEvent from "./autoAttackEvent";
 import AbilityCastEndEvent from "./abilityCastEndEvent";
@@ -11,61 +11,14 @@ const ID_ABILITY_CAST_END = eventTypeId(AbilityCastEndEvent.type);
 // =============================================================================
 // MWIX adaptation (performance): scan the heap's backing array in place.
 //
-// Every predicate method below used to call `this.minHeap.toArray()`. heap-js
-// 2.7.1 implements that as
-//
-//     Heap.prototype.toArray = function () {
-//         return __spreadArray([], __read(this.heapArray), false);
-//     };
-//
-// — the TypeScript ES5 downlevel helpers, i.e. a full copy that walks the array
-// through Symbol.iterator and allocates an iterator-result object PER ELEMENT.
-// One simulated hour of chimerical_den T0 / L600 / 5 geared players made 32 936
-// such scans over 2 305 965 heap entries (mean heap length 70); heap-js's
-// `__read` alone held 4.0% of self time in the CPU profile.
-//
-// `heapArray` is a public, typed field on the Heap class —
-//   dist/types/Heap.d.ts:  `compare: Comparator<T>;  heapArray: Array<T>;  _limit: number;`
-// — with no `private`/`protected`/`@internal` marker, and heap-js's own
-// `clone()` assigns to it. But it is NOT in the README's public API list and
-// carries no jsdoc, so it is "public but undocumented": a minor release could
-// rename it without anyone considering that a break. Two mitigations:
-//
-//   1. `heap-js` is pinned to an exact version (2.7.1) in every package.json
-//      that declares it (root, api/, ui/) rather than `^2.2.0`, so an
-//      unrelated `npm install` cannot move us onto a version where the field
-//      is gone.
-//   2. The constructor asserts the field exists, so a future bump fails loudly
-//      at the first EventQueue rather than silently scanning nothing — which is
-//      what an `undefined.length` would otherwise quietly become under `?.`.
-//
-// The alternatives were both worse: `toArray()` is the copy we are removing,
-// `iterator()` is documented as `return this.toArray()`, and iterating the Heap
-// with `for...of` DRAINS it (its Symbol.iterator yields `this.pop()`).
+// The predicate methods below walk `this.minHeap.heapArray` directly instead
+// of copying it (heap-js's toArray() was a per-element iterator copy, 4.0% of
+// self time). The heap is local (./minHeap.js), so the field is ours to read.
 // =============================================================================
 
 class EventQueue {
     constructor() {
-        this.minHeap = new Heap((a, b) => a.time - b.time);
-
-        if (!Array.isArray(this.minHeap.heapArray)) {
-            throw new Error(
-                "heap-js no longer exposes `heapArray`; EventQueue's in-place scans " +
-                    "(containsEventOfType, getMatching, clearMatching, ...) depend on it. " +
-                    "Pin heap-js back to 2.7.1, or port these methods to the new API."
-            );
-        }
-        if (
-            typeof this.minHeap._sortNodeUp !== "function" ||
-            typeof this.minHeap._sortNodeDown !== "function"
-        ) {
-            throw new Error(
-                "heap-js no longer exposes `_sortNodeUp`/`_sortNodeDown`; EventQueue's " +
-                    "_removeFromHeap performs Heap.remove's re-heapify itself and the " +
-                    "removal order fixes the tie-break order among equal-time events. " +
-                    "Pin heap-js back to 2.7.1, or port _removeFromHeap to the new API."
-            );
-        }
+        this.minHeap = new MinHeap();
     }
 
     // =========================================================================
@@ -193,7 +146,7 @@ class EventQueue {
         for (let i = 0; i < events.length; i++) {
             this._trackRemoved(events[i]);
         }
-        this.minHeap = new Heap((a, b) => a.time - b.time);
+        this.minHeap = new MinHeap();
     }
 
     // =========================================================================
@@ -323,9 +276,7 @@ class EventQueue {
     // equal-`time` events; todo.md §3 records a single-compaction variant that
     // failed the parity gate precisely because "the array one compaction
     // produces is not the array N successive removals produce". Only the SEARCH
-    // changed. `_sortNodeUp`/`_sortNodeDown` are asserted in the constructor
-    // beside `heapArray`, so a dependency bump fails loudly at the first
-    // EventQueue rather than producing wrong numbers.
+    // changed; MinHeap.siftUp/siftDown are heap-js's _sortNodeUp/_sortNodeDown.
     //
     // The `o === undefined -> pop()` arm of upstream's remove is deliberately
     // NOT reproduced: the only caller passes a collected event, never undefined.
@@ -360,8 +311,8 @@ class EventQueue {
             heapArray.pop();
         } else {
             heapArray.splice(idx, 1, heapArray.pop());
-            heap._sortNodeUp(idx);
-            heap._sortNodeDown(idx);
+            heap.siftUp(idx);
+            heap.siftDown(idx);
         }
         return true;
     }

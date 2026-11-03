@@ -37,31 +37,35 @@
 // extracts ~4.7 MB of engine and nothing else, into a scratch directory the
 // CURRENT api/eval/engine.mjs then loads. One harness, two engines.
 //
-// It also has to land at that path: api/loader.js resolves bare specifiers
-// (heap-js) ONLY when the importing file's path contains the literal substring
-// "/src/combatsimulator/". `git archive <ref> src/combatsimulator | tar -x -C
-// <scratch>/<ref>` produces <scratch>/<ref>/src/combatsimulator/…, which does.
-//
 // THE heap-js CONTROL
 // -------------------
-// bb4d767 re-pinned heap-js from ^2.2.0 to exactly 2.7.1. The loader resolves
-// it from the CURRENT node_modules whichever engine is loaded, so both engines
-// get 2.7.1. That is the correct control — it isolates engine source, which is
-// what the question is about — but it means this tool says nothing about
-// whether the dependency bump itself changed anything.
+// HEAD's engine has its own heap (src/combatsimulator/events/minHeap.js), a
+// comparison-for-comparison copy of heap-js 2.7.1. Older engines still import
+// "heap-js", which an extraction under tmpdir cannot resolve, so this tool
+// maps that one bare specifier to api/node_modules/heap-js 2.7.1 (an api
+// devDependency kept for this alone). Every older engine gets 2.7.1, which
+// isolates engine source and says nothing about the bb4d767 dependency bump.
 // =============================================================================
 
 import { execFileSync } from 'child_process';
+import { createRequire, registerHooks } from 'module';
 import { mkdtempSync, rmSync, mkdirSync, writeFileSync, readFileSync, existsSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 import { allEvalCases, DEFAULT_SEEDS } from './cases.mjs';
 import { loadEngine } from './engine.mjs';
 import { measureCase, compare, listFixtures } from './run.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+// Older engines import "heap-js"; see THE heap-js CONTROL above.
+const HEAP_JS = pathToFileURL(createRequire(import.meta.url).resolve('heap-js/dist/heap-js.es5.js')).href;
+registerHooks({
+  resolve: (specifier, context, next) =>
+    specifier === 'heap-js' ? { url: HEAP_JS, shortCircuit: true } : next(specifier, context),
+});
 const REPO = join(__dirname, '..', '..');
 const RECORDS_DIR = join(__dirname, 'records');
 
@@ -137,8 +141,6 @@ function assertDataUnchanged(ref) {
 
 /**
  * Extract <ref>:src/combatsimulator into <scratch>/<ref>/src/combatsimulator.
- * The nesting is not incidental — see the header: the loader keys on the
- * literal path substring.
  */
 function extractEngine(scratch, ref) {
   const root = join(scratch, ref);
@@ -185,8 +187,8 @@ for (const sig of ['SIGINT', 'SIGTERM']) process.on(sig, () => { cleanup(); proc
 console.log(`backrun: HEAD ${git('rev-parse', '--short', 'HEAD')} vs ${refs.length} ref(s)`);
 console.log(`         ${selected.length} case(s) × ${seedCount} seeds = ${selected.length * seedCount} runs per ref`);
 console.log(
-  `         heap-js is resolved from the CURRENT node_modules for BOTH engines (pinned 2.7.1 by\n` +
-    `         bb4d767), which isolates engine source and says nothing about the dependency bump.`
+  `         an older engine's heap-js resolves to api/node_modules (2.7.1, which HEAD's local heap\n` +
+    `         copies), which isolates engine source and says nothing about the bb4d767 bump.`
 );
 console.log(`         scratch: ${scratch}\n`);
 
@@ -283,7 +285,7 @@ if (recordPath) {
         caveats: [
           'Bit-identity is of the CANONICAL SimResult tree, with wipeEvents and timeSeriesData dropped (engines before audit2-5/audit2-17 emit them; wipeEvents carried wall-clock time).',
           'Under a seeded global Math.random (mulberry32), on the MAIN-THREAD branch only — a worker realm does not see the override.',
-          'heap-js held at 2.7.1 for both engines: the loader resolves it from the current node_modules whichever engine is loaded.',
+          'heap-js held at 2.7.1: an older engine resolves it from api/node_modules; HEAD uses a local heap that copies 2.7.1 comparison for comparison.',
           'Game data asserted byte-identical across the span before running; the comparison is refused otherwise.',
           'A Tier A match is strong evidence of behaviour preservation. A Tier A mismatch proves only that RNG consumption order or the result tree changed — Tier B agreement is then weaker evidence and is labelled as such.',
         ],

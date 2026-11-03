@@ -477,11 +477,19 @@ export function loadVersioned(key, expectedVersion, fallback) {
   return { data: fallback, status: 'incompatible' };
 }
 
+/**
+ * The stored characters, plus how the read went: an 'incompatible' (corrupt or
+ * future-version) store has been copied to `csim_characters.v1` and the caller
+ * gets an empty one, which it must not save over the original unasked.
+ *
+ * @returns {{schemaVersion: number, characters: object, status: 'empty'|'ok'|'incompatible'}}
+ */
 export function loadCharacters() {
-  const { data } = loadVersioned(CHARACTERS_KEY, SCHEMA_VERSION, emptyStore());
+  const { data, status } = loadVersioned(CHARACTERS_KEY, SCHEMA_VERSION, emptyStore());
   return {
     schemaVersion: SCHEMA_VERSION,
-    characters: isObject(data?.characters) ? data.characters : {}
+    characters: isObject(data?.characters) ? data.characters : {},
+    status
   };
 }
 

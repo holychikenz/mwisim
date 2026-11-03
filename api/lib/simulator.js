@@ -41,7 +41,13 @@ export async function runSimulation({ players: playersData, zone: zoneConfig, si
   const args = { players: playersData, zone: zoneConfig, simulationTimeLimit, extra, guildBuffs };
 
   if (maxRuns != null) {
+    if (!Number.isInteger(maxRuns) || maxRuns < 1) {
+      throw new RangeError(`maxRuns must be a positive integer, got ${maxRuns}`);
+    }
     const runDurationNs = maxRunDurationNs ?? DEFAULT_MAX_RUN_HOURS * ONE_HOUR_NS;
+    if (!(runDurationNs > 0)) {
+      throw new RangeError(`maxRunDurationNs must be greater than 0, got ${maxRunDurationNs}`);
+    }
     const merged = await runDungeonRunsSerial({
       totalRuns: maxRuns,
       maxRunDurationNs: runDurationNs,
@@ -51,6 +57,10 @@ export async function runSimulation({ players: playersData, zone: zoneConfig, si
     return addRunIdleTime(merged);
   }
 
+  // An hours-mode run with no positive limit simulates nothing (or forever).
+  if (!(simulationTimeLimit > 0)) {
+    throw new RangeError(`simulationTimeLimit must be greater than 0, got ${simulationTimeLimit}`);
+  }
   return simulateOnMainThread(args);
 }
 

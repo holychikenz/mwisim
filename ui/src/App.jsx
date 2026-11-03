@@ -30,7 +30,7 @@ import { useEquipmentOptimizer } from './hooks/useEquipmentOptimizer';
 import { usePrices } from './hooks/usePrices';
 import { usePersistentState, isBool } from './hooks/usePersistentState';
 import { exportFormatToPlayer } from './utils/importSet';
-import { readMwixBridgePayload, clearMwixBridgeHash, partyFromBridgePayload } from './utils/mwixBridge';
+import { readMwixBridgePayload, clearMwixBridgeHash, partyFromBridgePayload, mwixStoreId } from './utils/mwixBridge';
 import {
   readRosterLinkValue,
   decodeRosterLinkValue,
@@ -110,7 +110,7 @@ import {
   clampTier,
   findZone
 } from './utils/zones';
-import { clampRunCount, clampRunHours, clampZoneWorkers } from '../../shared/dungeonRuns.js';
+import { clampDuration, clampRunCount, clampRunHours, clampZoneWorkers } from '../../shared/dungeonRuns.js';
 import {
   comboKey,
   parseComboKey,
@@ -195,6 +195,10 @@ const VERSION_NOTICE =
   'csim_guild_trial.v1) and your old flat loadouts are untouched in csim_loadouts. ' +
   'Starting fresh — import a character to begin.';
 
+const CHARACTERS_NOTICE =
+  'Your saved characters could not be read (corrupt, or saved by a newer version) ' +
+  'and were set aside in csim_characters.v1. They are left in place until you change something here.';
+
 function App() {
   const { data: gameData } = useGameData();
   const {
@@ -239,7 +243,15 @@ function App() {
   // Recover a pre-v2 `csim_loadouts` library, at most once ever, before the
   // store is first handed to React. See utils/orphanMigration.js — the original
   // blob is never written, cleared or deleted.
-  const restored = useMemo(() => migrateLegacyLoadouts(loadCharacters()), []);
+  const loadedCharacters = useMemo(() => loadCharacters(), []);
+  const restored = useMemo(() => {
+    const { status, ...store } = loadedCharacters;
+    // The migration saves what it builds; over an unreadable store that would
+    // overwrite the original unasked, so it waits for a readable one.
+    return status === 'incompatible'
+      ? { store, recovered: 0, created: 0, names: [], skipped: 0 }
+      : migrateLegacyLoadouts(store);
+  }, [loadedCharacters]);
   const [characters, setCharacters] = useState(() => restored.store);
   // Five slots, each a {characterId, loadoutName} REFERENCE — so two slots can
   // be the same character in different gear with no copy of anything.
@@ -309,7 +321,7 @@ function App() {
     upgrades: { combatDamage: 0, attackSpeed: 0, castSpeed: 0, criticalRate: 0 }
   });
   const [duration, setDuration] = useState(
-    () => (typeof savedSession?.duration === 'number' ? savedSession.duration : 100)
+    () => (typeof savedSession?.duration === 'number' ? clampDuration(savedSession.duration) : 100)
   );
   // A dungeon is simulated as a number of runs rather than hours, each failed
   // if it is still going after maxRunHours (see shared/dungeonRuns.js).
@@ -349,6 +361,7 @@ function App() {
       session.status === 'incompatible' || trialState.status === 'incompatible'
         ? VERSION_NOTICE
         : null,
+      loadedCharacters.status === 'incompatible' ? CHARACTERS_NOTICE : null,
       restored.recovered
         ? `Recovered ${restored.recovered} saved loadout${restored.recovered === 1 ? '' : 's'} ` +
           `from the previous version into ${restored.created} character` +
@@ -400,12 +413,12 @@ function App() {
       // "Sim Party" (MWIX modules/party-sim-launch): every member into its own
       // slot, in the game's order, each with its OWN shrines — so the shared
       // trial knobs are not touched. A member's loadout is filed under its
-      // in-game name beside any loadouts that character already has here.
+      // game characterId (its name if absent) beside its other loadouts here.
       const partyMembers = partyFromBridgePayload(payload);
       if (partyMembers) {
         const refs = {};
         for (const m of partyMembers) {
-          refs[m.slot] = { characterId: makeCharacterId(`mwix ${m.name}`), loadoutName: m.loadoutName };
+          refs[m.slot] = { characterId: mwixStoreId(m.characterId, m.name), loadoutName: m.loadoutName };
         }
         setCharacters(prev => {
           let next = prev;
@@ -484,8 +497,10 @@ function App() {
       // character grouping to begin with, so there is nothing richer upstream
       // to carry and no reason to break tampermonkey/src/kernel/sim-launch.js:
       // it becomes a character with a single loadout named `bridge`.
-      const characterName = payload.loadout?.name || 'MWIX import';
-      const characterId = makeCharacterId(`mwix ${characterName}`);
+      const characterName = payload.character?.name || payload.loadout?.name || 'MWIX import';
+      // By the game's characterId when the payload has one: two alts with a
+      // loadout called "Combat" used to collapse into one character.
+      const characterId = mwixStoreId(payload.characterId ?? payload.character?.id, payload.loadout?.name || 'MWIX import');
       const split = splitPlayer(player);
       // Merge, as the party path above does: the character's other loadouts stay.
       setCharacters(prev => upsertCharacter(prev, {
@@ -502,7 +517,7 @@ function App() {
         setDifficultyTier(Number(importSet.difficultyTier) || 0);
       }
       if (importSet.simulationTime != null) {
-        setDuration(Math.max(1, Number(importSet.simulationTime) || 24));
+        setDuration(clampDuration(Number(importSet.simulationTime) || 24));
       }
       // Labyrinth context: the worker understands extra.mwixLabUpgrades and
       // extra.mwixMaze (the lab-shop combat upgrades apply only when the
@@ -601,8 +616,11 @@ function App() {
   }, [allZonesSelection, allZonesHours, allZonesWorkers]);
 
   useEffect(() => {
+    // An unreadable store is not overwritten by the empty one standing in for it
+    // until the user actually changes something.
+    if (loadedCharacters.status === 'incompatible' && characters === restored.store) return;
     saveCharacters(characters);
-  }, [characters]);
+  }, [characters, loadedCharacters, restored]);
 
   // The five slots as flat players, manufactured on demand. This is THE view
   // every DTO site, panel and optimiser payload reads; nothing downstream knows
@@ -762,8 +780,11 @@ function App() {
     [characters, selectedEntry]
   );
   // Participants = SUM of row counts (drives monster HP, speed and haste),
-  // unless explicitly overridden in trial options.
-  const participantCount = trialConfig.participantCount ?? rosterSize(roster);
+  // unless explicitly overridden in trial options. Rows whose character or
+  // loadout is gone are not simulated (handleStartTrial skips them), so they
+  // are not counted either.
+  const participantCount = trialConfig.participantCount
+    ?? rosterSize(roster.filter(entry => resolveRef(characters, entry)));
   // The selected trial's monster reference (rendered as cards in the viewport).
   const selectedTrialDetail = (gameData?.guildTrials || []).find(t => t.hrid === trialConfig.trialHrid) || null;
 
@@ -1001,11 +1022,15 @@ function App() {
       for (const [buildId, build] of Object.entries(builds)) {
         if (!build || typeof build !== 'object') continue;
         const { character, loadout } = splitPlayer(build);
+        // Merge loadouts only: upsertCharacter replaces, and a re-import must not wipe
+        // saved loadouts. Not mergeImportedCharacter: a roster build carries no
+        // guildShrines (SCLIRoster omits them on purpose) and must keep falling back
+        // to the party-wide shrine levels, and a re-import renames the character.
         next = upsertCharacter(next, {
           ...character,
           id: buildId,
           name: build.name || buildId,
-          loadouts: { default: loadout }
+          loadouts: { ...(next.characters?.[buildId]?.loadouts || {}), default: loadout }
         });
       }
       return next;
@@ -1240,6 +1265,7 @@ function App() {
       // server ignores them for a labyrinth, where nothing is eaten.
       consumableCosts: buildConsumableCosts(playerDTOs, {
         prices: pricing.prices,
+        fetchedPrices: pricing.fetchedPrices,
         unit: pricing.unit,
         expenseMode: pricing.expenseMode,
         // Hand-entered per-item costs win over the fetched ones. A 0 here is a
@@ -1280,6 +1306,7 @@ function App() {
     // values inside it rather than the wrapper — otherwise the preview refetches on
     // every keystroke anywhere in the app.
     pricing.prices,
+    pricing.fetchedPrices,
     pricing.unit,
     pricing.expenseMode,
     pricing.itemCostOverrides
@@ -1352,6 +1379,7 @@ function App() {
       // by the server for a labyrinth target, where nothing is eaten at all.
       consumableCosts: buildConsumableCosts(playerDTOs, {
         prices: pricing.prices,
+        fetchedPrices: pricing.fetchedPrices,
         unit: pricing.unit,
         expenseMode: pricing.expenseMode,
         itemCostOverrides: pricing.itemCostOverrides
@@ -1379,6 +1407,7 @@ function App() {
     extraOptions,
     equipOptConfig,
     pricing.prices,
+    pricing.fetchedPrices,
     pricing.unit,
     pricing.expenseMode,
     pricing.itemCostOverrides
@@ -1432,6 +1461,7 @@ function App() {
     () =>
       describeConsumableCosts(triggerOptPayload?.players ?? equipOptPayload?.players, {
         prices: pricing.prices,
+        fetchedPrices: pricing.fetchedPrices,
         unit: pricing.unit,
         expenseMode: pricing.expenseMode,
         itemCostOverrides: pricing.itemCostOverrides
@@ -1440,6 +1470,7 @@ function App() {
       triggerOptPayload,
       equipOptPayload,
       pricing.prices,
+      pricing.fetchedPrices,
       pricing.unit,
       pricing.expenseMode,
       pricing.itemCostOverrides
@@ -1538,6 +1569,18 @@ function App() {
 
   const dungeonRunMode = simMode === 'zone' && !!findZone(gameData?.zones, zone)?.isDungeon;
 
+  // Character names for the party as it is NOW. A run snapshots these into its
+  // meta at start, and its results are labelled from that snapshot.
+  const playerNames = useMemo(() => {
+    const out = {};
+    for (const id of [1, 2, 3, 4, 5]) {
+      const ref = party[id];
+      const character = ref && characters.characters?.[ref.characterId];
+      if (character) out[`player${id}`] = `${character.name || character.id} · ${ref.loadoutName}`;
+    }
+    return out;
+  }, [characters, party]);
+
   const handleStartSimulation = useCallback(() => {
     // A single run replaces the sweep table with its own results — two answers
     // in one pane, one of them stale, helps nobody.
@@ -1616,9 +1659,11 @@ function App() {
       // src/worker.js concatenates onto this list. This field now carries
       // nothing on the zone/labyrinth path, and is kept explicit so that a
       // reader does not have to wonder whether it was forgotten.
-      guildBuffs: []
+      guildBuffs: [],
+      // Labels as of this run, so re-binding a slot later does not relabel it.
+      meta: { playerNames }
     });
-  }, [resolvedParty, selectedParty, simMode, zone, difficultyTier, labConfig, mazeContext, duration, zoneWorkers, gameData, dungeonRunMode, dungeonRuns, maxRunHours, extraOptions, experimental, runSimulation, handleStartTrial, handleStartTriggerOpt, handleStartEquipOpt]);
+  }, [resolvedParty, selectedParty, simMode, zone, difficultyTier, labConfig, mazeContext, duration, zoneWorkers, gameData, dungeonRunMode, dungeonRuns, maxRunHours, extraOptions, experimental, runSimulation, handleStartTrial, handleStartTriggerOpt, handleStartEquipOpt, playerNames]);
 
   // Pickers for the slot binder, and the label the party checkboxes wear.
   const characterOptions = useMemo(
@@ -1658,18 +1703,6 @@ function App() {
     setSheetOpen(true);
     closeNav();
   }, [sheetOpen, activeTab, setSheetOpen, closeNav]);
-
-  // Character names for the results tables. Read from the party as it is NOW:
-  // re-binding a slot after a run relabels that run's rows.
-  const playerNames = useMemo(() => {
-    const out = {};
-    for (const id of [1, 2, 3, 4, 5]) {
-      const ref = party[id];
-      const character = ref && characters.characters?.[ref.characterId];
-      if (character) out[`player${id}`] = `${character.name || character.id} · ${ref.loadoutName}`;
-    }
-    return out;
-  }, [characters, party]);
 
   // The header, progress bar and results pane read from whichever engine the
   // current mode uses. Both optimisers go through an API hook; every other mode
@@ -2216,7 +2249,7 @@ function App() {
               abilities={gameData?.abilities}
               pricing={pricing}
               zones={gameData?.zones}
-              playerNames={playerNames}
+              playerNames={activeResults?.meta?.playerNames ?? playerNames}
               onClear={clearActiveResults}
               // Whose loot the Drops tab shows. Same convention as the All Zones
               // table: the party's members do not share a drop table — drop

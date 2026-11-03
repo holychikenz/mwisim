@@ -65,6 +65,18 @@ class GuildTrial {
      */
     constructor(trialHrid, startTier = GuildTrial.START_TIER, participantCount = 1, options = {}) {
         this.trialHrid = trialHrid;
+        // MWIX adaptation: a string "100" became tier "10010" (+10 per clear)
+        // and an off-ladder 105 miscounted every tier; refuse both.
+        if (
+            !Number.isInteger(startTier) ||
+            startTier < GuildTrial.START_TIER ||
+            startTier > GuildTrial.MAX_TIER ||
+            (startTier - GuildTrial.START_TIER) % GuildTrial.TIER_STEP !== 0
+        ) {
+            throw new RangeError(
+                `startTier must be a tier on the ${GuildTrial.START_TIER}-${GuildTrial.MAX_TIER} ladder (step ${GuildTrial.TIER_STEP}), got ${JSON.stringify(startTier)}`
+            );
+        }
 
         const detail = guildTrialDetailMap[trialHrid];
         if (!detail) {

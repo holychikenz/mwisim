@@ -199,7 +199,7 @@ export function GuildTrialResults({ result, onClear }) {
                 <Table.Th>Tier</Table.Th>
                 <Table.Th>P(clear)</Table.Th>
                 <Table.Th ta="right">Avg time</Table.Th>
-                <Table.Th ta="right">Deaths at tier</Table.Th>
+                <Table.Th ta="right">Deaths per run</Table.Th>
                 {hasEndDiagnostics && (
                   <Table.Th ta="right" title="Avg fraction of the in-progress encounter's HP removed by runs that ENDED at this tier">
                     HP removed when ended here
@@ -222,7 +222,8 @@ export function GuildTrialResults({ result, onClear }) {
                       </Group>
                     </Table.Td>
                     <NumTd>{seconds(agg.avgTimePerTierMs?.[t])}</NumTd>
-                    <NumTd faded={!agg.deathsByTier?.[t]}>{agg.deathsByTier?.[t] || 0}</NumTd>
+                    {/* deathsByTier is a raw tally over all runs (SCLIRoster relies on that); per run here. */}
+                    <NumTd faded={!agg.deathsByTier?.[t]}>{((agg.deathsByTier?.[t] || 0) / (agg.iterations || 1)).toFixed(2)}</NumTd>
                     {hasEndDiagnostics && (
                       <NumTd faded={!(endedHere > 0 && hpRemoved != null)}>
                         {endedHere > 0 && hpRemoved != null ? (

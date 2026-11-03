@@ -80,22 +80,6 @@ export function planBatches(totalRuns, maxRunDurationNs) {
 }
 
 /**
- * A request body's { maxRuns, maxRunHours } as engine run limits, or null when
- * the request is hour-based (no maxRuns). Throws RangeError on bad input.
- */
-export function normaliseRunLimits({ maxRuns, maxRunHours } = {}) {
-  if (maxRuns == null) return null;
-  if (!Number.isInteger(maxRuns) || maxRuns < 1 || maxRuns > MAX_DUNGEON_RUNS) {
-    throw new RangeError(`maxRuns must be an integer from 1 to ${MAX_DUNGEON_RUNS} (got ${maxRuns})`);
-  }
-  const hours = maxRunHours ?? DEFAULT_MAX_RUN_HOURS;
-  if (typeof hours !== 'number' || !(hours >= MIN_RUN_HOURS && hours <= MAX_RUN_HOURS)) {
-    throw new RangeError(`maxRunHours must be from ${MIN_RUN_HOURS} to ${MAX_RUN_HOURS} (got ${maxRunHours})`);
-  }
-  return { maxRuns, maxRunDurationNs: hours * ONE_HOUR_NS };
-}
-
-/**
  * A value typed into the UI's Max run field as hours within [MIN_RUN_HOURS,
  * MAX_RUN_HOURS]; anything that is not a number (a blank field) gives the
  * default. Applied when the field loses focus and when a simulation starts,
@@ -106,6 +90,20 @@ export function clampRunHours(value) {
   const n = value === '' || value == null ? NaN : Number(value);
   if (!Number.isFinite(n)) return DEFAULT_MAX_RUN_HOURS;
   return Math.min(MAX_RUN_HOURS, Math.max(MIN_RUN_HOURS, n));
+}
+
+/** A planet zone's Duration field, in hours. */
+export const MIN_DURATION_HOURS = 1;
+export const MAX_DURATION_HOURS = 1000;
+
+/**
+ * Duration in hours within [MIN_DURATION_HOURS, MAX_DURATION_HOURS]: the header
+ * field, an imported file and a restored session all go through this, so a
+ * file cannot hand the simulator 1e9 hours (or 0). Not a number gives the minimum.
+ */
+export function clampDuration(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.min(MAX_DURATION_HOURS, Math.max(MIN_DURATION_HOURS, n)) : MIN_DURATION_HOURS;
 }
 
 /** As clampRunCount, for a planet zone's Workers field: a whole number from 1 to MAX_ZONE_WORKERS, blank gives 1. */
@@ -125,9 +123,9 @@ export function clampRunCount(value) {
 // ---- merging -------------------------------------------------------------------
 
 const TRIAL_KEYS = [
-  'isGuildTrial', 'trialHrid', 'trialStartTier', 'trialParticipantCount', 'trialTiersCleared',
+  'trialTiersCleared',
   'trialMaxTierCleared', 'trialCurrentTier', 'trialEndReason', 'trialEndTime',
-  'trialFinalTierHpRemovedFrac', 'trialTierTimes', 'trialTierStartTimes', 'trialPlayerDeaths',
+  'trialFinalTierHpRemovedFrac', 'trialTierTimes', 'trialPlayerDeaths',
 ];
 
 /** How each SimResult key combines across shards. A key not listed takes the first shard's value. */

@@ -5,39 +5,7 @@ import Labyrinth from "./combatsimulator/labyrinth";
 import { applySimSettingsFromExtra } from "./combatsimulator/simSettings";
 import { buildCommunityBuffs } from "../shared/communityBuffs.js";
 import { runTrialIterations } from "../shared/guildTrialRuns.js";
-
-// MWIX adaptation: labyrinth shop-upgrade extraBuffs (labyrinth-only). Mirrors
-// tampermonkey/src/modules/labyrinth-sim/index.js's LAB_UPGRADE_DEFS. The four
-// buffs (combat damage / attack speed / cast speed / critical rate, +1%/level)
-// are permanent character upgrades from the labyrinth shop and apply ONLY in
-// the labyrinth. Gated on `mwixMaze.enabled`, the "labyrinth run" toggle.
-function buildLabUpgradeBuffs(extra = {}) {
-    let extraBuffs = [];
-    if (extra && extra.mwixLabUpgrades && extra.mwixMaze && extra.mwixMaze.enabled) {
-        const u = extra.mwixLabUpgrades;
-        const LAB_UPGRADE_RATIO_STEP = 0.01;
-        function pushLabBuff(level, key, typeHrid, valueKey) {
-            const lv = Math.max(0, Math.floor(Number(level) || 0));
-            if (lv <= 0) return;
-            extraBuffs.push({
-                uniqueHrid: `/buff_uniques/labyrinth_upgrade_${key}`,
-                typeHrid,
-                ratioBoost: 0,
-                ratioBoostLevelBonus: 0,
-                flatBoost: 0,
-                flatBoostLevelBonus: 0,
-                [valueKey]: lv * LAB_UPGRADE_RATIO_STEP,
-                startTime: "0001-01-01T00:00:00Z",
-                duration: 0,
-            });
-        }
-        pushLabBuff(u.combatDamage, "combat_damage", "/buff_types/damage",        "ratioBoost");
-        pushLabBuff(u.attackSpeed,  "attack_speed",  "/buff_types/attack_speed",  "ratioBoost");
-        pushLabBuff(u.castSpeed,    "cast_speed",    "/buff_types/cast_speed",    "flatBoost");
-        pushLabBuff(u.criticalRate, "critical_rate", "/buff_types/critical_rate", "flatBoost");
-    }
-    return extraBuffs;
-}
+import { buildLabUpgradeBuffs } from "../shared/labUpgrades.js";
 
 onmessage = async function (event) {
     switch (event.data.type) {
@@ -61,7 +29,10 @@ onmessage = async function (event) {
             // NOTE: guild BUILDING buffs are deliberately NOT included on this
             // path — those apply to guild trials only (see "start_guild_trial").
             let extraBuffs = buildCommunityBuffs(event.data.extra || {});
-            extraBuffs = extraBuffs.concat(buildLabUpgradeBuffs(event.data.extra || {}));
+            // MWIX adaptation: lab-shop upgrades apply only with the "labyrinth run" toggle on.
+            if (event.data.extra?.mwixMaze?.enabled) {
+                extraBuffs = extraBuffs.concat(buildLabUpgradeBuffs(event.data.extra.mwixLabUpgrades));
+            }
             extraBuffs = extraBuffs.concat(event.data.guildBuffs || []);
 
             let playersData = event.data.players;

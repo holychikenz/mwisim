@@ -383,16 +383,26 @@ class CombatSimulator extends EventTarget {
         // console.log("Player " + event.hrid + " respawn at " + + (this.simulationTime / 1000000000));
         let respawningPlayer = this.players.find(player => player.hrid === event.hrid);
         this.countedDeadPlayers.delete(respawningPlayer.hrid);
-        respawningPlayer.combatDetails.currentHitpoints = respawningPlayer.combatDetails.maxHitpoints;
-        respawningPlayer.combatDetails.currentManapoints = respawningPlayer.combatDetails.maxManapoints;
-        respawningPlayer.clearBuffs();
-        respawningPlayer.clearCCs();
+        this._refillPlayer(respawningPlayer);
         if (this.allPlayersDead) {
             this.allPlayersDead = false;
             this.startAttacks();
         } else {
             this.addNextAttackEvent(respawningPlayer);
         }
+    }
+
+    // MWIX adaptation: HP/MP to max. A DEAD player first loses its buffs and
+    // CCs — their expiry events went with clearEventsForUnit at death, so a
+    // stun would never end — and only then is refilled, so a max-HP buff that
+    // died with it cannot leave HP above the new max. Live players keep buffs.
+    _refillPlayer(player) {
+        if (player.combatDetails.currentHitpoints <= 0) {
+            player.clearBuffs();
+            player.clearCCs();
+        }
+        player.combatDetails.currentHitpoints = player.combatDetails.maxHitpoints;
+        player.combatDetails.currentManapoints = player.combatDetails.maxManapoints;
     }
 
     processEnemyRespawnEvent(event) {
@@ -559,9 +569,7 @@ class CombatSimulator extends EventTarget {
                     this.tempDungeonCount = currentDungeonCount;
                     this.countedDeadPlayers.clear(); // everyone is refilled below
                     for (let i = 0; i < this.players.length; i++) {
-                        this.players[i].combatDetails.currentHitpoints = this.players[i].combatDetails.maxHitpoints;
-                        this.players[i].combatDetails.currentManapoints = this.players[i].combatDetails.maxManapoints;
-                        // this.simResult.playerRanOutOfMana[this.players[i].hrid] = false;
+                        this._refillPlayer(this.players[i]);
                     }
                 }
                 // MWIX adaptation (dungeon run mode)
@@ -575,7 +583,6 @@ class CombatSimulator extends EventTarget {
             // NEXT tier's monsters. No per-encounter timer (unlike labyrinth).
             this.enemies = this.guildTrial.getEncounter();
             this.trialTierStartTime = this.simulationTime;
-            this.simResult.recordTrialTierStart(this.guildTrial.currentTier, this.simulationTime);
         }
 
         if (this.labyrinth) {
@@ -972,7 +979,7 @@ class CombatSimulator extends EventTarget {
                 // via the same _startFreshRun path dungeon run mode uses.
                 const timeSpent = this.simulationTime - this.trialTierStartTime;
                 const clearedCapTier = this.guildTrial.currentTier >= GuildTrial.MAX_TIER;
-                this.simResult.recordTrialTierClear(this.guildTrial.currentTier, timeSpent, this.simulationTime);
+                this.simResult.recordTrialTierClear(this.guildTrial.currentTier, timeSpent);
                 this.guildTrial.advanceTier();
                 if (clearedCapTier) {
                     // Cap tier (300) cleared — nothing further to fight. The
@@ -1015,7 +1022,7 @@ class CombatSimulator extends EventTarget {
             this.simResult.addRanOutOfManaCount(player, false, this.simulationTime);
             if (this.guildTrial) {
                 // Trial: dead players STAY DEAD (no PlayerRespawnEvent ever).
-                this.simResult.recordTrialPlayerDeath(player.hrid, trialTierAtCheck, this.simulationTime);
+                this.simResult.recordTrialPlayerDeath(player.hrid, trialTierAtCheck);
             } else if (this.zone && !this.zone.isDungeon) {
                 this.eventQueue.addEvent(new PlayerRespawnEvent(this.simulationTime + PLAYER_RESPAWN_INTERVAL, player.hrid));
             }
@@ -1098,6 +1105,11 @@ class CombatSimulator extends EventTarget {
     addNextAttackEvent(source) {
         // MWIX adaptation: a unit killed by thorns, retaliation or a parry counter must not re-arm.
         if (source.combatDetails.currentHitpoints <= 0) {
+            return;
+        }
+        // MWIX adaptation: a stunned unit does not re-arm (a regen tick or a
+        // cooldown wake-up used to); stun expiry, respawn and revive re-arm it.
+        if (source.isStunned) {
             return;
         }
         // MWIX adaptation (performance): answered from a per-unit counter the

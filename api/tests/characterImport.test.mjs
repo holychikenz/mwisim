@@ -156,6 +156,15 @@ test('the loadouts genuinely differ, and no slot carries a level', () => {
   assert.ok(!('level' in mage.abilities[0]));
 });
 
+test('audit3-6: an ability keeps its game slot when an earlier slot is empty', () => {
+  const sparse = structuredClone(char);
+  sparse.characterLoadoutMap = { l1: { ...char.characterLoadoutMap.l1, abilityMap: { 1: '/abilities/smack', 4: '/abilities/cleave' } } };
+  const tank = characterToCharacter(sparse, null).character.loadouts.tank;
+  assert.equal(tank.abilities[0].hrid, '/abilities/smack');
+  assert.equal(tank.abilities[1], null);
+  assert.equal(tank.abilities[3].hrid, '/abilities/cleave');
+});
+
 // A loadout's wearableMap ref is the item's HASH as it was when the loadout was
 // last SAVED in game ("charID::location::itemHrid::enhancement"). Enhance the
 // item afterwards and the ref goes stale — the real holychikenz payload has 161

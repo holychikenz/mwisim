@@ -45,6 +45,7 @@ import {
   ONE_HOUR_NS,
 } from '../triggerSearch/score.js';
 import { pairedComparison } from './stats.js';
+import { AbortError } from '../triggerSearch/pool.js';
 
 /**
  * Defaults.
@@ -116,10 +117,7 @@ function averageMetrics(metricsList) {
 }
 
 function throwIfAborted(signal) {
-  if (!signal?.aborted) return;
-  const error = new Error('Equipment scan cancelled');
-  error.name = 'AbortError';
-  throw error;
+  if (signal?.aborted) throw new AbortError('Equipment scan cancelled');
 }
 
 /**
@@ -345,9 +343,9 @@ export async function scanEquipment({
     estimatedSimulations: workload.total,
     // "Nothing here is distinguishable from noise" is a real and useful answer,
     // and far better than ranking a table of accidents with a straight face.
-    // Only a significant GAIN concludes anything: a level that measurably hurts
+    // Only a family-wise significant GAIN concludes anything (stats.js §3): a level that measurably hurts
     // is not an answer to "which slot is worth the next level".
-    inconclusive: !rows.some((row) => row.significant && row.perLevel > 0),
+    inconclusive: !rows.some((row) => row.significantFamilywise && row.perLevel > 0),
     // Distinct from inconclusive, and the distinction matters. A saturated run
     // measured perfectly and found that every attempt already clears ('ceiling')
     // or that none of them ever will ('floor') — not "we could not tell".

@@ -27,7 +27,7 @@ import { levelToTierIndex, tierIndexToLevel, MAX_TIER_INDEX } from '../utils/tri
 import { simulableZones, zoneTiers, findZone } from '../utils/zones';
 import { SettingsMenu } from './SettingsMenu';
 import { usePersistentState, isBool } from '../hooks/usePersistentState';
-import { MAX_DUNGEON_RUNS, MIN_RUN_HOURS, MAX_RUN_HOURS, MAX_ZONE_WORKERS, clampRunCount, clampRunHours, clampZoneWorkers } from '../../../shared/dungeonRuns.js';
+import { MAX_DUNGEON_RUNS, MIN_RUN_HOURS, MAX_RUN_HOURS, MAX_ZONE_WORKERS, MIN_DURATION_HOURS, MAX_DURATION_HOURS, clampDuration, clampRunCount, clampRunHours, clampZoneWorkers } from '../../../shared/dungeonRuns.js';
 
 // =============================================================================
 // HeaderControls — the sticky simulation bar: mode (zone / labyrinth), the
@@ -546,9 +546,9 @@ export function HeaderControls({
         <>
           <NumberInput
             value={duration}
-            onChange={(v) => onDurationChange(Math.max(1, Math.min(1000, Number(v) || 1)))}
-            min={1}
-            max={1000}
+            onChange={(v) => onDurationChange(clampDuration(v))}
+            min={MIN_DURATION_HOURS}
+            max={MAX_DURATION_HOURS}
             w={90}
             size="sm"
             suffix=" h"

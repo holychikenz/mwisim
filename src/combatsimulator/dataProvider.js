@@ -30,6 +30,7 @@
 // =============================================================================
 
 import _abilityDetailMap from "./data/abilityDetailMap.json";
+import _abilitySlotsLevelRequirementList from "./data/abilitySlotsLevelRequirementList.json";
 import _achievementDetailMap from "./data/achievementDetailMap.json";
 import _achievementTierDetailMap from "./data/achievementTierDetailMap.json";
 import _actionDetailMap from "./data/actionDetailMap.json";
@@ -47,6 +48,7 @@ import _guildTrialDetailMap from "./data/guildTrialDetailMap.json";
 // ---- Bundled (read-only snapshot, for fallback / reset) ---------------------
 const _bundled = Object.freeze({
     abilityDetailMap: _abilityDetailMap,
+    abilitySlotsLevelRequirementList: _abilitySlotsLevelRequirementList,
     achievementDetailMap: _achievementDetailMap,
     achievementTierDetailMap: _achievementTierDetailMap,
     actionDetailMap: _actionDetailMap,
@@ -72,6 +74,7 @@ const _bundled = Object.freeze({
 // in place; consumers always see the latest content because they hold the
 // same object reference.
 export const abilityDetailMap = { ..._abilityDetailMap };
+export const abilitySlotsLevelRequirementList = [..._abilitySlotsLevelRequirementList];
 export const achievementDetailMap = { ..._achievementDetailMap };
 export const achievementTierDetailMap = { ..._achievementTierDetailMap };
 export const actionDetailMap = { ..._actionDetailMap };
@@ -89,6 +92,7 @@ export const guildTrialDetailMap = { ..._guildTrialDetailMap };
 // Registry for setOverrides; keys must match `_bundled` keys exactly.
 const _live = {
     abilityDetailMap,
+    abilitySlotsLevelRequirementList,
     achievementDetailMap,
     achievementTierDetailMap,
     actionDetailMap,

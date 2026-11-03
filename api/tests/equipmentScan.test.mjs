@@ -707,6 +707,10 @@ test('marginalCostFromTargets refuses a non-positive or unavailable difference',
   assert.equal(marginalCostFromTargets(300, 300), null);
   assert.equal(marginalCostFromTargets(null, 300), null);
   assert.equal(marginalCostFromTargets(300, undefined), null);
+  // audit3-d: Number(null) and Number('') are 0, which is not a free +0.
+  assert.equal(marginalCostFromTargets(300, null), null);
+  assert.equal(marginalCostFromTargets(300, ''), null);
+  assert.equal(marginalCostFromTargets('', 300), null);
 });
 
 test('breakEvenHours solves the amortisation identity', () => {
@@ -976,4 +980,24 @@ test('pickProtectionRow refuses rows it cannot read', () => {
   const chosen = pickProtectionRow([{ protect_at: 2, total_cost: 100 }]);
   assert.equal(chosen.totalCost, 100);
   assert.equal(chosen.protects, null);
+});
+
+test('audit3-10: a gain significant per slot but not family-wise is inconclusive', async () => {
+  const candidates = enumerateEquipment(TWO_SLOT_BUILD);
+  const { evaluate } = syntheticEvaluator({
+    base: 100,
+    weights: { '/equipment_types/head': 2, '/equipment_types/main_hand': 0 },
+    jobNoise: 5,
+  });
+  const result = await scanEquipment({
+    playerDTOs: TWO_SLOT_BUILD,
+    candidates,
+    evaluate,
+    applyCandidate: applyEnhancement,
+    objective: 'encountersPerHour',
+    replicates: 3,
+  });
+  const head = result.rows.find((row) => row.slotKey === '/equipment_types/head');
+  assert.ok(head.significant && !head.significantFamilywise && head.perLevel > 0, 'fixture is the borderline case');
+  assert.equal(result.inconclusive, true);
 });

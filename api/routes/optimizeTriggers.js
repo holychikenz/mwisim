@@ -197,12 +197,13 @@ router.post('/optimize-triggers/preview', (req, res) => {
  * Run the search, streaming progress over SSE.
  */
 router.post('/optimize-triggers', async (req, res) => {
-  const invalid = validateBody(req.body);
-  if (invalid) return res.status(400).json({ success: false, error: invalid });
-
   let prepared;
   let stages;
   try {
+    // Inside the try: a hostile body can make validation itself throw, and an
+    // async Express 4 handler's rejection is unhandled and kills the process.
+    const invalid = validateBody(req.body);
+    if (invalid) return res.status(400).json({ success: false, error: invalid });
     stages = sanitiseStages(req.body.stages, { stableMode: !!req.body.stableMode });
     prepared = prepare(req.body);
   } catch (error) {

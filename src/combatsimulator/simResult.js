@@ -104,13 +104,9 @@ class SimResult {
         this.labRoomOutcomes = [];
 
         // ---- Guild Trial results (populated only for trial runs) ------------
-        // Per-iteration trial outcome. isGuildTrial gates everything; the rest
-        // is written incrementally during the run and finalised in
-        // finalizeGuildTrial(). Zone/labyrinth fields above are untouched.
-        this.isGuildTrial = false;
-        this.trialHrid = null;
-        this.trialStartTier = 0;
-        this.trialParticipantCount = 0;
+        // Per-iteration trial outcome, written incrementally during the run
+        // and finalised in finalizeGuildTrial(). Zone/labyrinth fields above
+        // are untouched.
         this.trialTiersCleared = 0;      // distinct tiers cleared (no re-clears exist)
         this.trialMaxTierCleared = 0;    // highest tier LEVEL fully cleared (0 = none)
         this.trialCurrentTier = 0;       // tier in progress (or just cleared, for "completed") when the run ended
@@ -122,7 +118,6 @@ class SimResult {
         // gap (next encounter never spawned — see combatSimulator.simulate).
         this.trialFinalTierHpRemovedFrac = 0;
         this.trialTierTimes = {};        // { tier: nsSpentToClear }
-        this.trialTierStartTimes = {};   // { tier: nsWhenTierBegan }
         this.trialPlayerDeaths = {};     // { hrid: [tier, ...] } tiers a player died at
 
         // MWIX adaptation: snapshots of the ACTUAL combat stats the engine
@@ -303,18 +298,10 @@ class SimResult {
 
     // ---- Guild Trial recorders ---------------------------------------------
 
-    // A tier's encounter just spawned. Records the tier's start time (used to
-    // report partial time if the run ends mid-tier).
-    recordTrialTierStart(tier, time) {
-        if (this.trialTierStartTimes[tier] === undefined) {
-            this.trialTierStartTimes[tier] = time;
-        }
-    }
-
     // A tier was cleared. `timeSpent` is ns from the tier's spawn to its clear.
     // Each tier is fought at most once (the run completes on clearing the cap),
     // so the undefined-guard is just defensive.
-    recordTrialTierClear(tier, timeSpent, atTime) {
+    recordTrialTierClear(tier, timeSpent) {
         if (this.trialTierTimes[tier] === undefined) {
             this.trialTierTimes[tier] = timeSpent;
         }
@@ -322,7 +309,7 @@ class SimResult {
 
     // A player died at `tier`. Appends so a revived-then-re-died player is
     // recorded once per death.
-    recordTrialPlayerDeath(hrid, tier, time) {
+    recordTrialPlayerDeath(hrid, tier) {
         if (!this.trialPlayerDeaths[hrid]) {
             this.trialPlayerDeaths[hrid] = [];
         }
@@ -357,10 +344,6 @@ class SimResult {
     // (first record wins); only the timeout path — where the loop simply
     // stopped — fills them here, with `hpRemovedFrac` computed at loop exit.
     finalizeGuildTrial(guildTrial, { endReason, endTime, hpRemovedFrac } = {}) {
-        this.isGuildTrial = true;
-        this.trialHrid = guildTrial.trialHrid;
-        this.trialStartTier = guildTrial.startTier;
-        this.trialParticipantCount = guildTrial.participantCount;
         this.trialTiersCleared = guildTrial.tiersCleared;
         this.trialMaxTierCleared = guildTrial.maxTierCleared;
         if (!this.trialCurrentTier) {

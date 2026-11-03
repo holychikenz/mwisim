@@ -23,6 +23,7 @@
 
 import { IRON_API_BASE } from '../hooks/usePrices';
 import { resolveItemCost } from './consumableCosts';
+import { lastSegment } from './itemCosts';
 import {
   MIRROR_OF_PROTECTION,
   PROTECTION_PRICING,
@@ -149,10 +150,6 @@ export function describeEnhancementInputs(
   return { materials, protection, protectionCandidates, unpriced };
 }
 
-/** `/items/chaotic_chain` → `chaotic chain`. */
-function lastSegment(hrid) {
-  return String(hrid || '').split('/').pop().replace(/_/g, ' ');
-}
 
 /**
  * Expected cost, in seconds, of taking a fresh item from +0 to `target`.
@@ -401,7 +398,8 @@ export async function costScanRows(
       );
     }
     out[row.id] = memo.get(key);
-    onProgress?.(i + 1, list.length);
+    // A stop during the await must not report progress after the run ended.
+    if (!signal?.aborted) onProgress?.(i + 1, list.length);
   }
   return out;
 }

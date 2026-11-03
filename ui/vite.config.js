@@ -1,25 +1,9 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
-import { createRequire } from 'node:module'
-
-// The engine sources in ../src import "heap-js". Because those files live
-// outside ui/, Node's upward module resolution from ../src never reaches
-// ui/node_modules — it would only resolve heap-js via a root-level
-// node_modules (present locally, absent in a ui-only CI install). Pin the
-// bare specifier to the copy installed under ui/ so it resolves regardless
-// of the importing file's location.
-const require = createRequire(import.meta.url)
-const heapPkg = require('heap-js/package.json')
-const heapJs = require.resolve('heap-js/' + heapPkg.module)
 
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [react()],
-  resolve: {
-    alias: {
-      'heap-js': heapJs,
-    },
-  },
   // Relative asset paths so the build works when mounted under a prefix
   // (tampermonkey/start-server.py serves dist/ at http://127.0.0.1:17645/sim/).
   base: './',
@@ -51,11 +35,11 @@ export default defineConfig({
         target: 'http://localhost:3001',
         changeOrigin: true
       },
-      // cow/webapp character data (Load my character).
-      '/cow': {
-        target: 'http://localhost:12345',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/cow/, '')
+      // apiBase.js pingApi() probes /health; without this dev served index.html
+      // and every API error read as "cannot reach the API".
+      '/health': {
+        target: 'http://localhost:3001',
+        changeOrigin: true
       }
     }
   }

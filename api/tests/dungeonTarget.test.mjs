@@ -367,7 +367,9 @@ test('a failed verification does not claim that no run ever completes', async ()
     [{ playerIndex: 0, slotKind: 'abilities', slotIndex: 0, triggerIndex: 0 }],
     bounds
   );
-  const result = await optimizeTriggers({
+  // audit3-5: with nothing verified the search now throws rather than returning
+  // any result at all, which is the strongest form of "claims nothing".
+  await assert.rejects(optimizeTriggers({
     playerDTOs,
     params,
     objective: 'completionsPerHour',
@@ -386,6 +388,5 @@ test('a failed verification does not claim that no run ever completes', async ()
           ? { id: job.id, error: 'simulated worker failure' }
           : { id: job.id, metrics: { completionsPerHour: 0, deathsPerHour: 0 } }
       ),
-  });
-  assert.equal(result.saturated, null, 'nothing was verified, so nothing is claimed');
+  }), /Every simulation failed: simulated worker failure/);
 });

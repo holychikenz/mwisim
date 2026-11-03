@@ -11,7 +11,7 @@
 //
 // Two deployments, and they need different answers:
 //
-//   npm run dev            Vite proxies /api → http://localhost:3001
+//   npm run dev            Vite proxies /api and /health → http://localhost:3001
 //                          (ui/vite.config.js), so a RELATIVE path works and
 //                          keeps requests same-origin.
 //

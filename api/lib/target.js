@@ -36,50 +36,8 @@ const { labyrinthCrateDetailMap, combatMonsterDetailMap, actionDetailMap } =
 export const MIN_ROOM_LEVEL = 1;
 export const MAX_ROOM_LEVEL = 500;
 
-/** Lab-shop upgrade levels are bounded by the shop, not by us; this is a guard. */
-export const MAX_LAB_UPGRADE_LEVEL = 40;
-
-/**
- * Lab-shop combat upgrades: each purchased level is +1%, as a ratio boost on
- * damage and attack speed and a flat boost on cast speed and critical rate.
- *
- * MIRROR of src/worker.js buildLabUpgradeBuffs (and formerly of a private copy
- * in labStats.js, which now imports this one). Keep the three in step: the
- * browser worker's copy is the reference, because it is what a normal labyrinth
- * simulation runs, and an optimiser that buffed differently would be tuning a
- * build the user cannot actually field.
- */
-const LAB_UPGRADE_RATIO_STEP = 0.01;
-const LAB_UPGRADE_DEFS = [
-  ['combatDamage', 'combat_damage', '/buff_types/damage', 'ratioBoost'],
-  ['attackSpeed', 'attack_speed', '/buff_types/attack_speed', 'ratioBoost'],
-  ['castSpeed', 'cast_speed', '/buff_types/cast_speed', 'flatBoost'],
-  ['criticalRate', 'critical_rate', '/buff_types/critical_rate', 'flatBoost'],
-];
-
-/**
- * @param {object} [labUpgrades]  { combatDamage, attackSpeed, castSpeed, criticalRate }
- * @returns {object[]} buff objects, empty when nothing is purchased
- */
-export function buildLabUpgradeBuffs(labUpgrades = {}) {
-  const buffs = [];
-  for (const [field, key, typeHrid, valueKey] of LAB_UPGRADE_DEFS) {
-    const level = Math.max(0, Math.floor(Number(labUpgrades?.[field]) || 0));
-    if (level <= 0) continue;
-    buffs.push({
-      uniqueHrid: `/buff_uniques/labyrinth_upgrade_${key}`,
-      typeHrid,
-      ratioBoost: 0,
-      ratioBoostLevelBonus: 0,
-      flatBoost: 0,
-      flatBoostLevelBonus: 0,
-      [valueKey]: Math.min(MAX_LAB_UPGRADE_LEVEL, level) * LAB_UPGRADE_RATIO_STEP,
-      startTime: '0001-01-01T00:00:00Z',
-      duration: 0,
-    });
-  }
-  return buffs;
-}
+import { LAB_UPGRADE_DEFS, MAX_LAB_UPGRADE_LEVEL, buildLabUpgradeBuffs } from '../../shared/labUpgrades.js';
+export { MAX_LAB_UPGRADE_LEVEL, buildLabUpgradeBuffs };
 
 /**
  * Supply-crate buffs, dropping unknown crate hrids.

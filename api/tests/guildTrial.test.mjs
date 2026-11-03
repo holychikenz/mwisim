@@ -231,6 +231,17 @@ test('constructor defaults + guards', () => {
   assert.throws(() => new GuildTrial('/guild_skilling/cooking')); // skilling trial has no monsters
 });
 
+test('audit3-14: a start tier off the 100..300 ladder is a RangeError', async () => {
+  for (const bad of ['100', 105, 90, 310, 100.5, null]) {
+    assert.throws(() => new GuildTrial('/guild_combat/jellyfish', bad), RangeError, String(bad));
+  }
+  for (const ok of [100, 200, 300]) new GuildTrial('/guild_combat/jellyfish', ok);
+  await assert.rejects(
+    runGuildTrialSimulation({ players: [], trialHrid: '/guild_combat/jellyfish', startTier: '100', iterations: 1 }),
+    RangeError
+  );
+});
+
 test('bonus regen constants default to 0.03 and are overridable', () => {
   const def = new GuildTrial('/guild_combat/badger', 100, 5);
   assert.equal(def.bonusHpRegenRatio, 0.03);
@@ -307,7 +318,6 @@ test('1-hour simulated cutoff ends the run (stalemate ⇒ timeout)', async () =>
     sim.simulate(10 * GuildTrial.TRIAL_DURATION_NS)
   );
 
-  assert.equal(result.isGuildTrial, true);
   assert.equal(result.trialEndReason, 'timeout');
   assert.ok(result.simulatedTime >= GuildTrial.TRIAL_DURATION_NS);
   assert.ok(result.simulatedTime < GuildTrial.TRIAL_DURATION_NS + 5e9); // stopped right at the cap
@@ -931,14 +941,17 @@ test('each new tier starts from a full player reset', async () => {
   const sim = new CombatSimulator(players, null, null, { guildTrial: gt });
   // simulate() builds a fresh SimResult, so the probes go on the prototype.
   const proto = SimResult.prototype;
-  const clear = proto.recordTrialTierClear, start = proto.recordTrialTierStart;
+  const clear = proto.recordTrialTierClear;
   proto.recordTrialTierClear = function (...a) {
     for (const p of players) p.combatDetails.currentManapoints = 0;
     players[1].combatDetails.currentHitpoints = 0;
     return clear.apply(this, a);
   };
   let starts = 0;
-  proto.recordTrialTierStart = function (tier, t) {
+  // Each tier's encounter is fetched as it spawns; probe there.
+  const getEncounter = gt.getEncounter.bind(gt);
+  gt.getEncounter = function () {
+    const tier = gt.currentTier;
     if (tier > 100) {
       starts++;
       for (const p of players) {
@@ -946,11 +959,11 @@ test('each new tier starts from a full player reset', async () => {
         assert.equal(p.combatDetails.currentManapoints, p.combatDetails.maxManapoints, `${p.hrid} MP at tier ${tier}`);
       }
     }
-    return start.call(this, tier, t);
+    return getEncounter();
   };
   let result;
   try { result = await sim.simulate(10 * GuildTrial.TRIAL_DURATION_NS); }
-  finally { proto.recordTrialTierClear = clear; proto.recordTrialTierStart = start; }
+  finally { proto.recordTrialTierClear = clear; }
   assert.ok(starts >= 2, `cleared enough tiers to test (${starts})`);
   assert.ok(result.trialMaxTierCleared > 100);
 });

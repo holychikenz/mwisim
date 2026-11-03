@@ -37,6 +37,7 @@
 // =============================================================================
 
 import { gridFor, coarseGridSize } from './grids.js';
+import { AbortError } from './pool.js';
 import { applyValues, countConditions, readValues } from './params.js';
 import {
   DEFAULT_INSENSITIVITY_EPSILON,
@@ -68,13 +69,6 @@ export const DEFAULT_STAGES = {
 
 /** "Stable mode" — the peer's 120h verification. */
 export const STABLE_VERIFY_HOURS = 120;
-
-export class AbortError extends Error {
-  constructor(message = 'Trigger optimisation cancelled') {
-    super(message);
-    this.name = 'AbortError';
-  }
-}
 
 function throwIfAborted(signal) {
   if (signal?.aborted) throw new AbortError();
@@ -238,6 +232,8 @@ export async function optimizeTriggers({
   // The stages revisit the same vector at the same fidelity (the baseline and
   // each stage's survivors), and a seeded run gives the same answer twice.
   const scoredCache = new Map();
+  // The first simulation error seen, so a search where every run failed says why.
+  let firstError = null;
 
   /**
    * Simulate a set of value-vectors, de-duplicating identical ones, within
@@ -281,7 +277,10 @@ export async function optimizeTriggers({
     const byId = new Map((raw || []).filter(Boolean).map((entry) => [entry.id, entry]));
     for (const entry of misses) {
       const scored = byId.get(entry.id);
-      if (!scored?.metrics) continue; // a failed simulation simply does not compete
+      if (!scored?.metrics) {
+        firstError ??= scored?.error ?? null;
+        continue; // a failed simulation simply does not compete
+      }
       scoredCache.set(cacheKey(entry.key), {
         id: entry.id,
         values: entry.values,
@@ -581,6 +580,10 @@ export async function optimizeTriggers({
     label: `verify ${finalists.length} finalist${finalists.length === 1 ? '' : 's'} at ${verifyHours}h`,
     idPrefix: 'verify',
   });
+
+  if (!verified.some((entry) => entry.metrics)) {
+    throw new Error(`Every simulation failed: ${firstError ?? 'no result'}`);
+  }
 
   const baselineKey = vectorKey(baselineValues);
   const baselineEntry = verified.find((entry) => vectorKey(entry.values) === baselineKey);

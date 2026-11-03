@@ -123,6 +123,15 @@ test('buildCrateBuffs drops unknown crates instead of concatenating undefined', 
   assert.deepEqual(buildCrateBuffs(), []);
 });
 
+test('audit3-12: the browser worker builds lab upgrades with the one capped function', async () => {
+  const { readFileSync } = await import('fs');
+  const worker = readFileSync(new URL('../../src/worker.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(worker, /function buildLabUpgradeBuffs/, 'worker has its own uncapped copy again');
+  assert.match(worker, /import \{ buildLabUpgradeBuffs \} from "..\/shared\/labUpgrades.js"/);
+  const [damage] = buildLabUpgradeBuffs({ combatDamage: MAX_LAB_UPGRADE_LEVEL + 60 });
+  assert.equal(damage.ratioBoost, MAX_LAB_UPGRADE_LEVEL * 0.01);
+});
+
 test('lab-shop upgrades become ratio or flat boosts, and only when purchased', () => {
   assert.deepEqual(buildLabUpgradeBuffs({}), []);
   assert.deepEqual(buildLabUpgradeBuffs({ combatDamage: 0 }), []);
@@ -130,7 +139,7 @@ test('lab-shop upgrades become ratio or flat boosts, and only when purchased', (
   const buffs = buildLabUpgradeBuffs({ combatDamage: 5, castSpeed: 3 });
   const damage = buffs.find((b) => b.typeHrid === '/buff_types/damage');
   const cast = buffs.find((b) => b.typeHrid === '/buff_types/cast_speed');
-  // Mirrors src/worker.js: damage and attack speed are RATIO boosts, cast speed
+  // The worker uses this same function: damage and attack speed are RATIO boosts, cast speed
   // and critical rate are FLAT. Swapping the two would be a silent mis-buff.
   assert.equal(damage.ratioBoost, 0.05);
   assert.equal(damage.flatBoost, 0);

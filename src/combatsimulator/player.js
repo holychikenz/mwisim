@@ -4,6 +4,7 @@ import Consumable from "./consumable";
 import Equipment from "./equipment";
 import HouseRoom from "./houseRoom";
 import Achievement from "./achievement";
+import { abilitySlotsLevelRequirementList } from "./dataProvider";
 import { copyEquipmentTotals, makeEquipmentTotals } from "./generated/statSchema";
 
 // =============================================================================
@@ -133,9 +134,22 @@ class Player extends CombatUnit {
             player.equipment[key] = value ? Equipment.createFromDTO(value) : null;
         }
 
-        player.food = dto.food.map((food) => (food ? Consumable.createFromDTO(food) : null));
-        player.drinks = dto.drinks.map((drink) => (drink ? Consumable.createFromDTO(drink) : null));
-        player.abilities = dto.abilities.map((ability) => (ability ? Ability.createFromDTO(ability) : null));
+        // MWIX adaptation: only the slots the game would let the player use.
+        // Food and drinks: the first 1 + pouch slots. Abilities: index i is
+        // game slot i + 1 (slot 1, index 0, is the special), unlocked at the
+        // listed BASE intelligence level. An empty table (MWIX's vendored engine
+        // stubs data it is not sent) locks no slot rather than every one.
+        let pouch = player.equipment["/equipment_types/pouch"];
+        let foodSlots = 1 + (pouch ? pouch.getCombatStat("foodSlots") : 0);
+        let drinkSlots = 1 + (pouch ? pouch.getCombatStat("drinkSlots") : 0);
+        player.food = dto.food.map((food, i) => (food && i < foodSlots ? Consumable.createFromDTO(food) : null));
+        player.drinks = dto.drinks.map((drink, i) => (drink && i < drinkSlots ? Consumable.createFromDTO(drink) : null));
+        player.abilities = dto.abilities.map((ability, i) =>
+            ability && (abilitySlotsLevelRequirementList.length === 0 ||
+                player.intelligenceLevel >= (abilitySlotsLevelRequirementList[i + 1] ?? Infinity))
+                ? Ability.createFromDTO(ability)
+                : null
+        );
         Object.entries(dto.houseRooms).forEach(houseRoom => {
             if (houseRoom[1] > 0) {
                 player.houseRooms.push(new HouseRoom(houseRoom[0], houseRoom[1]))

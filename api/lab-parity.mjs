@@ -195,7 +195,7 @@ function cmdCheck(target, maxDrift) {
 }
 
 function cmdRecord(args) {
-  const [monsterHrid, roomLevelRaw, ...labelParts] = args;
+  const [monsterHrid, roomLevelRaw, ...labelParts] = args.filter((a) => a !== '--force');
   if (!monsterHrid || !roomLevelRaw) {
     console.error('Usage: npm run lab:record -- /monsters/<name> <roomLevel> [label]');
     process.exit(2);

@@ -4,6 +4,7 @@ import { playerToExportFormat, exportFormatToPlayer } from '../utils/importSet';
 import { saveSession, SESSION_KEY } from '../utils/session';
 import { CHARACTERS_KEY } from '../utils/characterStore';
 import { GUILD_TRIAL_KEY } from '../utils/roster';
+import { clampDuration } from '../../../shared/dungeonRuns.js';
 
 // `setSelectedPlayers` is gone from the props: its only reader was the restore
 // effect, and the party selection is now restored in App's own initialiser.
@@ -128,7 +129,7 @@ export function ImportExport({
           setDifficultyTier(data.difficultyTier);
         }
         if (typeof data.simulationTime === 'number') {
-          setDuration(data.simulationTime);
+          setDuration(clampDuration(data.simulationTime));
         }
 
         showMessage(`Player ${activeTab} imported successfully`);
@@ -150,7 +151,7 @@ export function ImportExport({
               setDifficultyTier(playerData.difficultyTier);
             }
             if (typeof playerData.simulationTime === 'number') {
-              setDuration(playerData.simulationTime);
+              setDuration(clampDuration(playerData.simulationTime));
             }
             zoneSet = true;
           }

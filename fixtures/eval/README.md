@@ -31,8 +31,8 @@ one-file diffs that merge, rather than one enormous file that conflicts.
 a diff a reviewer reads; a hundred and thirty is one nobody reads twice.
 
 The per-run record is deliberately **not** the whole headline. `encounters` is
-already `value` for a zone case, `elapsedTime` is null on every `SimResult` the
-engine produces, and `experienceKeys` is a constant — storing those 464 times
+already `value` for a zone case, `simulatedTime` is the case's fixed hours, and
+`experienceKeys` is a constant — storing those 464 times
 cost 45 % of the corpus to say nothing. The whole corpus is ~88 KB.
 
 ## Seeds
