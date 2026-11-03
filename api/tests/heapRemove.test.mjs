@@ -1,5 +1,8 @@
 // =============================================================================
-// EventQueue._removeFromHeap against heap-js's Heap.remove.
+// EventQueue's local MinHeap (push, pop) and _removeFromHeap against heap-js
+// 2.7.1, which the engine used until audit3-16. heap-js stays an api
+// devDependency (eval:backrun needs it for older engines), so this test can
+// keep comparing against the real thing.
 // Run: cd api && node --import ./register-loader.js --test tests/heapRemove.test.mjs
 //
 // `_removeCollected` used to call `this.minHeap.remove(event)`. heap-js 2.7.1
@@ -23,11 +26,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 const EventQueue = (await import('../../src/combatsimulator/events/eventQueue.js')).default;
 
-// The Heap class the ENGINE resolved, taken off a live queue. Importing
-// 'heap-js' here would take a second resolution path — the loader only rewrites
-// bare specifiers for files under /src/combatsimulator/ — and the reference arm
-// must be the same class the engine uses, or this compares nothing.
-const Heap = new EventQueue().minHeap.constructor;
+// The reference: the exact heap-js build the engine used to resolve.
+const { Heap } = await import('heap-js/dist/heap-js.es5.js');
 
 const COMPARE = (a, b) => a.time - b.time;
 
@@ -187,22 +187,30 @@ test('a single-element heap empties the same way', () => {
 });
 
 // --------------------------------------------------------------------------
-// 5. The dependency assertion. Both fields _removeFromHeap reaches into are
-//    undocumented, so the constructor is the thing that makes a bump loud.
+// 5. push and pop themselves: interleaved at random, the backing array and
+//    every popped element must match heap-js's, ties included.
 // --------------------------------------------------------------------------
-test('the constructor refuses a heap-js without the internals _removeFromHeap uses', () => {
-  const q = new EventQueue();
-  for (const field of ['_sortNodeUp', '_sortNodeDown']) {
-    assert.equal(typeof q.minHeap[field], 'function', `heap-js still exposes ${field}`);
+test('MinHeap push/pop reproduce heap-js 2.7.1 exactly, ties included', () => {
+  const rand = lcg(4242);
+  for (let trial = 0; trial < 200; trial++) {
+    const ref = new Heap(COMPARE);
+    const q = new EventQueue();
+    const events = makeEvents(rand, 60, rand() < 0.5 ? 3 : 1000);
+    for (const e of events) {
+      ref.push(e);
+      q.minHeap.push(e);
+      if (rand() < 0.4) assert.equal(q.minHeap.pop(), ref.pop(), `trial ${trial}: pop`);
+      assertSameArray(q.minHeap.heapArray, ref.heapArray, `trial ${trial}`);
+    }
   }
-  assert.ok(Array.isArray(q.minHeap.heapArray), 'heap-js still exposes heapArray');
+  assert.equal(new EventQueue().minHeap.pop(), undefined, 'empty pop');
+});
 
-  const saved = Heap.prototype._sortNodeUp;
-  try {
-    delete Heap.prototype._sortNodeUp;
-    assert.throws(() => new EventQueue(), /_sortNodeUp/);
-  } finally {
-    Heap.prototype._sortNodeUp = saved;
-  }
-  assert.doesNotThrow(() => new EventQueue(), 'restored');
+test('equal-time events pop in a fixed, known order', () => {
+  const q = new EventQueue();
+  const ids = [];
+  for (let i = 0; i < 6; i++) q.minHeap.push({ id: i, time: i === 5 ? 0 : 1 });
+  while (q.minHeap.heapArray.length) ids.push(q.minHeap.pop().id);
+  // time 0 first; the time-1 ties then come out in heap-js 2.7.1's order.
+  assert.deepEqual(ids, [5, 2, 4, 3, 0, 1]);
 });

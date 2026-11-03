@@ -103,18 +103,15 @@ mean a second `node_modules` and a second loader. `git archive <ref>
 src/combatsimulator | tar -x -C <scratch>/<ref>` extracts ~4.7 MB of engine and
 nothing else, and the current harness loads it.
 
-The extraction path matters: `api/loader.js` resolves bare specifiers only when
-the importing file's path contains the literal substring
-`/src/combatsimulator/`, and `git archive` reproduces that prefix.
-
 ## The heap-js control
 
-`bb4d767` re-pinned `heap-js` from `^2.2.0` to exactly `2.7.1`. The loader
-resolves it from the **current** `node_modules` whichever engine is loaded, so
-both engines get 2.7.1. That is the correct control — it isolates engine source,
-which is what the question is about — but it means a back-run says nothing
-about whether the dependency bump itself changed anything. If you want to know
-that, it is a different experiment.
+HEAD's engine uses a local heap (`src/combatsimulator/events/minHeap.js`) that
+copies heap-js 2.7.1 comparison for comparison (audit3-16; every hash was
+unchanged). Older engines still import `heap-js`, so `backrun` maps that one
+bare specifier to `api/node_modules/heap-js`, kept as an api devDependency for
+this alone and pinned to 2.7.1 (`bb4d767`). Both engines therefore run the same
+heap algorithm, which isolates engine source; a back-run says nothing about
+whether the bb4d767 dependency bump itself changed anything.
 
 ## What a cross-version hash match does and does not prove
 

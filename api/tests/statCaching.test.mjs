@@ -445,8 +445,6 @@ test('overridden game data is not served from the stale stat copy', () => {
 
 test('EventQueue scans the live heap and clears every match', () => {
   const q = new EventQueue();
-  assert.ok(Array.isArray(q.minHeap.heapArray),
-    'heap-js stopped exposing heapArray — the in-place scans are broken');
 
   // Events carry an integer typeId alongside `type` so the queue's scans can
   // compare an int; CombatEvent's constructor mints it. Anything pushed onto
