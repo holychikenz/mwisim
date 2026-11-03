@@ -30,12 +30,12 @@
     "extra": {}
   },
   "expected": {
-    "sha256": "bbf800f796d5f852dae663eac9e23dcc81f5d43e2cb59bed895e361375df6913",
+    "sha256": "8950af6db0c8024fddaca4bb54767862ce7e4fb4e6f6f63c119db8734555d4f1",
     "headline": {
       "encounters": 50,
-      "elapsedTime": null,
+      "simulatedTime": 600000000000,
       "dungeonsCompleted": 0,
-      "deathCount": 1,
+      "deathCount": 50,
       "experienceKeys": 1
     },
     "result": {
@@ -147,7 +147,6 @@
       },
       "hitpointsSpent": {},
       "isDungeon": false,
-      "isGuildTrial": false,
       "isLabyrinth": false,
       "labRoomOutcomes": [],
       "labyAttemptCount": 0,
@@ -195,12 +194,8 @@
       "trialEndReason": null,
       "trialEndTime": 0,
       "trialFinalTierHpRemovedFrac": 0,
-      "trialHrid": null,
       "trialMaxTierCleared": 0,
-      "trialParticipantCount": 0,
       "trialPlayerDeaths": {},
-      "trialStartTier": 0,
-      "trialTierStartTimes": {},
       "trialTierTimes": {},
       "trialTiersCleared": 0,
       "zoneName": "/actions/combat/fly"

@@ -55,10 +55,6 @@ let settings = { ...DEFAULTS };
 // labyrinth room). Set by CombatSimulator, read only by the "auto" mode.
 let encounterContext = "zone";
 
-export function getSimSettings() {
-    return settings;
-}
-
 export function resetSimSettings() {
     settings = { ...DEFAULTS };
     encounterContext = "zone";
@@ -66,10 +62,6 @@ export function resetSimSettings() {
 
 export function setEncounterContext(context) {
     encounterContext = context === "labyrinth" ? "labyrinth" : "zone";
-}
-
-export function getEncounterContext() {
-    return encounterContext;
 }
 
 // The resolved model for the encounter currently being simulated: "half" or

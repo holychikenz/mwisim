@@ -222,12 +222,12 @@
     "extra": {}
   },
   "expected": {
-    "sha256": "d50baf2eb32c7ab521c75345ebc4909e9caf09ba0fec371bbd0ac253d7b45735",
+    "sha256": "dc0f0acd75279c69308bc8fa2ee14e6dfd6c1842ff9217ac9c5199c1f17a96ff",
     "headline": {
       "encounters": 5,
-      "elapsedTime": null,
+      "simulatedTime": 600000000000,
       "dungeonsCompleted": 0,
-      "deathCount": 3,
+      "deathCount": 16,
       "experienceKeys": 1
     },
     "result": {
@@ -705,7 +705,6 @@
       },
       "hitpointsSpent": {},
       "isDungeon": false,
-      "isGuildTrial": false,
       "isLabyrinth": false,
       "labRoomOutcomes": [],
       "labyAttemptCount": 0,
@@ -782,12 +781,8 @@
       "trialEndReason": null,
       "trialEndTime": 0,
       "trialFinalTierHpRemovedFrac": 0,
-      "trialHrid": null,
       "trialMaxTierCleared": 0,
-      "trialParticipantCount": 0,
       "trialPlayerDeaths": {},
-      "trialStartTier": 0,
-      "trialTierStartTimes": {},
       "trialTierTimes": {},
       "trialTiersCleared": 0,
       "zoneName": "/actions/combat/infernal_abyss"

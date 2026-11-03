@@ -21,7 +21,6 @@ import {
   clampRunCount,
   DEFAULT_DUNGEON_RUNS,
   MAX_DUNGEON_RUNS,
-  normaliseRunLimits,
   planShards,
   planBatches,
   mergeSimResults,
@@ -38,34 +37,11 @@ const sum = (xs) => xs.reduce((a, b) => a + b, 0);
 
 // -- limits --------------------------------------------------------------------
 
-test('normaliseRunLimits defaults a run to 3 hours', () => {
+test('a run defaults to 3 hours, within 1 to 10', () => {
   assert.equal(DEFAULT_MAX_RUN_HOURS, 3);
   assert.equal(ONE_HOUR_NS, 3600e9);
-  assert.deepEqual(normaliseRunLimits({ maxRuns: 10 }), { maxRuns: 10, maxRunDurationNs: 3 * 3600e9 });
-  assert.deepEqual(normaliseRunLimits({ maxRuns: 10, maxRunHours: 1.5 }), { maxRuns: 10, maxRunDurationNs: 1.5 * 3600e9 });
-});
-
-test('normaliseRunLimits allows a run of 1 to 10 hours, both ends included', () => {
   assert.equal(MIN_RUN_HOURS, 1);
   assert.equal(MAX_RUN_HOURS, 10);
-  assert.equal(normaliseRunLimits({ maxRuns: 1, maxRunHours: 1 }).maxRunDurationNs, 1 * 3600e9);
-  assert.equal(normaliseRunLimits({ maxRuns: 1, maxRunHours: 10 }).maxRunDurationNs, 10 * 3600e9);
-  for (const h of [0.5, 0.99, 10.01, 11]) {
-    assert.throws(() => normaliseRunLimits({ maxRuns: 5, maxRunHours: h }), RangeError, String(h));
-  }
-});
-
-test('normaliseRunLimits is null without maxRuns', () => {
-  assert.equal(normaliseRunLimits({}), null);
-  assert.equal(normaliseRunLimits({ maxRunHours: 2 }), null);
-  assert.equal(normaliseRunLimits(undefined), null);
-});
-
-test('normaliseRunLimits refuses bad runs and durations', () => {
-  for (const bad of [{ maxRuns: 0 }, { maxRuns: 1.5 }, { maxRuns: 10001 }, { maxRuns: '5' },
-    { maxRuns: 5, maxRunHours: 0.05 }, { maxRuns: 5, maxRunHours: 25 }, { maxRuns: 5, maxRunHours: NaN }]) {
-    assert.throws(() => normaliseRunLimits(bad), RangeError, JSON.stringify(bad));
-  }
 });
 
 test('clampRunHours puts what was typed into 1 to 10 hours, and a blank back to the default', () => {
@@ -140,7 +116,7 @@ function shardA() {
     lastDungeonFinishTime: 80, lastEncounterFinishTime: 95, firstEncounterFinishTime: 4,
     labRoomOutcomes: [{ outcome: 'death', time: 70, startTime: 60 }],
     zoneName: '/actions/combat/chimerical_den', difficultyTier: 0, isDungeon: true, numberOfPlayers: 1,
-    bossSpawns: ['#50,boss'], isGuildTrial: false, trialHrid: null,
+    bossSpawns: ['#50,boss'],
   };
 }
 
@@ -164,7 +140,7 @@ function shardB() {
     lastDungeonFinishTime: 0, lastEncounterFinishTime: 45, firstEncounterFinishTime: 2,
     labRoomOutcomes: [{ outcome: 'win', time: 20, startTime: 10 }],
     zoneName: '/actions/combat/chimerical_den', difficultyTier: 0, isDungeon: true, numberOfPlayers: 1,
-    bossSpawns: ['#50,boss'], isGuildTrial: false, trialHrid: null,
+    bossSpawns: ['#50,boss'],
   };
 }
 

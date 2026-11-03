@@ -149,28 +149,20 @@ class SimulationPool {
    * Run a batch of jobs, resolving when every one has finished.
    *
    * @param {object[]} jobs  `{ id, playersData, zoneConfig, labyrinthConfig, extraBuffs, simulationTimeLimit, seed }`
-   * @param {object} [opts]
-   * @param {(done: number, total: number) => void} [opts.onJobDone]
    * @returns {Promise<object[]>} `{ id, metrics }` or `{ id, error }` per job
    */
-  async run(jobs, { onJobDone = null } = {}) {
+  async run(jobs) {
     if (this.destroyed) throw new Error('pool has been destroyed');
     // Nothing would ever drain the queue: the exit handler failed only the batch in flight.
     if (!this.workers.length) throw new Error('no workers left');
     if (!jobs.length) return [];
-
-    let done = 0;
 
     const results = jobs.map(
       (job) =>
         new Promise((resolve) => {
           this.queue.push({
             job,
-            resolve: (value) => {
-              done += 1;
-              onJobDone?.(done, jobs.length);
-              resolve(value);
-            },
+            resolve,
           });
         })
     );
@@ -230,10 +222,9 @@ export async function createSimulationPool({ size = defaultPoolSize() } = {}) {
  * @param {{zoneHrid: string, difficultyTier?: number}} [args.zoneConfig]
  * @param {{labyrinthHrid: string, roomLevel: number, crates?: string[]}} [args.labyrinthConfig]
  * @param {object[]} [args.extraBuffs]
- * @param {(info: object) => void} [args.onJobDone]
  * @param {AbortSignal} [args.signal]
  * @param {string} [args.cancelMessage]  surfaced to the user on cancellation
- * @returns {(jobs: object[], meta: object) => Promise<object[]>}
+ * @returns {(jobs: object[]) => Promise<object[]>}
  */
 export function makePoolEvaluator({
   pool,
@@ -241,7 +232,6 @@ export function makePoolEvaluator({
   labyrinthConfig = null,
   extraBuffs = [],
   consumableCosts = null,
-  onJobDone = null,
   signal = null,
   cancelMessage = 'Trigger optimisation cancelled',
 }) {
@@ -250,7 +240,7 @@ export function makePoolEvaluator({
   // of only refusing the next one.
   signal?.addEventListener('abort', () => pool.destroy(), { once: true });
 
-  return async function evaluate(jobs, meta) {
+  return async function evaluate(jobs) {
     if (signal?.aborted) throw aborted();
 
     const poolJobs = jobs.map((job) => ({
@@ -264,9 +254,7 @@ export function makePoolEvaluator({
       seed: job.seed,
     }));
 
-    const results = await pool.run(poolJobs, {
-      onJobDone: onJobDone ? (done, total) => onJobDone({ done, total, ...meta }) : null,
-    });
+    const results = await pool.run(poolJobs);
     if (signal?.aborted) throw aborted();
     return results;
   };

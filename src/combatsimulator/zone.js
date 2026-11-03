@@ -15,7 +15,6 @@ class Zone {
         this.isDungeon = gameZone.combatZoneInfo.isDungeon;
         this.dungeonsCompleted = 0;
         this.dungeonsFailed = 0;
-        this.finalWave = false;
     }
 
     getRandomEncounter() {

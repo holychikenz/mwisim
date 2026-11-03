@@ -80,22 +80,6 @@ export function planBatches(totalRuns, maxRunDurationNs) {
 }
 
 /**
- * A request body's { maxRuns, maxRunHours } as engine run limits, or null when
- * the request is hour-based (no maxRuns). Throws RangeError on bad input.
- */
-export function normaliseRunLimits({ maxRuns, maxRunHours } = {}) {
-  if (maxRuns == null) return null;
-  if (!Number.isInteger(maxRuns) || maxRuns < 1 || maxRuns > MAX_DUNGEON_RUNS) {
-    throw new RangeError(`maxRuns must be an integer from 1 to ${MAX_DUNGEON_RUNS} (got ${maxRuns})`);
-  }
-  const hours = maxRunHours ?? DEFAULT_MAX_RUN_HOURS;
-  if (typeof hours !== 'number' || !(hours >= MIN_RUN_HOURS && hours <= MAX_RUN_HOURS)) {
-    throw new RangeError(`maxRunHours must be from ${MIN_RUN_HOURS} to ${MAX_RUN_HOURS} (got ${maxRunHours})`);
-  }
-  return { maxRuns, maxRunDurationNs: hours * ONE_HOUR_NS };
-}
-
-/**
  * A value typed into the UI's Max run field as hours within [MIN_RUN_HOURS,
  * MAX_RUN_HOURS]; anything that is not a number (a blank field) gives the
  * default. Applied when the field loses focus and when a simulation starts,
@@ -139,9 +123,9 @@ export function clampRunCount(value) {
 // ---- merging -------------------------------------------------------------------
 
 const TRIAL_KEYS = [
-  'isGuildTrial', 'trialHrid', 'trialStartTier', 'trialParticipantCount', 'trialTiersCleared',
+  'trialTiersCleared',
   'trialMaxTierCleared', 'trialCurrentTier', 'trialEndReason', 'trialEndTime',
-  'trialFinalTierHpRemovedFrac', 'trialTierTimes', 'trialTierStartTimes', 'trialPlayerDeaths',
+  'trialFinalTierHpRemovedFrac', 'trialTierTimes', 'trialPlayerDeaths',
 ];
 
 /** How each SimResult key combines across shards. A key not listed takes the first shard's value. */

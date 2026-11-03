@@ -583,7 +583,6 @@ class CombatSimulator extends EventTarget {
             // NEXT tier's monsters. No per-encounter timer (unlike labyrinth).
             this.enemies = this.guildTrial.getEncounter();
             this.trialTierStartTime = this.simulationTime;
-            this.simResult.recordTrialTierStart(this.guildTrial.currentTier, this.simulationTime);
         }
 
         if (this.labyrinth) {
@@ -980,7 +979,7 @@ class CombatSimulator extends EventTarget {
                 // via the same _startFreshRun path dungeon run mode uses.
                 const timeSpent = this.simulationTime - this.trialTierStartTime;
                 const clearedCapTier = this.guildTrial.currentTier >= GuildTrial.MAX_TIER;
-                this.simResult.recordTrialTierClear(this.guildTrial.currentTier, timeSpent, this.simulationTime);
+                this.simResult.recordTrialTierClear(this.guildTrial.currentTier, timeSpent);
                 this.guildTrial.advanceTier();
                 if (clearedCapTier) {
                     // Cap tier (300) cleared — nothing further to fight. The
@@ -1023,7 +1022,7 @@ class CombatSimulator extends EventTarget {
             this.simResult.addRanOutOfManaCount(player, false, this.simulationTime);
             if (this.guildTrial) {
                 // Trial: dead players STAY DEAD (no PlayerRespawnEvent ever).
-                this.simResult.recordTrialPlayerDeath(player.hrid, trialTierAtCheck, this.simulationTime);
+                this.simResult.recordTrialPlayerDeath(player.hrid, trialTierAtCheck);
             } else if (this.zone && !this.zone.isDungeon) {
                 this.eventQueue.addEvent(new PlayerRespawnEvent(this.simulationTime + PLAYER_RESPAWN_INTERVAL, player.hrid));
             }

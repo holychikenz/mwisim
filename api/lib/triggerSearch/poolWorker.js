@@ -77,10 +77,6 @@ async function runOne(job) {
 }
 
 parentPort.on('message', async (message) => {
-  if (message?.type === 'stop') {
-    parentPort.close();
-    return;
-  }
   if (message?.type !== 'run') return;
 
   try {

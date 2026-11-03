@@ -1058,12 +1058,12 @@
     "extra": {}
   },
   "expected": {
-    "sha256": "5a2ea2212ea204ea96ba3f72ca526440954f2236aea244707f704b0fc43b5155",
+    "sha256": "2d14ec54cc425f310e165bae0a588cbcee553bb551a35dbab003d2801f1f1ae7",
     "headline": {
       "encounters": 66,
-      "elapsedTime": null,
+      "simulatedTime": 600000000000,
       "dungeonsCompleted": 1,
-      "deathCount": 29,
+      "deathCount": 227,
       "experienceKeys": 5
     },
     "result": {
@@ -4399,7 +4399,6 @@
       },
       "hitpointsSpent": {},
       "isDungeon": true,
-      "isGuildTrial": false,
       "isLabyrinth": false,
       "labRoomOutcomes": [],
       "labyAttemptCount": 0,
@@ -5069,12 +5068,8 @@
       "trialEndReason": null,
       "trialEndTime": 0,
       "trialFinalTierHpRemovedFrac": 0,
-      "trialHrid": null,
       "trialMaxTierCleared": 0,
-      "trialParticipantCount": 0,
       "trialPlayerDeaths": {},
-      "trialStartTier": 0,
-      "trialTierStartTimes": {},
       "trialTierTimes": {},
       "trialTiersCleared": 0,
       "zoneName": "/actions/combat/chimerical_den"
