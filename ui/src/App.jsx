@@ -1022,13 +1022,16 @@ function App() {
       for (const [buildId, build] of Object.entries(builds)) {
         if (!build || typeof build !== 'object') continue;
         const { character, loadout } = splitPlayer(build);
-        // Merge, not replace: a re-import keeps the character's other loadouts.
-        next = mergeImportedCharacter(next, {
+        // Merge loadouts only: upsertCharacter replaces, and a re-import must not wipe
+        // saved loadouts. Not mergeImportedCharacter: a roster build carries no
+        // guildShrines (SCLIRoster omits them on purpose) and must keep falling back
+        // to the party-wide shrine levels, and a re-import renames the character.
+        next = upsertCharacter(next, {
           ...character,
           id: buildId,
           name: build.name || buildId,
-          loadouts: { default: loadout }
-        }).store;
+          loadouts: { ...(next.characters?.[buildId]?.loadouts || {}), default: loadout }
+        });
       }
       return next;
     });
