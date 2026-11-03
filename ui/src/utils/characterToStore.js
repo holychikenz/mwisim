@@ -266,10 +266,12 @@ export function characterToCharacter(char, gameData, displayName) {
       loadoutTriggerMap && typeof loadoutTriggerMap === 'object' &&
       Object.keys(loadoutTriggerMap).length > 0;
 
-    const slots = Object.keys(raw.abilityMap || {}).sort((a, b) => Number(a) - Number(b));
-    slots.slice(0, 5).forEach((slot, i) => {
-      const h = raw.abilityMap[slot];
-      if (!h) return;
+    // Game slots are 1..5 (slot 1 is the special); index = slot - 1, kept in
+    // place so an empty slot does not shift a later ability into a slot with
+    // a lower intelligence requirement. MWIX's party payload omits empty slots.
+    Object.entries(raw.abilityMap || {}).forEach(([slot, h]) => {
+      const i = Number(slot) - 1;
+      if (!h || !(i >= 0 && i < 5)) return;
       if (!knownAbility(h)) { skipped.abilities.push(h); return; }
       let triggers;
       if (loadoutHasTriggers) {
