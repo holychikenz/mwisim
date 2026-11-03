@@ -195,6 +195,10 @@ const VERSION_NOTICE =
   'csim_guild_trial.v1) and your old flat loadouts are untouched in csim_loadouts. ' +
   'Starting fresh — import a character to begin.';
 
+const CHARACTERS_NOTICE =
+  'Your saved characters could not be read (corrupt, or saved by a newer version) ' +
+  'and were set aside in csim_characters.v1. They are left in place until you change something here.';
+
 function App() {
   const { data: gameData } = useGameData();
   const {
@@ -239,7 +243,11 @@ function App() {
   // Recover a pre-v2 `csim_loadouts` library, at most once ever, before the
   // store is first handed to React. See utils/orphanMigration.js — the original
   // blob is never written, cleared or deleted.
-  const restored = useMemo(() => migrateLegacyLoadouts(loadCharacters()), []);
+  const loadedCharacters = useMemo(() => loadCharacters(), []);
+  const restored = useMemo(() => {
+    const { status: _status, ...store } = loadedCharacters;
+    return migrateLegacyLoadouts(store);
+  }, [loadedCharacters]);
   const [characters, setCharacters] = useState(() => restored.store);
   // Five slots, each a {characterId, loadoutName} REFERENCE — so two slots can
   // be the same character in different gear with no copy of anything.
@@ -349,6 +357,7 @@ function App() {
       session.status === 'incompatible' || trialState.status === 'incompatible'
         ? VERSION_NOTICE
         : null,
+      loadedCharacters.status === 'incompatible' ? CHARACTERS_NOTICE : null,
       restored.recovered
         ? `Recovered ${restored.recovered} saved loadout${restored.recovered === 1 ? '' : 's'} ` +
           `from the previous version into ${restored.created} character` +
@@ -603,8 +612,11 @@ function App() {
   }, [allZonesSelection, allZonesHours, allZonesWorkers]);
 
   useEffect(() => {
+    // An unreadable store is not overwritten by the empty one standing in for it
+    // until the user actually changes something.
+    if (loadedCharacters.status === 'incompatible' && characters === restored.store) return;
     saveCharacters(characters);
-  }, [characters]);
+  }, [characters, loadedCharacters, restored]);
 
   // The five slots as flat players, manufactured on demand. This is THE view
   // every DTO site, panel and optimiser payload reads; nothing downstream knows

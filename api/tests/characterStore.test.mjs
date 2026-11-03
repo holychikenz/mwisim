@@ -151,10 +151,23 @@ test('the character→loadouts structure round-trips through persistence', () =>
   localStorage.clear();
   const store = storeWith(character(), { tank: loadout(), mage: createLoadout() });
   saveCharacters(store);
-  const reloaded = loadCharacters();
+  const { status, ...reloaded } = loadCharacters();
+  assert.equal(status, 'ok');
   assert.deepEqual(reloaded, store);
   assert.equal(reloaded.schemaVersion, 2);
   assert.deepEqual(Object.keys(reloaded.characters.c.loadouts), ['tank', 'mage']);
+});
+
+test('audit3-11: a corrupt or future-version character store reports itself, and is set aside', () => {
+  localStorage.clear();
+  const future = JSON.stringify({ schemaVersion: 99, characters: { c: {} } });
+  localStorage.setItem('csim_characters', future);
+  const loaded = loadCharacters();
+  assert.equal(loaded.status, 'incompatible');
+  assert.deepEqual(loaded.characters, {});
+  assert.equal(localStorage.getItem('csim_characters.v1'), future);
+  localStorage.setItem('csim_characters', '{not json');
+  assert.equal(loadCharacters().status, 'incompatible');
 });
 
 test('splitPlayer is the inverse of resolvePlayer', () => {
