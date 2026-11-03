@@ -160,3 +160,12 @@ test('audit3-c: headline() reports simulated time and the total of deaths', () =
   assert.equal(h.simulatedTime, 3600e9);
   assert.equal(h.deathCount, 5);
 });
+
+test('audit3-a: the statistical band widens when fewer seeds are checked than were recorded', async () => {
+  const { compare } = await import('../eval/run.mjs');
+  const fx = { id: 'x', metric: 'm', seeds: 16, runs: [], stats: { mean: 100, sd: 10, bandFloor: 0.25 } };
+  const fresh = (n) => ({ runs: Array.from({ length: n }, (_, seed) => ({ seed })), values: Array(n).fill(100) });
+  assert.ok(Math.abs(compare(fx, fresh(16)).band - 4 * 10 * Math.sqrt(2 / 16)) < 1e-12);
+  assert.ok(Math.abs(compare(fx, fresh(4)).band - 4 * 10 * Math.sqrt(1 / 16 + 1 / 4)) < 1e-12);
+  assert.equal(compare({ ...fx, stats: { ...fx.stats, sd: 0 } }, fresh(4)).band, 0.25, 'the floor still binds');
+});

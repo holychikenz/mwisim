@@ -24,7 +24,9 @@
 // -------------------------------------
 // At record time the sample mean and sd over the S seeds are stored. At check:
 //
-//     band = max( 4 * sd_rec * sqrt(2/S) ,  0.0025 * |mean_rec| )
+//     band = max( 4 * sd_rec * sqrt(1/S_rec + 1/S_new) ,  0.0025 * |mean_rec| )
+//
+// (= 4 * sd_rec * sqrt(2/S) when the check runs all S recorded seeds)
 //     pass <=> |mean_new - mean_rec| <= band
 //
 // sd*sqrt(2/S) is the standard error of the DIFFERENCE of two S-sample means
@@ -230,7 +232,10 @@ export function compare(fx, fresh) {
   }
 
   const mean = meanOf(fresh.values);
-  const b = { band: fx.stats.band, se: fx.stats.standardErrorOfDifference };
+  // The band is for THESE two sample sizes: recorded at fx.seeds, checked at
+  // however many ran (--seeds=4 is a weaker check, so a wider band).
+  const se = fx.stats.sd * Math.sqrt(1 / fx.seeds + 1 / fresh.runs.length);
+  const b = { band: Math.max(BAND_K * se, fx.stats.bandFloor), se };
   const delta = mean - fx.stats.mean;
   const z = b.se > 0 ? delta / b.se : null;
 
@@ -290,7 +295,8 @@ async function cmdCheck() {
       );
     }
 
-    const seedCount = Number(arg('seeds', String(fx.seeds)));
+    // Seeds past the recorded ones have no hash to match.
+    const seedCount = Math.min(fx.seeds, Number(arg('seeds', String(fx.seeds))));
     const fresh = await measureCase(engine, fx.case, seedCount);
     const cmp = compare(fx, fresh);
     rows.push(cmp);

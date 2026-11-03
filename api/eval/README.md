@@ -51,12 +51,12 @@ At record time the sample mean and sample sd over the S seeds are stored. At
 check time:
 
 ```
-band = max( 4 · sd_rec · sqrt(2/S) ,  0.0025 · |mean_rec| )
+band = max( 4 · sd_rec · sqrt(1/S_rec + 1/S_new) ,  0.0025 · |mean_rec| )
 pass ⟺ |mean_new − mean_rec| ≤ band
 ```
 
-`sd · sqrt(2/S)` is the standard error of the **difference of two S-sample
-means** under equal variance — the conservative case, in which the two engines'
+`sd · sqrt(1/S_rec + 1/S_new)` (`sd · sqrt(2/S)` at the full S seeds) is the
+standard error of the **difference of two sample means** under equal variance — the conservative case, in which the two engines'
 draws are independent rather than shared. `k = 4` gives ≈ 6 × 10⁻⁵ two-sided
 per test; over ~29 cases the family-wise false-alarm rate is ≈ 1.8 × 10⁻³, or
 about **one spurious red per 550 clean runs**. That number is written down here
