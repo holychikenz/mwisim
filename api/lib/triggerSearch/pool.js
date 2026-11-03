@@ -18,6 +18,14 @@ import { availableParallelism, cpus } from 'os';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 
+/** A cancelled optimiser run; optimizerRoute.js answers it as 'cancelled'. */
+export class AbortError extends Error {
+  constructor(message = 'Trigger optimisation cancelled') {
+    super(message);
+    this.name = 'AbortError';
+  }
+}
+
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const WORKER_PATH = join(__dirname, 'poolWorker.js');
 
@@ -237,11 +245,7 @@ export function makePoolEvaluator({
   signal = null,
   cancelMessage = 'Trigger optimisation cancelled',
 }) {
-  const aborted = () => {
-    const error = new Error(cancelMessage);
-    error.name = 'AbortError';
-    return error;
-  };
+  const aborted = () => new AbortError(cancelMessage);
   // Mid-batch abort: tearing the pool down settles the batch at once, instead
   // of only refusing the next one.
   signal?.addEventListener('abort', () => pool.destroy(), { once: true });

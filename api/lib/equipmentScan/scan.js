@@ -45,6 +45,7 @@ import {
   ONE_HOUR_NS,
 } from '../triggerSearch/score.js';
 import { pairedComparison } from './stats.js';
+import { AbortError } from '../triggerSearch/pool.js';
 
 /**
  * Defaults.
@@ -116,10 +117,7 @@ function averageMetrics(metricsList) {
 }
 
 function throwIfAborted(signal) {
-  if (!signal?.aborted) return;
-  const error = new Error('Equipment scan cancelled');
-  error.name = 'AbortError';
-  throw error;
+  if (signal?.aborted) throw new AbortError('Equipment scan cancelled');
 }
 
 /**

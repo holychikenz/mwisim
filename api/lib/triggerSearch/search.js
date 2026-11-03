@@ -37,6 +37,7 @@
 // =============================================================================
 
 import { gridFor, coarseGridSize } from './grids.js';
+import { AbortError } from './pool.js';
 import { applyValues, countConditions, readValues } from './params.js';
 import {
   DEFAULT_INSENSITIVITY_EPSILON,
@@ -68,13 +69,6 @@ export const DEFAULT_STAGES = {
 
 /** "Stable mode" — the peer's 120h verification. */
 export const STABLE_VERIFY_HOURS = 120;
-
-export class AbortError extends Error {
-  constructor(message = 'Trigger optimisation cancelled') {
-    super(message);
-    this.name = 'AbortError';
-  }
-}
 
 function throwIfAborted(signal) {
   if (signal?.aborted) throw new AbortError();

@@ -91,14 +91,6 @@ export function estimateSeconds(workload, workerCount = 4) {
   return workload.simulatedHours / (HOURS_PER_SECOND_PER_WORKER * Math.max(1, workerCount));
 }
 
-/** Human-readable duration from seconds. */
-export function formatDuration(seconds) {
-  if (seconds == null || !Number.isFinite(seconds)) return '—';
-  if (seconds < 90) return `~${Math.max(1, Math.round(seconds))}s`;
-  if (seconds < 5400) return `~${Math.round(seconds / 60)} min`;
-  return `~${(seconds / 3600).toFixed(1)} h`;
-}
-
 /**
  * A signed percentage with a fixed number of decimals, or an em dash.
  *
@@ -119,10 +111,6 @@ export function formatPct(fraction, decimals = 2) {
   return `${(fraction * 100).toFixed(decimals)}%`;
 }
 
-/** `/items/kraken_tunic` → `kraken tunic`. */
-export function lastSegment(hrid) {
-  return String(hrid || '').split('/').pop().replace(/_/g, ' ');
-}
 
 /**
  * The verdict for a row, as a small vocabulary the results table renders.

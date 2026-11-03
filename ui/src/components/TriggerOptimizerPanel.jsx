@@ -20,6 +20,7 @@ import {
   Tooltip
 } from '@mantine/core';
 import { Select } from './SearchSelect';
+import { lastSegment } from '../utils/itemCosts';
 import {
   DEFAULT_TRIGGER_OPT_CONFIG,
   estimateSeconds,
@@ -46,10 +47,6 @@ import {
 
 const SLOT_LABELS = { abilities: 'Abilities', food: 'Food', drinks: 'Drinks' };
 
-function lastSegment(hrid) {
-  if (!hrid) return '';
-  return String(hrid).split('/').pop().replace(/_/g, ' ');
-}
 
 /** 'player3' → 'P3'. Anything unrecognised is shown as it came. */
 function playerLabel(hrid) {

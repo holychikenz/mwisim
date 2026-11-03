@@ -21,9 +21,8 @@ import { Select } from './SearchSelect';
 import {
   DEFAULT_EQUIPMENT_OPT_CONFIG,
   estimateSeconds,
-  formatDuration,
 } from '../utils/equipmentOptimizer';
-import { formatAge, formatSeconds } from '../utils/triggerOptimizer';
+import { formatAge, formatDuration, formatSeconds } from '../utils/triggerOptimizer';
 
 // =============================================================================
 // EquipmentOptimizerPanel — navbar view for the Equipment Optimizer mode.
