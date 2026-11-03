@@ -19,7 +19,7 @@
     "startTier": 100,
     "metric": "trialMaxTierCleared"
   },
-  "recordedAt": "2026-11-03T09:53:56.474Z",
+  "recordedAt": "2026-11-03T10:01:55.329Z",
   "node": "v26.8.2",
   "platform": "darwin/arm64",
   "seeds": 16,
@@ -27,7 +27,7 @@
     "encounters": 2,
     "simulatedTime": 3600220741305.3984,
     "dungeonsCompleted": 0,
-    "deathCount": 4,
+    "deathCount": 0,
     "experienceKeys": 0
   },
   "stats": {

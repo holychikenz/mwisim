@@ -156,7 +156,7 @@ test('validateEvalCases() reports every violation, not the first', async () => {
 });
 
 test('audit3-c: headline() reports simulated time and the total of deaths', () => {
-  const h = headline({ simulatedTime: 3600e9, deaths: { player1: 2, player2: 3 } });
+  const h = headline({ simulatedTime: 3600e9, deaths: { player1: 2, player2: 3, '/monsters/fly': 900 } });
   assert.equal(h.simulatedTime, 3600e9);
   assert.equal(h.deathCount, 5);
 });

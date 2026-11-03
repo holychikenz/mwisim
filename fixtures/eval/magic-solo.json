@@ -13,7 +13,7 @@
     "n": 1,
     "party": "magic"
   },
-  "recordedAt": "2026-11-03T09:53:49.251Z",
+  "recordedAt": "2026-11-03T10:01:48.250Z",
   "node": "v26.8.2",
   "platform": "darwin/arm64",
   "seeds": 16,
@@ -21,7 +21,7 @@
     "encounters": 749,
     "simulatedTime": 3600000000000,
     "dungeonsCompleted": 0,
-    "deathCount": 749,
+    "deathCount": 0,
     "experienceKeys": 1
   },
   "stats": {

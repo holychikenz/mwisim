@@ -101,7 +101,10 @@ export function headline(result) {
     encounters: result?.encounters ?? null,
     simulatedTime: result?.simulatedTime ?? null,
     dungeonsCompleted: result?.dungeonsCompleted ?? null,
-    deathCount: result?.deaths ? Object.values(result.deaths).reduce((a, b) => a + b, 0) : null,
+    // `deaths` also counts monster kills; the headline is player deaths.
+    deathCount: result?.deaths
+      ? Object.entries(result.deaths).reduce((a, [hrid, n]) => a + (hrid.startsWith('player') ? n : 0), 0)
+      : null,
     experienceKeys: result?.experienceGained ? Object.keys(result.experienceGained).length : null,
   };
 }

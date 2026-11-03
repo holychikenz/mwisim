@@ -227,7 +227,7 @@
       "encounters": 5,
       "simulatedTime": 600000000000,
       "dungeonsCompleted": 0,
-      "deathCount": 16,
+      "deathCount": 0,
       "experienceKeys": 1
     },
     "result": {

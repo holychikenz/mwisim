@@ -245,8 +245,12 @@ function App() {
   // blob is never written, cleared or deleted.
   const loadedCharacters = useMemo(() => loadCharacters(), []);
   const restored = useMemo(() => {
-    const { status: _status, ...store } = loadedCharacters;
-    return migrateLegacyLoadouts(store);
+    const { status, ...store } = loadedCharacters;
+    // The migration saves what it builds; over an unreadable store that would
+    // overwrite the original unasked, so it waits for a readable one.
+    return status === 'incompatible'
+      ? { store, recovered: 0, created: 0, names: [], skipped: 0 }
+      : migrateLegacyLoadouts(store);
   }, [loadedCharacters]);
   const [characters, setCharacters] = useState(() => restored.store);
   // Five slots, each a {characterId, loadoutName} REFERENCE — so two slots can
@@ -513,7 +517,7 @@ function App() {
         setDifficultyTier(Number(importSet.difficultyTier) || 0);
       }
       if (importSet.simulationTime != null) {
-        setDuration(Math.max(1, Number(importSet.simulationTime) || 24));
+        setDuration(clampDuration(Number(importSet.simulationTime) || 24));
       }
       // Labyrinth context: the worker understands extra.mwixLabUpgrades and
       // extra.mwixMaze (the lab-shop combat upgrades apply only when the
@@ -1018,13 +1022,13 @@ function App() {
       for (const [buildId, build] of Object.entries(builds)) {
         if (!build || typeof build !== 'object') continue;
         const { character, loadout } = splitPlayer(build);
-        next = upsertCharacter(next, {
+        // Merge, not replace: a re-import keeps the character's other loadouts.
+        next = mergeImportedCharacter(next, {
           ...character,
           id: buildId,
           name: build.name || buildId,
-          // Merge: upsertCharacter replaces, and a re-import must not wipe saved loadouts.
-          loadouts: { ...(next.characters?.[buildId]?.loadouts || {}), default: loadout }
-        });
+          loadouts: { default: loadout }
+        }).store;
       }
       return next;
     });
@@ -2242,7 +2246,7 @@ function App() {
               abilities={gameData?.abilities}
               pricing={pricing}
               zones={gameData?.zones}
-              playerNames={activeResults.meta?.playerNames ?? playerNames}
+              playerNames={activeResults?.meta?.playerNames ?? playerNames}
               onClear={clearActiveResults}
               // Whose loot the Drops tab shows. Same convention as the All Zones
               // table: the party's members do not share a drop table — drop

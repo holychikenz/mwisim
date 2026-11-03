@@ -13,7 +13,7 @@
     "n": 2,
     "party": "melee"
   },
-  "recordedAt": "2026-11-03T09:53:50.206Z",
+  "recordedAt": "2026-11-03T10:01:49.196Z",
   "node": "v26.8.2",
   "platform": "darwin/arm64",
   "seeds": 16,
@@ -21,7 +21,7 @@
     "encounters": 442,
     "simulatedTime": 3600000000000,
     "dungeonsCompleted": 0,
-    "deathCount": 1117,
+    "deathCount": 0,
     "experienceKeys": 2
   },
   "stats": {
