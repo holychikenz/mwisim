@@ -105,8 +105,8 @@ export async function measureCase(engine, kase, seedCount) {
     const result = await withSeed(seed, () => runCase(engine, kase, EVAL_HOURS));
     const value = Number(result?.[kase.metric] ?? 0);
     // Deliberately NOT the whole headline() per seed. `encounters` is already
-    // `value` for a zone case, `elapsedTime` is null on every SimResult the
-    // engine produces and `experienceKeys` is a constant 5 — storing the four
+    // `value` for a zone case, `simulatedTime` is the case's fixed hours
+    // and `experienceKeys` is a constant 5 — storing the four
     // of them 464 times cost 45 % of the corpus to say nothing. Deaths and
     // dungeons are kept because they are the two numbers that actually orient a
     // reader looking at a drifted hash. The full headline of the first seed is

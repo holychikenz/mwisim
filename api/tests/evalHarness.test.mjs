@@ -25,7 +25,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { canonical, digest, withSeed } from '../lib/determinism.mjs';
+import { canonical, digest, headline, withSeed } from '../lib/determinism.mjs';
 import { allEvalCases, seedsFor, validateEvalCases, fnv1a32, EVAL_HOURS } from '../eval/cases.mjs';
 import { loadEngine } from '../eval/engine.mjs';
 import { runSimulation } from '../lib/simulator.js';
@@ -153,4 +153,10 @@ test('validateEvalCases() reports every violation, not the first', async () => {
 
   // And the real catalogue passes.
   validateEvalCases(engine.gameData);
+});
+
+test('audit3-c: headline() reports simulated time and the total of deaths', () => {
+  const h = headline({ simulatedTime: 3600e9, deaths: { player1: 2, player2: 3 } });
+  assert.equal(h.simulatedTime, 3600e9);
+  assert.equal(h.deathCount, 5);
 });
