@@ -1240,6 +1240,7 @@ function App() {
       // server ignores them for a labyrinth, where nothing is eaten.
       consumableCosts: buildConsumableCosts(playerDTOs, {
         prices: pricing.prices,
+        fetchedPrices: pricing.fetchedPrices,
         unit: pricing.unit,
         expenseMode: pricing.expenseMode,
         // Hand-entered per-item costs win over the fetched ones. A 0 here is a
@@ -1280,6 +1281,7 @@ function App() {
     // values inside it rather than the wrapper — otherwise the preview refetches on
     // every keystroke anywhere in the app.
     pricing.prices,
+    pricing.fetchedPrices,
     pricing.unit,
     pricing.expenseMode,
     pricing.itemCostOverrides
@@ -1352,6 +1354,7 @@ function App() {
       // by the server for a labyrinth target, where nothing is eaten at all.
       consumableCosts: buildConsumableCosts(playerDTOs, {
         prices: pricing.prices,
+        fetchedPrices: pricing.fetchedPrices,
         unit: pricing.unit,
         expenseMode: pricing.expenseMode,
         itemCostOverrides: pricing.itemCostOverrides
@@ -1379,6 +1382,7 @@ function App() {
     extraOptions,
     equipOptConfig,
     pricing.prices,
+    pricing.fetchedPrices,
     pricing.unit,
     pricing.expenseMode,
     pricing.itemCostOverrides
@@ -1432,6 +1436,7 @@ function App() {
     () =>
       describeConsumableCosts(triggerOptPayload?.players ?? equipOptPayload?.players, {
         prices: pricing.prices,
+        fetchedPrices: pricing.fetchedPrices,
         unit: pricing.unit,
         expenseMode: pricing.expenseMode,
         itemCostOverrides: pricing.itemCostOverrides
@@ -1440,6 +1445,7 @@ function App() {
       triggerOptPayload,
       equipOptPayload,
       pricing.prices,
+      pricing.fetchedPrices,
       pricing.unit,
       pricing.expenseMode,
       pricing.itemCostOverrides
