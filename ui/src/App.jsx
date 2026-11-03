@@ -1005,7 +1005,8 @@ function App() {
           ...character,
           id: buildId,
           name: build.name || buildId,
-          loadouts: { default: loadout }
+          // Merge: upsertCharacter replaces, and a re-import must not wipe saved loadouts.
+          loadouts: { ...(next.characters?.[buildId]?.loadouts || {}), default: loadout }
         });
       }
       return next;
