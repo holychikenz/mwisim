@@ -23,15 +23,14 @@ ui/src/utils/characterToPlayer.js ──▶ port of tampermonkey/src/kernel/csim
   (`src/workers/allZonesWorker.js`, one `src/worker.js` shard per
   combination) and ranks them by XP/h and effective encounters/hour. See
   [../ALL-ZONES.md](../ALL-ZONES.md).
-- **"Load my character"** talks to cow/webapp (port 12345) through the Vite
-  proxy (`/cow` → `http://localhost:12345`): `GET /api/characters` and
-  `GET /api/character/raw?character=<name>`.
+- **"Load my character"** talks to cow/webapp (port 12345) directly (its CORS
+  is open): `GET /api/characters` and `GET /api/character/raw?character=<name>`.
 
 ## Commands
 
 ```bash
 npm install
-npm run dev      # http://localhost:5173 (proxy expects cow webapp on :12345)
+npm run dev      # http://localhost:5173 (proxies /api and /health to :3001)
 npm run build    # production bundle in dist/
 npm run lint
 ```

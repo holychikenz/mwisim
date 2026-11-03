@@ -35,11 +35,11 @@ export default defineConfig({
         target: 'http://localhost:3001',
         changeOrigin: true
       },
-      // cow/webapp character data (Load my character).
-      '/cow': {
-        target: 'http://localhost:12345',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/cow/, '')
+      // apiBase.js pingApi() probes /health; without this dev served index.html
+      // and every API error read as "cannot reach the API".
+      '/health': {
+        target: 'http://localhost:3001',
+        changeOrigin: true
       }
     }
   }
