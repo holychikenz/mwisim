@@ -110,7 +110,7 @@ import {
   clampTier,
   findZone
 } from './utils/zones';
-import { clampRunCount, clampRunHours, clampZoneWorkers } from '../../shared/dungeonRuns.js';
+import { clampDuration, clampRunCount, clampRunHours, clampZoneWorkers } from '../../shared/dungeonRuns.js';
 import {
   comboKey,
   parseComboKey,
@@ -309,7 +309,7 @@ function App() {
     upgrades: { combatDamage: 0, attackSpeed: 0, castSpeed: 0, criticalRate: 0 }
   });
   const [duration, setDuration] = useState(
-    () => (typeof savedSession?.duration === 'number' ? savedSession.duration : 100)
+    () => (typeof savedSession?.duration === 'number' ? clampDuration(savedSession.duration) : 100)
   );
   // A dungeon is simulated as a number of runs rather than hours, each failed
   // if it is still going after maxRunHours (see shared/dungeonRuns.js).

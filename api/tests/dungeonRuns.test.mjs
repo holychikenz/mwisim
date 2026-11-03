@@ -29,6 +29,7 @@ import {
   workerBatchRunner,
   runZoneRepeats,
   clampZoneWorkers,
+  clampDuration,
   MAX_ZONE_WORKERS,
 } from '../../shared/dungeonRuns.js';
 
@@ -442,4 +443,12 @@ test('audit2-13: every field of a real dungeon result has a merge rule', async (
   // dungeonIdleTime is added once, after the merge (addRunIdleTime).
   const missing = Object.keys(result).filter((k) => k !== 'dungeonIdleTime' && !(k in MERGE_RULES));
   assert.deepEqual(missing, []);
+});
+
+test('audit3-13: clampDuration keeps an imported or restored duration within 1..1000 h', () => {
+  assert.equal(clampDuration(1e9), 1000);
+  assert.equal(clampDuration(0), 1);
+  assert.equal(clampDuration(-5), 1);
+  assert.equal(clampDuration(NaN), 1);
+  assert.equal(clampDuration(24), 24);
 });

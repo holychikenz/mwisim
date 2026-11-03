@@ -108,6 +108,20 @@ export function clampRunHours(value) {
   return Math.min(MAX_RUN_HOURS, Math.max(MIN_RUN_HOURS, n));
 }
 
+/** A planet zone's Duration field, in hours. */
+export const MIN_DURATION_HOURS = 1;
+export const MAX_DURATION_HOURS = 1000;
+
+/**
+ * Duration in hours within [MIN_DURATION_HOURS, MAX_DURATION_HOURS]: the header
+ * field, an imported file and a restored session all go through this, so a
+ * file cannot hand the simulator 1e9 hours (or 0). Not a number gives the minimum.
+ */
+export function clampDuration(value) {
+  const n = Number(value);
+  return Number.isFinite(n) ? Math.min(MAX_DURATION_HOURS, Math.max(MIN_DURATION_HOURS, n)) : MIN_DURATION_HOURS;
+}
+
 /** As clampRunCount, for a planet zone's Workers field: a whole number from 1 to MAX_ZONE_WORKERS, blank gives 1. */
 export function clampZoneWorkers(value) {
   const n = value === '' || value == null ? NaN : Number(value);
