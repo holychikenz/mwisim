@@ -4,7 +4,7 @@ import { DropsEconomy } from './DropsEconomy';
 import { ClearResultsButton, NumTd, Section, StatGroup } from './ResultParts';
 import { nameOf } from '../utils/names';
 import { effectiveRateFor, summariseConsumableCost } from '../utils/consumableCosts';
-import { formatNetSeconds, formatSeconds } from '../utils/triggerOptimizer';
+import { effectiveHint, formatNetSeconds, formatSeconds } from '../utils/triggerOptimizer';
 import { usePersistentState } from '../hooks/usePersistentState';
 
 const LAB_TABS = ['labstats', 'outcomes'];
@@ -57,8 +57,8 @@ function SummaryStats({ results, monsters, pricing, zones }) {
     [results, hoursSimulated, pricing]
   );
   // consumed − drop credit = net, when the credit is on (Costs page).
-  const netText = consumableCost.netSecondsPerHour == null ? null : formatNetSeconds(
-    consumableCost.secondsPerHour, consumableCost.creditSecondsPerHour, consumableCost.netSecondsPerHour);
+  const netText = consumableCost.netSecondsPerHour == null ? null : formatNetSeconds(consumableCost.secondsPerHour,
+    consumableCost.creditSecondsPerHour, consumableCost.netSecondsPerHour, consumableCost.creditFloored);
 
   const kpis = [];
 
@@ -118,10 +118,8 @@ function SummaryStats({ results, monsters, pricing, zones }) {
         value: formatNumber(effectiveRateFor(ratePerHour, consumableCost)),
         // A run that ate nothing owes no production time, so its effective rate
         // IS its raw rate — said plainly, rather than as "0 items priced", which
-        // reads like a failure to price something.
-        hint: consumableCost.nothingConsumed
-          ? 'nothing consumed'
-          : `${(consumableCost.timeShare * 100).toFixed(0)}% of time cooking`,
+        // reads like a failure to price something. With drop credit, the net's.
+        hint: effectiveHint(consumableCost),
         tip: netText
           ? `${rateNoun} per hour of total time, each character's own consumable drops set against ` +
             `their own eating: ${netText} production per hour of combat.`

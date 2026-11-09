@@ -2,7 +2,7 @@
 // Drop credit — the consumables a run drops offset its consumable bill in every
 // effective rate: shared/consumableCost.js (the class, the per-player credit, the
 // net clock and its floor), score.js (opt-in, byte-identical without it), the
-// equipment route's gating, and the UI's pricing layer and bear preset.
+// equipment route's gating, and the UI's pricing layer, breakdown and bear preset.
 //
 // Run from api/:  npm test
 // =============================================================================
@@ -26,8 +26,10 @@ import {
   BEAR_ZONE_ZEROED,
   buildDropCreditCosts,
   describeDropCredit,
+  revertPatch,
   summariseConsumableCost,
 } from '../../ui/src/utils/consumableCosts.js';
+import { effectiveHint, formatNetSeconds } from '../../ui/src/utils/triggerOptimizer.js';
 
 const { itemDetailMap, actionDetailMap } = await import('../../src/combatsimulator/dataProvider.js');
 const CLASS = consumableClassHrids(itemDetailMap, actionDetailMap);
@@ -100,6 +102,22 @@ test('scoreSimResult: without the table the output is byte-identical; with it, t
   assert.equal(on.effectiveEncountersPerHour, 110 / (1 + 3000 / 3600));
 });
 
+test('the credit reported is the credit itself, each member\'s own as a plain mean over the roster; the floor is flagged', () => {
+  // One player past the floor: 600 sugar at 20 s is 12000 s against a 3600 s bill, but the net stops at the floor.
+  const floored = scoreSimResult(bear(110, 10), { consumableCosts: COSTS, dropCreditCosts: { '/items/sugar': 20 } });
+  assert.equal(floored.dropCreditSecondsPerHour, 12000, 'not bill − net, which the floor bends to 6840');
+  assert.equal(floored.netConsumableSecondsPerHour, (MIN_CLOCK_DIVISOR - 1) * 3600);
+  assert.equal(floored.dropCreditFloored, true);
+  assert.equal(floored.effectiveEncountersPerHour, 110 / MIN_CLOCK_DIVISOR);
+  assert.equal('dropCreditFloored' in scoreSimResult(bear(110, 10), { consumableCosts: COSTS, dropCreditCosts: { '/items/sugar': 1 } }), false);
+  // Two members on the same kills, 300 sugar each; only player1 ate. The mean rule's bill − net would say 335 s.
+  const pair = { ...bear(110, 10), numberOfPlayers: 2, manaUsed: { player1: 0, player2: 0 },
+    dropRateMultiplier: { player1: 1, player2: 1 }, combatDropQuantity: { player1: 0, player2: 0 } };
+  const party = scoreSimResult(pair, { consumableCosts: COSTS, dropCreditCosts: { '/items/sugar': 1 } });
+  assert.equal(party.dropCreditSecondsPerHour, 300);
+  assert.equal('dropCreditFloored' in party, false);
+});
+
 test('credit can flip a ranking: the build that kills more bears wins once their sugar counts', () => {
   const rank = (opts) => rankResults([
     { id: 'faster', metrics: scoreSimResult(bear(110, 10), opts) },
@@ -109,14 +127,23 @@ test('credit can flip a ranking: the build that kills more bears wins once their
   assert.deepEqual(rank({ consumableCosts: COSTS, dropCreditCosts: { '/items/sugar': 1 } }), ['more bears', 'faster']); // 100 against 60
 });
 
-test('the credit table rides only beside a cost table, never alone and never into a labyrinth', () => {
+test('the credit table rides beside a known bill — a cost table, or a party that slots nothing — never into a labyrinth', () => {
   const player = { hrid: 'player1', equipment: {}, abilities: [], food: [], drinks: [] };
+  const eats = { ...player, drinks: [{ hrid: '/items/stamina_coffee', triggers: [] }] };
   const zone = { zoneHrid: '/actions/combat/gummy_bear', difficultyTier: 0 };
   const dropCreditCosts = { '/items/sugar': 2, '/items/wheat': -1, '/items/egg': null };
-  assert.deepEqual(prepareEquipmentRun({ players: [player], zone, consumableCosts: COSTS, dropCreditCosts }).dropCreditCosts,
-    { '/items/sugar': 2 });
-  assert.equal(prepareEquipmentRun({ players: [player], zone, consumableCosts: COSTS }).dropCreditCosts, null);
-  assert.equal(prepareEquipmentRun({ players: [player], zone, dropCreditCosts }).dropCreditCosts, null);
+  const run = (players, extra) => prepareEquipmentRun({ players, zone, ...extra });
+  assert.deepEqual(run([eats], { consumableCosts: COSTS, dropCreditCosts }).dropCreditCosts, { '/items/sugar': 2 });
+  assert.equal(run([eats], { consumableCosts: COSTS }).dropCreditCosts, null);
+  // Nothing to eat is a bill of zero, as the zone tab's "nothing consumed": credited, and the objective is costed.
+  const alone = run([player], { dropCreditCosts });
+  assert.deepEqual(alone.dropCreditCosts, { '/items/sugar': 2 });
+  assert.equal(alone.objective, 'effectiveEncountersPerHour');
+  // A slotted coffee with no price leaves the bill unknown: no credit, and raw throughput, as before.
+  const unpriced = run([eats], { dropCreditCosts });
+  assert.equal(unpriced.dropCreditCosts, null);
+  assert.equal(unpriced.objective, 'encountersPerHour');
+  assert.equal(run([player]).objective, 'encountersPerHour');
   assert.equal(prepareEquipmentRun({ players: [player], labyrinth: { labyrinthHrid: '/monsters/cyclops', roomLevel: 100 },
     consumableCosts: COSTS, dropCreditCosts }).dropCreditCosts, null);
 });
@@ -137,7 +164,8 @@ const pricing = (itemCostOverrides = {}, extra = {}) => ({
 });
 /** What summariseConsumableCost reads for drop credit: one hour, ten gummy bears, nothing eaten. */
 const DROPS = bear(0, 10);
-const summary = (p, drops = DROPS) => summariseConsumableCost({ consumablesUsed: {}, hours: 1, pricing: p, players: ['player1'], drops });
+const summary = (p, drops = DROPS, creditCosts) =>
+  summariseConsumableCost({ consumablesUsed: {}, hours: 1, pricing: p, players: ['player1'], drops, creditCosts });
 
 test('the posted table: the consumable class at its times; nothing with the credit off or a coin source', () => {
   assert.deepEqual(buildDropCreditCosts(pricing()), { '/items/sugar': 2, '/items/apple_gummy': 60 }, 'a sword is no consumable');
@@ -155,12 +183,46 @@ test('a zero override removes an item\'s credit, and the credit off leaves the s
   assert.equal('netSecondsPerHour' in before, false);
 });
 
+test('the zone results report the credit itself too, say when the floor binds, and take a table built once', () => {
+  // 600 sugar at 20 s + 5 apple gummies at 60 s = 12300 s of credit; nothing eaten, so the net stops at the floor.
+  const floored = summary(pricing({ '/items/sugar': 20 }));
+  assert.equal(floored.creditSecondsPerHour, 12300);
+  assert.equal(floored.netSecondsPerHour, (MIN_CLOCK_DIVISOR - 1) * 3600);
+  assert.equal(floored.creditFloored, true);
+  assert.equal('creditFloored' in summary(pricing()), false);
+  // All Zones builds the table once per pricing and passes it in: the table given is the one used.
+  assert.deepEqual(summary(pricing(), DROPS, buildDropCreditCosts(pricing())), summary(pricing()));
+  assert.equal(summary(pricing(), DROPS, { '/items/sugar': 1 }).creditSecondsPerHour, 600);
+  assert.deepEqual(summary(pricing(), DROPS, null), summary(pricing(), null));
+});
+
+test('the breakdown says when the floor binds, and the hint under an effective rate follows the net', () => {
+  assert.equal(formatNetSeconds(1200, 900, 300), '20 min eaten − 15 min of drops = 5 min net');
+  assert.equal(formatNetSeconds(0, 12300, -3240, true), '0s eaten − 3.4 h of drops = −54 min net (capped: effective ≤ 10× raw)');
+  // Without credit the hint is what it always was; with it, the net's.
+  assert.equal(effectiveHint({ nothingConsumed: true, timeShare: 0 }), 'nothing consumed');
+  assert.equal(effectiveHint({ nothingConsumed: false, timeShare: 0.44 }), '44% of time cooking');
+  assert.equal(effectiveHint(summary(pricing())), 'drops outweigh the cooking');
+  assert.equal(effectiveHint(summary(pricing({ '/items/sugar': 0, '/items/apple_gummy': 0 }))), 'nothing consumed');
+  assert.equal(effectiveHint({ nothingConsumed: false, timeShare: 0.5, netSecondsPerHour: 1800 }), '33% of time cooking, net of drops');
+  assert.equal(effectiveHint(summary(pricing({ '/items/sugar': 20 }))), 'capped: effective ≤ 10× raw');
+});
+
 test('the Costs page lists what one character is expected to receive, consumables only, most credit first', () => {
   const rows = describeDropCredit(DROPS, pricing(), 'player1');
   assert.ok(rows.every((row) => CLASS.has(row.hrid)));
   assert.equal(rows[0].hrid, '/items/sugar');
   assert.equal(rows[0].creditPerHour, 1200);
   assert.equal(rows.find((row) => row.hrid === '/items/apple_gummy').creditPerHour, 300);
+});
+
+test('Revert puts back only what is still the preset\'s 0: a later edit wins, then nothing is left to revert', () => {
+  const undo = { '/items/sugar': null, '/items/gummy': 12, '/items/apple_gummy': null, '/items/orange_gummy': 5 };
+  // Since the preset: gummy edited to 7, orange's override removed.
+  assert.deepEqual(revertPatch(undo, { '/items/sugar': 0, '/items/gummy': 7, '/items/apple_gummy': 0 }),
+    { '/items/sugar': null, '/items/apple_gummy': null });
+  assert.deepEqual(revertPatch(undo, {}), {});
+  assert.deepEqual(revertPatch(null, { '/items/sugar': 0 }), {});
 });
 
 test('the bear preset zeroes sugar and the low gummies, real consumables all, and keeps the useful ones', () => {

@@ -47,12 +47,17 @@ export function sanitiseConsumableCosts(input) {
 
 /**
  * The drop-credit table (body.dropCreditCosts: itemHrid → seconds over the
- * consumable class) on the cost table's rules, and only BESIDE a cost table:
- * credit refines the time-denominated objective and never makes one, so with no
- * food bill priced — and in a labyrinth, which has none — nothing changes.
+ * consumable class) on the cost table's rules, wherever the zone results credit
+ * it: beside a KNOWN bill — a cost table, or a party that slots nothing to eat
+ * (a bill of zero, the zone tab's "nothing consumed"). Consumables slotted with
+ * no price leave the bill unknown, so there it is refused, as the zone tab then
+ * omits its effective rate; and never in a labyrinth. Present, it makes the
+ * objective time-denominated (consumableCostsKnown).
  */
-export function sanitiseDropCreditCosts(body, consumableCosts) {
-  return consumableCosts ? sanitiseConsumableCosts(body?.dropCreditCosts) : null;
+export function sanitiseDropCreditCosts(body, { labyrinth, consumableCosts, simPlayers }) {
+  if (labyrinth) return null;
+  const eats = (simPlayers || []).some((p) => [...(p?.food || []), ...(p?.drinks || [])].some((c) => c?.hrid));
+  return consumableCosts || !eats ? sanitiseConsumableCosts(body?.dropCreditCosts) : null;
 }
 
 /**
@@ -175,20 +180,21 @@ export function subjectRoutes({ path, prepare, run, cancelMessage, emptyError })
     const labyrinth = target.kind === 'labyrinth';
     // Nothing is eaten in a labyrinth, so there is no bill to count.
     const consumableCosts = labyrinth ? null : sanitiseConsumableCosts(body.consumableCosts);
+    // Food and drinks blanked in a labyrinth, as the game blanks them (target.js).
+    const simPlayers = targetPlayerDTOs(body.players, target);
+    const dropCreditCosts = sanitiseDropCreditCosts(body, { labyrinth, consumableCosts, simPlayers });
     const base = {
-      target, subjectIndex: k, scan: sanitiseFidelity(body.scan), consumableCosts,
-      dropCreditCosts: sanitiseDropCreditCosts(body, consumableCosts),
+      target, subjectIndex: k, scan: sanitiseFidelity(body.scan), consumableCosts, dropCreditCosts,
       // Same composition runSimulation uses, plus the lab-shop upgrades in a labyrinth.
       extraBuffs: buildExtraBuffs(body.extra || {}).concat(body.guildBuffs || []).concat(targetExtraBuffs(target)),
-      // Food and drinks blanked in a labyrinth, as the game blanks them (target.js).
-      simPlayers: targetPlayerDTOs(body.players, target),
-      objective: body.objective || defaultObjective({ consumableCostsKnown: !!consumableCosts, labyrinth, dungeon: !!target.dungeon }),
+      simPlayers,
+      objective: body.objective || defaultObjective({ consumableCostsKnown: !!(consumableCosts || dropCreditCosts), labyrinth, dungeon: !!target.dungeon }),
     };
     return { prepared: { ...base, ...prepare(base, body) } };
   };
   // What the panel and the results describe the run by. Never the DTOs.
   const echo = (p) => ({ objective: p.objective, target: p.target, reportedMetrics: reportedMetricsFor(p.target),
-    consumableCostsKnown: !!p.consumableCosts, subjectIndex: p.subjectIndex, scan: p.scan, workload: p.workload,
+    consumableCostsKnown: !!(p.consumableCosts || p.dropCreditCosts), subjectIndex: p.subjectIndex, scan: p.scan, workload: p.workload,
     candidates: p.candidates.length, refusal: p.refusal ?? null, ...p.echo });
 
   router.post(`/${path}/preview`, (req, res) => {

@@ -6,7 +6,7 @@
 import { resolvePlayer } from './characterStore';
 import { toPlayerDTO } from './playerDTO';
 import { priceOf } from './prices';
-import { formatSignedPct } from './equipmentOptimizer';
+import { formatSignedPct, verdictOf } from './equipmentOptimizer';
 
 /** On a planet: rank on encounters, or on encounters per hour of TOTAL time (shared/consumableCost.js). */
 export const OBJECTIVE_OPTIONS = [
@@ -27,11 +27,8 @@ export const isProgressOptConfig = sameShape(DEFAULT_PROGRESS_OPT_CONFIG);
 export const DEFAULT_SWAP_OPT_CONFIG = { ...DEFAULT_LOADOUT_OPT_CONFIG, search: 'swaps', passes: 2 };
 export const isSwapOptConfig = sameShape(DEFAULT_SWAP_OPT_CONFIG);
 
-/**
- * CandidateResults' "Best": the first family-wise significant row with a GAIN (> 0) — the bar descent.js takes a step on
- * and scan.js calls a run conclusive by. verdictOf's >= 0 would crown a delta of exactly 0, or a null one.
- */
-export const headlineRow = (rows) => (rows || []).find((row) => row.significantFamilywise && (row.perLevel ?? row.delta) > 0);
+/** CandidateResults' "Best": the first row verdictOf calls a clear gain (family-wise significant, gain > 0). */
+export const headlineRow = (rows) => (rows || []).find((row) => verdictOf(row) === 'strong-gain');
 
 /** Whose loadout the tools vary: the picked slot while it is selected, else the main character's slot, else the first selected. */
 export function pickSubjectSlot({ selectedParty, party, mainId, picked }) {

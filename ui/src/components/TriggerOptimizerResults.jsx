@@ -376,7 +376,8 @@ export function TriggerOptimizerResults({ results, items, abilities, onClear }) 
             value={`${(timeShare * 100).toFixed(1)}%`}
             tip={`${formatSeconds(consumableSeconds)} of production owed per hour of combat, for ${formatNumber(leader?.metrics?.consumablesPerHour, 1)} consumables. This is real time you do not spend fighting.` +
               (leader?.metrics?.netConsumableSecondsPerHour == null ? '' : ` Drop credit sets the consumables the run drops against it: ${formatNetSeconds(
-                consumableSeconds, leader.metrics.dropCreditSecondsPerHour, leader.metrics.netConsumableSecondsPerHour)}.`)}
+                consumableSeconds, leader.metrics.dropCreditSecondsPerHour, leader.metrics.netConsumableSecondsPerHour,
+                leader.metrics.dropCreditFloored)}.`)}
           />
         ) : (
           <StatCard

@@ -113,6 +113,7 @@ function averageMetrics(metricsList) {
   // Carried through unaveraged: these are run properties, not rates.
   out.consumableCostsKnown = !!list[0]?.consumableCostsKnown;
   out.ranOutOfMana = list.some((m) => m?.ranOutOfMana);
+  if (list.some((m) => m?.dropCreditFloored)) out.dropCreditFloored = true; // only with drop credit on
   return out;
 }
 

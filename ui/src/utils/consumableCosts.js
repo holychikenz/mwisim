@@ -28,7 +28,7 @@ import {
   effectiveRatePerHour,
   sumConsumablesUsed,
 } from '../../../shared/consumableCost.js';
-import { calculateExpectedDrops } from '../../../shared/drops.js';
+import { calculateDropsPerHour, calculateExpectedDrops } from '../../../shared/drops.js';
 import { priceOf } from './prices';
 // The bundled snapshot useGameData reads too: what drop credit counts, and what drops it.
 import ITEMS from '../../../src/combatsimulator/data/itemDetailMap.json';
@@ -174,8 +174,10 @@ export function buildConsumableCosts(playerDTOs, pricing) {
  * DROP CREDIT. Given `drops` (the simResult, or a row carrying its deaths and
  * per-player drop multipliers) and buildDropCreditCosts' table, each member's own
  * consumable drops offset their own bill (partyNetConsumableSeconds), adding
- * creditSecondsPerHour and netSecondsPerHour: consumed − credit = net, the net
- * possibly negative. Without both the result is exactly as before.
+ * creditSecondsPerHour (the members' own credit, their plain mean), netSecondsPerHour
+ * (possibly negative) and creditFloored (only when a member hit the clock floor).
+ * Without both the result is exactly as before. A caller summarising many runs
+ * on one pricing (All Zones) passes `creditCosts`, built once.
  *
  * @param {object} args
  * @param {Record<string, Record<string, number>>} args.consumablesUsed  simResult tally
@@ -183,12 +185,14 @@ export function buildConsumableCosts(playerDTOs, pricing) {
  * @param {object} args.pricing
  * @param {string[]} [args.players]  the roster; see partyConsumableSeconds
  * @param {object} [args.drops]  what drop credit reads; see above
+ * @param {Record<string, number>|null} [args.creditCosts]  buildDropCreditCosts(pricing), when already built
  * @returns {{known: boolean, nothingConsumed: boolean, secondsPerHour: number,
  *           timeShare: number, unitsPerHour: number, priced: string[],
  *           unpriced: string[], overrides: string[],
- *           creditSecondsPerHour?: number, netSecondsPerHour?: number}}
+ *           creditSecondsPerHour?: number, netSecondsPerHour?: number, creditFloored?: true}}
  */
-export function summariseConsumableCost({ consumablesUsed, hours, pricing, players, drops = null }) {
+export function summariseConsumableCost({ consumablesUsed, hours, pricing, players, drops = null,
+  creditCosts = drops ? buildDropCreditCosts(pricing) : null }) {
   const { byItem, total } = sumConsumablesUsed(consumablesUsed);
   const perHour = (value) => (hours > 0 ? value / hours : 0);
   const nothingConsumed = Object.keys(byItem).length === 0;
@@ -203,10 +207,9 @@ export function summariseConsumableCost({ consumablesUsed, hours, pricing, playe
 
   const { seconds, priced, unpriced } = partyConsumableSeconds(consumablesUsed, costs, { players, hours });
   const secondsPerHour = perHour(seconds);
-  const creditCosts = drops && buildDropCreditCosts(pricing);
   const roster = players?.length ? players : Object.keys(consumablesUsed || {});
-  const netSecondsPerHour = creditCosts && perHour(partyNetConsumableSeconds(consumablesUsed, costs,
-    dropCreditSeconds(drops, MONSTERS, creditCosts, roster), { players: roster, hours }).seconds);
+  const net = drops && creditCosts && partyNetConsumableSeconds(consumablesUsed, costs,
+    dropCreditSeconds(drops, MONSTERS, creditCosts, roster), { players: roster, hours });
 
   return {
     known: nothingConsumed || priced.length > 0,
@@ -217,7 +220,11 @@ export function summariseConsumableCost({ consumablesUsed, hours, pricing, playe
     priced,
     unpriced,
     overrides,
-    ...(creditCosts && { creditSecondsPerHour: secondsPerHour - netSecondsPerHour, netSecondsPerHour }),
+    ...(net && {
+      creditSecondsPerHour: perHour(net.credit),
+      netSecondsPerHour: perHour(net.seconds),
+      ...(net.floored && { creditFloored: true }),
+    }),
   };
 }
 
@@ -258,14 +265,12 @@ export function buildDropCreditCosts(pricing) {
  * @returns {Array<object>} resolveItemCost rows plus name, roles, usedBy, perHour, creditPerHour
  */
 export function describeDropCredit(simResult, pricing, playerHrid) {
-  const hours = (Number(simResult?.simulatedTime) || 0) / (3600 * 1e9);
-  if (!(hours > 0)) return [];
-  return calculateExpectedDrops(simResult, MONSTERS, ITEMS, playerHrid)
+  if (!(Number(simResult?.simulatedTime) > 0)) return [];
+  return calculateDropsPerHour(calculateExpectedDrops(simResult, MONSTERS, ITEMS, playerHrid), simResult.simulatedTime)
     .filter((drop) => CONSUMABLE_CLASS.has(drop.itemHrid))
-    .map((drop) => {
-      const cost = resolveItemCost(drop.itemHrid, pricing);
-      const perHour = drop.amount / hours;
-      return { ...cost, name: drop.name, roles: [], usedBy: [], perHour, creditPerHour: perHour * (cost.effective ?? 0) };
+    .map(({ itemHrid, name, perHour }) => {
+      const cost = resolveItemCost(itemHrid, pricing);
+      return { ...cost, name, roles: [], usedBy: [], perHour, creditPerHour: perHour * (cost.effective ?? 0) };
     })
     .sort((a, b) => b.creditPerHour - a.creditPerHour);
 }
@@ -276,6 +281,18 @@ export function describeDropCredit(simResult, pricing, playerHrid) {
  * worth no time; plum, peach, dragon fruit and star fruit gummies keep theirs.
  */
 export const BEAR_ZONE_ZEROED = ['/items/sugar', '/items/gummy', '/items/apple_gummy', '/items/orange_gummy'];
+
+/**
+ * What the preset's Revert puts back (hrid → the value it replaced, null: none): only the items whose override is
+ * still the 0 the preset set — anything edited since keeps the edit. Empty when nothing is left to revert.
+ *
+ * @param {Record<string, number|null>|null} undo  usePrices dropCreditUndo
+ * @param {Record<string, number>} overrides  usePrices itemCostOverrides
+ * @returns {Record<string, number|null>}
+ */
+export function revertPatch(undo, overrides) {
+  return Object.fromEntries(Object.entries(undo || {}).filter(([hrid]) => overrides?.[hrid] === 0));
+}
 
 // Re-exported so a consumer needs one import rather than two, and so the divisor
 // itself is never rewritten by hand at the call site.

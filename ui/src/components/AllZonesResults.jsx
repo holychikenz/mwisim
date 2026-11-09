@@ -14,7 +14,7 @@ import {
   UnstyledButton
 } from '@mantine/core';
 import { usePersistentState } from '../hooks/usePersistentState';
-import { effectiveRateFor, summariseConsumableCost } from '../utils/consumableCosts';
+import { buildDropCreditCosts, effectiveRateFor, summariseConsumableCost } from '../utils/consumableCosts';
 import { formatNetSeconds, formatSeconds } from '../utils/triggerOptimizer';
 
 // =============================================================================
@@ -117,6 +117,8 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
     () => ({ fetchedPrices, prices, unit, expenseMode, itemCostOverrides, dropCredit }),
     [fetchedPrices, prices, unit, expenseMode, itemCostOverrides, dropCredit]
   );
+  // Drop credit's table, once per pricing rather than once per row.
+  const creditCosts = useMemo(() => buildDropCreditCosts(costBasis), [costBasis]);
 
   // One pass over the rows, re-run when prices change: the effective columns are
   // derived from whatever pricing is loaded NOW, not from what was loaded when
@@ -157,6 +159,7 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
         players: activeHrid ? [activeHrid] : partyHrids,
         // Drop credit: this player's own consumable drops against their own plate (the row carries the drop inputs).
         drops: row,
+        creditCosts,
       });
 
       // A dungeon's encounters are its WAVES, so its Enc/h is waves per hour —
@@ -178,6 +181,7 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
         secondsPerHour: cost.secondsPerHour,
         creditSecondsPerHour: cost.creditSecondsPerHour,
         netSecondsPerHour: cost.netSecondsPerHour,
+        creditFloored: cost.creditFloored,
         effEncountersPerHour: cost.known && !dungeon
           ? effectiveRateFor(encountersPerHour, cost)
           : null,
@@ -186,7 +190,7 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
           : null,
       };
     });
-  }, [rows, zoneNames, costBasis, activeHrid, partyHrids]);
+  }, [rows, zoneNames, costBasis, creditCosts, activeHrid, partyHrids]);
 
   // A sort can outlive its column: sort by Clears/h on a sweep that included
   // dungeons, re-run with planets only, and the column is gone while `sort` (the
@@ -398,7 +402,7 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
                           <Tooltip
                             label={
                               row.netSecondsPerHour != null
-                                ? `${formatNetSeconds(row.secondsPerHour, row.creditSecondsPerHour, row.netSecondsPerHour)} production per combat hour — this player's drops against their own plate`
+                                ? `${formatNetSeconds(row.secondsPerHour, row.creditSecondsPerHour, row.netSecondsPerHour, row.creditFloored)} production per combat hour — this player's drops against their own plate`
                                 : row.nothingConsumed
                                 ? 'Nothing consumed here — no production time owed, so this equals the raw rate'
                                 : `${(row.timeShare * 100).toFixed(0)}% of total time cooking — ${formatSeconds(

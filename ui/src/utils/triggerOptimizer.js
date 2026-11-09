@@ -7,6 +7,8 @@
 // not also export constants or helpers.
 // =============================================================================
 
+import { MIN_CLOCK_DIVISOR, consumableTimeShare } from '../../../shared/consumableCost.js';
+
 /** localStorage key, following the UI's `csim_*` convention. */
 export const TRIGGER_OPT_KEY = 'csim_trigger_optimizer';
 
@@ -41,9 +43,29 @@ export function formatSeconds(seconds) {
   return `${(value / 3600).toFixed(1)} h`;
 }
 
-/** Drop credit's breakdown per hour of combat: "20 min eaten − 45 min of drops = −25 min net". The net can be negative. */
-export function formatNetSeconds(consumed, credit, net) {
-  return `${formatSeconds(consumed)} eaten − ${formatSeconds(credit)} of drops = ${net < 0 ? '−' : ''}${formatSeconds(Math.abs(net))} net`;
+/** What an effective rate is when drop credit hits the clock floor (shared/consumableCost.js MIN_CLOCK_DIVISOR). */
+const CAPPED = `capped: effective ≤ ${1 / MIN_CLOCK_DIVISOR}× raw`;
+
+/**
+ * Drop credit's breakdown per hour of combat: "20 min eaten − 45 min of drops = −25 min net". The net can be negative;
+ * `floored`, it is the floor's rather than the difference, and the breakdown says so. In a party the eaten and net
+ * figures are the per-player clock's and the credit the members' plain mean, so the sum is near, not exact.
+ */
+export function formatNetSeconds(consumed, credit, net, floored = false) {
+  return `${formatSeconds(consumed)} eaten − ${formatSeconds(credit)} of drops = ${net < 0 ? '−' : ''}${formatSeconds(Math.abs(net))} net` +
+    (floored ? ` (${CAPPED})` : '');
+}
+
+/**
+ * The zone results' hint under an effective rate, from what the rate is built on: the net of drop credit when a
+ * summariseConsumableCost result carries one (a surplus, or the floor, said as such), else the bill.
+ */
+export function effectiveHint(cost) {
+  const net = cost.netSecondsPerHour; // undefined without drop credit: the bill's hint, as it always was
+  if (cost.creditFloored) return CAPPED;
+  if (net < 0) return 'drops outweigh the cooking';
+  if (net > 0) return `${(consumableTimeShare(net) * 100).toFixed(0)}% of time cooking, net of drops`;
+  return cost.nothingConsumed ? 'nothing consumed' : `${(cost.timeShare * 100).toFixed(0)}% of time cooking`;
 }
 
 /**

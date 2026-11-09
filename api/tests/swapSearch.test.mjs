@@ -156,6 +156,11 @@ test('under a costed objective an unpriced consumable is not ticked by default a
   assert.deepEqual(costed.candidates.map((c) => c.id), [`drinks:0:${I('defense_coffee')}`]);
   // Raw EPH ignores prices, and with nothing priced effective EPH is EPH: every consumable stays ticked.
   for (const extra of [{ objective: 'encountersPerHour' }, { consumableCosts: null }]) assert.equal(at(extra).candidates.length, 2);
+  // Drop credit alone (the route admits it only where nothing is slotted) costs the objective: nothing has a price.
+  const credited = at({ simPlayers: [subject({ drinks: [null, null, null] })], consumableCosts: null, dropCreditCosts: { [I('sugar')]: 1 } });
+  const items = credited.echo.groups.find((g) => g.key === 'drinks').items;
+  assert.ok(items.length === 2 && items.every((i) => !i.default && /no price/.test(i.label)), JSON.stringify(items));
+  assert.equal(credited.candidates.length, 0);
 });
 
 test('the descent estimate counts the off hand only where candidatesAt can offer one', () => {

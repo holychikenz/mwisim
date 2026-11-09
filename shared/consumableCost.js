@@ -230,11 +230,19 @@ export function dropCreditSeconds(simResult, monsters, creditCosts, players) {
  * seconds whose rate is the members' mean (one player: their own net), and it
  * is negative when the drops are worth more than the food.
  *
+ * `credit` is the credit itself, never bill − net (which the floor and, in a
+ * party, the mean rule both bend): the PLAIN mean over the roster of each
+ * member's own credit — the bill's roster, members with no drops counted at 0.
+ * Credit has no clock of its own to put through the mean rule. So consumed −
+ * credit = net exactly for one player above the floor, and only nearly in a
+ * party. `floored` says some member's net hit the floor (their effective rate
+ * is capped at 1 / MIN_CLOCK_DIVISOR times the raw one).
+ *
  * @param {Record<string, Record<string, number>>} consumablesUsed  per-player tally
  * @param {Record<string, number>} costs  itemHrid → seconds each, for what was eaten
  * @param {Record<string, number>} creditByPlayer  playerHrid → seconds (dropCreditSeconds)
  * @param {{players?: string[], hours?: number}} [opts]
- * @returns {{seconds: number}}
+ * @returns {{seconds: number, credit: number, floored: boolean}}  seconds over the run, like partyConsumableSeconds
  */
 export function partyNetConsumableSeconds(consumablesUsed, costs, creditByPlayer, { players, hours = 1 } = {}) {
   const roster = players?.length ? players : Object.keys(consumablesUsed || {});
@@ -242,13 +250,22 @@ export function partyNetConsumableSeconds(consumablesUsed, costs, creditByPlayer
   const lowest = (MIN_CLOCK_DIVISOR - 1) * 3600 * span; // the divisor's floor, as a floor on the net
   let clockShare = 0;
   let solo = 0; // a party of one returns its own net exactly, as partyConsumableSeconds does
+  let credit = 0;
+  let floored = false;
   for (const hrid of roster) {
     const own = consumableSecondsUsed(consumablesUsed?.[hrid], costs).seconds;
-    solo = Math.max(lowest, own - (Number(creditByPlayer?.[hrid]) || 0));
+    const mine = Number(creditByPlayer?.[hrid]) || 0;
+    credit += mine;
+    if (own - mine < lowest) floored = true;
+    solo = Math.max(lowest, own - mine);
     clockShare += 1 / (1 + solo / span / 3600);
   }
   const mean = roster.length ? clockShare / roster.length : 1;
-  return { seconds: roster.length === 1 ? solo : 3600 * (1 / mean - 1) * span };
+  return {
+    seconds: roster.length === 1 ? solo : 3600 * (1 / mean - 1) * span,
+    credit: roster.length ? credit / roster.length : 0,
+    floored,
+  };
 }
 
 /**

@@ -445,11 +445,17 @@ effective = E / max(MIN_CLOCK_DIVISOR, 1 + net_i / 3600)    (per player, then th
 
 A surplus puts the effective rate ABOVE the raw one, which is intended;
 `MIN_CLOCK_DIVISOR` (0.1, `shared/consumableCost.js`, reason beside it) keeps it
-finite. The optimisers take the table as `dropCreditCosts`, use it only beside
-`consumableCosts`, and add `dropCreditSecondsPerHour` and
-`netConsumableSecondsPerHour` to the metrics only when it was sent. An infinite
-pool — the bear zone's sugar and low gummies — should be zeroed; the Costs page
-has a one-click preset, and a 0 override removes any item's credit.
+finite, and every breakdown says "capped: effective ≤ 10× raw" when it binds.
+The optimisers take the table as `dropCreditCosts` and credit it where the zone
+results do: beside a known bill — `consumableCosts`, or a party that slots
+nothing to eat — and never in a labyrinth; it then counts as costed
+(`consumableCostsKnown`, the effective objective). They add
+`dropCreditSecondsPerHour` (each member's own credit, the plain mean over the
+roster — so in a party consumed − credit is near the net, not exactly it),
+`netConsumableSecondsPerHour`, and `dropCreditFloored: true` when a member hit
+the floor, only when it was sent. An infinite pool — the bear zone's sugar and
+low gummies — should be zeroed; the Costs page has a one-click preset (which
+also makes eating those items free), and a 0 override removes any item's credit.
 
 ### What it found
 

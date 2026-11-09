@@ -19,6 +19,7 @@ import { prepareEquipmentRun } from '../routes/optimizeEquipment.js';
 import { sanitiseFidelity } from '../lib/optimizerRoute.js';
 
 const { pickSubjectSlot, loadoutCandidates, progressColumns, applySwapChanges, headlineRow } = await import('../../ui/src/utils/candidateOptimizer.js');
+const { verdictOf } = await import('../../ui/src/utils/equipmentOptimizer.js');
 const { resolvePlayer } = await import('../../ui/src/utils/characterStore.js');
 const { toPlayerDTO } = await import('../../ui/src/utils/playerDTO.js');
 
@@ -40,6 +41,19 @@ test('headlineRow: "Best" needs a significant GAIN; a delta of exactly 0, or a n
   assert.equal(headlineRow([sig('zero', { delta: 0 }), sig('none', { delta: null }), sig('up', { delta: 0.5 })])?.id, 'up');
   assert.equal(headlineRow([sig('flat', { perLevel: 0 }), sig('level', { perLevel: 0.01 })])?.id, 'level');
   assert.equal(headlineRow([sig('zero', { delta: 0 }), { id: 'noise', significantFamilywise: false, delta: 3 }]), undefined);
+});
+
+test('verdictOf: a gain is > 0; a zero or missing change is no clear change, never a gain or a loss', () => {
+  const sig = { significant: true, significantFamilywise: true };
+  for (const row of [{ ...sig, delta: 0 }, { ...sig, delta: null }, { ...sig, perLevel: 0 }, { significant: true, delta: 0 }, {}]) {
+    assert.equal(verdictOf(row), 'noise', JSON.stringify(row));
+  }
+  assert.equal(verdictOf({ ...sig, delta: 0.5 }), 'strong-gain');
+  assert.equal(verdictOf({ significant: true, perLevel: 0.01 }), 'gain');
+  assert.equal(verdictOf({ ...sig, perLevel: -0.01, delta: 9 }), 'strong-loss', 'perLevel before delta');
+  assert.equal(verdictOf({ significant: true, delta: -0.5 }), 'loss');
+  assert.equal(verdictOf({ delta: 3 }), 'noise');
+  assert.equal(verdictOf(null), 'unknown');
 });
 
 test('loadoutCandidates: every OTHER saved loadout as a plain DTO', () => {
@@ -157,6 +171,20 @@ test('drop credit rides the pool: rows carry the breakdown only when the table i
   assert.equal('dropCreditSecondsPerHour' in off, false);
   const uncosted = assertRunShape(await frames(`${base}/optimize-loadout`, { ...body, consumableCosts: undefined, dropCreditCosts })).baseline.metrics;
   assert.equal('dropCreditSecondsPerHour' in uncosted, false);
+});
+
+test('drop credit makes a run costed where the bill is known — nothing slotted — but not beside an unpriced plate', async (t) => {
+  const base = await serve(t);
+  const preview = async (player, extra) => (await post(`${base}/optimize-loadout/preview`,
+    { ...BASE_BODY, players: [player], subjectIndex: 0, candidates: [{ name: 'same', player }], ...extra })).json();
+  const credit = { dropCreditCosts: { '/items/sugar': 1 } };
+  const alone = await preview(bare, credit); // eats nothing: a bill of zero
+  assert.equal(alone.consumableCostsKnown, true);
+  assert.equal(alone.objective, 'effectiveEncountersPerHour');
+  const unpriced = await preview(melee, credit); // food and coffee slotted, none priced: the bill is unknown
+  assert.equal(unpriced.consumableCostsKnown, false);
+  assert.equal(unpriced.objective, 'encountersPerHour');
+  assert.equal((await preview(bare, {})).consumableCostsKnown, false);
 });
 
 test('Abilities route end to end: one swap and one cast order, default triggers, deterministic', async (t) => {

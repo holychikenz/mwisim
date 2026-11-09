@@ -18,6 +18,7 @@ import {
   MIN_PROTECT_AT,
   formatPct,
   formatSignedPct,
+  verdictOf,
 } from '../utils/equipmentOptimizer';
 import { formatSeconds } from '../utils/triggerOptimizer';
 import { useEnhancementCosts } from '../hooks/useEnhancementCosts';
@@ -572,7 +573,7 @@ export function EquipmentOptimizerResults({
 
   const costed = !!results.consumableCostsKnown;
   // The headline names the first family-wise significant GAIN (as scan.js), not merely the top row.
-  const leader = rows.find((row) => row.significantFamilywise && row.perLevel > 0) ?? rows[0];
+  const leader = rows.find((row) => verdictOf(row) === 'strong-gain') ?? rows[0];
 
   return (
     <Stack gap="md">
@@ -745,7 +746,7 @@ export function EquipmentOptimizerResults({
                   </NumTd>
                   <NumTd
                     strong={row.significant}
-                    c={row.significant ? (row.perLevel >= 0 ? 'teal' : 'red') : undefined}
+                    c={row.significant && row.perLevel ? (row.perLevel > 0 ? 'teal' : 'red') : undefined}
                   >
                     {formatPerLevel(row)}
                   </NumTd>

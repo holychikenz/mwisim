@@ -330,10 +330,11 @@ export function scoreSimResult(simResult, { consumableCosts = null, dropCreditCo
   // bill, on the per-player clock (shared/consumableCost.js partyNetConsumableSeconds).
   // The net can go negative, so it has its own floored divisor; consumableSecondsPerHour
   // stays the bill, and without the table nothing below changes.
-  const netSecondsPerHour = dropCreditCosts
-    ? perHour(partyNetConsumableSeconds(simResult?.consumablesUsed, consumableCosts,
-      dropCreditSeconds(simResult, combatMonsterDetailMap, dropCreditCosts, playerHrids), { players: playerHrids, hours }).seconds)
+  const net = dropCreditCosts
+    ? partyNetConsumableSeconds(simResult?.consumablesUsed, consumableCosts,
+      dropCreditSeconds(simResult, combatMonsterDetailMap, dropCreditCosts, playerHrids), { players: playerHrids, hours })
     : null;
+  const netSecondsPerHour = net ? perHour(net.seconds) : null;
   const onClock = (rate) => (netSecondsPerHour == null
     ? effectiveRatePerHour(rate, consumableSecondsPerHour)
     : effectiveNetRatePerHour(rate, netSecondsPerHour));
@@ -371,15 +372,18 @@ export function scoreSimResult(simResult, { consumableCosts = null, dropCreditCo
     consumablesPerHour: perHour(consumablesTotal),
     consumablesByItemPerHour,
     consumableSecondsPerHour,
-    // Only with drop credit on: consumed − credit = net, both in the party figure's terms.
-    ...(netSecondsPerHour != null && {
-      dropCreditSecondsPerHour: consumableSecondsPerHour - netSecondsPerHour,
+    // Only with drop credit on: the credit itself (the members' own, plain mean
+    // over the roster — partyNetConsumableSeconds), the net on the per-player
+    // clock, and dropCreditFloored only when some member's net hit the floor.
+    ...(net && {
+      dropCreditSecondsPerHour: perHour(net.credit),
       netConsumableSecondsPerHour: netSecondsPerHour,
+      ...(net.floored && { dropCreditFloored: true }),
     }),
     // Fraction of a player's real time that goes on producing consumables rather
     // than fighting. The headline number for an ironcow player.
     consumableTimeShare: consumableTimeShare(consumableSecondsPerHour),
-    consumableCostsKnown: !!consumableCosts,
+    consumableCostsKnown: !!(consumableCosts || dropCreditCosts),
     outOfManaSecondsPerHour: perHour(outOfManaSeconds),
     ranOutOfMana: anyOutOfMana,
   };

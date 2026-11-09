@@ -131,7 +131,7 @@ function prepare(body) {
   // never read.
   const { params, rejected } = collectSearchParams(simPlayers, selection, bounds, { labyrinth });
   const consumableCosts = labyrinth ? null : sanitiseConsumableCosts(body.consumableCosts);
-  const dropCreditCosts = sanitiseDropCreditCosts(body, consumableCosts);
+  const dropCreditCosts = sanitiseDropCreditCosts(body, { labyrinth, consumableCosts, simPlayers });
 
   // Default to the time-denominated objective whenever we can actually price the
   // food, because raw throughput cannot see the bill and will happily recommend
@@ -139,7 +139,7 @@ function prepare(body) {
   // nothing to eat and nothing to price, so the objective is the completion
   // chance instead — see score.js defaultObjective.
   const objective =
-    body.objective || defaultObjective({ consumableCostsKnown: !!consumableCosts, labyrinth, dungeon });
+    body.objective || defaultObjective({ consumableCostsKnown: !!(consumableCosts || dropCreditCosts), labyrinth, dungeon });
 
   return {
     target,
@@ -166,7 +166,7 @@ router.post('/optimize-triggers/preview', (req, res) => {
     if (invalid) return res.status(400).json({ success: false, error: invalid });
 
     const stages = sanitiseStages(req.body.stages, { stableMode: !!req.body.stableMode });
-    const { target, bounds, triggers, selection, params, rejected, consumableCosts, objective } =
+    const { target, bounds, triggers, selection, params, rejected, consumableCosts, dropCreditCosts, objective } =
       prepare(req.body);
 
     return res.json({
@@ -179,7 +179,7 @@ router.post('/optimize-triggers/preview', (req, res) => {
       // Lets the UI say plainly whether the food bill is being counted, and warn
       // when it is not — that is the difference between a trustworthy consumable
       // recommendation and one biased toward eating constantly.
-      consumableCostsKnown: !!consumableCosts,
+      consumableCostsKnown: !!(consumableCosts || dropCreditCosts),
       pricedConsumables: consumableCosts ? Object.keys(consumableCosts) : [],
       bounds,
       triggers,
@@ -230,7 +230,7 @@ router.post('/optimize-triggers', async (req, res) => {
       objective: prepared.objective,
       target: prepared.target,
       reportedMetrics: reportedMetricsFor(prepared.target),
-      consumableCostsKnown: !!prepared.consumableCosts,
+      consumableCostsKnown: !!(prepared.consumableCosts || prepared.dropCreditCosts),
       params: prepared.params,
       rejected: prepared.rejected,
       workload: estimateWorkload(prepared.params, stages),
@@ -268,7 +268,7 @@ router.post('/optimize-triggers', async (req, res) => {
         ...result,
         target: prepared.target,
         reportedMetrics: reportedMetricsFor(prepared.target),
-        consumableCostsKnown: !!prepared.consumableCosts,
+        consumableCostsKnown: !!(prepared.consumableCosts || prepared.dropCreditCosts),
         pricedConsumables: prepared.consumableCosts ? Object.keys(prepared.consumableCosts) : [],
       },
     });
