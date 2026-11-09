@@ -7,8 +7,9 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
-  COORDINATES, abilityContext, bestCandidate, candidatesAt, coordinateSummary, descendAbilities, estimateDescent,
+  COORDINATES, abilityContext, bestCandidate, candidatesAt, coordinateSummary, estimateDescent, labelOf,
 } from '../lib/abilitySearch.js';
+import { descend } from '../lib/descent.js';
 import { rankCandidates } from '../lib/equipmentScan/scan.js';
 import { prepareAbilityRun, runAbilitySearch } from '../routes/optimizeAbilities.js';
 
@@ -111,7 +112,8 @@ test('descent climbs to the best combination and stops on a pass that changes no
     sims += result.simulationsRun;
     return result;
   };
-  const { abilities, steps } = await descendAbilities({ ctx, coordinates: COORDINATES, passes: 3, rank });
+  const { state: abilities, steps } = await descend({ start: ctx.abilities, coordinates: COORDINATES, passes: 3, rank,
+    candidatesAt: (a, key) => candidatesAt(a, key, ctx), labelOf, stateOf: (row) => row.abilities });
   assert.deepEqual(abilities.map((a) => a?.hrid ?? null),
     [A('fierce_aura'), A('precision'), A('cleave'), A('maim'), A('poke')]);
   assert.equal(steps.at(-1).taken, false);

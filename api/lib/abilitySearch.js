@@ -1,8 +1,9 @@
 // =============================================================================
 // abilitySearch — the ability changes the Abilities tool tries for ONE player:
 // another owned ability in one slot, or another cast order of slots 1-4, and a
-// coordinate descent that chains them. Pure apart from the game data; the
-// statistics are rankCandidates' (equipmentScan/scan.js).
+// coordinate descent's answer (bestCandidate); the search itself is descent.js's.
+// Pure apart from the game data; the statistics are rankCandidates'
+// (equipmentScan/scan.js).
 //
 // The rules are the game's and the engine's:
 //   * slot i (DTO index; 0 is the special) unlocks at BASE intelligence >=
@@ -16,6 +17,8 @@
 //     loadout remembers for it (triggerMemory), else the game's defaults. Kept
 //     abilities keep theirs; a re-order moves them with the ability.
 // =============================================================================
+import { descentWorkload } from './descent.js';
+
 const { abilityDetailMap, abilitySlotsLevelRequirementList } =
   await import('../../src/combatsimulator/dataProvider.js');
 
@@ -24,7 +27,7 @@ export const COORDINATES = ['s0', 's1', 's2', 's3', 's4', 'order'];
 const SLOT_LABELS = ['Aura', 'Ability 1', 'Ability 2', 'Ability 3', 'Ability 4']; // as PlayerConfig names them
 const FACTORIAL = [1, 1, 2, 6, 24];
 const slotOf = (coordinate) => Number(coordinate.slice(1));
-const labelOf = (coordinate) => (coordinate === 'order' ? 'Cast order' : SLOT_LABELS[slotOf(coordinate)]);
+export const labelOf = (coordinate) => (coordinate === 'order' ? 'Cast order' : SLOT_LABELS[slotOf(coordinate)]);
 const nameOf = (hrid) => (hrid ? abilityDetailMap[hrid]?.name ?? hrid : 'empty');
 const isSpecial = (hrid) => !!abilityDetailMap[hrid]?.isSpecialAbility;
 
@@ -111,35 +114,7 @@ export function estimateDescent(ctx, coordinates, passes, { hours, replicates })
     const count = candidatesAt(ctx.abilities, key, ctx).length;
     return count ? sims + count + 1 : sims;
   }, 0);
-  const perReplicate = perPass * passes + 2;
-  const total = perReplicate * replicates;
-  return { candidates: perPass, replicates, perReplicate, total, simulatedHours: total * hours };
-}
-
-/**
- * Coordinate descent: each pass visits every coordinate, ranks what it offers
- * against the current best, and moves only on a family-wise significant gain;
- * a descent that followed noise would wander. Stops after a pass that moves
- * nothing, or after `passes`. `rank(abilities, candidates, label)` is
- * rankCandidates against `abilities`.
- */
-export async function descendAbilities({ ctx, coordinates, passes, rank }) {
-  let abilities = ctx.abilities;
-  const steps = [];
-  for (let pass = 1; pass <= passes; pass += 1) {
-    let moved = false;
-    for (const coordinate of coordinates) {
-      const candidates = candidatesAt(abilities, coordinate, ctx);
-      if (!candidates.length) continue;
-      const label = labelOf(coordinate);
-      const [best] = (await rank(abilities, candidates, `pass ${pass} · ${label}`)).rows;
-      const taken = best.significantFamilywise && best.delta > 0;
-      steps.push({ pass, coordinate, label, tried: candidates.length, best: best.label, deltaPct: best.deltaPct, taken });
-      if (taken) { abilities = best.abilities; moved = true; }
-    }
-    if (!moved) break;
-  }
-  return { abilities, steps };
+  return descentWorkload(perPass, passes, { hours, replicates });
 }
 
 /** Same ability with the same triggers. A descent can end on the starting abilities with other triggers (one swapped out
