@@ -53,13 +53,13 @@ export function useSpeech({ pref, onText, onFinal, onError, onStatus }) {
   };
 
   const transcribe = async (blob) => {
+    let ctx;
     try {
       const AC = globalThis.AudioContext || globalThis.webkitAudioContext;
-      const ctx = new AC({ sampleRate: 16000 });
+      ctx = new AC({ sampleRate: 16000 });
       const buf = await ctx.decodeAudioData(await blob.arrayBuffer());
       // Copied before transfer, so no AudioBuffer storage is detached.
       const pcm = buf.getChannelData(0).slice();
-      ctx.close();
       cbs.current.onStatus('Transcribing…');
       worker.current ??= new Worker(new URL('./asr.worker.js', import.meta.url), { type: 'module' });
       worker.current.onmessage = ({ data }) => {
@@ -77,6 +77,8 @@ export function useSpeech({ pref, onText, onFinal, onError, onStatus }) {
       worker.current.postMessage(pcm, [pcm.buffer]);
     } catch (e) {
       cbs.current.onError(`Could not read the recording: ${e?.message || e}`);
+    } finally {
+      ctx?.close();   // also when decoding fails; each failed recording would leak an audio context
     }
   };
 

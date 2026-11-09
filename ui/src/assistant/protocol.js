@@ -20,14 +20,17 @@ const SYSTEM = `You are Roboburble, the assistant in the Milky Way Idle combat s
 - player is a party slot 1-5 (in Trial: a roster row) or a character name; leave it out for the open one.
 - Use item, zone and ability names as get_state shows them. Never invent names.
 - Changes apply at once and the user can undo them; do not ask for confirmation.
-- Call run_simulation only when the user asks to run or sim.`;
+- Call run_simulation only when the user asks to run or sim.
+- A user message may end with a "Now:" line: the view and open player when it was sent.`;
 
-/** @param {{tools: {name, description, parameters}[], now: string, protocol: 'prompt'|'native'}} o */
-export function buildSystemPrompt({ tools, now, protocol }) {
-  const head = `${SYSTEM}\nNow: ${now}`;
-  if (protocol !== 'prompt') return head;
+/**
+ * The same text on every request.
+ * @param {{tools: {name, description, parameters}[], protocol: 'prompt'|'native'}} o
+ */
+export function buildSystemPrompt({ tools, protocol }) {
+  if (protocol !== 'prompt') return SYSTEM;
   const lines = tools.map(t => JSON.stringify({ type: 'function', function: { name: t.name, description: t.description, parameters: t.parameters } }));
-  return `${head}
+  return `${SYSTEM}
 
 # Tools
 
@@ -116,7 +119,7 @@ export function toLocalMessages(system, transcript) {
     else out.push({ role, content });
   };
   for (const e of transcript) {
-    if (e.role === 'user') push('user', e.text);
+    if (e.role === 'user') push('user', e.now ? `${e.text}\n\nNow: ${e.now}` : e.text);
     else if (e.role === 'assistant') push('assistant', typeof e.raw === 'string' ? e.raw : e.text || '');
     else if (e.role === 'tool') push('user', toolResponses(e.results));
   }

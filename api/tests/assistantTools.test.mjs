@@ -171,6 +171,9 @@ test('8: set_equipment rejections and unequip', () => {
   const s = makeState();
   assert.match(run(s, 'set_equipment', { item: 'Griffin Tunic', slot: 'head' }).content, /body gear, not head/);
   assert.match(run(s, 'set_equipment', { item: 'Rainbow Brush' }).content, /not combat gear/);
+  const amb = run(s, 'set_equipment', { item: 'azure' }).content;
+  assert.match(amb, /Several items match 'azure': Azure Boots/);
+  assert.doesNotMatch(amb, /Alembic|Brush/, 'only combat gear is offered');
   assert.match(run(s, 'set_equipment', { item: 'Griffin Tunik' }).content, /Close: /);
   assert.ok(run(s, 'set_equipment', { item: null }).isError);
   const n = commit(s, run(s, 'set_equipment', { slot: 'head', item: null }));

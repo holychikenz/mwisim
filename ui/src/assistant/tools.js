@@ -107,10 +107,14 @@ export const REGISTRY = {
         equipment[slotKey(slot)] = null;
         return { next: edited(state, t, { ...t.flat, equipment }), summary: `${t.label} loadout: ${slot} unequipped.` };
       }
-      const found = resolveName(catalog(gameData).equipment, item, 'item');
-      if (found.error) return found;
+      const c = catalog(gameData);
+      const found = resolveName(c.gear, item, 'item');
+      if (found.error) {
+        // Only gear is offered; a name that resolves only among all equipment is a tool or trinket.
+        const other = resolveName(c.equipment, item, 'item').item;
+        return other ? { error: `${other.name} is not combat gear (${other.slot.replace(/_/g, ' ')}).` } : found;
+      }
       const it = found.item;
-      if (!SLOTS.includes(it.slot)) return { error: `${it.name} is not combat gear (${it.slot.replace(/_/g, ' ')}).` };
       if (slot && slot !== it.slot) return { error: `${it.name} is ${it.slot} gear, not ${slot}.` };
       const key = slotKey(it.slot);
       const keep = equipment[key]?.enhancementLevel || 0;

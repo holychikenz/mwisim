@@ -42,7 +42,7 @@ test('1: Anthropic request — URL, headers, no sampling params, input_schema', 
   assert.equal(init.headers['x-api-key'], KEY);
   const body = JSON.parse(init.body);
   for (const k of ['temperature', 'top_p', 'top_k']) assert.ok(!(k in body), k);
-  assert.equal(body.max_tokens, 4096);
+  assert.equal(body.max_tokens, 16000);
   assert.equal(body.system, 'S');
   assert.deepEqual(body.tools[0], { name: 'get_state', description: 'Read.', input_schema: tools[0].parameters });
 });
@@ -118,4 +118,64 @@ test('8: chatOpenAI — key only in Authorization; errors redacted', async () =>
   const bad = mockFetch(429, { error: { message: `quota for ${KEY}` } });
   await assert.rejects(P.chatOpenAI({ fetch: bad.fetch, key: KEY, model: 'm', system: 'S', transcript: [], tools }),
     (e) => /^OpenAI 429: /.test(e.message) && !e.message.includes(KEY));
+});
+
+test('9: an empty Claude reply is left out', () => {
+  const transcript = [{ role: 'user', text: 'hi' }, { role: 'assistant', text: '', raw: [], calls: [] }, { role: 'user', text: 'again' }];
+  const body = JSON.parse(P.anthropicRequest({ key: KEY, model: 'm', system: 'S', transcript, tools }).init.body);
+  assert.deepEqual(body.messages, [{ role: 'user', content: [{ type: 'text', text: 'hi' }, { type: 'text', text: 'again' }] }]);
+});
+
+test('10: the state line is its own block on the user turn, never after tool results', () => {
+  const transcript = [{ role: 'user', text: 'hi', now: 'Zone · Simulate' }, transcriptA[1],
+    { role: 'tool', results: [{ id: 'tu1', name: 'get_state', content: 'ok' }] }];
+  const body = JSON.parse(P.anthropicRequest({ key: KEY, model: 'm', system: 'S', transcript, tools }).init.body);
+  assert.equal(body.system, 'S');
+  assert.deepEqual(body.messages[0].content, [{ type: 'text', text: 'hi' }, { type: 'text', text: 'Now: Zone · Simulate' }]);
+  assert.deepEqual(body.messages[2].content, [{ type: 'tool_result', tool_use_id: 'tu1', content: 'ok' }]);
+  const o = JSON.parse(P.openaiRequest({ key: KEY, model: 'm', system: 'S', transcript, tools }).init.body);
+  assert.equal(o.messages[1].content, 'hi\n\nNow: Zone · Simulate');
+});
+
+test('11: fitCloudHistory keeps thinking within budget and strips it once rounds are dropped', () => {
+  const round = (q, big = 0) => [
+    { role: 'user', text: q + 'x'.repeat(big) },
+    { role: 'assistant', text: 'Raising.', raw: anthropicRaw, calls: [{ id: 'tu1', name: 'get_state', args: {} }] },
+    { role: 'tool', results: [{ id: 'tu1', name: 'get_state', content: 'ok' }] },
+    { role: 'assistant', text: '', raw: [{ type: 'redacted_thinking', data: 'x' }], calls: [] },
+  ];
+  const small = P.fitCloudHistory(round('a'));
+  assert.equal(small[1].raw, anthropicRaw);
+  const kept = P.fitCloudHistory([...round('a', 80000), ...round('b')]);
+  assert.equal(kept[0].text, 'b');
+  for (const e of kept) if (Array.isArray(e.raw)) assert.ok(e.raw.every(b => b.type !== 'thinking' && b.type !== 'redacted_thinking'));
+  assert.deepEqual(kept[1].raw.map(b => b.type), ['text', 'tool_use']);
+  const body = JSON.parse(P.anthropicRequest({ key: KEY, model: 'm', system: 'S', transcript: kept, tools }).init.body);
+  assert.equal(body.messages.length, 3);
+  const o = [{ role: 'user', text: 'x'.repeat(80000) }, { role: 'user', text: 'b' }, { role: 'assistant', text: '', raw: openaiRaw, calls: [] }];
+  assert.equal(P.fitCloudHistory(o)[1].raw, openaiRaw);
+});
+
+test('12: a worker error rejects pending and later calls and reports the death once', { timeout: 2000 }, async () => {
+  const { createLocalClient } = await import('../../ui/src/assistant/localLlm.js');
+  const workers = [];
+  const posted = [];
+  globalThis.Worker = class {
+    constructor() { workers.push(this); }
+    postMessage(m) { posted.push(m); }
+    terminate() { this.terminated = true; }
+  };
+  try {
+    const deaths = [];
+    const c = createLocalClient(e => deaths.push(e.message));
+    const pending = c.cached('m');
+    workers[0].onerror({ message: 'boom' });
+    await assert.rejects(pending, /boom/);
+    await assert.rejects(c.load('m'), /boom/);
+    assert.equal(workers[0].terminated, true);
+    assert.deepEqual(deaths, ['boom']);
+    assert.equal(posted.length, 1);
+  } finally {
+    delete globalThis.Worker;
+  }
 });

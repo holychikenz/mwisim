@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createLocalClient } from './localLlm';
 import { recommendModel, MODEL_TIERS } from './models';
 import { BUDGET, buildSystemPrompt, fitHistory, parseToolCalls, toLocalMessages } from './protocol';
-import { chatAnthropic, chatOpenAI } from './providers';
+import { CUT, chatAnthropic, chatOpenAI, fitCloudHistory } from './providers';
 import { readKey, saveKey } from './settings';
 
 async function detectGpu() {
@@ -30,7 +30,11 @@ export function useLlm(settings) {
   }, []);
   useEffect(() => () => client.current?.terminate(), []);
 
-  const getClient = useCallback(() => (client.current ??= createLocalClient()), []);
+  // A worker that errors is dropped (localLlm terminates it); the next call starts a fresh one.
+  const getClient = useCallback(() => (client.current ??= createLocalClient((e) => {
+    client.current = null;
+    setLocal({ ...IDLE, error: e.message });
+  })), []);
   const rec = useMemo(() => (gpu ? recommendModel(gpu) : null), [gpu]);
   // A remembered model from the other quant (another device) maps to this device's id.
   const localModel = useMemo(() => {
@@ -73,18 +77,19 @@ export function useLlm(settings) {
   const { provider } = settings;
   const model = provider === 'anthropic' ? settings.anthropicModel : settings.openaiModel;
   const key = keys[provider];
-  const ready = provider === 'local' ? !!local.loaded : !!key;
+  // Only the selected model answers: picking another one waits for its Load.
+  const ready = provider === 'local' ? !!local.loaded && local.loaded === localModel : !!key;
 
-  const chat = useCallback(async ({ transcript, tools, now, signal }) => {
+  const chat = useCallback(async ({ transcript, tools, signal }) => {
     if (provider === 'local') {
       const c = client.current;
-      const messages = toLocalMessages(buildSystemPrompt({ tools, now, protocol: 'prompt' }), fitHistory(transcript, BUDGET.localHistory));
+      const messages = toLocalMessages(buildSystemPrompt({ tools, protocol: 'prompt' }), fitHistory(transcript, BUDGET.localHistory));
       const onAbort = () => c.interrupt();
       signal?.addEventListener('abort', onAbort);
       try {
         const { text, finish } = await c.chat(messages, { max_tokens: BUDGET.generation, temperature: 0.2 });
         const p = parseToolCalls(text, tools.map(t => t.name));
-        return { text: p.text + (finish === 'length' ? ' …(cut off)' : ''), calls: p.calls, parseErrors: p.errors, raw: text };
+        return { text: p.text + (finish === 'length' ? CUT : ''), calls: p.calls, parseErrors: p.errors, raw: text };
       } catch (e) {
         if (/ContextWindowSizeExceeded/.test(e.message)) throw new Error('The conversation is too long for this model. Clear chat and try again.');
         throw e;
@@ -95,8 +100,8 @@ export function useLlm(settings) {
     const send = provider === 'anthropic' ? chatAnthropic : chatOpenAI;
     return send({
       fetch: fetch.bind(globalThis), key, model,
-      system: buildSystemPrompt({ tools, now, protocol: 'native' }),
-      transcript: fitHistory(transcript, BUDGET.cloudHistory), tools, signal,
+      system: buildSystemPrompt({ tools, protocol: 'native' }),
+      transcript: fitCloudHistory(transcript), tools, signal,
     });
   }, [provider, key, model]);
 

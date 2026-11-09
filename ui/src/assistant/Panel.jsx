@@ -71,7 +71,7 @@ export function Panel({ opened, onClose, bridge, avatarUrl }) {
   };
   const onSettings = (patch) => {
     // Transcripts carry provider-specific raw turns, so a new provider or local model starts afresh.
-    if ((patch.provider && patch.provider !== settings.provider) || ('localModel' in patch && patch.localModel !== settings.localModel)) clearChat();
+    if ((patch.provider && patch.provider !== settings.provider) || ('localModel' in patch && patch.localModel !== llm.localModel)) clearChat();
     setSettings(s => ({ ...s, ...patch }));
   };
 
@@ -97,12 +97,17 @@ export function Panel({ opened, onClose, bridge, avatarUrl }) {
       setStatus(out.isError ? `${call.name} failed` : chipStatus === 'applied' ? `Applied ${call.name}` : chipStatus === 'started' ? 'Run started' : 'Thinking…');
       return { id: call.id, name: call.name, isError: !!out.isError, content: out.content };
     };
-    const r = await runAgent({
-      llm, execute, tools: specs, signal: ac.signal,
-      transcript: [...transcript, { role: 'user', text }],
-      now: () => describeNow(bridge.getState()),
-      onEvent: (e) => { if (e.type === 'text') patchMessage(aid, m => ({ ...m, text: e.text })); },
-    });
+    let r;
+    try {
+      r = await runAgent({
+        llm, execute, tools: specs, signal: ac.signal,
+        transcript: [...transcript, { role: 'user', text }],
+        now: () => describeNow(bridge.getState()),
+        onEvent: (e) => { if (e.type === 'text') patchMessage(aid, m => ({ ...m, text: e.text })); },
+      });
+    } catch (error) {
+      r = { error };   // whatever throws, the panel must not stay busy
+    }
     if (r.stopped) {
       patchMessage(aid, m => ({ ...m, pending: false, text: m.text || 'Stopped.' }));
       setStatus('Stopped');

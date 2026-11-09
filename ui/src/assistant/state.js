@@ -146,7 +146,7 @@ export function describeView(state) {
   return parts.join(' · ');
 }
 
-/** The one line the system prompt carries about the current state. */
+/** The state line a turn's user message carries (runAgent's now). */
 export function describeNow(state) {
   const open = resolveTarget(state);
   return `${describeView(state)} · ${open.error ? 'no open player' : `open ${open.label}`}`;

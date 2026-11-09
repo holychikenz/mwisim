@@ -83,3 +83,39 @@ test('7: an LLM failure returns {error} with nothing executed', async () => {
   assert.equal(r.error.message, 'boom');
   assert.equal(ex.calls.length, 0);
 });
+
+test('8: a tool that throws is reported as a failed call and the turn goes on', async () => {
+  const llm = scripted([{ calls: [call('a', 'run_simulation'), call('b', 'get_state')] }, { text: 'Could not start.' }]);
+  const ex = executor((c) => {
+    if (c.name === 'run_simulation') throw new Error('flushSync boom');
+    return { id: c.id, name: c.name, content: 'ok' };
+  });
+  const r = await runAgent({ llm, execute: ex.execute, transcript: user });
+  assert.equal(r.text, 'Could not start.');
+  assert.deepEqual(r.transcript[2].results.map(x => [x.id, !!x.isError]), [['a', true], ['b', false]]);
+  assert.match(r.transcript[2].results[0].content, /run_simulation failed: flushSync boom/);
+});
+
+test('9: parse errors beside readable calls are reported with the results', async () => {
+  const llm = scripted([{ calls: [call('c0', 'get_state')], parseErrors: ["unknown tool 'launch'"] }, { text: 'ok' }]);
+  const ex = executor();
+  const r = await runAgent({ llm, execute: ex.execute, transcript: user });
+  const results = r.transcript[2].results;
+  assert.deepEqual(results.map(x => x.id), ['c0', 'parse']);
+  assert.equal(results[1].isError, true);
+  assert.match(results[1].content, /launch/);
+});
+
+test('10: the state line is stamped once on the user turn, never passed to the LLM', async () => {
+  const args = [];
+  const replies = [{ text: '', calls: [call('a', 'get_state')], raw: 'r' }, { text: 'Done.', calls: [], raw: 'r' }];
+  const llm = { chat: async (a) => { args.push(a); return replies.shift(); } };
+  let n = 0;
+  const transcript = [{ role: 'user', text: 'hi' }];
+  const r = await runAgent({ llm, execute: executor().execute, transcript, now: () => `S${++n}` });
+  assert.equal(n, 1);
+  assert.equal(r.transcript[0].now, 'S1');
+  assert.equal(transcript[0].now, undefined);
+  assert.equal(args.length, 2);
+  for (const a of args) assert.ok(!('now' in a));
+});

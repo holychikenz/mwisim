@@ -69,17 +69,17 @@ test('9: an unknown tool name is an error, not a call', () => {
 
 test('10: the prompt protocol lists one JSON line per tool and fits the budget', () => {
   const tools = toolSpecs();
-  const s = buildSystemPrompt({ tools, now: 'Zone · Simulate · Smelly Planet T0 · 24 h · open P1 Ada (tank)', protocol: 'prompt' });
+  const s = buildSystemPrompt({ tools, protocol: 'prompt' });
   const block = s.split('<tools>\n')[1].split('\n</tools>')[0].split('\n');
   assert.equal(block.length, tools.length);
   for (const line of block) assert.equal(JSON.parse(line).type, 'function');
   assert.match(s, /<tool_call>\n\{"name": <function-name>, "arguments": <args-json-object>\}\n<\/tool_call>/);
-  assert.match(s, /Now: Zone · Simulate/);
+  assert.doesNotMatch(s, /Now: Zone|undefined/, 'no per-turn state in the system prompt');
   assert.ok(s.length <= 4200, `system prompt is ${s.length} chars`);
 });
 
 test('11: the native protocol has no <tools> block', () => {
-  const s = buildSystemPrompt({ tools: toolSpecs(), now: 'x', protocol: 'native' });
+  const s = buildSystemPrompt({ tools: toolSpecs(), protocol: 'native' });
   assert.ok(!s.includes('<tools>'));
   assert.match(s, /Roboburble/);
 });
@@ -121,4 +121,16 @@ test('13: fitHistory drops whole oldest rounds and keeps the newest', () => {
   const tiny = fitHistory(t, 1);
   assert.deepEqual(tiny, round(3, 300), 'the newest round always survives');
   assert.equal(estimateTokens('abcdef'), 2);
+});
+
+test('14: the state line rides on its user turn, so a later step only appends', () => {
+  const sys = buildSystemPrompt({ tools: toolSpecs(), protocol: 'prompt' });
+  const u = { role: 'user', text: 'raise my gear', now: 'Zone · Simulate · Smelly Planet T0 · 24 h · open P1 Ada (tank)' };
+  const step1 = toLocalMessages(sys, [u]);
+  const step2 = toLocalMessages(sys, [u,
+    { role: 'assistant', text: '', raw: '<tool_call>{"name":"get_state","arguments":{}}</tool_call>', calls: [{}] },
+    { role: 'tool', results: [{ id: 'c0', content: 'ok' }] }]);
+  assert.equal(step1[1].content, `raise my gear\n\nNow: ${u.now}`);
+  assert.deepEqual(step2.slice(0, step1.length), step1);
+  assert.ok(!sys.includes('open P1'));
 });

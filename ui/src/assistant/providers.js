@@ -8,12 +8,17 @@
 // reasoning_effort "none".
 // The key goes only in its header; errors are redacted; nothing is logged.
 // `fetch` is injected and called unbound (the hook passes fetch.bind(globalThis)).
+// Requests only append: the system prompt never changes and the state line rides
+// on the user turn, so Claude's thinking blocks stay valid (fitCloudHistory is the
+// one exception).
 // Pure: no React, no browser globals.
 // =============================================================================
 
+import { BUDGET, fitHistory } from './protocol.js';
+
 export const ANTHROPIC_URL = 'https://api.anthropic.com/v1/messages';
 export const OPENAI_URL = 'https://api.openai.com/v1/chat/completions';
-const CUT = ' …(cut off)';
+export const CUT = ' …(cut off)';
 
 // -- Anthropic ----------------------------------------------------------------
 
@@ -26,9 +31,11 @@ function anthropicMessages(transcript) {
     else out.push({ role, content });
   };
   for (const e of transcript) {
-    if (e.role === 'user') push('user', e.text);
-    // The full content array, thinking and tool_use blocks included, untouched.
-    else if (e.role === 'assistant') push('assistant', e.raw ?? e.text ?? '');
+    // The turn's state line is its own block, apart from the user's words (and never after tool results).
+    if (e.role === 'user') push('user', e.now ? [{ type: 'text', text: e.text }, { type: 'text', text: `Now: ${e.now}` }] : e.text);
+    // The full content array, thinking and tool_use blocks included, untouched. An empty reply is left
+    // out: the API rejects empty assistant content, and sending one back only invites another.
+    else if (e.role === 'assistant') { const c = e.raw ?? e.text; if (c?.length) push('assistant', c); }
     else if (e.role === 'tool') {
       push('user', e.results.map(r => ({
         type: 'tool_result', tool_use_id: r.id, content: r.content, ...(r.isError ? { is_error: true } : {}),
@@ -51,7 +58,7 @@ export function anthropicRequest({ key, model, system, transcript, tools }) {
       },
       body: JSON.stringify({
         model,
-        max_tokens: 4096,
+        max_tokens: 16000, // thinking counts toward it (Claude Haiku 5.5 thinks by default)
         system,
         tools: tools.map(t => ({ name: t.name, description: t.description, input_schema: t.parameters })),
         messages: anthropicMessages(transcript),
@@ -74,7 +81,7 @@ export function parseAnthropic(json) {
 function openaiMessages(system, transcript) {
   const out = [{ role: 'system', content: system }];
   for (const e of transcript) {
-    if (e.role === 'user') out.push({ role: 'user', content: e.text });
+    if (e.role === 'user') out.push({ role: 'user', content: e.now ? `${e.text}\n\nNow: ${e.now}` : e.text });
     // The message as returned, tool_calls included.
     else if (e.role === 'assistant') out.push(e.raw ?? { role: 'assistant', content: e.text || '' });
     else if (e.role === 'tool') {
@@ -117,6 +124,21 @@ export function parseOpenAI(json) {
   let text = message.content || '';
   if (choice.finish_reason === 'length') text += CUT;
   return { text, calls, raw: message };
+}
+
+// -- history ------------------------------------------------------------------
+
+/**
+ * The cloud history: the newest whole rounds within budget. Claude binds each thinking block to
+ * everything sent before it, so once older rounds are dropped no thinking block is replayed
+ * (dropping all of them is allowed; changing the history before them is not).
+ */
+export function fitCloudHistory(transcript) {
+  const kept = fitHistory(transcript, BUDGET.cloudHistory);
+  if (kept.length === transcript.length) return kept;
+  // shortcut: past the budget every request replays no thinking (Claude re-plans each step); move to server-side compaction if long chats get slow or costly.
+  return kept.map(e => (Array.isArray(e.raw)
+    ? { ...e, raw: e.raw.filter(b => b.type !== 'thinking' && b.type !== 'redacted_thinking') } : e));
 }
 
 // -- the call -----------------------------------------------------------------
