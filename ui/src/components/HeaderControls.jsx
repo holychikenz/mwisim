@@ -215,7 +215,7 @@ export function HeaderControls({
     // One pick can move both halves of the state; React batches the two sets.
     const go = (target, tool) => {
       const next = fromRoute(target, tool, optTarget);
-      onOptTargetChange(next.optTarget);
+      onOptTargetChange?.(next.optTarget);
       onSimModeChange(next.simMode);
     };
     // Costs is a view, not a target: pressed again, it returns to exactly the
@@ -239,12 +239,12 @@ export function HeaderControls({
             aria-label="Target"
           />
           <Group gap="xs" wrap="nowrap" ml="auto">
-            <Tooltip label="Item costs" withArrow>
+            <Tooltip label={route.costs ? 'Close item costs' : 'Item costs'} withArrow>
               <ActionIcon
                 variant={route.costs ? 'filled' : 'default'}
                 size="lg"
                 onClick={toggleCosts}
-                aria-label="Item costs"
+                aria-label={route.costs ? 'Close item costs' : 'Item costs'}
                 aria-pressed={route.costs}
               >
                 {/* No icon package in this UI — the glyph is the icon. */}
@@ -258,16 +258,17 @@ export function HeaderControls({
           </Group>
         </Group>
         {/* What to do there. A tool that cannot fight the target is disabled; in
-            Costs nothing is selected and every tab is off. The transparent tab
-            line leaves the header's own border as the baseline. */}
+            Costs nothing is selected and every tab is off. The header's own
+            border is the baseline (index.css hides the list's). */}
         <Tabs
+          className="header-tabs"
           value={route.tool}
           onChange={(tool) => go(route.target, tool)}
-          styles={{ root: { '--tab-border-color': 'transparent' }, list: { flexWrap: 'nowrap', overflowX: 'auto' } }}
+          styles={{ list: { flexWrap: 'nowrap', overflowX: 'auto' } }}
         >
           <Tabs.List px="md">
             <Tabs.Tab value="simulate" disabled={!supports('simulate', route.target)}>Simulate</Tabs.Tab>
-            <Divider orientation="vertical" my="xs" mx={4} />
+            <Divider orientation="vertical" my="xs" mx={4} aria-hidden />
             {TOOLS.map(t => (
               <Tabs.Tab key={t.value} value={t.value} disabled={!supports(t.value, route.target)}>
                 {t.label}
