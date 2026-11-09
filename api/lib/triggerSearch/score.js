@@ -251,6 +251,9 @@ function dungeonMetrics(simResult, perHour, onClock) {
   };
 }
 
+/** The bill is known, so the objective is time-denominated, with either table: every metric, and optimizerRoute's costTables. */
+export const costsKnown = (consumableCosts, dropCreditCosts) => !!(consumableCosts || dropCreditCosts);
+
 /**
  * Reduce a SimResult to the scalars we rank and report on.
  *
@@ -383,7 +386,7 @@ export function scoreSimResult(simResult, { consumableCosts = null, dropCreditCo
     // Fraction of a player's real time that goes on producing consumables rather
     // than fighting. The headline number for an ironcow player.
     consumableTimeShare: consumableTimeShare(consumableSecondsPerHour),
-    consumableCostsKnown: !!(consumableCosts || dropCreditCosts),
+    consumableCostsKnown: costsKnown(consumableCosts, dropCreditCosts),
     outOfManaSecondsPerHour: perHour(outOfManaSeconds),
     ranOutOfMana: anyOutOfMana,
   };

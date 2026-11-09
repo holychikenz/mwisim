@@ -204,6 +204,31 @@ test('sanitiseDropCreditCosts: a candidate loadout that slots food counts as eat
   assert.deepEqual(sanitise({ candidates: [{ name: 'bare', player: none }, null, { player: 'junk' }] }, null), credit);
 });
 
+test('sanitiseDropCreditCosts: only the loadouts a run simulates count, the first 40 that have a player', () => {
+  const credit = { '/items/sugar': 1 };
+  const none = { food: [null, null, null], drinks: [null, null, null] };
+  const eats = { food: [{ hrid: '/items/donut', triggers: [] }, null, null], drinks: [] };
+  const sanitise = (candidates) => sanitiseDropCreditCosts({ dropCreditCosts: credit, candidates }, { consumableCosts: null, simPlayers: [none] });
+  const bare = Array.from({ length: 40 }, (_, i) => ({ name: `b${i}`, player: none }));
+  assert.deepEqual(sanitise([...bare, { name: 'eats', player: eats }]), credit); // the 41st is never simulated
+  assert.equal(sanitise([null, ...bare.slice(1), { name: 'eats', player: eats }]), null); // a junk entry takes no place
+});
+
+test('prepareLoadoutRun: under a costed objective a loadout slotting unpriced food or drink says so, as Swaps does', () => {
+  const base = { target: { kind: 'zone' }, simPlayers: [{ hrid: 'player1' }], subjectIndex: 0, scan: { hours: 1, replicates: 2 },
+    objective: 'effectiveEncountersPerHour', consumableCosts: { '/items/donut': 0 }, consumableCostsKnown: true };
+  const candidates = [
+    { name: 'priced', player: { food: [{ hrid: '/items/donut' }, null, null], drinks: [] } },
+    { name: 'coffee', player: { food: [], drinks: [{ hrid: '/items/coffee' }, null, null] } },
+    { name: 'bare', player: { food: 'junk' } },
+  ];
+  const labels = (extra) => prepareLoadoutRun({ ...base, ...extra }, { candidates }).candidates.map((c) => c.label);
+  assert.deepEqual(labels({}), ['priced', 'coffee · no price', 'bare']);
+  // Raw EPH ignores prices, and with no bill known effective EPH is EPH: nothing to flag.
+  assert.deepEqual(labels({ objective: 'encountersPerHour' }), ['priced', 'coffee', 'bare']);
+  assert.deepEqual(labels({ consumableCosts: null, consumableCostsKnown: false }), ['priced', 'coffee', 'bare']);
+});
+
 test('Abilities route end to end: one swap and one cast order, default triggers, deterministic', async (t) => {
   const base = await serve(t);
   const slot = (hrid) => ({ hrid, level: 10, triggers: abilityData[hrid].defaultCombatTriggers });

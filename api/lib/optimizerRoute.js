@@ -1,9 +1,10 @@
 // =============================================================================
 // optimizerRoute — what routes/optimizeTriggers.js and routes/optimizeEquipment.js
-// share: body validation, the consumable-cost table rule, the pool size, and the SSE run
+// share: body validation, the consumable-cost table rules, the pool size, and the SSE run
 // lifecycle (headers, heartbeat, client-disconnect abort, pool teardown). Plus
 // subjectRoutes, the whole preview + SSE pair for a tool that ranks replacements
-// for one party member (routes/optimizeLoadout.js, routes/optimizeAbilities.js).
+// for one party member (routes/optimizeLoadout.js, routes/optimizeAbilities.js), and
+// what those tools share with the cost rules: the Loadout cap and the unpriced test.
 // =============================================================================
 
 import { Router } from 'express';
@@ -11,7 +12,7 @@ import { isKnownCost } from '../../shared/consumableCost.js';
 import { buildExtraBuffs } from './simulator.js';
 import { markDungeon, normaliseTarget, targetExtraBuffs, targetPlayerDTOs } from './target.js';
 import { createSimulationPool, defaultPoolSize, makePoolEvaluator, MAX_WORKERS } from './triggerSearch/pool.js';
-import { defaultObjective, OBJECTIVE_METRICS, reportedMetricsFor } from './triggerSearch/score.js';
+import { costsKnown, COSTED_OBJECTIVES, defaultObjective, OBJECTIVE_METRICS, reportedMetricsFor } from './triggerSearch/score.js';
 import { DEFAULT_SCAN, DEFAULT_SEED_BASE } from './equipmentScan/scan.js';
 
 /** Heartbeat interval. Comfortably inside a 30s client stall timeout. */
@@ -45,11 +46,29 @@ export function sanitiseConsumableCosts(input) {
   return Object.keys(costs).length ? costs : null;
 }
 
+/** The Loadout tool simulates only the first this many of the whole loadouts it is sent (body.candidates). */
+export const MAX_LOADOUT_CANDIDATES = 40;
+
+/** body.candidates that can run at all (each needs a player), in order; only the first MAX_LOADOUT_CANDIDATES do. */
+export const postedLoadouts = (body) => (Array.isArray(body?.candidates) ? body.candidates : [])
+  .filter((c) => c?.player && typeof c.player === 'object');
+
+/** Whether a player slots any food or drink, or with `test` one whose hrid passes it. */
+export const slotsConsumable = (player, test = () => true) =>
+  [player?.food, player?.drinks].some((list) => Array.isArray(list) && list.some((c) => c?.hrid && test(c.hrid)));
+
+/**
+ * Under a costed objective a consumable with no price counts as free (sanitiseConsumableCosts dropped its -1; a 0
+ * stays), and with drop credit alone nothing has a price: the test Swaps and Loadout flag such items by. Else null.
+ */
+export const unpricedUnder = ({ objective, consumableCosts, consumableCostsKnown }) =>
+  (consumableCostsKnown && COSTED_OBJECTIVES.has(objective) ? (hrid) => !Object.hasOwn(consumableCosts || {}, hrid) : null);
+
 /**
  * The drop-credit table (body.dropCreditCosts: itemHrid → seconds over the
  * consumable class) on the cost table's rules, beside a bill known BEFORE the
  * run: a cost table, or nothing slotted to eat by the party or by any whole
- * loadout the run swaps in (body.candidates, the Loadout tool). Consumables
+ * loadout the run swaps in (the postedLoadouts it simulates, the Loadout tool). Consumables
  * slotted with no price leave the bill unknown, so there it is refused; and
  * never in a labyrinth. The zone results ask the same question of what was
  * EATEN, which only a finished run knows, so they also credit a run whose
@@ -58,8 +77,8 @@ export function sanitiseConsumableCosts(input) {
  */
 export function sanitiseDropCreditCosts(body, { labyrinth, consumableCosts, simPlayers }) {
   if (labyrinth) return null;
-  const parties = [...(simPlayers || []), ...(Array.isArray(body?.candidates) ? body.candidates.map((c) => c?.player) : [])];
-  const eats = parties.some((p) => [p?.food, p?.drinks].some((list) => Array.isArray(list) && list.some((c) => c?.hrid)));
+  const parties = [...(simPlayers || []), ...postedLoadouts(body).slice(0, MAX_LOADOUT_CANDIDATES).map((c) => c.player)];
+  const eats = parties.some((p) => slotsConsumable(p));
   return consumableCosts || !eats ? sanitiseConsumableCosts(body?.dropCreditCosts) : null;
 }
 
@@ -71,7 +90,7 @@ export function costTables(body, { labyrinth, simPlayers }) {
   // Nothing is eaten in a labyrinth, so there is no bill to count.
   const consumableCosts = labyrinth ? null : sanitiseConsumableCosts(body?.consumableCosts);
   const dropCreditCosts = sanitiseDropCreditCosts(body, { labyrinth, consumableCosts, simPlayers });
-  return { consumableCosts, dropCreditCosts, consumableCostsKnown: !!(consumableCosts || dropCreditCosts) };
+  return { consumableCosts, dropCreditCosts, consumableCostsKnown: costsKnown(consumableCosts, dropCreditCosts) };
 }
 
 /**

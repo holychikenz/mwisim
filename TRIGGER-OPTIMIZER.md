@@ -449,7 +449,7 @@ finite, and every breakdown says "capped: effective ≤ 10× raw" when it binds
 (in a party, when it binds a member).
 The optimisers take the table as `dropCreditCosts` and credit it beside a bill
 known before the run — `consumableCosts`, or nothing slotted to eat by the party
-or by any candidate loadout — and never in a labyrinth; it then counts as costed
+or by any candidate loadout it simulates — and never in a labyrinth; it then counts as costed
 (`consumableCostsKnown`, the effective objective). The zone results decide by
 what was eaten instead, so they also credit a run whose unpriced slot never
 fired, which no optimiser can promise of a candidate. They add
