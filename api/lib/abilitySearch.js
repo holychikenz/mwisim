@@ -102,13 +102,17 @@ export function coordinateSummary(ctx) {
 /**
  * An upper bound (for loadouts the game can produce) on what a descent
  * simulates, in estimateWorkload's shape: a slot never offers more than it does
- * now, since moves only fill or swap; a cast order is counted as if every
- * unlocked slot 1-4 were filled; plus the confirmation run.
+ * now, since moves only fill or swap; a cast order is counted over the unlocked
+ * slots 1-4 that are filled or can be (each fill takes an unslotted non-special);
+ * plus the confirmation run.
  */
 export function estimateDescent(ctx, coordinates, passes, { hours, replicates }) {
+  const equipped = new Set(ctx.abilities.filter(Boolean).map((a) => a.hrid));
+  const spare = Object.keys(ctx.owned).filter((hrid) => !equipped.has(hrid) && !isSpecial(hrid)).length;
+  const open = [1, 2, 3, 4].filter((i) => ctx.unlocked[i]);
   const perPass = coordinates.reduce((sims, key) => {
     if (key === 'order') {
-      const k = [1, 2, 3, 4].filter((i) => ctx.unlocked[i]).length;
+      const k = Math.min(open.length, open.filter((i) => ctx.abilities[i]).length + spare);
       return k >= 2 ? sims + FACTORIAL[k] : sims; // k! - 1 orders + the baseline
     }
     const count = candidatesAt(ctx.abilities, key, ctx).length;

@@ -18,7 +18,8 @@ import swapRoutes from '../routes/optimizeSwaps.js';
 import { prepareEquipmentRun } from '../routes/optimizeEquipment.js';
 import { sanitiseFidelity } from '../lib/optimizerRoute.js';
 
-const { pickSubjectSlot, loadoutCandidates, progressColumns, applySwapChanges, headlineRow } = await import('../../ui/src/utils/candidateOptimizer.js');
+const { pickSubjectSlot, loadoutCandidates, progressColumns, applySwapChanges, applyAbilityChanges, headlineRow, samePayload } =
+  await import('../../ui/src/utils/candidateOptimizer.js');
 const { verdictOf } = await import('../../ui/src/utils/equipmentOptimizer.js');
 const { resolvePlayer } = await import('../../ui/src/utils/characterStore.js');
 const { toPlayerDTO } = await import('../../ui/src/utils/playerDTO.js');
@@ -250,17 +251,20 @@ test('prepareLoadoutRun: loadouts past the cap are reported as skipped, not drop
   assert.equal(out.workload.total, 41 * 2);
 });
 
-test('the equipment scan clamps hours, replicates and alpha exactly as sanitiseFidelity does', () => {
-  const zone = BASE_BODY.zone;
-  const scans = [{ hours: 5000, replicates: 45.5, alpha: 0.9, step: 99 }, { hours: 0.05, replicates: 2.5, alpha: 0.0001, step: 0 },
-    { hours: 'x', replicates: 1.99, alpha: -1, step: 2.7 }, undefined, null];
-  for (const scan of scans) {
-    const { hours, replicates, alpha } = prepareEquipmentRun({ players: [melee], zone, scan }).scan;
-    assert.deepEqual({ hours, replicates, alpha }, sanitiseFidelity(scan), JSON.stringify(scan));
+test('fidelity: hours, replicates and alpha clamp or fall back to the defaults; the equipment scan adds its step', () => {
+  const DEFAULTS = { hours: 24, replicates: 6, alpha: 0.05 };
+  const cases = [
+    [{ hours: 5000, replicates: 45.5, alpha: 0.9, step: 99 }, { hours: 1000, replicates: 40, alpha: 0.5 }, 20],
+    [{ hours: 0.05, replicates: 2.5, alpha: 0.0001, step: 0 }, { hours: 24, replicates: 2, alpha: 0.0001 }, 6],
+    [{ hours: 0.1, replicates: 2, alpha: 0.5, step: 1 }, { hours: 0.1, replicates: 2, alpha: 0.5 }, 1],
+    [{ hours: 'x', replicates: 1.99, alpha: -1, step: 2.7 }, DEFAULTS, 2],
+    [undefined, DEFAULTS, 6],
+    [null, DEFAULTS, 6],
+  ];
+  for (const [scan, fidelity, step] of cases) {
+    assert.deepEqual(sanitiseFidelity(scan), fidelity, JSON.stringify(scan));
+    assert.deepEqual(prepareEquipmentRun({ players: [melee], zone: BASE_BODY.zone, scan }).scan, { ...fidelity, step }, JSON.stringify(scan));
   }
-  assert.deepEqual(prepareEquipmentRun({ players: [melee], zone, scan: scans[0] }).scan, { hours: 1000, replicates: 40, alpha: 0.5, step: 20 });
-  assert.deepEqual(prepareEquipmentRun({ players: [melee], zone, scan: scans[1] }).scan, { hours: 24, replicates: 2, alpha: 0.0001, step: 6 });
-  assert.deepEqual(prepareEquipmentRun({ players: [melee], zone, scan: null }).scan, { hours: 24, replicates: 6, alpha: 0.05, step: 6 });
 });
 
 test('Progress route end to end: the probes, per-level rows with costs, deterministic', async (t) => {
@@ -328,4 +332,29 @@ test('applySwapChanges writes only the changed slots, in the store\'s shape, wit
   assert.equal(next.food[0], player.food[0]);
   assert.equal(next.abilities, player.abilities);
   assert.equal(JSON.stringify(player), frozen);
+});
+
+test('applyAbilityChanges writes only the slots a row changed from the run\'s start; an edit made since stands', () => {
+  const a = (name, v = 1) => ({ hrid: `/abilities/${name}`, level: 1, triggers: [{ value: v }] });
+  const start = [a('fierce_aura'), a('poke'), a('cleave'), null, null];
+  const row = [a('fierce_aura'), a('maim'), a('cleave'), null, null]; // slot 1: poke → maim
+  const player = { abilities: [a('fierce_aura'), a('poke'), a('precision'), null, null], abilityMemory: { '/abilities/maim': { level: 7 } } };
+  const out = applyAbilityChanges(player, row, start);
+  assert.deepEqual(out.map((s) => s?.hrid ?? null), ['/abilities/fierce_aura', '/abilities/maim', '/abilities/precision', null, null]);
+  assert.equal(out[1].level, 7, 'at the level the character has now');
+  assert.equal(out[2], player.abilities[2], 'slot 2 was edited since the run and is kept');
+  // The row's ability, put elsewhere since the run, is not slotted twice.
+  const moved = { ...player, abilities: [a('fierce_aura'), a('poke'), a('cleave'), a('maim'), null] };
+  assert.deepEqual(applyAbilityChanges(moved, row, start).map((s) => s?.hrid ?? null), ['/abilities/fierce_aura', '/abilities/maim', '/abilities/cleave', null, null]);
+  // The same ability with other triggers is a change.
+  assert.deepEqual(applyAbilityChanges(player, [a('fierce_aura'), a('poke', 2), a('cleave'), null, null], start)[1].triggers, [{ value: 2 }]);
+});
+
+test('samePayload: the same payload or an equal rebuild; never a missing preview', () => {
+  const p = { players: [{ hrid: 'player1' }], subjectIndex: 0 };
+  assert.ok(samePayload(p, p));
+  assert.ok(samePayload(p, JSON.parse(JSON.stringify(p))));
+  assert.ok(!samePayload(p, { ...p, subjectIndex: 1 }));
+  assert.ok(!samePayload(null, p));
+  assert.ok(!samePayload(null, null));
 });

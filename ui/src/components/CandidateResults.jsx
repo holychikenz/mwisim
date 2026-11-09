@@ -101,8 +101,8 @@ export function CandidateResults({ results, title, currentLabel, applyLabel = 'A
 
       <Text size="xs" c="dimmed">
         Ranked on {objectiveName}. Δ is against the current setup on the same seeds{perLevel ? ', divided by the levels added' : ''}; ± is the {confidence}% interval (Student-t).
-        {kind === 'zone' && !results.consumableCostsKnown
-          ? ' No production times were loaded, so effective EPH equals EPH.'
+        {kind !== 'labyrinth' && !results.consumableCostsKnown
+          ? ` No slotted food or drink has a production time, so ${kind === 'dungeon' ? 'effective runs/h equals runs/h' : 'effective EPH equals EPH'}.`
           : ''}
       </Text>
 

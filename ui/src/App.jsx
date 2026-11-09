@@ -93,6 +93,7 @@ import {
   DEFAULT_LOADOUT_OPT_CONFIG,
   DEFAULT_PROGRESS_OPT_CONFIG,
   DEFAULT_SWAP_OPT_CONFIG,
+  applyAbilityChanges,
   applySwapChanges,
   isAbilityOptConfig,
   isLoadoutOptConfig,
@@ -100,7 +101,8 @@ import {
   isSwapOptConfig,
   loadoutCandidates,
   pickSubjectSlot,
-  progressColumns
+  progressColumns,
+  samePayload
 } from './utils/candidateOptimizer';
 // The ONE atomic repair: party AND roster (AND the trial selection) rewritten
 // together, so neither holder can be mended at the other's expense.
@@ -1636,10 +1638,12 @@ function App() {
   }, [toolBase, subjectIndex, swapInventory, gameData, swapAllowed, swapOptConfig, planetTarget,
     pricing.prices, pricing.fetchedPrices, pricing.unit, pricing.expenseMode, pricing.itemCostOverrides]);
 
-  // A run remembers whose loadout it measured, so Apply writes there.
+  // A run remembers whose loadout it measured, so Apply writes there — and the abilities it measured, so Abilities'
+  // Apply writes only the slots a row changed.
   const startSubjectRun = useCallback((run, payload) => {
     if (!payload) return;
-    run({ ...payload, meta: { optTarget, zone, difficultyTier, labConfig, subject: { slot: subjectSlot, ...party[subjectSlot] } } });
+    run({ ...payload, meta: { optTarget, zone, difficultyTier, labConfig,
+      subject: { slot: subjectSlot, ...party[subjectSlot], abilities: payload.players[payload.subjectIndex]?.abilities } } });
   }, [optTarget, zone, difficultyTier, labConfig, subjectSlot, party]);
 
   // Stable, as handleStartTriggerOpt / handleStartEquipOpt are, so handleStartSimulation's useCallback holds.
@@ -1662,13 +1666,10 @@ function App() {
     bindSlot(subject.slot, { characterId: subject.characterId, loadoutName: row.name });
   }, [characters, bindSlot]);
 
-  /** Abilities' Apply: the row's slots into the loadout the run measured, at the levels the character has NOW. */
+  /** Abilities' Apply: the slots the row changed into the loadout the run measured, as it is NOW (candidateOptimizer.js). */
   const applyAbilityRow = useCallback((row, subject) => {
     const player = resolveRef(characters, subject);
-    if (!player) return;
-    // shortcut: writes all five measured slots, so an ability edit made to this loadout since the run is replaced; diff against the run's slots if that bites.
-    const abilities = row.abilities.map(a => a && { ...a, level: player.abilityMemory?.[a.hrid]?.level ?? a.level });
-    applyPlayerEdit(subject, withAbilities(player, abilities));
+    if (player) applyPlayerEdit(subject, withAbilities(player, applyAbilityChanges(player, row.abilities, subject.abilities)));
   }, [characters, applyPlayerEdit]);
 
   /** Swaps' Apply: the row's changes into the loadout the run measured, through the same store path as the sheet. */
@@ -1683,7 +1684,10 @@ function App() {
     onSubjectChange: (value) => setSubjectPick(Number(value)), subjectNotice, pricing, consumableCostRows: costRows
   });
   // What the server will compare: it caps the list and reports the rest as skipped (api/routes/optimizeLoadout.js).
-  const loadoutCount = (loadoutOptPayload && loadoutOpt.preview?.candidates) || 0;
+  // Read from a preview of THIS payload; until one arrives, the payload's own list (and Run waits for it).
+  const loadoutFresh = useMemo(() => samePayload(loadoutOpt.previewFor, loadoutOptPayload), [loadoutOpt.previewFor, loadoutOptPayload]);
+  const loadoutCount = (loadoutFresh ? loadoutOpt.preview?.candidates : loadoutOptPayload?.candidates.length) || 0;
+  const swapReady = useMemo(() => samePayload(swapOpt.previewFor, swapOptPayload), [swapOpt.previewFor, swapOptPayload]);
   const abilityCount = abilityOpt.preview?.candidates ?? 0;
   const progressCount = progressOpt.preview?.candidates ?? 0;
   const swapCount = swapOpt.preview?.candidates ?? 0;
@@ -1766,7 +1770,7 @@ function App() {
       payload: loadoutOptPayload,
       start: handleStartLoadoutOpt,
       runLabel: `Compare ${loadoutCount} loadout${loadoutCount === 1 ? '' : 's'}`,
-      runDisabled: !loadoutCount || loadoutOpt.previewing,
+      runDisabled: !loadoutCount || loadoutOpt.previewing || !loadoutFresh,
       empty: 'Pick whose saved loadouts to compare above, then press Run.',
       panel: (costRows) => (
         <CandidateOptimizerPanel {...subjectPanelProps(loadoutOpt, loadoutOptConfig, setLoadoutOptConfig, costRows)}
@@ -1774,7 +1778,7 @@ function App() {
           <Text size="xs" c="dimmed">{loadoutOptPayload?.candidates.length
             ? `Against ${party[subjectSlot]?.loadoutName}: ${loadoutOptPayload.candidates.map(c => c.name).join(', ')}.`
             : 'This character has no other saved loadout.'}</Text>
-          {loadoutOpt.preview?.skipped > 0 && <Text size="xs" c="orange">Only the first {loadoutCount} are compared; {loadoutOpt.preview.skipped} more are left out.</Text>}
+          {loadoutFresh && loadoutOpt.preview?.skipped > 0 && <Text size="xs" c="orange">Only the first {loadoutCount} are compared; {loadoutOpt.preview.skipped} more are left out.</Text>}
         </CandidateOptimizerPanel>
       ),
       results: (r, onClear) => (
@@ -1829,7 +1833,7 @@ function App() {
           blurb="Tries the food, drinks and gear this character owns (and can wear), one swap at a time or the best combination, against the current setup on shared seeds.">
           <SwapOptions preview={swapOpt.preview} config={swapOptConfig} onConfigChange={setSwapOptConfig} loading={swapOpt.loading}
             allowed={swapAllowed} onAllowedChange={(allowed) => setSwapPick({ key: swapKey, allowed })} hasInventory={!!swapInventory}
-            ready={swapOpt.previewFor === swapOptPayload} />
+            ready={swapReady} />
         </CandidateOptimizerPanel>
       ),
       results: (r, onClear) => (

@@ -6,12 +6,13 @@
 import { subjectRoutes } from '../lib/optimizerRoute.js';
 import { planSearch, searchSubject } from '../lib/descent.js';
 import { COORDINATES, bestSwap, candidatesAt, estimateSwapDescent, labelOf, swapContext, swapGroups } from '../lib/swapSearch.js';
+import { COSTED_OBJECTIVES } from '../lib/triggerSearch/score.js';
 
 function prepare({ target, simPlayers, subjectIndex, scan, objective, consumableCosts, dropCreditCosts }, body) {
   const allowed = Array.isArray(body.allowed) ? new Set(body.allowed.map(String)) : null;
   // A costed objective counts a consumable with no price as free (sanitiseConsumableCosts dropped its -1; a 0 stays) —
   // drop credit alone costs it too, and then nothing has a price.
-  const unpriced = (consumableCosts || dropCreditCosts) && objective?.startsWith('effective')
+  const unpriced = (consumableCosts || dropCreditCosts) && COSTED_OBJECTIVES.has(objective)
     ? (hrid) => !Object.hasOwn(consumableCosts || {}, hrid) : null;
   // Nothing is eaten in a labyrinth (target.js strips it), so only gear is swapped there.
   const ctx = swapContext(simPlayers[subjectIndex], body.owned, { allowed, consumables: target.kind !== 'labyrinth', unpriced });

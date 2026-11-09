@@ -125,6 +125,15 @@ test('descent climbs to the best combination and stops on a pass that changes no
   assert.equal(bestCandidate(ctx, ctx.abilities), null);
 });
 
+test('estimateDescent counts cast orders only over slots that are, or can be, filled', () => {
+  const scan = { hours: 1, replicates: 2 };
+  const subject = { intelligenceLevel: 90, abilities: [null, slot(A('berserk')), slot(A('cleave')), null, null] };
+  const orders = (o) => estimateDescent(abilityContext(subject, o), ['order'], 1, scan).candidates;
+  assert.equal(orders(owned('berserk', 'cleave')), 2, 'two filled, nothing to fill the rest: 2! setups, not 4!');
+  assert.equal(orders(owned('berserk', 'cleave', 'maim')), 6, 'one spare can fill a third slot');
+  assert.equal(orders(owned('berserk', 'cleave', 'maim', 'precision', 'fierce_aura')), 24, 'a special never fills slots 1-4');
+});
+
 test('coordinateSummary reports counts, locks and unlock levels; the cast order is always open', () => {
   const ctx = abilityContext({ intelligenceLevel: 1, abilities: [null, slot(A('poke')), null, null, null] }, owned('poke', 'cleave'));
   const summary = Object.fromEntries(coordinateSummary(ctx).map((s) => [s.key, s]));

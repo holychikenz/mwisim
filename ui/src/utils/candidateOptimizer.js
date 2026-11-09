@@ -67,6 +67,27 @@ export function progressColumns(pricing) {
   return columns;
 }
 
+/** A preview answers this payload: the one it was fetched for, or an equal one a memo rebuilt (compared as posted). */
+export const samePayload = (previewFor, payload) =>
+  previewFor != null && (previewFor === payload || JSON.stringify(previewFor) === JSON.stringify(payload));
+
+/**
+ * Abilities' Apply: only the slots a row changed from what the run measured (`start`, its DTO abilities) are written
+ * onto the player's abilities NOW, at the levels the character has now, so an edit made since the run stands; a slot
+ * kept as it is now but holding an ability the row places elsewhere is emptied, never slotted twice.
+ */
+export function applyAbilityChanges(player, row, start) {
+  const key = (a) => JSON.stringify(a?.hrid ? [a.hrid, a.triggers || []] : null);
+  const changed = row.map((a, i) => key(a) !== key(start?.[i]));
+  const placed = new Set(row.filter((a, i) => changed[i] && a?.hrid).map((a) => a.hrid));
+  return [0, 1, 2, 3, 4].map((i) => {
+    const now = player.abilities?.[i] ?? null;
+    if (!changed[i]) return now?.hrid && placed.has(now.hrid) ? null : now;
+    const to = row[i];
+    return to?.hrid ? { ...to, level: player.abilityMemory?.[to.hrid]?.level ?? to.level } : null;
+  });
+}
+
 /** Swaps' Apply: a row's changes (DTO-shaped, api/lib/swapSearch.js) onto the flat player in the store's shape; only the changed slots are written. */
 export function applySwapChanges(player, changes) {
   const next = { ...player, equipment: { ...player.equipment }, food: [...player.food], drinks: [...player.drinks] };

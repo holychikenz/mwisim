@@ -502,6 +502,9 @@ export function defaultObjective({ consumableCostsKnown = false, labyrinth = fal
  */
 export const COMPLETION_OBJECTIVES = new Set(['completionsPerHour', 'effectiveCompletionsPerHour']);
 
+/** The objectives restated on the real clock (onClock): the ones a consumable's price, or its absence, moves. */
+export const COSTED_OBJECTIVES = new Set(['effectiveEncountersPerHour', 'effectiveCompletionsPerHour']);
+
 /**
  * Has the objective pinned against one of its limits, so that no candidate can
  * differ from any other on it?

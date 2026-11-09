@@ -106,7 +106,7 @@ export function CandidateOptimizerPanel({
               disabled={loading}
             />
             {preview && !preview.consumableCostsKnown && (
-              <Text size="10px" c="dimmed">No production times loaded, so effective EPH equals EPH.</Text>
+              <Text size="10px" c="dimmed">No slotted food or drink has a production time, so effective EPH equals EPH.</Text>
             )}
           </Stack>
         )}
