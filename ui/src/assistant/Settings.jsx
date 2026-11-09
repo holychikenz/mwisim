@@ -26,7 +26,7 @@ function LocalModels({ llm, onSettings }) {
   const tooLow = rec.reason === 'limits';
   return (
     <Stack gap="xs">
-      {tooLow && <Text size="sm">This GPU's WebGPU limits are too low for the local models, so none can load here. Use an Anthropic or OpenAI key; downloaded models can still be deleted below.</Text>}
+      {tooLow && <Text size="sm">This browser's WebGPU limits are too low for the local models, so none can load here. Try Chrome, or use an Anthropic or OpenAI key; downloaded models can still be deleted below.</Text>}
       <Radio.Group value={localModel} onChange={(id) => onSettings({ localModel: id })} label="Model" description="Bigger models follow instructions better but download more.">
         <Stack gap={6} mt={6}>
           {rec.list.map(m => (

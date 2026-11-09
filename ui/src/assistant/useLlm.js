@@ -15,7 +15,7 @@ async function detectGpu() {
 // tvmjs's "requested <limit> exceeds limit" error, said plainly.
 function readable(message) {
   const limit = /requested (\w+) exceeds limit/.exec(message)?.[1];
-  return limit ? `This GPU's WebGPU ${limit} limit is too low for local models. Use an Anthropic or OpenAI key instead.` : message;
+  return limit ? `This browser's WebGPU ${limit} limit is too low for local models. Try Chrome, or use an Anthropic or OpenAI key instead.` : message;
 }
 
 const IDLE = { loaded: null, loading: null, progress: 0, text: '', error: null };
