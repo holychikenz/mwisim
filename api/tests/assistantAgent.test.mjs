@@ -132,3 +132,39 @@ test('11: a turn that fails or is stopped after a tool round keeps that round; w
   assert.deepEqual(stopped.transcript.map(e => e.role), ['user', 'assistant', 'tool']);
   assert.equal((await runAgent({ llm: scripted([new Error('down')]), execute: executor().execute, transcript: user })).transcript, undefined);
 });
+
+test('12: after a provider 4xx the turn keeps a note of what its tools did, never the rounds the provider may have rejected', async () => {
+  const rejected = Object.assign(new Error('Anthropic 400: messages.2: invalid tool_result'), { status: 400 });
+  const ex = executor((c) => (c.name === 'get_state' ? { id: c.id, name: c.name, isError: true, content: 'nope' }
+    : { id: c.id, name: c.name, content: 'P1 Ann (default) loadout: 8 item(s) +2.' }));
+  const r = await runAgent({ llm: scripted([{ calls: [call('a', 'adjust_enhancement', { delta: 2 }), call('b', 'get_state')] }, rejected]),
+    execute: ex.execute, transcript: user });
+  assert.equal(r.error, rejected);
+  assert.deepEqual(r.transcript.map(e => e.role), ['user', 'assistant']);
+  assert.equal(r.transcript[1].raw, undefined);
+  assert.match(r.transcript[1].text, /adjust_enhancement: P1 Ann \(default\) loadout: 8 item\(s\) \+2\./);
+  assert.doesNotMatch(r.transcript[1].text, /get_state/); // a failed call changed nothing
+  // Nothing ran: nothing to keep. A 5xx is not the history's fault: its rounds are kept as they are (as in 11).
+  const failedOnly = executor((c) => ({ id: c.id, name: c.name, isError: true, content: 'no' }));
+  assert.equal((await runAgent({ llm: scripted([{ calls: [call('a', 'set_zone')] }, rejected]), execute: failedOnly.execute, transcript: user })).transcript, undefined);
+  const overloaded = Object.assign(new Error('Anthropic 529: Overloaded'), { status: 529 });
+  const kept = await runAgent({ llm: scripted([{ calls: [call('a', 'set_zone')] }, overloaded]), execute: executor().execute, transcript: user });
+  assert.deepEqual(kept.transcript.map(e => e.role), ['user', 'assistant', 'tool']);
+});
+
+test('13: a stop between two calls of one reply runs neither the rest nor another request; every call id is answered', async () => {
+  const ac = new AbortController();
+  const llm = scripted([{ calls: [call('a', 'set_zone'), call('b', 'run_simulation')] }, { text: 'never asked' }]);
+  const ex = executor((c) => { ac.abort(); return { id: c.id, name: c.name, content: 'ok' }; });
+  const r = await runAgent({ llm, execute: ex.execute, transcript: user, signal: ac.signal });
+  assert.equal(r.stopped, true);
+  assert.deepEqual(ex.calls.map(c => c.name), ['set_zone']);
+  assert.deepEqual(r.transcript[2].results.map(x => [x.id, !!x.isError, x.content]), [['a', false, 'ok'], ['b', true, 'Skipped: stopped.']]);
+  assert.equal(llm.seen.length, 1);
+  // In the last round too: a stop, not the round limit.
+  const ac2 = new AbortController();
+  const last = await runAgent({ llm: scripted([{ calls: [call('a', 'set_zone')] }]), maxSteps: 1, signal: ac2.signal, transcript: user,
+    execute: executor((c) => { ac2.abort(); return { id: c.id, name: c.name, content: 'ok' }; }).execute });
+  assert.equal(last.stopped, true);
+  assert.equal(last.limit, undefined);
+});

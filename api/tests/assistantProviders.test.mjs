@@ -72,9 +72,10 @@ test('4: chatAnthropic — one call, key only in x-api-key, 401 redacted', async
   assert.ok(!ok.seen[0].url.includes(KEY) && !ok.seen[0].init.body.includes(KEY));
   const bad = mockFetch(401, { error: { message: `invalid x-api-key ${KEY}` } });
   await assert.rejects(P.chatAnthropic({ fetch: bad.fetch, key: KEY, model: 'm', system: 'S', transcript: [], tools }),
-    (e) => /^Anthropic 401: /.test(e.message) && !e.message.includes(KEY));
+    (e) => /^Anthropic 401: /.test(e.message) && e.status === 401 && !e.message.includes(KEY));
   const down = async () => { throw new TypeError('Failed to fetch'); };
-  await assert.rejects(P.chatAnthropic({ fetch: down, key: KEY, model: 'm', system: 'S', transcript: [], tools }), /Could not reach api\.anthropic\.com/);
+  await assert.rejects(P.chatAnthropic({ fetch: down, key: KEY, model: 'm', system: 'S', transcript: [], tools }),
+    (e) => /Could not reach api\.anthropic\.com/.test(e.message) && e.status === undefined);
 });
 
 test('5: OpenAI request — URL, Bearer, reasoning_effort none, tool_choice auto, system first', () => {
@@ -117,7 +118,7 @@ test('8: chatOpenAI — key only in Authorization; errors redacted', async () =>
   assert.ok(!ok.seen[0].init.body.includes(KEY));
   const bad = mockFetch(429, { error: { message: `quota for ${KEY}` } });
   await assert.rejects(P.chatOpenAI({ fetch: bad.fetch, key: KEY, model: 'm', system: 'S', transcript: [], tools }),
-    (e) => /^OpenAI 429: /.test(e.message) && !e.message.includes(KEY));
+    (e) => /^OpenAI 429: /.test(e.message) && e.status === 429 && !e.message.includes(KEY));
 });
 
 test('9: an empty Claude reply is left out', () => {

@@ -160,7 +160,8 @@ async function send({ fetch, key, signal }, provider, host, { url, init }) {
   try { json = await res.json(); } catch { /* an empty or non-JSON body */ }
   if (!res.ok) {
     const message = String(json?.error?.message || res.statusText || 'request failed');
-    throw new Error(`${provider} ${res.status}: ${key ? message.replaceAll(key, '…') : message}`);
+    // The status rides along: a 4xx may be the history's own fault (runAgent keeps only a note then).
+    throw Object.assign(new Error(`${provider} ${res.status}: ${key ? message.replaceAll(key, '…') : message}`), { status: res.status });
   }
   return json;
 }
