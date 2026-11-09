@@ -28,11 +28,12 @@ export async function runAgent({ llm, execute, transcript, tools, now, signal, o
   // The state line rides on this turn's user entry, never the system prompt, so each request only
   // appends: web-llm reuses its KV cache and Claude's thinking blocks stay valid.
   if (now != null && t.length) t[t.length - 1] = { ...t[t.length - 1], now: typeof now === 'function' ? now() : now };
-  // Ended early: the completed rounds (each ends on its tool results), if there are any. A provider 4xx
-  // may be those rounds' own fault (a rejected block) and would repeat every turn, so then only a note.
+  // Ended early: the completed rounds (each ends on its tool results), if there are any. A 400/413 may be
+  // those rounds' own fault (a rejected block) and would repeat every turn, so then only a note; a 401/403/429
+  // is not the history's fault and keeps them.
   const early = (r) => {
     if (t.length === transcript.length) return r;
-    if (!(r.error?.status >= 400 && r.error.status < 500)) return { ...r, transcript: t };
+    if (r.error?.status !== 400 && r.error?.status !== 413) return { ...r, transcript: t };
     const ran = t.slice(transcript.length).flatMap(e => (e.role === 'tool' ? e.results : []))
       .filter(x => !x.isError).map(x => `${x.name}: ${x.content.slice(0, 200)}`);
     return ran.length ? { ...r, transcript: [...t.slice(0, transcript.length),

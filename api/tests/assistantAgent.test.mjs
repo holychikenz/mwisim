@@ -150,6 +150,10 @@ test('12: after a provider 4xx the turn keeps a note of what its tools did, neve
   const overloaded = Object.assign(new Error('Anthropic 529: Overloaded'), { status: 529 });
   const kept = await runAgent({ llm: scripted([{ calls: [call('a', 'set_zone')] }, overloaded]), execute: executor().execute, transcript: user });
   assert.deepEqual(kept.transcript.map(e => e.role), ['user', 'assistant', 'tool']);
+  // A rate limit is not the history's fault either.
+  const limited = Object.assign(new Error('Anthropic 429: rate_limit_error'), { status: 429 });
+  const kept429 = await runAgent({ llm: scripted([{ calls: [call('a', 'set_zone')] }, limited]), execute: executor().execute, transcript: user });
+  assert.deepEqual(kept429.transcript.map(e => e.role), ['user', 'assistant', 'tool']);
 });
 
 test('13: a stop between two calls of one reply runs neither the rest nor another request; every call id is answered', async () => {
