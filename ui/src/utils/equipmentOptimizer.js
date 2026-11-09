@@ -122,8 +122,10 @@ export function formatPct(fraction, decimals = 2) {
  */
 export function verdictOf(row) {
   if (!row) return 'unknown';
-  if (row.significantFamilywise) return row.perLevel >= 0 ? 'strong-gain' : 'strong-loss';
-  if (row.significant) return row.perLevel >= 0 ? 'gain' : 'loss';
+  // perLevel on a scan row, delta on a whole-candidate row (rankCandidates).
+  const up = (row.perLevel ?? row.delta) >= 0;
+  if (row.significantFamilywise) return up ? 'strong-gain' : 'strong-loss';
+  if (row.significant) return up ? 'gain' : 'loss';
   return 'noise';
 }
 

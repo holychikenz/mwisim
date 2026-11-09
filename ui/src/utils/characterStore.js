@@ -244,6 +244,20 @@ export function resolvePlayer(character, loadout) {
 }
 
 /**
+ * `player` with `abilities` in its slots and the per-ability memory refreshed
+ * for each filled one — level and triggers stick to the ABILITY, so A → B → A
+ * restores A (PlayerConfig). splitPlayer turns the memory into abilityLevels
+ * and triggerMemory, which keeps the store in sync.
+ */
+export function withAbilities(player, abilities) {
+  const abilityMemory = { ...(player?.abilityMemory || {}) };
+  for (const slot of abilities) {
+    if (slot?.hrid) abilityMemory[slot.hrid] = { level: slot.level, triggers: slot.triggers || [] };
+  }
+  return { ...player, abilities, abilityMemory };
+}
+
+/**
  * The inverse of resolvePlayer: two PARTIALS to be merged onto the stored
  * halves. Ability levels route to the character, slot ordering and triggers to
  * the loadout, and the guildShrines tri-state is mirrored rather than defaulted.

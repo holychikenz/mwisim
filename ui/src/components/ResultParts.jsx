@@ -1,5 +1,6 @@
 import { Fragment } from 'react';
-import { Button, Group, Paper, Progress, Stack, Table, Text, Title, Tooltip } from '@mantine/core';
+import { Badge, Button, Group, Paper, Progress, Stack, Table, Text, Title, Tooltip } from '@mantine/core';
+import { VERDICT_LABELS, verdictOf } from '../utils/equipmentOptimizer';
 
 // =============================================================================
 // ResultParts — the shared building blocks of every result view, so all modes
@@ -113,5 +114,26 @@ export function Section({ title, right, children }) {
         {children}
       </Stack>
     </Paper>
+  );
+}
+
+// A paired comparison's verdict (utils/equipmentOptimizer.js verdictOf): the
+// Gear scan's rows and the Loadout / Abilities rows.
+const VERDICT_STYLE = {
+  'strong-gain': { color: 'teal', variant: 'filled' },
+  gain: { color: 'teal', variant: 'light' },
+  'strong-loss': { color: 'red', variant: 'filled' },
+  loss: { color: 'red', variant: 'light' },
+  noise: { color: 'gray', variant: 'outline' },
+  unknown: { color: 'gray', variant: 'outline' },
+};
+
+export function VerdictBadge({ row }) {
+  const verdict = verdictOf(row);
+  const style = VERDICT_STYLE[verdict] || VERDICT_STYLE.unknown;
+  return (
+    <Badge size="xs" color={style.color} variant={style.variant}>
+      {VERDICT_LABELS[verdict]}
+    </Badge>
   );
 }

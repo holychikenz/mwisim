@@ -35,7 +35,8 @@ const {
   resolveRef,
   createCharacter,
   mainCharacter,
-  mainSlotRef
+  mainSlotRef,
+  withAbilities
 } = await import('../../ui/src/utils/characterStore.js');
 const {
   deleteLoadoutEverywhere,
@@ -504,4 +505,15 @@ test('game identity is optional: absent stays absent, a non-object is dropped', 
   assert.ok(!('game' in sanitizeCharacter(character())));
   assert.ok(!('game' in sanitizeCharacter(character({ game: 42 }))));
   assert.deepEqual(sanitizeCharacter(character({ game: { id: 7, name: 'c' } })).game, { id: 7, name: 'c' });
+});
+
+test('withAbilities: a swapped-in ability lands in the slot and the memory, and splitPlayer stores its triggers and level', () => {
+  const c = character({ abilityLevels: { a: 3 } });
+  const player = resolvePlayer(c, loadout({ abilities: [null, null, null, null, null], triggerMemory: {} }));
+  const next = withAbilities(player, [null, { hrid: '/abilities/cleave', level: 7, triggers: [TRIGGER] }, null, null, null]);
+  assert.equal(next.abilities[1].hrid, '/abilities/cleave');
+  const { character: split, loadout: out } = splitPlayer(next);
+  assert.equal(split.abilityLevels['/abilities/cleave'], 7);
+  assert.deepEqual(out.triggerMemory['/abilities/cleave'], [TRIGGER]);
+  assert.equal(split.abilityLevels.a, 3);
 });

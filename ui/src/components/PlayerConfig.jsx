@@ -17,6 +17,7 @@ import { Select } from './SearchSelect';
 import { getFood, getDrinks, getCombatAbilities, getAuras } from '../hooks/useGameData';
 import { TriggerEditor } from './TriggerEditor';
 import { CharacterBonuses } from './CharacterBonuses';
+import { withAbilities } from '../utils/characterStore';
 
 const SKILL_NAMES = ['stamina', 'intelligence', 'attack', 'melee', 'defense', 'ranged', 'magic'];
 
@@ -383,17 +384,7 @@ export function PlayerConfig({ gameData, player, onPlayerChange, hideConsumables
   // swapping a slot's ability inherited the OUTGOING ability's level and
   // triggers and quietly simulated a build nobody had configured.
   const applyAbilities = useCallback((newAbilities) => {
-    const abilityMemory = { ...(player.abilityMemory || {}) };
-    for (const slot of newAbilities) {
-      if (slot?.hrid) {
-        abilityMemory[slot.hrid] = { level: slot.level, triggers: slot.triggers || [] };
-      }
-    }
-    onPlayerChange({
-      ...player,
-      abilities: newAbilities,
-      abilityMemory
-    });
+    onPlayerChange(withAbilities(player, newAbilities));
   }, [player, onPlayerChange]);
 
   const handleAbilityChange = useCallback((index, abilityHrid, level) => {
