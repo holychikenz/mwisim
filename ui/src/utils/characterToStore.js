@@ -21,6 +21,7 @@
 //   abilityLevels ← characterAbilities[i].{abilityHrid, level}     CHARACTER
 //   houseRooms    ← characterHouseRoomMap[hrid].level              CHARACTER
 //   achievements  ← characterAchievements (array) → { hrid: true } CHARACTER
+//   inventory     ← characterItems (owned, combat-usable; hrid/enh/count)   CHARACTER
 //   loadouts      ← every COMBAT entry of characterLoadoutMap:     LOADOUT
 //     equipment     ← loadout.wearableMap ("charID::loc::itemHrid::enh" refs),
 //                       enhancement ← the highest owned copy in characterItems
@@ -169,6 +170,10 @@ export function characterToCharacter(char, gameData, displayName) {
     abilityLevels: {},
     loadouts: {}
   };
+  // IDENTITY: the game's characterId (players rename; the id never changes) and the in-game
+  // name (the webapp label only if the payload has none) — see mergeImportedCharacter.
+  const gameId = char.character?.id;
+  if (gameId != null) character.game = { id: gameId, name: char.character?.name || name };
 
   // Ability LEVELS, seeded from every ability the character has actually
   // trained — not merely the five a loadout slots. This was always character
@@ -229,6 +234,25 @@ export function characterToCharacter(char, gameData, displayName) {
     if (!item?.itemHrid || !(Number(item.count) > 0)) continue;
     const e = Math.max(0, Math.floor(Number(item.enhancementLevel) || 0));
     if (!(maxEnhancementByItem.get(item.itemHrid) >= e)) maxEnhancementByItem.set(item.itemHrid, e);
+  }
+
+  // What the character OWNS that a combat setup could use: the Swaps tool's pool. Hrid, enhancement and count only,
+  // never the entry's id, characterID, hash or timestamps. The store keeps combat levels only, so a requirement on any
+  // other skill (total level for pouches, skilling charms) is checked here, once; combat ones are checked against the
+  // build by api/lib/swapSearch.js. Absent from a payload without characterItems, so a re-import cannot wipe it.
+  if (Array.isArray(char.characterItems)) {
+    const combatSkills = new Set(Object.values(LEVEL_MAP));
+    const usable = (hrid) => {
+      const detail = gameData?.items?.[hrid];
+      if (!detail) return !gameData?.items; // no game data: allow, as knownItem does
+      if (detail.consumableDetail) return combatConsumable(hrid);
+      const eq = detail.equipmentDetail;
+      return !!eq && !String(eq.type).endsWith('_tool')
+        && (eq.levelRequirements || []).every((r) => combatSkills.has(r.skillHrid) || lvl(r.skillHrid) >= r.level);
+    };
+    character.inventory = char.characterItems
+      .filter((item) => item?.itemHrid && Number(item.count) > 0 && knownItem(item.itemHrid) && usable(item.itemHrid))
+      .map((item) => ({ itemHrid: item.itemHrid, enhancementLevel: Math.max(0, Math.floor(Number(item.enhancementLevel) || 0)), count: Number(item.count) }));
   }
 
   /** One raw game loadout → one stored loadout (gear, slots, consumables). */

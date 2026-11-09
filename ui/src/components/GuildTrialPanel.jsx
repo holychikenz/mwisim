@@ -16,7 +16,7 @@ import {
 } from '@mantine/core';
 import { Select } from './SearchSelect';
 import { listRosterEntries, buildSummary, refKey, MAX_ROW_COUNT } from '../utils/roster';
-import { listLoadoutRefs } from '../utils/characterStore';
+import { ABILITY_MEMORY_VERSION, listLoadoutRefs } from '../utils/characterStore';
 import { exportFormatToPlayer } from '../utils/importSet';
 import { describeShrines, ownsShrines } from '../utils/guildBuffs';
 import { combatLevel } from '../utils/combatLevel';
@@ -110,7 +110,7 @@ export function GuildTrialPanel({
       masterBuilds[buildId] = { ...entry.build, id: buildId, name: entry.displayName };
       wireRoster.push({ id: entry.id, buildId, count: entry.count });
     }
-    const payload = { masterBuilds, roster: wireRoster, trialConfig };
+    const payload = { masterBuilds, roster: wireRoster, trialConfig, abilityMemoryVersion: ABILITY_MEMORY_VERSION };
     try {
       await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
       showMessage('Roster copied to clipboard');

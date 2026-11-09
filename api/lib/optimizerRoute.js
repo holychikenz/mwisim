@@ -1,13 +1,19 @@
 // =============================================================================
 // optimizerRoute — what routes/optimizeTriggers.js and routes/optimizeEquipment.js
-// share: body validation, the consumable-cost table rule, the pool size, and the SSE run
-// lifecycle (headers, heartbeat, client-disconnect abort, pool teardown).
+// share: body validation, the consumable-cost table rules, the pool size, and the SSE run
+// lifecycle (headers, heartbeat, client-disconnect abort, pool teardown). Plus
+// subjectRoutes, the whole preview + SSE pair for a tool that ranks replacements
+// for one party member (routes/optimizeLoadout.js, routes/optimizeAbilities.js), and
+// what those tools share with the cost rules: the Loadout cap and the unpriced test.
 // =============================================================================
 
+import { Router } from 'express';
 import { isKnownCost } from '../../shared/consumableCost.js';
-import { markDungeon, normaliseTarget } from './target.js';
-import { createSimulationPool, defaultPoolSize, MAX_WORKERS } from './triggerSearch/pool.js';
-import { OBJECTIVE_METRICS, reportedMetricsFor } from './triggerSearch/score.js';
+import { buildExtraBuffs } from './simulator.js';
+import { markDungeon, normaliseTarget, targetExtraBuffs, targetPlayerDTOs } from './target.js';
+import { createSimulationPool, defaultPoolSize, makePoolEvaluator, MAX_WORKERS } from './triggerSearch/pool.js';
+import { costsKnown, COSTED_OBJECTIVES, defaultObjective, OBJECTIVE_METRICS, reportedMetricsFor } from './triggerSearch/score.js';
+import { DEFAULT_SCAN, DEFAULT_SEED_BASE } from './equipmentScan/scan.js';
 
 /** Heartbeat interval. Comfortably inside a 30s client stall timeout. */
 const HEARTBEAT_MS = 10_000;
@@ -38,6 +44,53 @@ export function sanitiseConsumableCosts(input) {
     if (isKnownCost(value)) costs[hrid] = Number(value);
   }
   return Object.keys(costs).length ? costs : null;
+}
+
+/** The Loadout tool simulates only the first this many of the whole loadouts it is sent (body.candidates). */
+export const MAX_LOADOUT_CANDIDATES = 40;
+
+/** body.candidates that can run at all (each needs a player), in order; only the first MAX_LOADOUT_CANDIDATES do. */
+export const postedLoadouts = (body) => (Array.isArray(body?.candidates) ? body.candidates : [])
+  .filter((c) => c?.player && typeof c.player === 'object');
+
+/** Whether a player slots any food or drink, or with `test` one whose hrid passes it. */
+export const slotsConsumable = (player, test = () => true) =>
+  [player?.food, player?.drinks].some((list) => Array.isArray(list) && list.some((c) => c?.hrid && test(c.hrid)));
+
+/**
+ * Under a costed objective a consumable with no price counts as free (sanitiseConsumableCosts dropped its -1; a 0
+ * stays), and with drop credit alone nothing has a price: the test Swaps and Loadout flag such items by. Else null.
+ */
+export const unpricedUnder = ({ objective, consumableCosts, consumableCostsKnown }) =>
+  (consumableCostsKnown && COSTED_OBJECTIVES.has(objective) ? (hrid) => !Object.hasOwn(consumableCosts || {}, hrid) : null);
+
+/**
+ * The drop-credit table (body.dropCreditCosts: itemHrid → seconds over the
+ * consumable class) on the cost table's rules, beside a bill known BEFORE the
+ * run: a cost table, or nothing slotted to eat by the party or by any whole
+ * loadout the run swaps in (the postedLoadouts it simulates, the Loadout tool). Consumables
+ * slotted with no price leave the bill unknown, so there it is refused; and
+ * never in a labyrinth. The zone results ask the same question of what was
+ * EATEN, which only a finished run knows, so they also credit a run whose
+ * unpriced slot never fired — no optimiser can promise that of a candidate.
+ * Present, it makes the objective time-denominated (consumableCostsKnown).
+ */
+export function sanitiseDropCreditCosts(body, { labyrinth, consumableCosts, simPlayers }) {
+  if (labyrinth) return null;
+  const parties = [...(simPlayers || []), ...postedLoadouts(body).slice(0, MAX_LOADOUT_CANDIDATES).map((c) => c.player)];
+  const eats = parties.some((p) => slotsConsumable(p));
+  return consumableCosts || !eats ? sanitiseConsumableCosts(body?.dropCreditCosts) : null;
+}
+
+/**
+ * Both tables on their rules, and the one flag every objective and echo reads:
+ * the bill is known, so the objective is time-denominated, with either table.
+ */
+export function costTables(body, { labyrinth, simPlayers }) {
+  // Nothing is eaten in a labyrinth, so there is no bill to count.
+  const consumableCosts = labyrinth ? null : sanitiseConsumableCosts(body?.consumableCosts);
+  const dropCreditCosts = sanitiseDropCreditCosts(body, { labyrinth, consumableCosts, simPlayers });
+  return { consumableCosts, dropCreditCosts, consumableCostsKnown: costsKnown(consumableCosts, dropCreditCosts) };
 }
 
 /**
@@ -121,4 +174,91 @@ export async function streamPoolRun(req, res, body) {
     await pool?.destroy();
     if (!res.writableEnded) res.end();
   }
+}
+
+/** hours / replicates / alpha for every paired run (the subject tools and the equipment scan): user data from NumberInputs. */
+export function sanitiseFidelity(input) {
+  const clamp = (value, fallback, min, max) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= min ? Math.min(max, parsed) : fallback;
+  };
+  return {
+    hours: clamp(input?.hours, DEFAULT_SCAN.hours, 0.1, 1000),
+    // Two replicates is the floor for any error bar at all; one would report a
+    // difference with no way to say whether it was real.
+    replicates: Math.floor(clamp(input?.replicates, DEFAULT_SCAN.replicates, 2, 40)),
+    alpha: clamp(input?.alpha, DEFAULT_SCAN.alpha, 0.0001, 0.5),
+  };
+}
+
+/**
+ * POST /api/<path>/preview (JSON) and POST /api/<path> (SSE) for a tool that
+ * ranks replacements for ONE member of the party, players[subjectIndex]:
+ * Loadout and Abilities. The tool supplies
+ *   prepare(base, body) → { candidates, workload, refusal?, echo?, ...its own state }
+ *     (refusal: why this run must not start — the preview echoes it, the run answers 400 with it)
+ *   run(prepared, { evaluate, signal, onProgress, seedBase, cancelMessage }) → result
+ * and this owns validation, the target, buffs and costs (as optimizeEquipment.js),
+ * the pool, the evaluator and the frames.
+ */
+export function subjectRoutes({ path, prepare, run, cancelMessage, emptyError }) {
+  const router = Router();
+  // May throw on a hostile body; both handlers call it inside their try.
+  const setup = (body) => {
+    const k = body?.subjectIndex;
+    const invalid = validateBody(body) || (Number.isInteger(k) && k >= 0 && k < body.players.length
+      && body.players[k] && typeof body.players[k] === 'object' ? null : 'subjectIndex must name one of the players');
+    if (invalid) return { invalid };
+    const target = markDungeon(normaliseTarget(body));
+    const labyrinth = target.kind === 'labyrinth';
+    // Food and drinks blanked in a labyrinth, as the game blanks them (target.js).
+    const simPlayers = targetPlayerDTOs(body.players, target);
+    const { consumableCosts, dropCreditCosts, consumableCostsKnown } = costTables(body, { labyrinth, simPlayers });
+    const base = {
+      target, subjectIndex: k, scan: sanitiseFidelity(body.scan), consumableCosts, dropCreditCosts, consumableCostsKnown,
+      // Same composition runSimulation uses, plus the lab-shop upgrades in a labyrinth.
+      extraBuffs: buildExtraBuffs(body.extra || {}).concat(body.guildBuffs || []).concat(targetExtraBuffs(target)),
+      simPlayers,
+      objective: body.objective || defaultObjective({ consumableCostsKnown, labyrinth, dungeon: !!target.dungeon }),
+    };
+    return { prepared: { ...base, ...prepare(base, body) } };
+  };
+  // What the panel and the results describe the run by. Never the DTOs.
+  const echo = (p) => ({ objective: p.objective, target: p.target, reportedMetrics: reportedMetricsFor(p.target),
+    consumableCostsKnown: p.consumableCostsKnown, subjectIndex: p.subjectIndex, scan: p.scan, workload: p.workload,
+    candidates: p.candidates.length, refusal: p.refusal ?? null, ...p.echo });
+
+  router.post(`/${path}/preview`, (req, res) => {
+    try {
+      const { invalid, prepared } = setup(req.body);
+      if (invalid) return res.status(400).json({ success: false, error: invalid });
+      return res.json({ success: true, ...echo(prepared), poolSize: poolSizeFor(req.body.workers) });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  router.post(`/${path}`, async (req, res) => {
+    let prepared;
+    try {
+      // Inside the try: an async Express 4 handler's rejection is unhandled and kills the process.
+      const out = setup(req.body);
+      if (out.invalid) return res.status(400).json({ success: false, error: out.invalid });
+      prepared = out.prepared;
+    } catch (error) {
+      return res.status(400).json({ success: false, error: error.message });
+    }
+    if (prepared.refusal || !prepared.candidates.length) return res.status(400).json({ success: false, error: prepared.refusal || emptyError });
+    await streamPoolRun(req, res, async ({ pool, poolSize, send, signal }) => {
+      send({ type: 'start', poolSize, ...echo(prepared) });
+      const evaluate = makePoolEvaluator({ pool, zoneConfig: prepared.target.zone, labyrinthConfig: prepared.target.labyrinth,
+        extraBuffs: prepared.extraBuffs, consumableCosts: prepared.consumableCosts, dropCreditCosts: prepared.dropCreditCosts,
+        signal, cancelMessage });
+      const result = await run(prepared, { evaluate, signal, cancelMessage,
+        seedBase: Number(req.body.seedBase) || DEFAULT_SEED_BASE,
+        onProgress: (progress) => send({ type: 'progress', ...progress }) });
+      send({ type: 'result', result: { ...result, ...echo(prepared) } });
+    });
+  });
+  return router;
 }

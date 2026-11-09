@@ -17,6 +17,7 @@ import { Select } from './SearchSelect';
 import { getFood, getDrinks, getCombatAbilities, getAuras } from '../hooks/useGameData';
 import { TriggerEditor } from './TriggerEditor';
 import { CharacterBonuses } from './CharacterBonuses';
+import { withAbilities } from '../utils/characterStore';
 
 const SKILL_NAMES = ['stamina', 'intelligence', 'attack', 'melee', 'defense', 'ranged', 'magic'];
 
@@ -383,17 +384,7 @@ export function PlayerConfig({ gameData, player, onPlayerChange, hideConsumables
   // swapping a slot's ability inherited the OUTGOING ability's level and
   // triggers and quietly simulated a build nobody had configured.
   const applyAbilities = useCallback((newAbilities) => {
-    const abilityMemory = { ...(player.abilityMemory || {}) };
-    for (const slot of newAbilities) {
-      if (slot?.hrid) {
-        abilityMemory[slot.hrid] = { level: slot.level, triggers: slot.triggers || [] };
-      }
-    }
-    onPlayerChange({
-      ...player,
-      abilities: newAbilities,
-      abilityMemory
-    });
+    onPlayerChange(withAbilities(player, newAbilities));
   }, [player, onPlayerChange]);
 
   const handleAbilityChange = useCallback((index, abilityHrid, level) => {
@@ -401,14 +392,15 @@ export function PlayerConfig({ gameData, player, onPlayerChange, hideConsumables
     if (abilityHrid) {
       if (abilityHrid !== newAbilities[index]?.hrid) {
         // A slot SWAP. Pull back what this ability was last set to for this
-        // player; a level of 1 and no triggers only for one never seen before.
+        // player; level 1 and the game's default triggers for one never set up
+        // in this loadout.
         // Clearing a slot leaves its memory entry behind on purpose — that is
         // what makes A → B → A restore A.
         const remembered = player.abilityMemory?.[abilityHrid];
         newAbilities[index] = {
           hrid: abilityHrid,
           level: remembered?.level ?? level ?? 1,
-          triggers: remembered?.triggers ?? []
+          triggers: remembered?.triggers ?? (abilities?.[abilityHrid]?.defaultCombatTriggers || []).map((t) => ({ ...t }))
         };
       } else {
         // A level edit on the ability already in the slot.
@@ -421,7 +413,7 @@ export function PlayerConfig({ gameData, player, onPlayerChange, hideConsumables
       newAbilities[index] = null;
     }
     applyAbilities(newAbilities);
-  }, [player, applyAbilities]);
+  }, [player, applyAbilities, abilities]);
 
   const handleAbilityTriggersChange = useCallback((index, triggers) => {
     const newAbilities = [...player.abilities];

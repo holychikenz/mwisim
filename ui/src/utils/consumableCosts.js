@@ -19,12 +19,24 @@
 // =============================================================================
 
 import {
+  MIN_CLOCK_DIVISOR,
   partyConsumableSeconds,
+  partyNetConsumableSeconds,
+  consumableClassHrids,
   consumableTimeShare,
+  dropCreditSeconds,
+  effectiveNetRatePerHour,
   effectiveRatePerHour,
   sumConsumablesUsed,
 } from '../../../shared/consumableCost.js';
+import { calculateDropsPerHour, calculateExpectedDrops } from '../../../shared/drops.js';
 import { priceOf } from './prices';
+// The bundled snapshot useGameData reads too: what drop credit counts, and what drops it.
+import ITEMS from '../../../src/combatsimulator/data/itemDetailMap.json';
+import ACTIONS from '../../../src/combatsimulator/data/actionDetailMap.json';
+import MONSTERS from '../../../src/combatsimulator/data/combatMonsterDetailMap.json';
+
+const CONSUMABLE_CLASS = consumableClassHrids(ITEMS, ACTIONS);
 
 /**
  * The price map, but only when it is denominated in something we can use.
@@ -160,16 +172,28 @@ export function buildConsumableCosts(playerDTOs, pricing) {
  * exposed alongside so a caller can phrase the difference rather than print
  * "0 items priced" at someone who ate nothing.
  *
+ * DROP CREDIT. Given `drops` (the simResult, or a row carrying its deaths and
+ * per-player drop multipliers) and buildDropCreditCosts' table, each member's own
+ * consumable drops offset their own bill (partyNetConsumableSeconds), adding
+ * creditSecondsPerHour (the members' own credit, their plain mean), netSecondsPerHour
+ * (possibly negative) and creditFloored (only when a member hit the clock floor).
+ * Without both the result is exactly as before. A caller summarising many runs
+ * on one pricing (All Zones) passes `creditCosts`, built once.
+ *
  * @param {object} args
  * @param {Record<string, Record<string, number>>} args.consumablesUsed  simResult tally
  * @param {number} args.hours    simulated hours (of combat time)
  * @param {object} args.pricing
  * @param {string[]} [args.players]  the roster; see partyConsumableSeconds
+ * @param {object} [args.drops]  what drop credit reads; see above
+ * @param {Record<string, number>|null} [args.creditCosts]  buildDropCreditCosts(pricing), when already built
  * @returns {{known: boolean, nothingConsumed: boolean, secondsPerHour: number,
  *           timeShare: number, unitsPerHour: number, priced: string[],
- *           unpriced: string[], overrides: string[]}}
+ *           unpriced: string[], overrides: string[],
+ *           creditSecondsPerHour?: number, netSecondsPerHour?: number, creditFloored?: true}}
  */
-export function summariseConsumableCost({ consumablesUsed, hours, pricing, players }) {
+export function summariseConsumableCost({ consumablesUsed, hours, pricing, players, drops = null,
+  creditCosts = drops ? buildDropCreditCosts(pricing) : null }) {
   const { byItem, total } = sumConsumablesUsed(consumablesUsed);
   const perHour = (value) => (hours > 0 ? value / hours : 0);
   const nothingConsumed = Object.keys(byItem).length === 0;
@@ -184,6 +208,9 @@ export function summariseConsumableCost({ consumablesUsed, hours, pricing, playe
 
   const { seconds, priced, unpriced } = partyConsumableSeconds(consumablesUsed, costs, { players, hours });
   const secondsPerHour = perHour(seconds);
+  const roster = players?.length ? players : Object.keys(consumablesUsed || {});
+  const net = drops && creditCosts && partyNetConsumableSeconds(consumablesUsed, costs,
+    dropCreditSeconds(drops, MONSTERS, creditCosts, roster), { players: roster, hours });
 
   return {
     known: nothingConsumed || priced.length > 0,
@@ -194,7 +221,94 @@ export function summariseConsumableCost({ consumablesUsed, hours, pricing, playe
     priced,
     unpriced,
     overrides,
+    ...(net && {
+      creditSecondsPerHour: perHour(net.credit),
+      netSecondsPerHour: perHour(net.seconds),
+      ...(net.floored && { creditFloored: true }),
+    }),
   };
+}
+
+/** A summariseConsumableCost result's rate on the real clock: net of drop credit when it has one, else its bill. */
+export function effectiveRateFor(ratePerHour, summary) {
+  return summary?.netSecondsPerHour == null
+    ? effectiveRatePerHour(ratePerHour, summary?.secondsPerHour)
+    : effectiveNetRatePerHour(ratePerHour, summary.netSecondsPerHour);
+}
+
+/** What an effective rate is when drop credit hits the clock floor (shared/consumableCost.js MIN_CLOCK_DIVISOR). */
+export const CAPPED = `capped: effective ≤ ${1 / MIN_CLOCK_DIVISOR}× raw`;
+
+/**
+ * The zone results' hint under an effective rate, from what effectiveRateFor builds it on: the net of drop credit when
+ * the summary carries one (a surplus, a net of zero, or the floor, said as such), else the bill.
+ */
+export function effectiveHint(cost) {
+  const net = cost.netSecondsPerHour; // undefined without drop credit: the bill's hint, as it always was
+  if (cost.creditFloored) return CAPPED;
+  if (net < 0) return 'drops outweigh the cooking';
+  // A net of exactly zero is the rate's own divisor too: say 0%, not the gross bill's share.
+  if (net >= 0 && !cost.nothingConsumed) return `${(consumableTimeShare(net) * 100).toFixed(0)}% of time cooking, net of drops`;
+  return cost.nothingConsumed ? 'nothing consumed' : `${(cost.timeShare * 100).toFixed(0)}% of time cooking`;
+}
+
+/**
+ * Seconds each for every consumable-class item the source can value, overrides
+ * included (so a 0 gives an item no credit): the drop-credit table posted with
+ * an optimiser run, and what the zone results credit. Null unless the credit is
+ * on (pricing.dropCredit) and the source is in seconds — coins are not time.
+ *
+ * @param {object} pricing
+ * @returns {Record<string, number>|null}
+ */
+export function buildDropCreditCosts(pricing) {
+  if (!pricing?.dropCredit || !secondsPrices(pricing)) return null;
+  const costs = {};
+  for (const hrid of CONSUMABLE_CLASS) {
+    const { effective } = resolveItemCost(hrid, pricing);
+    if (effective != null) costs[hrid] = effective;
+  }
+  return Object.keys(costs).length ? costs : null;
+}
+
+/**
+ * The Costs page's drop-credit rows for one character of a finished zone run:
+ * each consumable-class item they are expected to receive, priced like any cost
+ * row (overrides apply), with drops and credit per hour, most credit first.
+ *
+ * @param {object} simResult
+ * @param {object} pricing
+ * @param {string} playerHrid
+ * @returns {Array<object>} resolveItemCost rows plus name, roles, usedBy, perHour, creditPerHour
+ */
+export function describeDropCredit(simResult, pricing, playerHrid) {
+  if (!(Number(simResult?.simulatedTime) > 0)) return [];
+  return calculateDropsPerHour(calculateExpectedDrops(simResult, MONSTERS, ITEMS, playerHrid), simResult.simulatedTime)
+    .filter((drop) => CONSUMABLE_CLASS.has(drop.itemHrid))
+    .map(({ itemHrid, name, perHour }) => {
+      const cost = resolveItemCost(itemHrid, pricing);
+      return { ...cost, name, roles: [], usedBy: [], perHour, creditPerHour: perHour * (cost.effective ?? 0) };
+    })
+    .sort((a, b) => b.creditPerHour - a.creditPerHour);
+}
+
+/**
+ * The Costs page's bear-zone preset. Bear With It drops so much sugar (20-100
+ * from every gummy bear) and so many low gummies that they are an infinite pool,
+ * worth no time; plum, peach, dragon fruit and star fruit gummies keep theirs.
+ */
+export const BEAR_ZONE_ZEROED = ['/items/sugar', '/items/gummy', '/items/apple_gummy', '/items/orange_gummy'];
+
+/**
+ * What the preset's Revert puts back (hrid → the value it replaced, null: none): only the items whose override is
+ * still the 0 the preset set — anything edited since keeps the edit. Empty when nothing is left to revert.
+ *
+ * @param {Record<string, number|null>|null} undo  usePrices dropCreditUndo
+ * @param {Record<string, number>} overrides  usePrices itemCostOverrides
+ * @returns {Record<string, number|null>}
+ */
+export function revertPatch(undo, overrides) {
+  return Object.fromEntries(Object.entries(undo || {}).filter(([hrid]) => overrides?.[hrid] === 0));
 }
 
 // Re-exported so a consumer needs one import rather than two, and so the divisor

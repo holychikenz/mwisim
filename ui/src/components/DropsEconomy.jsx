@@ -5,7 +5,7 @@ import { DropsTable } from './DropsTable';
 import { nameOf } from '../utils/names';
 import { NumTd, Section, StatGroup } from './ResultParts';
 import { usePersistentState, isBool } from '../hooks/usePersistentState';
-import { calculateExpectedDrops, calculateDropsPerHour } from '../utils/drops';
+import { calculateExpectedDrops, calculateDropsPerHour } from '../../../shared/drops.js';
 import { priceOf, saleValue, formatValue } from '../utils/prices';
 import { convertDropsToCredits } from '../utils/guildCredits';
 

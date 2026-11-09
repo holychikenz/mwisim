@@ -12,7 +12,22 @@ Decisions for the React UI redesign (agreed 2026-10-09). Theme tokens live in
   poorly at the sidebar's 12–13 px. No kanji or other decorative glyphs.
 
 ## Structure (L2)
-- **Header**: brand, mode tabs (Zone · Lab · Trial · Triggers · Gear · Costs), settings.
+- **Header** (two rows, 96 px): brand, the target (Zone · Lab · Trial), then
+  Costs (a ledger icon, inline SVG since there is no icon package; a toggle:
+  pressed again it returns to where you were), the settings cog and, at the far
+  right, the main-character chip. Under them, the tools for that target: Simulate | Triggers ·
+  Gear. A tool that cannot fight the target is disabled (Trial offers Simulate
+  only); adding one is one entry in `TOOLS` (`src/utils/optimizerTarget.js`).
+  Neither row is remembered: a reload opens Zone · Simulate.
+- **Main character**: the header chip shows initials, name and CL (avatar
+  only below `sm`); its menu switches main among the stored characters. With
+  none stored it is a muted "Import character" that opens P1's sheet. Main is
+  remembered by store id and game characterId (`csim_ui_main_character`), so a
+  rename plus re-import keeps it; a choice whose character is gone falls back
+  to the only character, else none, and is not written back. It seeds P1 when
+  no session is stored (the slot Triggers, Gear and Costs read). Iron time
+  follows it: fetched once per session, never over its own cached times, and
+  quietly.
 - **Rail** (left, narrow): one card per party member — character, loadout,
   combat level, warnings, in/out of the sim. Trial mode shows the roster as
   the same `.member-card`s: name, CL, loadout · weapon · best skill, the
@@ -37,7 +52,14 @@ Decisions for the React UI redesign (agreed 2026-10-09). Theme tokens live in
 - **Narrow screens** (below Mantine `sm`, 768 px): the rail is hidden and a
   burger in the header opens it as an overlay; picking a member closes it and
   opens the sheet. The brand moves from the header to the top of the rail, so
-  the mode tabs keep the header (they scroll sideways rather than overflow).
+  the target and tools keep the header. In row 1 the burger and the right-hand
+  group (Costs, cog, chip — avatar only) stay put and only the target scrolls
+  sideways; the tools row scrolls too.
+- **Roboburble** (`src/assistant/`): a 56 px round launcher at the bottom right
+  of the main pane. It sits beside the pinned sheet (`--app-shell-aside-offset`)
+  and never in the header, which is full. It opens a non-modal panel above
+  itself; Escape closes it and returns focus to the launcher. Tools write
+  through App's own setters, and every edit gets an Undo chip.
 
 ## Gear (G2)
 Paper doll: slots as a 3-column grid of tiles (slot, item, +N). Clicking a tile
@@ -87,7 +109,10 @@ opens one searchable picker with the enhancement level; owned items first.
   `csim_ui_mode_settings_open`, `csim_ui_global_buffs_open`,
   `csim_ui_drops_credit_mode`, `csim_ui_trial_monsters_collapsed`,
   `csim_ui_trigopt_stages_open`, `csim_ui_equipopt_fidelity_open`,
-  `csim_ui_allzones_sort`.
+  `csim_ui_allzones_sort`, `csim_ui_main_character`, `csim_ui_assistant`.
+  API keys are data, not choices: `csim_assistant_key_anthropic` /
+  `csim_assistant_key_openai`, written only by the assistant's settings and
+  removed by Forget key.
 
 ## Performance
 - **Mode views load lazily.** The trial panel, trial results and monster
@@ -116,6 +141,9 @@ opens one searchable picker with the enhancement level; owned items first.
   visit downloads.
 - The simulation workers are bundled on their own and are untouched by this
   splitting.
+- The assistant panel, its WebLLM worker (~6 MB) and its Whisper worker (plus
+  the 27 MB ORT wasm, fetched only when Whisper is used) are lazy; the
+  launcher is the only eager part.
 
 ## Rule of thumb
 No information is dropped: it may move, group or fade, never vanish.

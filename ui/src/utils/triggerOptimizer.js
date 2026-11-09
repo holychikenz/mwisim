@@ -7,6 +7,8 @@
 // not also export constants or helpers.
 // =============================================================================
 
+import { CAPPED } from './consumableCosts';
+
 /** localStorage key, following the UI's `csim_*` convention. */
 export const TRIGGER_OPT_KEY = 'csim_trigger_optimizer';
 
@@ -39,6 +41,16 @@ export function formatSeconds(seconds) {
   if (value < 90) return `${Math.round(value)}s`;
   if (value < 5400) return `${Math.round(value / 60)} min`;
   return `${(value / 3600).toFixed(1)} h`;
+}
+
+/**
+ * Drop credit's breakdown per hour of combat: "20 min eaten − 45 min of drops = −25 min net". The net can be negative;
+ * `floored` (a member's net hit the clock floor) is said. For one player the net is then the floor's; in a party the
+ * eaten and net figures are the per-player clock's and the credit the members' plain mean, so the sum is near, not exact.
+ */
+export function formatNetSeconds(consumed, credit, net, floored = false) {
+  return `${formatSeconds(consumed)} eaten − ${formatSeconds(credit)} of drops = ${net < 0 ? '−' : ''}${formatSeconds(Math.abs(net))} net` +
+    (floored ? ` (${CAPPED})` : '');
 }
 
 /**

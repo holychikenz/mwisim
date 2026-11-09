@@ -16,14 +16,13 @@ import {
 import {
   MAX_PROTECT_AT,
   MIN_PROTECT_AT,
-  VERDICT_LABELS,
   formatPct,
   formatSignedPct,
   verdictOf,
 } from '../utils/equipmentOptimizer';
 import { formatSeconds } from '../utils/triggerOptimizer';
 import { useEnhancementCosts } from '../hooks/useEnhancementCosts';
-import { ClearResultsButton, NumTd, Section, StatCard } from './ResultParts';
+import { ClearResultsButton, NumTd, Section, StatCard, VerdictBadge } from './ResultParts';
 import {
   PROTECTION_PRICING,
   breakEvenHours,
@@ -106,25 +105,6 @@ function formatNumber(value, decimals = 2) {
   if (Math.abs(number) >= 1e6) return `${(number / 1e6).toFixed(2)}M`;
   if (Math.abs(number) >= 1e4) return `${(number / 1e3).toFixed(1)}K`;
   return number.toFixed(decimals);
-}
-
-const VERDICT_STYLE = {
-  'strong-gain': { color: 'teal', variant: 'filled' },
-  gain: { color: 'teal', variant: 'light' },
-  'strong-loss': { color: 'red', variant: 'filled' },
-  loss: { color: 'red', variant: 'light' },
-  noise: { color: 'gray', variant: 'outline' },
-  unknown: { color: 'gray', variant: 'outline' },
-};
-
-function VerdictBadge({ row }) {
-  const verdict = verdictOf(row);
-  const style = VERDICT_STYLE[verdict] || VERDICT_STYLE.unknown;
-  return (
-    <Badge size="xs" color={style.color} variant={style.variant}>
-      {VERDICT_LABELS[verdict]}
-    </Badge>
-  );
 }
 
 /** "9.4 h" / "3.1 days" — a grinding horizon, not a production time. */
@@ -593,7 +573,7 @@ export function EquipmentOptimizerResults({
 
   const costed = !!results.consumableCostsKnown;
   // The headline names the first family-wise significant GAIN (as scan.js), not merely the top row.
-  const leader = rows.find((row) => row.significantFamilywise && row.perLevel > 0) ?? rows[0];
+  const leader = rows.find((row) => verdictOf(row) === 'strong-gain') ?? rows[0];
 
   return (
     <Stack gap="md">
@@ -766,7 +746,7 @@ export function EquipmentOptimizerResults({
                   </NumTd>
                   <NumTd
                     strong={row.significant}
-                    c={row.significant ? (row.perLevel >= 0 ? 'teal' : 'red') : undefined}
+                    c={row.significant && row.perLevel ? (row.perLevel > 0 ? 'teal' : 'red') : undefined}
                   >
                     {formatPerLevel(row)}
                   </NumTd>

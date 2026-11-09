@@ -14,8 +14,8 @@ import {
   UnstyledButton
 } from '@mantine/core';
 import { usePersistentState } from '../hooks/usePersistentState';
-import { effectiveRatePerHour, summariseConsumableCost } from '../utils/consumableCosts';
-import { formatSeconds } from '../utils/triggerOptimizer';
+import { buildDropCreditCosts, effectiveRateFor, summariseConsumableCost } from '../utils/consumableCosts';
+import { formatNetSeconds, formatSeconds } from '../utils/triggerOptimizer';
 
 // =============================================================================
 // AllZonesResults — one row per (zone, tier), ranked, for ONE player
@@ -112,11 +112,13 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
   // wrapper would recompute 78 cost summaries and a sort on every progress tick
   // of a running sweep — hundreds of times a second. Depend on the stable values
   // inside it instead (the same trick App.jsx uses for the optimiser payloads).
-  const { fetchedPrices, prices, unit, expenseMode, itemCostOverrides } = pricing || {};
+  const { fetchedPrices, prices, unit, expenseMode, itemCostOverrides, dropCredit } = pricing || {};
   const costBasis = useMemo(
-    () => ({ fetchedPrices, prices, unit, expenseMode, itemCostOverrides }),
-    [fetchedPrices, prices, unit, expenseMode, itemCostOverrides]
+    () => ({ fetchedPrices, prices, unit, expenseMode, itemCostOverrides, dropCredit }),
+    [fetchedPrices, prices, unit, expenseMode, itemCostOverrides, dropCredit]
   );
+  // Drop credit's table, once per pricing rather than once per row.
+  const creditCosts = useMemo(() => buildDropCreditCosts(costBasis), [costBasis]);
 
   // One pass over the rows, re-run when prices change: the effective columns are
   // derived from whatever pricing is loaded NOW, not from what was loaded when
@@ -155,6 +157,9 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
         hours,
         pricing: costBasis,
         players: activeHrid ? [activeHrid] : partyHrids,
+        // Drop credit: this player's own consumable drops against their own plate (the row carries the drop inputs).
+        drops: row,
+        creditCosts,
       });
 
       // A dungeon's encounters are its WAVES, so its Enc/h is waves per hour —
@@ -174,15 +179,18 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
         nothingConsumed: cost.nothingConsumed,
         timeShare: cost.timeShare,
         secondsPerHour: cost.secondsPerHour,
+        creditSecondsPerHour: cost.creditSecondsPerHour,
+        netSecondsPerHour: cost.netSecondsPerHour,
+        creditFloored: cost.creditFloored,
         effEncountersPerHour: cost.known && !dungeon
-          ? effectiveRatePerHour(encountersPerHour, cost.secondsPerHour)
+          ? effectiveRateFor(encountersPerHour, cost)
           : null,
         effExperiencePerHour: cost.known
-          ? effectiveRatePerHour(experiencePerHour, cost.secondsPerHour)
+          ? effectiveRateFor(experiencePerHour, cost)
           : null,
       };
     });
-  }, [rows, zoneNames, costBasis, activeHrid, partyHrids]);
+  }, [rows, zoneNames, costBasis, creditCosts, activeHrid, partyHrids]);
 
   // A sort can outlive its column: sort by Clears/h on a sweep that included
   // dungeons, re-run with planets only, and the column is gone while `sort` (the
@@ -393,7 +401,9 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
                         {col.effective && row.costKnown && value != null ? (
                           <Tooltip
                             label={
-                              row.nothingConsumed
+                              row.netSecondsPerHour != null
+                                ? `${formatNetSeconds(row.secondsPerHour, row.creditSecondsPerHour, row.netSecondsPerHour, row.creditFloored)} production per combat hour — this player's drops against their own plate`
+                                : row.nothingConsumed
                                 ? 'Nothing consumed here — no production time owed, so this equals the raw rate'
                                 : `${(row.timeShare * 100).toFixed(0)}% of total time cooking — ${formatSeconds(
                                     row.secondsPerHour

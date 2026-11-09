@@ -84,3 +84,9 @@ test('audit-7d: a trigger named twice in the selection is swept once', async () 
   assert.equal(twice.body.selection.length, 1);
   assert.equal(twice.body.params.length, once.body.params.length);
 });
+
+test('a null stages body is the default stages, not a 500', async () => {
+  const res = await post(triggers, '/optimize-triggers/preview', { players, zone: fly, stages: null });
+  assert.equal(res.statusCode, 200, JSON.stringify(res.body));
+  assert.equal(res.body.success, true);
+});

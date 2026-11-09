@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const { saleValue } = await import('../../ui/src/utils/prices.js');
+const { saleValue, matchWebappCharacter, autoIronDecision } = await import('../../ui/src/utils/prices.js');
 
 const PRICES = {
   '/items/rainbow_milk': { ask: 100, bid: 80, vendor: 5 },
@@ -34,4 +34,42 @@ test('audit-18: formatValue rounds the total before splitting it', async () => {
   assert.equal(formatValue(3661, 'seconds'), '1h 1m');
   assert.equal(formatValue(Infinity, 'seconds'), '∞');
   assert.equal(formatValue(Infinity, 'coins'), '∞');
+});
+
+// Following the main character with the iron source (hooks/usePrices.js).
+const WEBAPP = { characters: ['alt', 'HolyChikenz'], details: [{ name: 'alt' }, { name: 'HolyChikenz' }] };
+
+test('matchWebappCharacter: by game id, then in-game name, then (no game identity) the record name', () => {
+  assert.equal(matchWebappCharacter({ name: 'holychikenz' }, WEBAPP), 'HolyChikenz');
+  assert.equal(matchWebappCharacter({ name: 'Holy (main)', game: { id: 7, name: 'holychikenz' } }, WEBAPP), 'HolyChikenz');
+  assert.equal(matchWebappCharacter({ name: 'nobody' }, WEBAPP), null);
+  const byId = { characters: ['renamed'], details: [{ name: 'renamed', characterId: 7 }] };
+  assert.equal(matchWebappCharacter({ name: 'x', game: { id: 7 } }, byId), 'renamed');
+  assert.equal(matchWebappCharacter({ name: 'x', game: { id: '7' } }, { details: [{ name: 'r', id: 7 }] }), 'r');
+  for (const bad of [null, {}, { characters: 'x' }]) assert.equal(matchWebappCharacter({ name: 'x' }, bad), null);
+  assert.equal(matchWebappCharacter(null, WEBAPP), null);
+  const both = { characters: ['alt', 'main'], details: [{ name: 'alt' }, { name: 'main', characterId: 7 }] };
+  assert.equal(matchWebappCharacter({ name: 'alt', game: { id: 7, name: 'alt' } }, both), 'main', 'id beats a name');
+  assert.equal(matchWebappCharacter({ name: 'alt', game: { id: 9, name: 'gone' } }, WEBAPP), null, 'editable name unused when game is known');
+});
+
+test('autoIronDecision: fetch once, never over the cached times, follow back', () => {
+  const main = { name: 'holychikenz' };
+  assert.deepEqual(autoIronDecision({ main, webapp: WEBAPP, cache: {} }), { name: 'HolyChikenz', needsFetch: true });
+  assert.deepEqual(
+    autoIronDecision({ main, webapp: WEBAPP, cache: { iron: { character: 'holychikenz' } } }),
+    { name: 'HolyChikenz', needsFetch: false }
+  );
+  assert.deepEqual(
+    autoIronDecision({ main, webapp: WEBAPP, cache: { iron: { character: 'alt' } } }),
+    { name: 'HolyChikenz', needsFetch: true }
+  );
+  assert.equal(autoIronDecision({ main, webapp: WEBAPP, cache: {}, followed: 'HolyChikenz' }), null);
+  assert.equal(autoIronDecision({ main, webapp: null, cache: {} }), null);
+  assert.equal(autoIronDecision({ main: null, webapp: WEBAPP, cache: {} }), null);
+  // Main moved to someone the webapp does not know: name null, so moving back follows again.
+  assert.deepEqual(
+    autoIronDecision({ main: { name: 'nobody' }, webapp: WEBAPP, cache: {}, followed: 'HolyChikenz' }),
+    { name: null, needsFetch: false }
+  );
 });

@@ -70,7 +70,7 @@ async function runOne(job) {
   try {
     const simulator = buildRun(job);
     const simResult = await simulator.simulate(job.simulationTimeLimit);
-    return { metrics: scoreSimResult(simResult, { consumableCosts: job.consumableCosts }) };
+    return { metrics: scoreSimResult(simResult, { consumableCosts: job.consumableCosts, dropCreditCosts: job.dropCreditCosts }) };
   } finally {
     restoreRandom();
   }

@@ -710,3 +710,161 @@ test('an import in flight does not overwrite an edit made while it was fetching'
   // StrictMode is harmless and the functional form is safe.
   assert.deepEqual(mergeImportedCharacter(applied, incoming).store, applied);
 });
+
+// =============================================================================
+// GAME IDENTITY — players rename in-game; the characterId never changes.
+// =============================================================================
+
+const asGame = (id, name) => ({ ...char, name, character: { id, name } });
+
+test('the import records the game characterId and the name it used', () => {
+  const c = characterToCharacter(asGame(4242, 'holychikenz'), null, 'holychikenz').character;
+  assert.deepEqual(c.game, { id: 4242, name: 'holychikenz' });
+  assert.ok(!('game' in characterToCharacter(char, null, 'holychikenz').character));
+  assert.ok(!('game' in toPlayerDTO(resolvePlayer(c, c.loadouts.tank), { hrid: 'player1' })));
+});
+
+test('an in-game rename re-imports onto the old record and takes the new name', () => {
+  let s = mergeImportedCharacter(
+    emptyStore(), characterToCharacter(asGame(4242, 'holychikenz'), null, 'holychikenz').character
+  ).store;
+  s = upsertCharacter(s, {
+    ...s.characters.holychikenz,
+    guildShrines: { '/buff_types/guild_force': 5 },
+    personalBuffs: ['/items/seal_of_pain']
+  });
+  s = setLoadout(s, 'holychikenz', 'pvp', sanitizeLoadout({}));
+
+  const incoming = characterToCharacter(asGame(4242, 'chikenz'), null, 'chikenz').character;
+  const merged = mergeImportedCharacter(s, incoming);
+  const stored = merged.store.characters.holychikenz;
+  assert.equal(merged.id, 'holychikenz');
+  assert.equal(merged.created, false);
+  assert.deepEqual(Object.keys(merged.store.characters), ['holychikenz']);
+  assert.equal(stored.name, 'chikenz');
+  assert.deepEqual(stored.game, { id: 4242, name: 'chikenz' });
+  assert.deepEqual(stored.guildShrines, { '/buff_types/guild_force': 5 });
+  assert.deepEqual(stored.personalBuffs, ['/items/seal_of_pain']);
+  assert.deepEqual(merged.kept, ['pvp']);
+  assert.deepEqual(mergeImportedCharacter(merged.store, incoming).store, merged.store);
+});
+
+test('a name chosen in csim survives an id-matched re-import', () => {
+  let s = mergeImportedCharacter(
+    emptyStore(), characterToCharacter(asGame(4242, 'holychikenz'), null, 'holychikenz').character
+  ).store;
+  s = upsertCharacter(s, { ...s.characters.holychikenz, name: 'main' });
+  const stored = mergeImportedCharacter(
+    s, characterToCharacter(asGame(4242, 'chikenz'), null, 'chikenz').character
+  ).store.characters.holychikenz;
+  assert.equal(stored.name, 'main');
+  assert.equal(stored.game.name, 'chikenz');
+});
+
+test("a different game character with a stored character's name gets its own record", () => {
+  const s = mergeImportedCharacter(
+    emptyStore(), characterToCharacter(asGame(1, 'alice'), null, 'alice').character
+  ).store;
+  const merged = mergeImportedCharacter(s, characterToCharacter(asGame(2, 'alice'), null, 'alice').character);
+  assert.equal(merged.created, true);
+  assert.notEqual(merged.id, 'alice');
+  assert.equal(merged.store.characters.alice.game.id, 1);
+  assert.equal(merged.store.characters[merged.id].game.id, 2);
+});
+
+test('a legacy record (no game) is re-imported in place, keeps its name, gains the id', () => {
+  let s = mergeImportedCharacter(emptyStore(), characterToCharacter(char, null, 'holychikenz').character).store;
+  s = upsertCharacter(s, { ...s.characters.holychikenz, name: 'Holy' });
+  const merged = mergeImportedCharacter(
+    s, characterToCharacter(asGame(4242, 'holychikenz'), null, 'holychikenz').character
+  );
+  assert.equal(merged.id, 'holychikenz');
+  assert.equal(merged.created, false);
+  assert.equal(merged.store.characters.holychikenz.name, 'Holy');
+  assert.deepEqual(merged.store.characters.holychikenz.game, { id: 4242, name: 'holychikenz' });
+});
+
+test('an explicit landing id is honoured verbatim, so the slot binding cannot drift', () => {
+  const s = mergeImportedCharacter(
+    emptyStore(), characterToCharacter(asGame(4242, 'holychikenz'), null, 'holychikenz').character
+  ).store;
+  const incoming = characterToCharacter(asGame(4242, 'chikenz'), null, 'chikenz').character;
+  const { id } = mergeImportedCharacter(s, incoming); // App's preview, pre-fetch base
+  assert.equal(id, 'holychikenz');
+  const live = deleteCharacter(s, 'holychikenz');     // base moved during the fetch
+  assert.equal(mergeImportedCharacter(live, incoming).id, 'chikenz', 'unpinned, the write drifts');
+  const pinned = mergeImportedCharacter(live, incoming, { id });
+  assert.equal(pinned.id, 'holychikenz');
+  assert.deepEqual(Object.keys(pinned.store.characters), ['holychikenz']);
+});
+
+test('a pinned landing id never merges two game characters', () => {
+  const s = mergeImportedCharacter(emptyStore(), characterToCharacter(asGame(1, 'alice'), null, 'alice').character).store;
+  const other = mergeImportedCharacter(s, characterToCharacter(asGame(2, 'alice'), null, 'alice').character, { id: 'alice' });
+  assert.equal(other.created, true);
+  assert.notEqual(other.id, 'alice');
+  assert.equal(other.store.characters.alice.game.id, 1);
+  assert.equal(other.store.characters[other.id].game.id, 2);
+  // The same game character, and an import with no game identity, still land where pinned.
+  assert.equal(mergeImportedCharacter(s, characterToCharacter(asGame(1, 'alice'), null, 'alice').character, { id: 'alice' }).id, 'alice');
+  assert.equal(mergeImportedCharacter(s, characterToCharacter(char, null, 'alice').character, { id: 'alice' }).id, 'alice');
+});
+
+test('game.name is the in-game name, not the webapp label; a rename follows it', () => {
+  const c = characterToCharacter(asGame(4242, 'holychikenz'), null, 'Holy (webapp)').character;
+  assert.equal(c.name, 'Holy (webapp)');
+  assert.deepEqual(c.game, { id: 4242, name: 'holychikenz' });
+  assert.deepEqual(
+    characterToCharacter({ ...char, character: { id: 4242 } }, null, 'label').character.game,
+    { id: 4242, name: 'label' }
+  );
+  const s = mergeImportedCharacter(
+    emptyStore(), characterToCharacter(asGame(4242, 'holychikenz'), null, 'holychikenz').character
+  ).store;
+  const stored = mergeImportedCharacter(
+    s, characterToCharacter(asGame(4242, 'chikenz'), null, 'Chik (webapp)').character
+  ).store.characters.holychikenz;
+  assert.equal(stored.name, 'chikenz');
+  assert.deepEqual(stored.game, { id: 4242, name: 'chikenz' });
+});
+
+test('the import keeps what the character owns that combat could use: hrid, enhancement and count only', () => {
+  const item = (equipmentDetail) => ({ equipmentDetail });
+  const gameData = { items: {
+    '/items/donut': { categoryHrid: '/item_categories/food', consumableDetail: { usableInActionTypeMap: { '/action_types/combat': true } } },
+    '/items/wisdom_tea': { categoryHrid: '/item_categories/drink', consumableDetail: { usableInActionTypeMap: { '/action_types/milking': true } } },
+    '/items/cheese_sword': item({ type: '/equipment_types/main_hand', levelRequirements: [{ skillHrid: '/skills/melee', level: 120 }] }),
+    '/items/small_pouch': item({ type: '/equipment_types/pouch', levelRequirements: [{ skillHrid: '/skills/total_level', level: 1 }] }),
+    '/items/giant_pouch': item({ type: '/equipment_types/pouch', levelRequirements: [{ skillHrid: '/skills/total_level', level: 750 }] }),
+    '/items/cheese_brush': item({ type: '/equipment_types/milking_tool', levelRequirements: [] }),
+    '/items/cheese': { categoryHrid: '/item_categories/resource' },
+  } };
+  const own = (itemHrid, count = 1, extra = {}) => ({ id: 9, characterID: 7, hash: 'h', itemLocationHrid: '/item_locations/inventory', itemHrid, enhancementLevel: 2, count, ...extra });
+  const payload = { ...char, characterSkills: [...char.characterSkills, { skillHrid: '/skills/total_level', level: 600 }],
+    characterItems: [own('/items/donut', 40), own('/items/wisdom_tea'), own('/items/cheese_sword'), own('/items/small_pouch'),
+      own('/items/giant_pouch'), own('/items/cheese_brush'), own('/items/cheese', 500), own('/items/donut', 0)] };
+  const { character } = characterToCharacter(payload, gameData, 'holychikenz');
+  assert.deepEqual(character.inventory.map((e) => e.itemHrid), ['/items/donut', '/items/cheese_sword', '/items/small_pouch']);
+  for (const entry of character.inventory) assert.deepEqual(Object.keys(entry).sort(), ['count', 'enhancementLevel', 'itemHrid']);
+  assert.deepEqual(character.inventory[0], { itemHrid: '/items/donut', enhancementLevel: 2, count: 40 });
+});
+
+test('a payload without characterItems carries no inventory, and a re-import from it keeps the stored one', () => {
+  assert.equal('inventory' in result.character, false);
+  const stored = [{ itemHrid: '/items/donut', enhancementLevel: 0, count: 3 }];
+  const first = mergeImportedCharacter(emptyStore(), { ...result.character, inventory: stored });
+  const kept = mergeImportedCharacter(first.store, characterToCharacter(char, null, 'holychikenz').character, { id: first.id });
+  assert.deepEqual(kept.store.characters[first.id].inventory, stored);
+  const fresh = characterToCharacter({ ...char, characterItems: [{ itemHrid: '/items/cupcake', enhancementLevel: 0, count: 1 }] }, null, 'holychikenz').character;
+  const replaced = mergeImportedCharacter(kept.store, fresh, { id: first.id });
+  assert.deepEqual(replaced.store.characters[first.id].inventory, [{ itemHrid: '/items/cupcake', enhancementLevel: 0, count: 1 }]);
+});
+
+test("csim_loadouts predates the [] rule: an unslotted ability's [] is dropped, a slotted one's kept, levels untouched", () => {
+  localStorage.clear();
+  localStorage.setItem(LEGACY_LOADOUTS_KEY, JSON.stringify(LEGACY_BLOB));
+  const two = migrateLegacyLoadouts(emptyStore()).store.characters.orphan_2;
+  assert.deepEqual(two.loadouts.tank.triggerMemory, { '/abilities/smack': SMACK_TRIGGERS });
+  assert.deepEqual(two.loadouts.sword.triggerMemory, { '/abilities/cleave': [] });
+  assert.deepEqual(two.abilityLevels, { '/abilities/cleave': 8, '/abilities/smack': 12 });
+});

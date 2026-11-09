@@ -8,6 +8,7 @@ import {
   NumberInput,
   SegmentedControl,
   Stack,
+  Switch,
   Table,
   Text,
   TextInput,
@@ -15,7 +16,8 @@ import {
   Tooltip
 } from '@mantine/core';
 import { Select } from './SearchSelect';
-import { COST_ROLES, describeBuildCosts, searchItemCosts } from '../utils/itemCosts';
+import { COST_ROLES, describeBuildCosts, lastSegment, searchItemCosts } from '../utils/itemCosts';
+import { BEAR_ZONE_ZEROED, describeDropCredit, revertPatch } from '../utils/consumableCosts';
 import { formatAge, formatSeconds } from '../utils/triggerOptimizer';
 import { PROTECTION_PRICING } from '../../../shared/enhancementRoi.js';
 import { NumTd, Section } from './ResultParts';
@@ -158,7 +160,7 @@ function CostTable({ rows, disabled, onChange, empty }) {
   );
 }
 
-export function ItemCostsView({ playerDTOs, gameItems, pricing, protectionPricing }) {
+export function ItemCostsView({ playerDTOs, gameItems, pricing, protectionPricing, simResult, focusHrid }) {
   const [query, setQuery] = useState('');
 
   const buildRows = useMemo(
@@ -172,8 +174,37 @@ export function ItemCostsView({ playerDTOs, gameItems, pricing, protectionPricin
   );
 
   const unpricedCount = buildRows.filter((row) => row.effective == null).length;
-  const overrideCount = Object.keys(pricing?.itemCostOverrides || {}).length;
-  const isSeconds = pricing?.unit === 'seconds';
+  const overrideCount = Object.keys(pricing.itemCostOverrides || {}).length;
+  const isSeconds = pricing.unit === 'seconds';
+
+  // Drop credit's list: the last zone run (App's useSimulation results), for the
+  // P-tab member when they were in it, else the first member simulated. Never a
+  // labyrinth's, which gets no credit. usePrices returns a fresh object every
+  // render, so the list depends on the fields it reads, as AllZonesResults does.
+  const zoneRun = !!simResult?.zoneName && !simResult.isLabyrinth;
+  const simulated = Object.keys(simResult?.dropRateMultiplier || {});
+  const dropper = simulated.includes(focusHrid) ? focusHrid : simulated[0];
+  const { fetchedPrices, prices, unit, expenseMode, itemCostOverrides, dropCreditUndo } = pricing;
+  const dropRows = useMemo(
+    () => (zoneRun ? describeDropCredit(simResult, { fetchedPrices, prices, unit, expenseMode, itemCostOverrides }, dropper) : [])
+      .map((row) => ({
+        ...row,
+        usedBy: [`${row.perHour.toFixed(1)} dropped per hour · ${formatSeconds(row.creditPerHour)} of credit per hour`],
+      })),
+    [zoneRun, simResult, fetchedPrices, prices, unit, expenseMode, itemCostOverrides, dropper]
+  );
+  // The preset keeps what it replaced (null: no override); Revert restores only
+  // what is still its 0 (a later edit wins), then nothing is left to revert.
+  const pending = Object.entries(revertPatch(dropCreditUndo, itemCostOverrides));
+  const nameOf = (hrid) => gameItems?.[hrid]?.name || lastSegment(hrid);
+  const zeroBearPools = () => {
+    pricing.setDropCreditUndo(Object.fromEntries(BEAR_ZONE_ZEROED.map((hrid) => [hrid, itemCostOverrides?.[hrid] ?? null])));
+    pricing.setItemCostOverrides(Object.fromEntries(BEAR_ZONE_ZEROED.map((hrid) => [hrid, 0])));
+  };
+  const revertBearPools = () => {
+    pricing.setItemCostOverrides(Object.fromEntries(pending));
+    pricing.setDropCreditUndo(null);
+  };
 
   return (
     <Stack gap="md">
@@ -222,7 +253,8 @@ export function ItemCostsView({ playerDTOs, gameItems, pricing, protectionPricin
               variant="subtle"
               size="compact-xs"
               color="gray"
-              onClick={pricing.clearItemCostOverrides}
+              // Nothing the preset zeroed survives a reset, so nothing is left to revert.
+              onClick={() => { pricing.clearItemCostOverrides(); pricing.setDropCreditUndo(null); }}
             >
               Reset all {overrideCount}
             </Button>
@@ -301,6 +333,69 @@ export function ItemCostsView({ playerDTOs, gameItems, pricing, protectionPricin
           rows={buildRows}
           onChange={pricing.setItemCostOverride}
           empty="Nothing slotted or equipped yet — configure a party and these fill in."
+        />
+      </Section>
+
+      <Section
+        title="Drop credit"
+        right={
+          <Switch
+            size="xs"
+            label="Credit drops"
+            checked={!!pricing.dropCredit}
+            onChange={(event) => pricing.setDropCredit(event.currentTarget.checked)}
+          />
+        }
+      >
+        <Text size="xs" c="dimmed">
+          {isSeconds ? (
+            <>
+              What a run drops that you would otherwise cook or brew — food, drink and their
+              ingredients — is credited at its time below, each character&apos;s own drops against
+              their own eating, so an effective rate can beat the raw one. <b>0</b> gives an item no
+              credit (and makes eating it free).
+            </>
+          ) : (
+            <>
+              Off while the source reports {pricing.source === 'vendor' ? 'nothing' : 'coins'}: drops
+              are credited in seconds of production, and coins are not time.
+            </>
+          )}
+        </Text>
+        <Group gap="xs">
+          {pending.length ? (
+            <>
+              <Text size="xs">
+                Zeroed{' '}
+                {pending.map(([hrid, was]) => `${nameOf(hrid)} (was ${was == null ? 'none' : formatSeconds(was)})`).join(', ')}:
+                no drop credit for them, and eating them costs nothing.
+              </Text>
+              <Button variant="default" size="compact-xs" onClick={revertBearPools}>
+                Revert
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="default" size="compact-xs" onClick={zeroBearPools}>
+                Bear zone: zero the infinite pools
+              </Button>
+              <Text size="xs" c="dimmed">
+                Sets {BEAR_ZONE_ZEROED.map(nameOf).join(', ')} to 0: no drop credit for them, and eating
+                them costs nothing too.
+              </Text>
+            </>
+          )}
+        </Group>
+        {zoneRun && (
+          <Text size="xs" c="dimmed">
+            Dropped in your last run — {lastSegment(simResult.zoneName)} T{simResult.difficultyTier},
+            for {String(dropper).replace('player', 'P')}.
+          </Text>
+        )}
+        <CostTable
+          rows={dropRows}
+          onChange={pricing.setItemCostOverride}
+          empty={zoneRun ? 'Nothing this run drops is a consumable.' : 'Run a zone simulation and what it drops is listed here.'}
         />
       </Section>
 

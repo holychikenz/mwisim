@@ -27,6 +27,10 @@ import { useSimulation } from './hooks/useSimulation';
 import { useAllZones } from './hooks/useAllZones';
 import { useTriggerOptimizer } from './hooks/useTriggerOptimizer';
 import { useEquipmentOptimizer } from './hooks/useEquipmentOptimizer';
+import { useLoadoutOptimizer } from './hooks/useLoadoutOptimizer';
+import { useAbilityOptimizer } from './hooks/useAbilityOptimizer';
+import { useProgressOptimizer } from './hooks/useProgressOptimizer';
+import { useSwapOptimizer } from './hooks/useSwapOptimizer';
 import { usePrices } from './hooks/usePrices';
 import { usePersistentState, isBool } from './hooks/usePersistentState';
 import { exportFormatToPlayer } from './utils/importSet';
@@ -39,6 +43,7 @@ import {
 } from './utils/rosterBridge';
 import { HeaderControls, GlobalBuffsCard } from './components/HeaderControls';
 import { PartyRail } from './components/PartyRail';
+import { MainCharacterChip } from './components/MainCharacterChip';
 import { PlayerConfig } from './components/PlayerConfig';
 import { SimulationResults } from './components/SimulationResults';
 import { ImportExport } from './components/ImportExport';
@@ -47,6 +52,8 @@ import { LoadoutManager } from './components/LoadoutManager';
 import { CharacterImport } from './components/CharacterImport';
 import { ChunkBoundary } from './components/ChunkBoundary';
 import { retryableLazy } from './utils/retryableLazy';
+import { Roboburble } from './assistant/Roboburble';
+import { useAssistantBridge } from './assistant/bridge';
 import { TextInput } from '@mantine/core';
 import { toPlayerDTO } from './utils/playerDTO';
 import { withLevelGapDebuff } from './utils/combatLevel';
@@ -67,17 +74,36 @@ import {
 } from './utils/roster';
 import {
   createCharacter,
+  dropLegacyEmptyMemory,
   emptyStore,
   loadCharacters,
-  makeCharacterId,
+  mainCharacter,
+  mainSlotRef,
   mergeImportedCharacter,
   resolveRef,
   saveCharacters,
   setLoadout,
   splitPlayer,
   uniqueLoadoutName,
-  upsertCharacter
+  upsertCharacter,
+  withAbilities
 } from './utils/characterStore';
+import {
+  DEFAULT_ABILITY_OPT_CONFIG,
+  DEFAULT_LOADOUT_OPT_CONFIG,
+  DEFAULT_PROGRESS_OPT_CONFIG,
+  DEFAULT_SWAP_OPT_CONFIG,
+  applyAbilityChanges,
+  applySwapChanges,
+  isAbilityOptConfig,
+  isLoadoutOptConfig,
+  isProgressOptConfig,
+  isSwapOptConfig,
+  loadoutCandidates,
+  pickSubjectSlot,
+  progressColumns,
+  samePayload
+} from './utils/candidateOptimizer';
 // The ONE atomic repair: party AND roster (AND the trial selection) rewritten
 // together, so neither holder can be mended at the other's expense.
 import {
@@ -86,7 +112,7 @@ import {
   renameLoadoutEverywhere
 } from './utils/refRepair';
 import { migrateLegacyLoadouts } from './utils/orphanMigration';
-import { buildConsumableCosts, describeConsumableCosts } from './utils/consumableCosts';
+import { buildConsumableCosts, buildDropCreditCosts, describeConsumableCosts } from './utils/consumableCosts';
 import {
   loadTriggerOptState,
   saveTriggerOptState,
@@ -99,7 +125,7 @@ import {
   saveEquipmentOptState,
   toScan
 } from './utils/equipmentOptimizer';
-import { loadOptTarget, saveOptTarget, toTargetPayload } from './utils/optimizerTarget';
+import { isTool, toTargetPayload } from './utils/optimizerTarget';
 import { loadSession } from './utils/session';
 import {
   DEFAULT_ZONE_HRID,
@@ -132,6 +158,11 @@ const TriggerOptimizerPanel = lazyNamed(() => import('./components/TriggerOptimi
 const TriggerOptimizerResults = lazyNamed(() => import('./components/TriggerOptimizerResults'), 'TriggerOptimizerResults');
 const EquipmentOptimizerPanel = lazyNamed(() => import('./components/EquipmentOptimizerPanel'), 'EquipmentOptimizerPanel');
 const EquipmentOptimizerResults = lazyNamed(() => import('./components/EquipmentOptimizerResults'), 'EquipmentOptimizerResults');
+const CandidateOptimizerPanel = lazyNamed(() => import('./components/CandidateOptimizerPanel'), 'CandidateOptimizerPanel');
+const AbilitySearchOptions = lazyNamed(() => import('./components/CandidateOptimizerPanel'), 'AbilitySearchOptions');
+const ProgressOptions = lazyNamed(() => import('./components/CandidateOptimizerPanel'), 'ProgressOptions');
+const SwapOptions = lazyNamed(() => import('./components/CandidateOptimizerPanel'), 'SwapOptions');
+const CandidateResults = lazyNamed(() => import('./components/CandidateResults'), 'CandidateResults');
 const ItemCostsView = lazyNamed(() => import('./components/ItemCostsView'), 'ItemCostsView');
 const TrialMonsterCards = lazyNamed(() => import('./components/TrialMonsterCards'), 'TrialMonsterCards');
 
@@ -190,6 +221,9 @@ function normalizeParty(saved) {
   return party;
 }
 
+/** A remembered main character: null, or { id, gameId }. */
+const isMainRef = (v) => v === null || (typeof v === 'object' && typeof v.id === 'string');
+
 const VERSION_NOTICE =
   'Saved data from an older version was set aside (csim_player_data.v1, ' +
   'csim_guild_trial.v1) and your old flat loadouts are untouched in csim_loadouts. ' +
@@ -227,9 +261,22 @@ function App() {
   // survives edits that would invalidate a trigger address.
   const [equipOptSelection, setEquipOptSelection] = useState([]);
 
-  // Zone or labyrinth for BOTH optimisers — see utils/optimizerTarget.js for why
-  // the choice is shared rather than held per-optimiser.
-  const [optTarget, setOptTarget] = useState(loadOptTarget);
+  // The subject tools (Loadout, Abilities, Progress, Swaps) vary ONE party member; all read the same pick (null = follow the main character).
+  const loadoutOpt = useLoadoutOptimizer();
+  const [loadoutOptConfig, setLoadoutOptConfig] = usePersistentState('csim_ui_loadout_opt', DEFAULT_LOADOUT_OPT_CONFIG, isLoadoutOptConfig);
+  const abilityOpt = useAbilityOptimizer();
+  const [abilityOptConfig, setAbilityOptConfig] = usePersistentState('csim_ui_ability_opt', DEFAULT_ABILITY_OPT_CONFIG, isAbilityOptConfig);
+  const progressOpt = useProgressOptimizer();
+  const [progressOptConfig, setProgressOptConfig] = usePersistentState('csim_ui_progress_opt', DEFAULT_PROGRESS_OPT_CONFIG, isProgressOptConfig);
+  const swapOpt = useSwapOptimizer();
+  const [swapOptConfig, setSwapOptConfig] = usePersistentState('csim_ui_swap_opt', DEFAULT_SWAP_OPT_CONFIG, isSwapOptConfig);
+  // The ticked items belong to one loadout; any other starts from the server's defaults. Derived, so no reset effect.
+  const [swapPick, setSwapPick] = useState(null); // { key, allowed }
+  const [subjectPick, setSubjectPick] = useState(null);
+
+  // Zone or labyrinth for BOTH optimisers, set from the header's target whenever
+  // an optimiser tab is picked — see utils/optimizerTarget.js. Not persisted.
+  const [optTarget, setOptTarget] = useState('zone');
 
   // The auto-saved session, read ONCE at initialisation — see utils/session.js
   // for why this is not an effect (it was, and the save above it erased the
@@ -253,9 +300,18 @@ function App() {
       : migrateLegacyLoadouts(store);
   }, [loadedCharacters]);
   const [characters, setCharacters] = useState(() => restored.store);
+  // The main character (header chip): a remembered { id, gameId }, resolved by mainCharacter.
+  const [mainRef, setMainRef] = usePersistentState('csim_ui_main_character', null, isMainRef);
+  const main = useMemo(() => mainCharacter(characters, mainRef), [characters, mainRef]);
   // Five slots, each a {characterId, loadoutName} REFERENCE — so two slots can
   // be the same character in different gear with no copy of anything.
-  const [party, setParty] = useState(() => normalizeParty(savedSession.party));
+  // With no stored session, P1 — the slot Triggers, Gear and Costs read by
+  // default — starts on the main character.
+  const [party, setParty] = useState(() => {
+    const restoredParty = normalizeParty(savedSession.party);
+    const seed = session.status !== 'ok' && mainSlotRef(restored.store, mainRef);
+    return seed ? { ...restoredParty, 1: seed } : restoredParty;
+  });
   const [navbarWidth, setNavbarWidth] = useState(loadNavbarWidth);
   // Below Mantine's `sm` the rail is hidden; the header burger brings it back
   // as an overlay, and picking a member closes it again to reveal the sheet.
@@ -401,7 +457,7 @@ function App() {
   // A button called "All Zones" that opens an empty grid is a riddle.
   const sweepInitialised = useRef(storedSweep?.selection != null);
 
-  const pricing = usePrices(gameData);
+  const pricing = usePrices(gameData, main);
 
   // MWIX in-game bridge: "Open in csim" lands here with a #mwiLabBridge=
   // payload. Runs after child effects (ImportExport's localStorage restore),
@@ -686,10 +742,12 @@ function App() {
 
   /**
    * A full character import: every combat loadout it owns, MERGED onto whatever
-   * is already stored rather than replacing it. The import id is deterministic
-   * (`makeCharacterId(name)`), so re-importing the same character always lands
-   * on the same key — and used to destroy every shrine level, every seal and
-   * every hand-made loadout on the way in. See `mergeImportedCharacter`.
+   * is already stored rather than replacing it. It lands on the stored character
+   * with the same game characterId — an in-game rename re-imports onto the old
+   * record and takes the new name — else on makeCharacterId(name), so
+   * re-importing the same character always lands on the same key; that used to
+   * destroy every shrine level, every seal and every hand-made loadout on the
+   * way in. See `mergeImportedCharacter`.
    *
    * The WRITE goes through a functional updater, and must stay that way.
    * `CharacterImport` awaits a network round trip before calling back, so the
@@ -701,26 +759,34 @@ function App() {
    * `mergeImportedCharacter` is idempotent on the same base.
    */
   const handleImportCharacter = useCallback((slotId, character, defaultLoadoutName) => {
-    const id = character.id || makeCharacterId(character.name);
-    setCharacters(prev => mergeImportedCharacter(prev, character).store);
+    // Where it lands depends on the base now (game-id match), so the pure preview
+    // names the record and the write is pinned to it (third argument), unless that
+    // record has since become another game character's: the merge then lands elsewhere,
+    // and the slot follows it. React runs this updater before party's, declared after.
+    const preview = mergeImportedCharacter(characters, character);
+    const { id } = preview;
+    let landed = id;
+    setCharacters(prev => {
+      const merged = mergeImportedCharacter(prev, character, { id });
+      landed = merged.id;
+      return merged.store;
+    });
 
     // Which loadout to bind depends only on the INCOMING character, never on
     // the base: the merge is a union, so any loadout the import carries is in
-    // the result whatever was there before. That keeps the binding correct even
-    // when the snapshot below is stale.
+    // the result whatever was there before.
     const incoming = character.loadouts || {};
     const loadoutName = (defaultLoadoutName && incoming[defaultLoadoutName])
       ? defaultLoadoutName
       : Object.keys(incoming)[0];
     if (loadoutName) {
-      setParty(prev => ({ ...prev, [slotId]: { characterId: id, loadoutName } }));
+      setParty(prev => ({ ...prev, [slotId]: { characterId: landed, loadoutName } }));
     }
 
     // The notice is COSMETIC, so it may be computed against the snapshot: in
     // the rare in-flight race its counts can lag by an edit, which is a wrong
-    // sentence rather than wrong data. The merge is pure, so previewing it here
+    // sentence rather than wrong data. The merge is pure, so previewing it
     // changes nothing.
-    const preview = mergeImportedCharacter(characters, character);
     if (!preview.created) {
       setBridgeMessage(
         `Re-imported ${preview.store.characters[id]?.name || character.name} — ` +
@@ -1021,7 +1087,8 @@ function App() {
       let next = prev;
       for (const [buildId, build] of Object.entries(builds)) {
         if (!build || typeof build !== 'object') continue;
-        const { character, loadout } = splitPlayer(build);
+        // A roster without abilityMemoryVersion holds the old coerced [] (characterStore.js).
+        const { character, loadout } = splitPlayer(dropLegacyEmptyMemory(build, data));
         // Merge loadouts only: upsertCharacter replaces, and a re-import must not wipe
         // saved loadouts. Not mergeImportedCharacter: a roster build carries no
         // guildShrines (SCLIRoster omits them on purpose) and must keep falling back
@@ -1223,26 +1290,18 @@ function App() {
     });
   }, [roster, characters, trialConfig, gameData, runGuildTrial, experimental]);
 
-  // ---------------------------------------------------------------------------
-  // Trigger optimiser
-  // ---------------------------------------------------------------------------
-  // Destructured so the callbacks below have stable identities — the hook returns
-  // a fresh object literal every render, which would otherwise churn every deps
-  // array that mentions it.
-  const {
-    fetchPreview: fetchTriggerPreview,
-    runOptimizer: runTriggerOptimizer,
-    cancel: cancelTriggerOpt,
-    preview: triggerOptPreview
-  } = triggerOpt;
-
-  const triggerOptPayload = useMemo(() => {
-    if (simMode !== 'triggerOpt') return null;
+  // -- Optimiser tools (TOOLS, utils/optimizerTarget.js) ---------------------
+  // What every tool sends, built once: the selected party as engine DTOs, the
+  // target, the consumable cost table, `extra` and the party-wide guild buffs.
+  // Live while ANY tool is open — only the open tool's payload is previewed or
+  // run (`tools`, below) — and each tool adds its own settings to it.
+  const toolBase = useMemo(() => {
+    if (!isTool(simMode)) return null;
     // NOT stripped for a labyrinth target, deliberately. The server does the
     // stripping (api/lib/target.js), and it needs to SEE the food and drink
     // triggers in order to list them back with "stripped on labyrinth entry"
     // beside them — a user who set those thresholds is owed the explanation.
-    const playerDTOs = withLevelGapDebuff(selectedParty.map(playerId => ({
+    const players = withLevelGapDebuff(selectedParty.map(playerId => ({
       ...toPlayerDTO(resolvedParty[playerId], { hrid: `player${playerId}` }),
       // Display only — the engine never reads it. The optimiser lists triggers
       // for the whole party, and "player2" does not say whose heal threshold a
@@ -1256,14 +1315,14 @@ function App() {
       extraBuffs: resolvePlayerExtraBuffs(resolvedParty[playerId], { includeSeals: sealsApply({ simMode, optTarget }) })
     })));
     return {
-      players: playerDTOs,
+      players,
       ...toTargetPayload(optTarget, { zone, difficultyTier, labConfig }),
       // Consumable production times, in seconds — the ironcow currency. Present
       // only on the `iron` price source; without them the optimiser cannot see the
       // food bill and would drive every consumable threshold toward "eat
       // constantly". See buildConsumableCosts. Sent regardless of target: the
       // server ignores them for a labyrinth, where nothing is eaten.
-      consumableCosts: buildConsumableCosts(playerDTOs, {
+      consumableCosts: buildConsumableCosts(players, {
         prices: pricing.prices,
         fetchedPrices: pricing.fetchedPrices,
         unit: pricing.unit,
@@ -1271,6 +1330,18 @@ function App() {
         // Hand-entered per-item costs win over the fetched ones. A 0 here is a
         // deliberate "free at the margin", not a missing value.
         itemCostOverrides: pricing.itemCostOverrides
+      }),
+      // Drop credit: seconds each over the consumable class, only with the Costs
+      // page's toggle on and a seconds source (buildDropCreditCosts). The server
+      // credits it beside a known bill — a cost table, or nothing slotted to eat
+      // (api/lib/optimizerRoute.js sanitiseDropCreditCosts) — never in a labyrinth.
+      dropCreditCosts: buildDropCreditCosts({
+        prices: pricing.prices,
+        fetchedPrices: pricing.fetchedPrices,
+        unit: pricing.unit,
+        expenseMode: pricing.expenseMode,
+        itemCostOverrides: pricing.itemCostOverrides,
+        dropCredit: pricing.dropCredit
       }),
       // The API's buildExtraBuffs honours mooPass / comExp / comDrop, which is
       // now the whole of `extra` worth sending: seals moved onto the player DTOs
@@ -1284,11 +1355,7 @@ function App() {
       // list, and shrines are no longer party-wide. The server composes
       // buildExtraBuffs(extra).concat(guildBuffs), so omitting it would work
       // too — sending [] says the emptiness is meant.
-      guildBuffs: [],
-      // Objective is left to the server: it picks the time-denominated one when the
-      // consumable costs above are present, and raw throughput when they are not.
-      stages: toStages(triggerOptConfig),
-      workers: triggerOptConfig.workers || undefined
+      guildBuffs: []
     };
   }, [
     simMode,
@@ -1301,7 +1368,6 @@ function App() {
     zone,
     difficultyTier,
     extraOptions,
-    triggerOptConfig,
     // usePrices returns a fresh object literal each render, so depend on the stable
     // values inside it rather than the wrapper — otherwise the preview refetches on
     // every keystroke anywhere in the app.
@@ -1309,18 +1375,24 @@ function App() {
     pricing.fetchedPrices,
     pricing.unit,
     pricing.expenseMode,
-    pricing.itemCostOverrides
+    pricing.itemCostOverrides,
+    pricing.dropCredit
   ]);
 
-  // Re-preview on every configuration change, debounced: it is a cheap
-  // server-side call, but editing a threshold fires this on each keystroke.
-  useEffect(() => {
-    if (!triggerOptPayload) return undefined;
-    const timer = setTimeout(() => {
-      fetchTriggerPreview(triggerOptPayload);
-    }, 350);
-    return () => clearTimeout(timer);
-  }, [triggerOptPayload, fetchTriggerPreview]);
+  // ---------------------------------------------------------------------------
+  // Trigger optimiser
+  // ---------------------------------------------------------------------------
+  // Destructured so the callbacks below have stable identities — the hook returns
+  // a fresh object literal every render, which would otherwise churn every deps
+  // array that mentions it.
+  const { runOptimizer: runTriggerOptimizer, preview: triggerOptPreview } = triggerOpt;
+
+  // Objective is left to the server: it picks the time-denominated one when the
+  // consumable costs are present, and raw throughput when they are not.
+  const triggerOptPayload = useMemo(
+    () => toolBase && { ...toolBase, stages: toStages(triggerOptConfig), workers: triggerOptConfig.workers || undefined },
+    [toolBase, triggerOptConfig]
+  );
 
   // Reconcile the selection against the latest preview. Trigger addresses are
   // positional, so editing an ability can invalidate a stored selection; drop
@@ -1354,72 +1426,15 @@ function App() {
   // optimiser, so most of this mirrors the block above. The two differences worth
   // noticing: `scan` replaces `stages` (one stage, not four), and the selection is
   // a list of stable row ids rather than positional addresses.
-  const {
-    fetchPreview: fetchEquipPreview,
-    runOptimizer: runEquipOptimizer,
-    cancel: cancelEquipOpt,
-    preview: equipOptPreview
-  } = equipOpt;
+  const { runOptimizer: runEquipOptimizer, preview: equipOptPreview } = equipOpt;
 
-  const equipOptPayload = useMemo(() => {
-    if (simMode !== 'equipOpt') return null;
-    // Same per-unit buffs as the trigger optimiser: the scan's candidate DTOs
-    // are structuredClones of these (equipmentScan/candidates.js
-    // applyEnhancement), so `extraBuffs` survives into every probe.
-    const playerDTOs = withLevelGapDebuff(selectedParty.map(playerId => ({
-      ...toPlayerDTO(resolvedParty[playerId], { hrid: `player${playerId}` }),
-      extraBuffs: resolvePlayerExtraBuffs(resolvedParty[playerId], { includeSeals: sealsApply({ simMode, optTarget }) })
-    })));
-    return {
-      players: playerDTOs,
-      ...toTargetPayload(optTarget, { zone, difficultyTier, labConfig }),
-      // Without these the scan ranks on raw encounters per hour, which cannot see
-      // the food bill — so an enhancement that lets the build eat less goes
-      // unrewarded. Same table, same seconds, as the trigger optimiser. Ignored
-      // by the server for a labyrinth target, where nothing is eaten at all.
-      consumableCosts: buildConsumableCosts(playerDTOs, {
-        prices: pricing.prices,
-        fetchedPrices: pricing.fetchedPrices,
-        unit: pricing.unit,
-        expenseMode: pricing.expenseMode,
-        itemCostOverrides: pricing.itemCostOverrides
-      }),
-      // As with the trigger optimiser: what is left in `extra` is the genuinely
-      // account-wide part, and `guildBuffs` is empty because shrines travel per
-      // unit now.
-      extra: {
-        comExp: extraOptions.comExp,
-        comDrop: extraOptions.comDrop,
-        mooPass: extraOptions.mooPass
-      },
-      guildBuffs: [],
-      scan: toScan(equipOptConfig),
-      workers: equipOptConfig.workers || undefined
-    };
-  }, [
-    simMode,
-    optTarget,
-    labConfig,
-    resolvedParty,
-    selectedParty,
-    zone,
-    difficultyTier,
-    extraOptions,
-    equipOptConfig,
-    pricing.prices,
-    pricing.fetchedPrices,
-    pricing.unit,
-    pricing.expenseMode,
-    pricing.itemCostOverrides
-  ]);
-
-  useEffect(() => {
-    if (!equipOptPayload) return undefined;
-    const timer = setTimeout(() => {
-      fetchEquipPreview(equipOptPayload);
-    }, 350);
-    return () => clearTimeout(timer);
-  }, [equipOptPayload, fetchEquipPreview]);
+  // Same per-unit buffs as the trigger optimiser: the scan's candidate DTOs
+  // are structuredClones of these (equipmentScan/candidates.js
+  // applyEnhancement), so `extraBuffs` survives into every probe.
+  const equipOptPayload = useMemo(
+    () => toolBase && { ...toolBase, scan: toScan(equipOptConfig), workers: equipOptConfig.workers || undefined },
+    [toolBase, equipOptConfig]
+  );
 
   // Reconcile the selection against the latest preview: swapping an item can make
   // a previously scannable slot unscannable (a charm with no combat stats, an item
@@ -1440,10 +1455,6 @@ function App() {
     saveEquipmentOptState({ config: equipOptConfig });
   }, [equipOptConfig]);
 
-  useEffect(() => {
-    saveOptTarget(optTarget);
-  }, [optTarget]);
-
   const handleStartEquipOpt = useCallback(() => {
     if (!equipOptPayload || equipOptSelection.length === 0) return;
     runEquipOptimizer({
@@ -1455,11 +1466,11 @@ function App() {
 
   // Rows for the panels' override editor: the party's slotted consumables, each
   // with its fetched time and whatever the user has said instead. Derived from the
-  // payload so it cannot drift from the cost table actually being sent — and
-  // declared after BOTH payloads, since it reads whichever one is live.
+  // shared payload so it cannot drift from the cost table actually being sent —
+  // every tool sends the same party (toolBase).
   const consumableCostRows = useMemo(
     () =>
-      describeConsumableCosts(triggerOptPayload?.players ?? equipOptPayload?.players, {
+      describeConsumableCosts(toolBase?.players, {
         prices: pricing.prices,
         fetchedPrices: pricing.fetchedPrices,
         unit: pricing.unit,
@@ -1467,8 +1478,7 @@ function App() {
         itemCostOverrides: pricing.itemCostOverrides
       }),
     [
-      triggerOptPayload,
-      equipOptPayload,
+      toolBase,
       pricing.prices,
       pricing.fetchedPrices,
       pricing.unit,
@@ -1581,6 +1591,285 @@ function App() {
     return out;
   }, [characters, party]);
 
+  // -- Loadout and Abilities: one member against what it wears now ---------
+  const { slot: subjectSlot, index: subjectIndex, mainSlot } =
+    pickSubjectSlot({ selectedParty, party, mainId: main?.id, picked: subjectPick });
+  const subjectOptions = selectedParty.map(id => ({ value: String(id), label: `P${id} · ${playerNames[`player${id}`] ?? ''}` }));
+  const subjectNotice = main && mainSlot == null && subjectSlot != null
+    ? `${main.name || main.id} is not in the selected party, so this uses P${subjectSlot}.` : null;
+  // EPH is a planet's measure; on a dungeon or in the labyrinth the server ranks on its own default.
+  const planetTarget = optTarget === 'zone' && !findZone(gameData?.zones, zone)?.isDungeon;
+
+  const loadoutOptPayload = useMemo(() => {
+    if (!toolBase || subjectIndex < 0) return null;
+    const ref = party[subjectSlot];
+    const candidates = loadoutCandidates(characters.characters?.[ref.characterId], ref.loadoutName);
+    return { ...toolBase, subjectIndex, candidates,
+      // Price what every candidate loadout eats too (as Swaps prices what is owned): left out, a candidate's food is free.
+      consumableCosts: buildConsumableCosts([...toolBase.players, ...candidates.map(c => c.player)], {
+        prices: pricing.prices, fetchedPrices: pricing.fetchedPrices, unit: pricing.unit,
+        expenseMode: pricing.expenseMode, itemCostOverrides: pricing.itemCostOverrides }),
+      objective: planetTarget ? loadoutOptConfig.objective : undefined, scan: loadoutOptConfig };
+  }, [toolBase, subjectIndex, subjectSlot, party, characters, planetTarget, loadoutOptConfig,
+    pricing.prices, pricing.fetchedPrices, pricing.unit, pricing.expenseMode, pricing.itemCostOverrides]);
+
+  const abilityOptPayload = useMemo(() => {
+    if (!toolBase || subjectIndex < 0) return null;
+    const ref = party[subjectSlot];
+    const character = characters.characters?.[ref.characterId];
+    return { ...toolBase, subjectIndex,
+      // Every ability the character has a level for; the API adds whatever is slotted.
+      ownedAbilities: character?.abilityLevels || {},
+      // The triggers this loadout last gave each ability: a swapped-in one is tried, and applied, with them
+      // (toPlayerDTO drops abilityMemory, so the DTO cannot carry them).
+      triggerMemory: character?.loadouts?.[ref.loadoutName]?.triggerMemory || {},
+      coordinates: abilityOptConfig.coordinates, search: abilityOptConfig.search, passes: abilityOptConfig.passes,
+      objective: planetTarget ? abilityOptConfig.objective : undefined, scan: abilityOptConfig };
+  }, [toolBase, subjectIndex, subjectSlot, party, characters, planetTarget, abilityOptConfig]);
+
+  const progressOptPayload = useMemo(() => {
+    if (!toolBase || subjectIndex < 0) return null;
+    return { ...toolBase, subjectIndex, levels: progressOptConfig.levels, stats: progressOptConfig.stats,
+      objective: planetTarget ? progressOptConfig.objective : undefined, scan: progressOptConfig };
+  }, [toolBase, subjectIndex, planetTarget, progressOptConfig]);
+
+  const subjectRef = subjectSlot == null ? null : party[subjectSlot];
+  const swapKey = subjectRef ? `${subjectRef.characterId}|${subjectRef.loadoutName}` : null;
+  const swapAllowed = swapPick?.key === swapKey ? swapPick.allowed : null;
+  const swapInventory = characters.characters?.[subjectRef?.characterId]?.inventory;
+  const swapOptPayload = useMemo(() => {
+    if (!toolBase || subjectIndex < 0) return null;
+    // Price every owned consumable, not only the slotted ones: an unpriced candidate would look free under effective EPH.
+    const plate = (swapInventory || []).filter((e) => gameData?.items?.[e.itemHrid]?.consumableDetail).map((e) => ({ hrid: e.itemHrid }));
+    return { ...toolBase, subjectIndex, owned: swapInventory || [], allowed: swapAllowed ?? undefined,
+      search: swapOptConfig.search, passes: swapOptConfig.passes,
+      consumableCosts: buildConsumableCosts([...toolBase.players, { food: plate }], {
+        prices: pricing.prices, fetchedPrices: pricing.fetchedPrices, unit: pricing.unit,
+        expenseMode: pricing.expenseMode, itemCostOverrides: pricing.itemCostOverrides }),
+      objective: planetTarget ? swapOptConfig.objective : undefined, scan: swapOptConfig };
+  }, [toolBase, subjectIndex, swapInventory, gameData, swapAllowed, swapOptConfig, planetTarget,
+    pricing.prices, pricing.fetchedPrices, pricing.unit, pricing.expenseMode, pricing.itemCostOverrides]);
+
+  // A run remembers whose loadout it measured, so Apply writes there — and the abilities it measured, so Abilities'
+  // Apply writes only the slots a row changed.
+  const startSubjectRun = useCallback((run, payload) => {
+    if (!payload) return;
+    run({ ...payload, meta: { optTarget, zone, difficultyTier, labConfig,
+      subject: { slot: subjectSlot, ...party[subjectSlot], abilities: payload.players[payload.subjectIndex]?.abilities } } });
+  }, [optTarget, zone, difficultyTier, labConfig, subjectSlot, party]);
+
+  // Stable, as handleStartTriggerOpt / handleStartEquipOpt are, so handleStartSimulation's useCallback holds.
+  const { runOptimizer: runLoadoutOptimizer } = loadoutOpt;
+  const { runOptimizer: runAbilityOptimizer } = abilityOpt;
+  const handleStartLoadoutOpt = useCallback(
+    () => startSubjectRun(runLoadoutOptimizer, loadoutOptPayload), [startSubjectRun, runLoadoutOptimizer, loadoutOptPayload]);
+  const handleStartAbilityOpt = useCallback(
+    () => startSubjectRun(runAbilityOptimizer, abilityOptPayload), [startSubjectRun, runAbilityOptimizer, abilityOptPayload]);
+  const { runOptimizer: runProgressOptimizer } = progressOpt;
+  const handleStartProgressOpt = useCallback(
+    () => startSubjectRun(runProgressOptimizer, progressOptPayload), [startSubjectRun, runProgressOptimizer, progressOptPayload]);
+  const { runOptimizer: runSwapOptimizer } = swapOpt;
+  const handleStartSwapOpt = useCallback(
+    () => startSubjectRun(runSwapOptimizer, swapOptPayload), [startSubjectRun, runSwapOptimizer, swapOptPayload]);
+
+  /** Loadout's Apply: wear that loadout in the slot the run measured. */
+  const applyLoadoutRow = useCallback((row, subject) => {
+    if (!characters.characters?.[subject?.characterId]?.loadouts?.[row.name]) return;
+    bindSlot(subject.slot, { characterId: subject.characterId, loadoutName: row.name });
+  }, [characters, bindSlot]);
+
+  /** Abilities' Apply: the slots the row changed into the loadout the run measured, as it is NOW (candidateOptimizer.js). */
+  const applyAbilityRow = useCallback((row, subject) => {
+    const player = resolveRef(characters, subject);
+    if (player) applyPlayerEdit(subject, withAbilities(player, applyAbilityChanges(player, row.abilities, subject.abilities)));
+  }, [characters, applyPlayerEdit]);
+
+  /** Swaps' Apply: the row's changes into the loadout the run measured, through the same store path as the sheet. */
+  const applySwapRow = useCallback((row, subject) => {
+    const player = resolveRef(characters, subject);
+    if (player) applyPlayerEdit(subject, applySwapChanges(player, row.changes));
+  }, [characters, applyPlayerEdit]);
+
+  const subjectPanelProps = (engine, config, setConfig, costRows) => ({
+    preview: engine.preview, previewing: engine.previewing, apiReachable: engine.apiReachable, loading: engine.loading,
+    config, onConfigChange: setConfig, subjectOptions, subject: subjectSlot == null ? null : String(subjectSlot),
+    onSubjectChange: (value) => setSubjectPick(Number(value)), subjectNotice, pricing, consumableCostRows: costRows
+  });
+  // What the server will compare: it caps the list and reports the rest as skipped (api/routes/optimizeLoadout.js).
+  // Read from a preview of THIS payload; until one arrives, the payload's own list (and Run waits for it).
+  const loadoutFresh = useMemo(() => samePayload(loadoutOpt.previewFor, loadoutOptPayload), [loadoutOpt.previewFor, loadoutOptPayload]);
+  const loadoutCount = (loadoutFresh ? loadoutOpt.preview?.candidates : loadoutOptPayload?.candidates.length) || 0;
+  const swapReady = useMemo(() => samePayload(swapOpt.previewFor, swapOptPayload), [swapOpt.previewFor, swapOptPayload]);
+  const abilityCount = abilityOpt.preview?.candidates ?? 0;
+  const progressCount = progressOpt.preview?.candidates ?? 0;
+  const swapCount = swapOpt.preview?.candidates ?? 0;
+
+  // The optimiser tools, keyed by their TOOLS value. Every mode-generic site
+  // below (Run, Stop, the settings panel, the results pane) reads the open one,
+  // so adding a tool is a TOOLS entry, its hook and payload above, and one entry
+  // here. `panel` and `results` are render functions, so only the open tool's run.
+  const tools = {
+    triggerOpt: {
+      engine: triggerOpt,
+      payload: triggerOptPayload,
+      start: handleStartTriggerOpt,
+      runLabel: `Optimise ${triggerOptSelection.length} threshold${triggerOptSelection.length === 1 ? '' : 's'}`,
+      runDisabled: !triggerOpt.preview || triggerOpt.previewing || triggerOptSelection.length === 0,
+      empty: 'Pick which trigger thresholds to search above, then press Run.',
+      panel: (costRows) => (
+        <TriggerOptimizerPanel
+          preview={triggerOpt.preview}
+          previewing={triggerOpt.previewing}
+          apiReachable={triggerOpt.apiReachable}
+          selection={triggerOptSelection}
+          onSelectionChange={setTriggerOptSelection}
+          config={triggerOptConfig}
+          onConfigChange={setTriggerOptConfig}
+          loading={triggerOpt.loading}
+          pricing={pricing}
+          consumableCostRows={costRows}
+        />
+      ),
+      results: (r, onClear) => (
+        <TriggerOptimizerResults
+          results={r}
+          items={gameData?.items}
+          abilities={gameData?.abilities}
+          onClear={onClear}
+        />
+      )
+    },
+    equipOpt: {
+      engine: equipOpt,
+      payload: equipOptPayload,
+      start: handleStartEquipOpt,
+      runLabel: 'Run equipment scan',
+      runDisabled: !equipOptPayload || equipOptSelection.length === 0,
+      empty: 'Pick which equipment slots to probe above, then press Run.',
+      panel: (costRows) => (
+        <EquipmentOptimizerPanel
+          preview={equipOpt.preview}
+          previewing={equipOpt.previewing}
+          apiReachable={equipOpt.apiReachable}
+          selection={equipOptSelection}
+          onSelectionChange={setEquipOptSelection}
+          config={equipOptConfig}
+          onConfigChange={setEquipOptConfig}
+          loading={equipOpt.loading}
+          pricing={pricing}
+          consumableCostRows={costRows}
+        />
+      ),
+      results: (r, onClear) => (
+        <EquipmentOptimizerResults
+          results={r}
+          onClear={onClear}
+          gameItems={gameData?.items}
+          pricing={pricing}
+          protectionPricing={equipOptConfig.protectionPricing}
+          protectAt={equipOptConfig.protectAt}
+          onProtectionPricingChange={(value) =>
+            setEquipOptConfig(prev => ({ ...prev, protectionPricing: value }))
+          }
+          onProtectAtChange={(value) =>
+            setEquipOptConfig(prev => ({ ...prev, protectAt: value }))
+          }
+        />
+      )
+    },
+    loadoutOpt: {
+      engine: loadoutOpt,
+      payload: loadoutOptPayload,
+      start: handleStartLoadoutOpt,
+      runLabel: `Compare ${loadoutCount} loadout${loadoutCount === 1 ? '' : 's'}`,
+      runDisabled: !loadoutCount || loadoutOpt.previewing || !loadoutFresh,
+      empty: 'Pick whose saved loadouts to compare above, then press Run.',
+      panel: (costRows) => (
+        <CandidateOptimizerPanel {...subjectPanelProps(loadoutOpt, loadoutOptConfig, setLoadoutOptConfig, costRows)}
+          title="Loadout" blurb="Simulates every saved loadout of one character at this target against the one it wears now, on shared seeds.">
+          <Text size="xs" c="dimmed">{loadoutOptPayload?.candidates.length
+            ? `Against ${party[subjectSlot]?.loadoutName}: ${loadoutOptPayload.candidates.map(c => c.name).join(', ')}.`
+            : 'This character has no other saved loadout.'}</Text>
+          {loadoutFresh && loadoutOpt.preview?.skipped > 0 && <Text size="xs" c="orange">Only the first {loadoutCount} are compared; {loadoutOpt.preview.skipped} more are left out.</Text>}
+        </CandidateOptimizerPanel>
+      ),
+      results: (r, onClear) => (
+        <CandidateResults results={r} title="Loadout" currentLabel={`${r.meta?.subject?.loadoutName ?? 'Current'} (worn)`}
+          applyLabel="Wear" onApply={(row) => applyLoadoutRow(row, r.meta?.subject)} onClear={onClear} />
+      )
+    },
+    abilityOpt: {
+      engine: abilityOpt,
+      payload: abilityOptPayload,
+      start: handleStartAbilityOpt,
+      runLabel: abilityOptConfig.search === 'best' ? 'Find the best combination' : `Try ${abilityCount} change${abilityCount === 1 ? '' : 's'}`,
+      runDisabled: !abilityCount || abilityOpt.previewing || !!abilityOpt.preview?.refusal,
+      empty: 'Pick which ability slots to try above, then press Run.',
+      panel: (costRows) => (
+        <CandidateOptimizerPanel {...subjectPanelProps(abilityOpt, abilityOptConfig, setAbilityOptConfig, costRows)}
+          title="Abilities" blurb="Tries each ability this character has a level for in each unlocked slot (the aura slot takes specials only) and each cast order of abilities 1–4, against the current setup on shared seeds.">
+          <AbilitySearchOptions preview={abilityOpt.preview} config={abilityOptConfig} onConfigChange={setAbilityOptConfig} loading={abilityOpt.loading} />
+        </CandidateOptimizerPanel>
+      ),
+      results: (r, onClear) => (
+        <CandidateResults results={r} title="Abilities" currentLabel="Current abilities"
+          onApply={(row) => applyAbilityRow(row, r.meta?.subject)} onClear={onClear} />
+      )
+    },
+    progressOpt: {
+      engine: progressOpt,
+      payload: progressOptPayload,
+      start: handleStartProgressOpt,
+      runLabel: `Measure ${progressCount} level-up${progressCount === 1 ? '' : 's'}`,
+      runDisabled: !progressCount || progressOpt.previewing,
+      empty: 'Pick whose levels to probe above, then press Run.',
+      panel: (costRows) => (
+        <CandidateOptimizerPanel {...subjectPanelProps(progressOpt, progressOptConfig, setProgressOptConfig, costRows)}
+          title="Progress" blurb="Raises the weapon's damage stat, attack, any ticked stat and each slotted ability by the same number of levels, one at a time, against the current levels on shared seeds; the gain is divided by the levels added.">
+          <ProgressOptions preview={progressOpt.preview} config={progressOptConfig} onConfigChange={setProgressOptConfig} loading={progressOpt.loading} />
+        </CandidateOptimizerPanel>
+      ),
+      results: (r, onClear) => (
+        <CandidateResults results={r} title="Progress" currentLabel="Current levels" extraColumns={progressColumns(pricing)} onClear={onClear} />
+      )
+    },
+    swapOpt: {
+      engine: swapOpt,
+      payload: swapOptPayload,
+      start: handleStartSwapOpt,
+      runLabel: swapOptConfig.search === 'best' ? 'Find the best combination' : `Try ${swapCount} swap${swapCount === 1 ? '' : 's'}`,
+      runDisabled: !swapCount || swapOpt.previewing || !!swapOpt.preview?.refusal,
+      empty: 'Tick which owned items to try above, then press Run.',
+      panel: (costRows) => (
+        <CandidateOptimizerPanel {...subjectPanelProps(swapOpt, swapOptConfig, setSwapOptConfig, costRows)} title="Swaps"
+          blurb="Tries the food, drinks and gear this character owns (and can wear), one swap at a time or the best combination, against the current setup on shared seeds.">
+          <SwapOptions preview={swapOpt.preview} config={swapOptConfig} onConfigChange={setSwapOptConfig} loading={swapOpt.loading}
+            allowed={swapAllowed} onAllowedChange={(allowed) => setSwapPick({ key: swapKey, allowed })} hasInventory={!!swapInventory}
+            ready={swapReady} />
+        </CandidateOptimizerPanel>
+      ),
+      results: (r, onClear) => (
+        <CandidateResults results={r} title="Swaps" currentLabel="Current setup" onApply={(row) => applySwapRow(row, r.meta?.subject)} onClear={onClear} />
+      )
+    }
+  };
+  // The header, progress bar and results pane read from whichever engine the
+  // current mode uses: a tool's API hook, or the browser worker.
+  const tool = isTool(simMode) ? tools[simMode] : null;
+  const isApiOpt = !!tool;
+  const apiEngine = tool?.engine;
+
+  // Re-preview the open tool on every configuration change, debounced: a cheap
+  // server-side call, but editing a threshold fires this on each keystroke.
+  const toolPayload = tool?.payload;
+  const fetchToolPreview = tool?.engine.fetchPreview;
+  const startTool = tool?.start;
+  useEffect(() => {
+    if (!toolPayload) return undefined;
+    const timer = setTimeout(() => fetchToolPreview(toolPayload), 350);
+    return () => clearTimeout(timer);
+  }, [toolPayload, fetchToolPreview]);
+
   const handleStartSimulation = useCallback(() => {
     // A single run replaces the sweep table with its own results — two answers
     // in one pane, one of them stale, helps nobody.
@@ -1589,12 +1878,8 @@ function App() {
       handleStartTrial();
       return;
     }
-    if (simMode === 'triggerOpt') {
-      handleStartTriggerOpt();
-      return;
-    }
-    if (simMode === 'equipOpt') {
-      handleStartEquipOpt();
+    if (startTool) {
+      startTool();
       return;
     }
     // Every selected slot is empty or dangling: there is nothing to simulate.
@@ -1663,7 +1948,7 @@ function App() {
       // Labels as of this run, so re-binding a slot later does not relabel it.
       meta: { playerNames }
     });
-  }, [resolvedParty, selectedParty, simMode, zone, difficultyTier, labConfig, mazeContext, duration, zoneWorkers, gameData, dungeonRunMode, dungeonRuns, maxRunHours, extraOptions, experimental, runSimulation, handleStartTrial, handleStartTriggerOpt, handleStartEquipOpt, playerNames]);
+  }, [resolvedParty, selectedParty, simMode, zone, difficultyTier, labConfig, mazeContext, duration, zoneWorkers, gameData, dungeonRunMode, dungeonRuns, maxRunHours, extraOptions, experimental, runSimulation, handleStartTrial, startTool, playerNames]);
 
   // Pickers for the slot binder, and the label the party checkboxes wear.
   const characterOptions = useMemo(
@@ -1703,14 +1988,17 @@ function App() {
     setSheetOpen(true);
     closeNav();
   }, [sheetOpen, activeTab, setSheetOpen, closeNav]);
+  const handleMainChange = useCallback(
+    (c) => setMainRef({ id: c.id, gameId: c.game?.id ?? null }), [setMainRef]);
+  // The chip's "Import character" (nothing stored): the import lives in the member
+  // sheet, which Trial and Costs do not show, so land on Zone with P1's sheet open.
+  const handleOpenImport = useCallback(() => {
+    if (simMode === 'guildTrial' || simMode === 'itemCosts') setSimMode('zone');
+    setActiveTab(1);
+    setSheetOpen(true);
+    closeNav();
+  }, [simMode, setSheetOpen, closeNav]);
 
-  // The header, progress bar and results pane read from whichever engine the
-  // current mode uses. Both optimisers go through an API hook; every other mode
-  // uses the browser worker.
-  const isTriggerOpt = simMode === 'triggerOpt';
-  const isEquipOpt = simMode === 'equipOpt';
-  const isApiOpt = isTriggerOpt || isEquipOpt;
-  const apiEngine = isEquipOpt ? equipOpt : triggerOpt;
   // The sweep shows its table in zone mode only; switching to Lab or Trials
   // hides it without discarding it, so coming back finds it where you left it.
   const showAllZones = simMode === 'zone' && allZonesView;
@@ -1732,26 +2020,13 @@ function App() {
   const activeError = isApiOpt ? apiEngine.error : simError;
   // The sweep wins: it is the only engine that can be running while the user is
   // looking at a different mode, so Stop must reach it from anywhere.
-  const handleStop = sweeping
-    ? cancelAllZones
-    : isEquipOpt
-      ? cancelEquipOpt
-      : isTriggerOpt
-        ? cancelTriggerOpt
-        : cancelRun;
+  const handleStop = sweeping ? cancelAllZones : isApiOpt ? apiEngine.cancel : cancelRun;
 
   const isTrial = simMode === 'guildTrial';
   const isCosts = simMode === 'itemCosts';
   // One Run, in the run strip, for every mode. The optimisers' panels hold
   // settings only; their Run label keeps the count their own button showed.
-  const runButtonProps = isTriggerOpt
-    ? {
-        runLabel: `Optimise ${triggerOptSelection.length} threshold${triggerOptSelection.length === 1 ? '' : 's'}`,
-        runDisabled: !triggerOpt.preview || triggerOpt.previewing || triggerOptSelection.length === 0
-      }
-    : isEquipOpt
-      ? { runLabel: 'Run equipment scan', runDisabled: !equipOptPayload || equipOptSelection.length === 0 }
-      : {};
+  const runButtonProps = isApiOpt ? { runLabel: tool.runLabel, runDisabled: tool.runDisabled } : {};
   // Costs is a settings view: no party editing, so no sheet.
   const showSheet = sheetOpen && !isCosts;
   // A new run no longer clears the old results (that unmounted the results
@@ -1767,15 +2042,43 @@ function App() {
     ? undefined
     : (isApiOpt ? apiEngine.clearResults : clearSimResults);
 
+  // Roboburble (src/assistant): reads this render's state, writes only through these setters.
+  const assistant = useAssistantBridge(
+    { gameData, characters, party, activeTab, selectedPlayers, roster, selectedEntryId, simMode, optTarget,
+      zone, difficultyTier, duration, labConfig, trialConfig, results: activeResults, loading: activeLoading,
+      progress: activeProgress, error: activeError, runDisabled: !!tool?.runDisabled },
+    { characters: setCharacters, zone: handleZoneChange, difficultyTier: setDifficultyTier, duration: setDuration,
+      labConfig: setLabConfig, trialConfig: setTrialConfig, simMode: setSimMode, optTarget: setOptTarget },
+    handleStartSimulation
+  );
+
   return (
     <AppShell
-      header={{ height: 56 }}
+      // Two rows: brand, target, Costs and the cog (56) over the tool tabs (40).
+      header={{ height: 96 }}
       navbar={{ width: navbarWidth, breakpoint: 'sm', collapsed: { mobile: !navOpened } }}
       aside={{ width: 500, breakpoint: '90em', collapsed: { desktop: !showSheet, mobile: !showSheet } }}
       padding="md"
     >
       <AppShell.Header>
-        <Group h="100%" px="md" justify="space-between" wrap="nowrap">
+        <HeaderControls
+          part="header"
+          simMode={simMode}
+          onSimModeChange={setSimMode}
+          optTarget={optTarget}
+          onOptTargetChange={setOptTarget}
+          labConfig={labConfig}
+          experimental={experimental}
+          onExperimentalChange={handleExperimentalChange}
+          characterChip={
+            <MainCharacterChip
+              characters={characters}
+              main={main}
+              onChange={handleMainChange}
+              onImport={handleOpenImport}
+            />
+          }
+        >
           <Group gap="xs" wrap="nowrap">
             <Burger opened={navOpened} onClick={handleToggleNav} hiddenFrom="sm" size="sm" aria-label="Toggle party rail" />
             {/* On phones the brand moves to the top of the rail (below), so
@@ -1792,16 +2095,7 @@ function App() {
               </Badge>
             )}
           </Group>
-          <HeaderControls
-            part="header"
-            simMode={simMode}
-            onSimModeChange={setSimMode}
-            labConfig={labConfig}
-            extraOptions={extraOptions}
-            experimental={experimental}
-            onExperimentalChange={handleExperimentalChange}
-          />
-        </Group>
+        </HeaderControls>
       </AppShell.Header>
 
       <AppShell.Navbar>
@@ -2035,7 +2329,6 @@ function App() {
                 part="strip"
                 simMode={simMode}
                 optTarget={optTarget}
-                onOptTargetChange={setOptTarget}
                 zones={gameData?.zones}
                 zone={zone}
                 onZoneChange={handleZoneChange}
@@ -2081,33 +2374,7 @@ function App() {
                 <div className="mode-settings">
                   <ChunkBoundary resetKey={simMode}>
                   <Suspense fallback={Pending}>
-                  {isTriggerOpt ? (
-                    <TriggerOptimizerPanel
-                      preview={triggerOpt.preview}
-                      previewing={triggerOpt.previewing}
-                      apiReachable={triggerOpt.apiReachable}
-                      selection={triggerOptSelection}
-                      onSelectionChange={setTriggerOptSelection}
-                      config={triggerOptConfig}
-                      onConfigChange={setTriggerOptConfig}
-                      loading={triggerOpt.loading}
-                      pricing={pricing}
-                      consumableCostRows={consumableCostRows}
-                    />
-                  ) : (
-                    <EquipmentOptimizerPanel
-                      preview={equipOpt.preview}
-                      previewing={equipOpt.previewing}
-                      apiReachable={equipOpt.apiReachable}
-                      selection={equipOptSelection}
-                      onSelectionChange={setEquipOptSelection}
-                      config={equipOptConfig}
-                      onConfigChange={setEquipOptConfig}
-                      loading={equipOpt.loading}
-                      pricing={pricing}
-                      consumableCostRows={consumableCostRows}
-                    />
-                  )}
+                  {tool.panel(consumableCostRows)}
                   </Suspense>
                   </ChunkBoundary>
                 </div>
@@ -2202,6 +2469,10 @@ function App() {
               gameItems={gameData?.items}
               pricing={pricing}
               protectionPricing={equipOptConfig.protectionPricing}
+              // The last zone run, for the Drop credit list: what it dropped,
+              // for the member open in the P-tab.
+              simResult={results}
+              focusHrid={`player${activeTab}`}
             />
           ) : showAllZones ? (
             <AllZonesResults
@@ -2217,28 +2488,8 @@ function App() {
               // the left panel, and follows the P-tab without re-running.
               focusHrid={`player${activeTab}`}
             />
-          ) : activeResults && activeResults.__kind === 'triggerOpt' ? (
-            <TriggerOptimizerResults
-              results={activeResults}
-              items={gameData?.items}
-              abilities={gameData?.abilities}
-              onClear={clearActiveResults}
-            />
-          ) : activeResults && activeResults.__kind === 'equipOpt' ? (
-            <EquipmentOptimizerResults
-              results={activeResults}
-              onClear={clearActiveResults}
-              gameItems={gameData?.items}
-              pricing={pricing}
-              protectionPricing={equipOptConfig.protectionPricing}
-              protectAt={equipOptConfig.protectAt}
-              onProtectionPricingChange={(value) =>
-                setEquipOptConfig(prev => ({ ...prev, protectionPricing: value }))
-              }
-              onProtectAtChange={(value) =>
-                setEquipOptConfig(prev => ({ ...prev, protectAt: value }))
-              }
-            />
+          ) : isApiOpt && activeResults ? (
+            tool.results(activeResults, clearActiveResults)
           ) : activeResults && activeResults.__kind === 'guildTrial' ? (
             <GuildTrialResults result={activeResults} onClear={clearActiveResults} />
           ) : (
@@ -2268,11 +2519,9 @@ function App() {
               <Text c="dimmed">
                 {simMode === 'guildTrial'
                   ? 'Build a roster on the left, then press Run.'
-                  : isTriggerOpt
-                    ? 'Pick which trigger thresholds to search above, then press Run.'
-                    : isEquipOpt
-                      ? 'Pick which equipment slots to probe above, then press Run.'
-                      : 'Set up your party on the left, then press Run — or All Zones to sweep every zone and tier at once.'}
+                  : isApiOpt
+                    ? tool.empty
+                    : 'Set up your party on the left, then press Run — or All Zones to sweep every zone and tier at once.'}
               </Text>
             </Center>
           )}
@@ -2309,6 +2558,7 @@ function App() {
         </Suspense>
         </ChunkBoundary>
       )}
+      <Roboburble bridge={assistant} />
     </AppShell>
   );
 }

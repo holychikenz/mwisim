@@ -33,7 +33,12 @@ const {
   loadVersioned,
   emptyStore,
   resolveRef,
-  createCharacter
+  createCharacter,
+  mainCharacter,
+  mainSlotRef,
+  withAbilities,
+  dropLegacyEmptyTriggers,
+  TRIGGER_MEMORY_MARKER_KEY
 } = await import('../../ui/src/utils/characterStore.js');
 const {
   deleteLoadoutEverywhere,
@@ -42,6 +47,7 @@ const {
 } = await import('../../ui/src/utils/refRepair.js');
 const { ownsShrines } = await import('../../ui/src/utils/guildBuffs.js');
 const { toPlayerDTO } = await import('../../ui/src/utils/playerDTO.js');
+const { exportFormatToPlayer, playerToExportFormat } = await import('../../ui/src/utils/importSet.js');
 
 const TRIGGER = { dependencyHrid: '/combat_trigger_dependencies/self' };
 const SWORD = { itemHrid: '/items/cheese_sword', enhancementLevel: 4 };
@@ -230,8 +236,9 @@ test('ability levels are character-owned, triggers are loadout-owned', () => {
 });
 
 test('a resolved player produces a clean DTO', () => {
-  const dto = toPlayerDTO(resolvePlayer(character(), loadout()), { hrid: 'player3' });
+  const dto = toPlayerDTO(resolvePlayer(character({ game: { id: 7, name: 'c' } }), loadout()), { hrid: 'player3' });
   assert.equal(dto.hrid, 'player3');
+  assert.ok(!('game' in dto));
   assert.ok(!('abilityMemory' in dto));
   assert.ok(!('loadouts' in dto));
   assert.ok(!('name' in dto));
@@ -463,4 +470,113 @@ test('deleting a sole `default` loadout drops its references despite the blank r
   // The character itself survives, levels intact — a delete of one loadout is
   // not a delete of the character.
   assert.equal(next.characters.characters.hero.attackLevel, 90);
+});
+
+// =============================================================================
+// THE MAIN CHARACTER (header chip) — resolved from a remembered { id, gameId }.
+// =============================================================================
+
+function twoStore() {
+  let s = upsertCharacter(emptyStore(), { id: 'bob', name: 'bob', loadouts: { default: createLoadout() } });
+  s = upsertCharacter(s, { id: 'alicia', name: 'alicia', game: { id: 1, name: 'alicia' }, loadouts: { default: createLoadout() } });
+  return s;
+}
+
+test('mainCharacter: by game id first, then store id, else the only character', () => {
+  const s = twoStore();
+  assert.equal(mainCharacter(s, { id: 'bob' }).id, 'bob');
+  // alice was re-imported as alicia (same game id): the choice follows her.
+  assert.equal(mainCharacter(s, { id: 'alice', gameId: 1 }).id, 'alicia');
+  assert.equal(mainCharacter(s, { id: 'gone' }), null, 'stale ref with two characters: no guess');
+  assert.equal(mainCharacter(s, null), null);
+  assert.equal(mainCharacter(s, { id: '__proto__' }), null);
+  const onlyBob = upsertCharacter(emptyStore(), { id: 'bob', name: 'bob' });
+  assert.equal(mainCharacter(onlyBob, { id: 'gone' }).id, 'bob');
+  assert.equal(mainCharacter(emptyStore(), { id: 'bob' }), null);
+  assert.equal(mainCharacter(undefined, undefined), null);
+});
+
+test('mainSlotRef: main in its first loadout, else null', () => {
+  const s = upsertCharacter(emptyStore(), {
+    id: 'a', name: 'a', loadouts: { tank: createLoadout(), mage: createLoadout() }
+  });
+  assert.deepEqual(mainSlotRef(s, { id: 'a' }), { characterId: 'a', loadoutName: 'tank' });
+  assert.equal(mainSlotRef(emptyStore(), { id: 'a' }), null);
+});
+
+test('game identity is optional: absent stays absent, a non-object is dropped', () => {
+  assert.ok(!('game' in sanitizeCharacter(character())));
+  assert.ok(!('game' in sanitizeCharacter(character({ game: 42 }))));
+  assert.deepEqual(sanitizeCharacter(character({ game: { id: 7, name: 'c' } })).game, { id: 7, name: 'c' });
+});
+
+test('withAbilities: a swapped-in ability lands in the slot and the memory, and splitPlayer stores its triggers and level', () => {
+  const c = character({ abilityLevels: { a: 3 } });
+  const player = resolvePlayer(c, loadout({ abilities: [null, null, null, null, null], triggerMemory: {} }));
+  const next = withAbilities(player, [null, { hrid: '/abilities/cleave', level: 7, triggers: [TRIGGER] }, null, null, null]);
+  assert.equal(next.abilities[1].hrid, '/abilities/cleave');
+  const { character: split, loadout: out } = splitPlayer(next);
+  assert.equal(split.abilityLevels['/abilities/cleave'], 7);
+  assert.deepEqual(out.triggerMemory['/abilities/cleave'], [TRIGGER]);
+  assert.equal(split.abilityLevels.a, 3);
+});
+
+test('trigger memory: an ability never set up in this loadout stays unset through an edit; a deliberate [] survives', () => {
+  const c = character({ abilityLevels: { '/abilities/smack': 12, '/abilities/cleave': 8, '/abilities/maim': 3 } });
+  const l = loadout({ triggerMemory: { '/abilities/smack': [TRIGGER], '/abilities/maim': [] } });
+  const player = resolvePlayer(c, l);
+  assert.equal(player.abilityMemory['/abilities/cleave'].triggers, undefined);
+  const { loadout: out } = splitPlayer(player);
+  assert.equal(Object.hasOwn(out.triggerMemory, '/abilities/cleave'), false); // was []
+  assert.deepEqual(out.triggerMemory['/abilities/maim'], []);
+  assert.deepEqual(out.triggerMemory['/abilities/smack'], [TRIGGER]);
+});
+
+test('legacy trigger memory: a stored [] for an ability not slotted in that loadout is dropped once; slotted ones are untouched', () => {
+  const legacy = loadout({
+    abilities: [{ hrid: '/abilities/smack', triggers: [] }, null, null, null, null],
+    triggerMemory: { '/abilities/smack': [], '/abilities/cleave': [], '/abilities/maim': [TRIGGER] }
+  });
+  const store = storeWith(character(), { a: legacy });
+  const out = dropLegacyEmptyTriggers(store);
+  assert.deepEqual(out.characters.c.loadouts.a.triggerMemory, { '/abilities/smack': [], '/abilities/maim': [TRIGGER] });
+  assert.deepEqual(store.characters.c.loadouts.a.triggerMemory['/abilities/cleave'], []); // not mutated
+
+  __store.clear();
+  __store.set('csim_characters', JSON.stringify(store));
+  assert.equal(Object.hasOwn(loadCharacters().characters.c.loadouts.a.triggerMemory, '/abilities/cleave'), false);
+  assert.equal(Object.hasOwn(JSON.parse(__store.get('csim_characters')).characters.c.loadouts.a.triggerMemory, '/abilities/cleave'), false);
+  assert.ok(__store.get(TRIGGER_MEMORY_MARKER_KEY));
+  // Once only: a [] written after the cleanup is deliberate and is kept.
+  __store.set('csim_characters', JSON.stringify(store));
+  assert.deepEqual(loadCharacters().characters.c.loadouts.a.triggerMemory['/abilities/cleave'], []);
+  // A first load with nothing stored marks it done without writing a store.
+  __store.clear();
+  loadCharacters();
+  assert.ok(__store.get(TRIGGER_MEMORY_MARKER_KEY));
+  assert.equal(__store.has('csim_characters'), false);
+  __store.clear();
+});
+
+test('inventory is optional: absent stays absent, a non-array is dropped, a list is kept; never in a player', () => {
+  assert.ok(!('inventory' in sanitizeCharacter(character())));
+  assert.ok(!('inventory' in sanitizeCharacter(character({ inventory: { a: 1 } }))));
+  const inventory = [{ itemHrid: '/items/donut', enhancementLevel: 0, count: 3 }];
+  assert.deepEqual(sanitizeCharacter(character({ inventory })).inventory, inventory);
+  assert.ok(!('inventory' in resolvePlayer(character({ inventory }), loadout())));
+});
+
+test('legacy trigger memory: a set exported before the [] rule loses its unslotted []; a set stamped since keeps them; levels stay', () => {
+  const abilityMemory = {
+    '/abilities/smack': { level: 12, triggers: [] },
+    '/abilities/cleave': { level: 8, triggers: [] },
+    '/abilities/maim': { level: 3, triggers: [TRIGGER] }
+  };
+  const set = { player: {}, abilities: [{ abilityHrid: '/abilities/smack', level: 12 }], abilityMemory };
+  const old = splitPlayer(exportFormatToPlayer(set, 1));
+  assert.deepEqual(old.loadout.triggerMemory, { '/abilities/smack': [], '/abilities/maim': [TRIGGER] });
+  assert.equal(old.character.abilityLevels['/abilities/cleave'], 8);
+  const stamped = splitPlayer(exportFormatToPlayer({ ...set, abilityMemoryVersion: 2 }, 1));
+  assert.deepEqual(stamped.loadout.triggerMemory['/abilities/cleave'], []);
+  assert.equal(playerToExportFormat(resolvePlayer(character(), loadout()), 'z', 0, 24).abilityMemoryVersion, 2);
 });

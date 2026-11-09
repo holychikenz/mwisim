@@ -32,12 +32,17 @@
 // extensionless or JSON imports, so it needs nothing from api/loader.js.
 import {
   partyConsumableSeconds,
+  partyNetConsumableSeconds,
   consumableTimeShare,
+  dropCreditSeconds,
+  effectiveNetRatePerHour,
   effectiveRatePerHour,
   sumConsumablesUsed,
 } from '../../../shared/consumableCost.js';
 
 const { sumDamageToEnemies } = await import('../../../src/combatsimulator/guildTrialStats.js');
+// Drop credit reads every kill's drop table (shared/drops.js).
+const { combatMonsterDetailMap } = await import('../../../src/combatsimulator/dataProvider.js');
 
 /** Nanoseconds in an hour. Same constant as api/cli.js:14 and App.jsx:50. */
 export const ONE_HOUR_NS = 60 * 60 * 1e9;
@@ -227,10 +232,10 @@ function labyrinthMetrics(simResult, perHour) {
  *
  * @param {object} simResult
  * @param {(value: number) => number} perHour
- * @param {number} consumableSecondsPerHour
+ * @param {(ratePerHour: number) => number} onClock  a rate restated on the real clock (scoreSimResult)
  * @returns {object}
  */
-function dungeonMetrics(simResult, perHour, consumableSecondsPerHour) {
+function dungeonMetrics(simResult, perHour, onClock) {
   if (!simResult?.isDungeon) return {};
   const completed = Number(simResult?.dungeonsCompleted) || 0;
   const failed = Number(simResult?.dungeonsFailed) || 0;
@@ -241,10 +246,13 @@ function dungeonMetrics(simResult, perHour, consumableSecondsPerHour) {
     completionsPerHour,
     // Same time-denominated restatement as effectiveEncountersPerHour, and equal
     // to the raw rate when no cost table was supplied.
-    effectiveCompletionsPerHour: effectiveRatePerHour(completionsPerHour, consumableSecondsPerHour),
+    effectiveCompletionsPerHour: onClock(completionsPerHour),
     dungeonFailuresPerHour: perHour(failed),
   };
 }
+
+/** The bill is known, so the objective is time-denominated, with either table: every metric, and optimizerRoute's costTables. */
+export const costsKnown = (consumableCosts, dropCreditCosts) => !!(consumableCosts || dropCreditCosts);
 
 /**
  * Reduce a SimResult to the scalars we rank and report on.
@@ -265,9 +273,11 @@ function dungeonMetrics(simResult, perHour, consumableSecondsPerHour) {
  * @param {object} simResult
  * @param {object} [opts]
  * @param {Record<string, number>} [opts.consumableCosts] itemHrid → seconds each
+ * @param {Record<string, number>} [opts.dropCreditCosts] itemHrid → seconds each over the
+ *   consumable class: drop credit, opt-in. Absent, every metric is exactly as without it.
  * @returns {object} metrics
  */
-export function scoreSimResult(simResult, { consumableCosts = null } = {}) {
+export function scoreSimResult(simResult, { consumableCosts = null, dropCreditCosts = null } = {}) {
   const simulatedTime = Number(simResult?.simulatedTime) || 0;
   const hours = simulatedTime / ONE_HOUR_NS;
   const seconds = simulatedTime / 1e9;
@@ -318,6 +328,20 @@ export function scoreSimResult(simResult, { consumableCosts = null } = {}) {
   });
   const consumableSecondsPerHour = perHour(consumableSeconds);
 
+  // DROP CREDIT, opt-in. The consumables a run's kills drop stand in for production
+  // the player would otherwise do: each player's OWN expected drops offset their OWN
+  // bill, on the per-player clock (shared/consumableCost.js partyNetConsumableSeconds).
+  // The net can go negative, so it has its own floored divisor; consumableSecondsPerHour
+  // stays the bill, and without the table nothing below changes.
+  const net = dropCreditCosts
+    ? partyNetConsumableSeconds(simResult?.consumablesUsed, consumableCosts,
+      dropCreditSeconds(simResult, combatMonsterDetailMap, dropCreditCosts, playerHrids), { players: playerHrids, hours })
+    : null;
+  const netSecondsPerHour = net ? perHour(net.seconds) : null;
+  const onClock = (rate) => (netSecondsPerHour == null
+    ? effectiveRatePerHour(rate, consumableSecondsPerHour)
+    : effectiveNetRatePerHour(rate, netSecondsPerHour));
+
   // Running dry of mana is invisible in encounters/hour until it is severe, but
   // it is exactly the failure mode a badly-tuned mana threshold produces. Report
   // it so a user can see that a "winning" configuration is starving itself.
@@ -335,14 +359,11 @@ export function scoreSimResult(simResult, { consumableCosts = null } = {}) {
   // Encounters per hour of TOTAL time, combat plus the production time owed for
   // everything consumed. With no cost table this equals encountersPerHour, so the
   // metric is always safe to rank on — it simply stops discriminating.
-  const effectiveEncountersPerHour = effectiveRatePerHour(
-    encountersPerHour,
-    consumableSecondsPerHour
-  );
+  const effectiveEncountersPerHour = onClock(encountersPerHour);
 
   return {
     ...labyrinthMetrics(simResult, perHour),
-    ...dungeonMetrics(simResult, perHour, consumableSecondsPerHour),
+    ...dungeonMetrics(simResult, perHour, onClock),
     hoursSimulated: hours,
     encounters: Number(simResult?.encounters) || 0,
     encountersPerHour,
@@ -354,10 +375,18 @@ export function scoreSimResult(simResult, { consumableCosts = null } = {}) {
     consumablesPerHour: perHour(consumablesTotal),
     consumablesByItemPerHour,
     consumableSecondsPerHour,
+    // Only with drop credit on: the credit itself (the members' own, plain mean
+    // over the roster — partyNetConsumableSeconds), the net on the per-player
+    // clock, and dropCreditFloored only when some member's net hit the floor.
+    ...(net && {
+      dropCreditSecondsPerHour: perHour(net.credit),
+      netConsumableSecondsPerHour: netSecondsPerHour,
+      ...(net.floored && { dropCreditFloored: true }),
+    }),
     // Fraction of a player's real time that goes on producing consumables rather
     // than fighting. The headline number for an ironcow player.
     consumableTimeShare: consumableTimeShare(consumableSecondsPerHour),
-    consumableCostsKnown: !!consumableCosts,
+    consumableCostsKnown: costsKnown(consumableCosts, dropCreditCosts),
     outOfManaSecondsPerHour: perHour(outOfManaSeconds),
     ranOutOfMana: anyOutOfMana,
   };
@@ -426,9 +455,14 @@ export const OBJECTIVE_METRICS = new Set([
   'clearsPerHour',
 ]);
 
-/** Every metric any kind of run can produce. Used where the kind is unknown. */
+/**
+ * Every metric any kind of run can produce. Used where the kind is unknown. The
+ * drop-credit pair is in no display list: a run has it only when the credit was
+ * posted, and averageMetrics and computeDeltas skip a key no run carries.
+ */
 export const ALL_REPORTED_METRICS = [
-  ...new Set([...LABYRINTH_REPORTED_METRICS, ...REPORTED_METRICS, ...DUNGEON_REPORTED_METRICS]),
+  ...new Set([...LABYRINTH_REPORTED_METRICS, ...REPORTED_METRICS, ...DUNGEON_REPORTED_METRICS,
+    'dropCreditSecondsPerHour', 'netConsumableSecondsPerHour']),
 ];
 
 /**
@@ -470,6 +504,9 @@ export function defaultObjective({ consumableCostsKnown = false, labyrinth = fal
  * floor — see rankResults.
  */
 export const COMPLETION_OBJECTIVES = new Set(['completionsPerHour', 'effectiveCompletionsPerHour']);
+
+/** The objectives restated on the real clock (onClock): the ones a consumable's price, or its absence, moves. */
+export const COSTED_OBJECTIVES = new Set(['effectiveEncountersPerHour', 'effectiveCompletionsPerHour']);
 
 /**
  * Has the objective pinned against one of its limits, so that no candidate can

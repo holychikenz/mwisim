@@ -232,6 +232,7 @@ export function makePoolEvaluator({
   labyrinthConfig = null,
   extraBuffs = [],
   consumableCosts = null,
+  dropCreditCosts = null,
   signal = null,
   cancelMessage = 'Trigger optimisation cancelled',
 }) {
@@ -250,6 +251,7 @@ export function makePoolEvaluator({
       labyrinthConfig,
       extraBuffs,
       consumableCosts,
+      dropCreditCosts,
       simulationTimeLimit: job.simulationTimeLimit,
       seed: job.seed,
     }));

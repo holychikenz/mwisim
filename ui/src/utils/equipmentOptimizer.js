@@ -122,8 +122,12 @@ export function formatPct(fraction, decimals = 2) {
  */
 export function verdictOf(row) {
   if (!row) return 'unknown';
-  if (row.significantFamilywise) return row.perLevel >= 0 ? 'strong-gain' : 'strong-loss';
-  if (row.significant) return row.perLevel >= 0 ? 'gain' : 'loss';
+  // perLevel on a scan row, delta on a whole-candidate row (rankCandidates). A gain is > 0, the bar descent.js
+  // and scan.js hold one to; a zero or missing one is no clear change, however small its p — never a gain or a loss.
+  const change = row.perLevel ?? row.delta;
+  if (!change) return 'noise';
+  if (row.significantFamilywise) return change > 0 ? 'strong-gain' : 'strong-loss';
+  if (row.significant) return change > 0 ? 'gain' : 'loss';
   return 'noise';
 }
 

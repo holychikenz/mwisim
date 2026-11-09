@@ -30,6 +30,9 @@ export const CHARACTERS_KEY = 'csim_characters';
 export const CHARACTER_KEYS = Object.freeze([
   'id',
   'name',
+  // Optional { id, name } game identity (characterId + the name the last import
+  // used). Never in a DTO: resolvePlayer emits explicit keys only.
+  'game',
   'staminaLevel',
   'intelligenceLevel',
   'attackLevel',
@@ -43,6 +46,9 @@ export const CHARACTER_KEYS = Object.freeze([
   'guildShrines',
   'personalBuffs',
   'abilityLevels',
+  // Optional [{ itemHrid, enhancementLevel, count }] from the last import
+  // (characterToStore.js); never in a DTO.
+  'inventory',
   'loadouts'
 ]);
 
@@ -72,6 +78,9 @@ const LEVEL_FIELDS = Object.freeze([
 
 const isObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 const has = (o, k) => Object.prototype.hasOwnProperty.call(o || {}, k);
+const sameGameId = (a, b) => a != null && b != null && String(a) === String(b);
+/** The record is a DIFFERENT game character: both sides carry a game id and they differ. */
+const otherGame = (record, gameId) => record?.game?.id != null && gameId != null && !sameGameId(record.game.id, gameId);
 
 /** Slug a display name into a stable character id. */
 export function makeCharacterId(name) {
@@ -151,9 +160,14 @@ export function sanitizeCharacter(raw) {
   const out = {};
   for (const key of CHARACTER_KEYS) {
     // The tri-state again: only copy `guildShrines` if the source actually has
-    // it, so "no opinion" survives a round trip through the store.
-    if (key === 'guildShrines') {
+    // it, so "no opinion" survives a round trip through the store. `game` is
+    // likewise optional and never defaulted.
+    if (key === 'guildShrines' || key === 'game') {
       if (has(raw, key) && isObject(raw[key])) out[key] = raw[key];
+      continue;
+    }
+    if (key === 'inventory') {
+      if (Array.isArray(raw[key])) out[key] = raw[key];
       continue;
     }
     if (key === 'loadouts') continue;
@@ -173,17 +187,18 @@ export function sanitizeCharacter(raw) {
  * { [abilityHrid]: { level, triggers } }. The LEVEL half comes from the
  * character (it is the same whichever loadout you are wearing); the TRIGGERS
  * half comes from this loadout. Slotted abilities' own triggers win, since the
- * slot is what the user is looking at.
+ * slot is what the user is looking at. An ability never set up in this loadout
+ * has no triggers here (undefined, not []): [] means "cast whenever ready".
  */
 function buildAbilityMemory(character, loadout) {
   const levels = isObject(character.abilityLevels) ? character.abilityLevels : {};
   const triggers = isObject(loadout.triggerMemory) ? loadout.triggerMemory : {};
   const memory = {};
   for (const [hrid, level] of Object.entries(levels)) {
-    memory[hrid] = { level: Number(level) || 1, triggers: triggers[hrid] || [] };
+    memory[hrid] = { level: Number(level) || 1, triggers: triggers[hrid] };
   }
   for (const [hrid, trigs] of Object.entries(triggers)) {
-    if (!memory[hrid]) memory[hrid] = { level: Number(levels[hrid]) || 1, triggers: trigs || [] };
+    if (!memory[hrid]) memory[hrid] = { level: Number(levels[hrid]) || 1, triggers: trigs };
   }
   for (const slot of loadout.abilities || []) {
     if (!slot?.hrid) continue;
@@ -239,6 +254,20 @@ export function resolvePlayer(character, loadout) {
 }
 
 /**
+ * `player` with `abilities` in its slots and the per-ability memory refreshed
+ * for each filled one — level and triggers stick to the ABILITY, so A → B → A
+ * restores A (PlayerConfig). splitPlayer turns the memory into abilityLevels
+ * and triggerMemory, which keeps the store in sync.
+ */
+export function withAbilities(player, abilities) {
+  const abilityMemory = { ...(player?.abilityMemory || {}) };
+  for (const slot of abilities) {
+    if (slot?.hrid) abilityMemory[slot.hrid] = { level: slot.level, triggers: slot.triggers || [] };
+  }
+  return { ...player, abilities, abilityMemory };
+}
+
+/**
  * The inverse of resolvePlayer: two PARTIALS to be merged onto the stored
  * halves. Ability levels route to the character, slot ordering and triggers to
  * the loadout, and the guildShrines tri-state is mirrored rather than defaulted.
@@ -251,7 +280,7 @@ export function splitPlayer(flat) {
   const triggerMemory = {};
   for (const [hrid, entry] of Object.entries(memory)) {
     abilityLevels[hrid] = Number(entry?.level) || 1;
-    triggerMemory[hrid] = entry?.triggers || [];
+    if (Array.isArray(entry?.triggers)) triggerMemory[hrid] = entry.triggers;
   }
   const abilities = (Array.isArray(p.abilities) ? p.abilities : []).map(a => {
     if (!a?.hrid) return null;
@@ -332,8 +361,23 @@ export function patchCharacter(store, characterId, partial) {
   return upsertCharacter(store, { ...existing, ...partial, id: existing.id, name: existing.name });
 }
 
+/** The stored character an import lands on: same game characterId (an in-game
+ *  rename re-imports onto its old record), else the name's slug — unless that
+ *  slug is a different game character's, which then gets a record of its own. */
+function importTargetId(store, incoming) {
+  const characters = store?.characters || {};
+  const gameId = incoming?.game?.id;
+  const same = Object.values(characters).find(c => sameGameId(c?.game?.id, gameId));
+  if (same) return same.id;
+  const slug = incoming?.id || makeCharacterId(incoming?.name);
+  return otherGame(characters[slug], gameId) ? makeCharacterId(`${slug} ${gameId}`) : slug;
+}
+
 /**
  * Merge an IMPORTED character onto whatever is already stored.
+ *
+ * EXISTING means the stored character with the same game characterId, else the
+ * one at the name's slug (see importTargetId).
  *
  *  - NEW character: stored as-is, plus the FIRST-IMPORT defaults for anything
  *    the import omitted. `{}` means "captured, owns none" and `[]` means "no
@@ -347,17 +391,23 @@ export function patchCharacter(store, characterId, partial) {
  *    every field it OMITS keeps the stored value — so shrines and seals the
  *    user has since entered survive a re-import, which is the whole point.
  *    Loadouts merge BY NAME: same-named incoming replaces, existing-without-
- *    incoming is PRESERVED, incoming-without-existing is ADDED.
+ *    incoming is PRESERVED, incoming-without-existing is ADDED. An in-game
+ *    rename is followed unless the character was renamed here.
  *
  * It operates on the RAW `incoming`, before `sanitizeCharacter` — which fills
  * `base[key]` for any absent non-`guildShrines` key and would manufacture the
  * very `personalBuffs: []` we are avoiding. `upsertCharacter` sanitizes at the
  * end, as always.
  *
- * @returns {{store, created: boolean, replaced: string[], added: string[], kept: string[]}}
+ * `{ id }` lands the import on exactly that record, skipping importTargetId, for a
+ * caller that already bound a slot to a preview's id — unless that record is now
+ * a different game character: characterId is identity, so two are never merged.
+ *
+ * @returns {{store, id: string, created: boolean, replaced: string[], added: string[], kept: string[]}}
  */
-export function mergeImportedCharacter(store, incoming) {
-  const id = incoming?.id || makeCharacterId(incoming?.name);
+export function mergeImportedCharacter(store, incoming, { id: landing } = {}) {
+  const id = landing && !otherGame(store?.characters?.[landing], incoming?.game?.id)
+    ? landing : importTargetId(store, incoming);
   const existing = store?.characters?.[id];
   const incomingLoadouts = isObject(incoming?.loadouts) ? incoming.loadouts : {};
 
@@ -367,6 +417,7 @@ export function mergeImportedCharacter(store, incoming) {
     if (!has(incoming, 'personalBuffs')) character.personalBuffs = [];
     return {
       store: upsertCharacter(store, character),
+      id,
       created: true,
       replaced: [],
       added: Object.keys(incomingLoadouts),
@@ -375,13 +426,16 @@ export function mergeImportedCharacter(store, incoming) {
   }
 
   // Only the keys the import actually carries. `loadouts` is deliberately NOT
-  // in the partial: patchCharacter is a shallow spread and would clobber them.
+  // in the partial: the spread below is shallow and would clobber them.
   const partial = {};
   for (const key of CHARACTER_KEYS) {
     if (key === 'id' || key === 'name' || key === 'loadouts') continue;
     if (has(incoming, key)) partial[key] = incoming[key];
   }
-  let next = patchCharacter(store, id, partial);
+  // Follow an in-game rename only while the stored name is still the one the
+  // last import gave it: a name chosen here stands, as it always has.
+  const follows = incoming?.game?.name && existing.game?.name != null && existing.name === existing.game.name;
+  let next = upsertCharacter(store, { ...existing, ...partial, id, name: follows ? incoming.game.name : existing.name });
 
   const replaced = [];
   const added = [];
@@ -390,7 +444,7 @@ export function mergeImportedCharacter(store, incoming) {
     next = setLoadout(next, id, name, loadout);
   }
   const kept = Object.keys(existing.loadouts || {}).filter(n => !has(incomingLoadouts, n));
-  return { store: next, created: false, replaced, added, kept };
+  return { store: next, id, created: false, replaced, added, kept };
 }
 
 export function setLoadout(store, characterId, loadoutName, loadout) {
@@ -443,6 +497,26 @@ export function deleteCharacter(store, characterId) {
   return { ...store, schemaVersion: SCHEMA_VERSION, characters };
 }
 
+/** THE MAIN CHARACTER (header chip): `ref` = remembered { id, gameId }. Game id
+ *  first (survives a re-import onto another record), then store id. No match:
+ *  the ONLY character if exactly one, else null — never written back, so a stale
+ *  choice returns with its character; never a guess, because main drives an
+ *  automatic price fetch. */
+export function mainCharacter(store, ref) {
+  const characters = store?.characters || {};
+  const all = Object.values(characters);
+  return all.find(c => sameGameId(c?.game?.id, ref?.gameId))
+    || (ref?.id && has(characters, ref.id) ? characters[ref.id] : null)
+    || (all.length === 1 ? all[0] : null);
+}
+
+/** P1 for a session with nothing stored: main in its first loadout, else null. */
+export function mainSlotRef(store, ref) {
+  const main = mainCharacter(store, ref);
+  const loadoutName = main && Object.keys(main.loadouts || {})[0];
+  return loadoutName ? { characterId: main.id, loadoutName } : null;
+}
+
 // -- persistence --------------------------------------------------------------
 
 /**
@@ -486,11 +560,79 @@ export function loadVersioned(key, expectedVersion, fallback) {
  */
 export function loadCharacters() {
   const { data, status } = loadVersioned(CHARACTERS_KEY, SCHEMA_VERSION, emptyStore());
-  return {
-    schemaVersion: SCHEMA_VERSION,
-    characters: isObject(data?.characters) ? data.characters : {},
-    status
-  };
+  let characters = isObject(data?.characters) ? data.characters : {};
+  // An empty store is marked too: what is saved from now on is written under the new rule.
+  if (status !== 'incompatible') characters = cleanLegacyTriggersOnce({ characters }, status === 'ok').characters;
+  return { schemaVersion: SCHEMA_VERSION, characters, status };
+}
+
+/** Sibling marker (not a field in the store, which saveCharacters rewrites): the legacy trigger cleanup has run. */
+export const TRIGGER_MEMORY_MARKER_KEY = 'csim_characters.triggerMemoryCleaned';
+
+/**
+ * Stamped on exported sets and rosters (importSet.js, GuildTrialPanel.jsx):
+ * their abilityMemory was written under the [] rule, so a [] in it is deliberate.
+ */
+export const ABILITY_MEMORY_VERSION = 2;
+
+/** The old coercion's mark in one loadout: a [] remembered for an ability not slotted there. */
+function coercedEmpty(abilities) {
+  const slotted = new Set((Array.isArray(abilities) ? abilities : []).map(a => a?.hrid).filter(Boolean));
+  return (hrid, triggers) => !slotted.has(hrid) && Array.isArray(triggers) && triggers.length === 0;
+}
+
+/**
+ * Before [] meant "cast whenever ready", every sheet edit wrote [] into
+ * triggerMemory for every trained ability never set up in that loadout. Those
+ * cannot be told from a deliberate [], so the old reading (the game's defaults)
+ * is kept: [] is dropped for abilities NOT slotted in that loadout. Slotted
+ * ones are untouched. Pure; returns a new store.
+ */
+export function dropLegacyEmptyTriggers(store) {
+  const characters = {};
+  for (const [id, c] of Object.entries(isObject(store?.characters) ? store.characters : {})) {
+    if (!isObject(c?.loadouts)) { characters[id] = c; continue; }
+    const loadouts = {};
+    for (const [name, l] of Object.entries(c.loadouts)) {
+      if (!isObject(l?.triggerMemory)) { loadouts[name] = l; continue; }
+      const legacy = coercedEmpty(l.abilities);
+      const triggerMemory = Object.fromEntries(Object.entries(l.triggerMemory).filter(([hrid, t]) => !legacy(hrid, t)));
+      loadouts[name] = { ...l, triggerMemory };
+    }
+    characters[id] = { ...c, loadouts };
+  }
+  return { ...store, characters };
+}
+
+/**
+ * The same rule on a flat player from outside the store: an exported set or
+ * roster (`from`) not stamped with ABILITY_MEMORY_VERSION, or a csim_loadouts
+ * entry (no `from`). An unslotted ability's [] becomes never set; its level
+ * stays. Pure.
+ */
+export function dropLegacyEmptyMemory(player, from) {
+  if (from?.abilityMemoryVersion >= ABILITY_MEMORY_VERSION || !isObject(player?.abilityMemory)) return player;
+  const legacy = coercedEmpty(player.abilities);
+  const abilityMemory = Object.fromEntries(Object.entries(player.abilityMemory)
+    .map(([hrid, entry]) => [hrid, legacy(hrid, entry?.triggers) ? { level: entry.level } : entry]));
+  return { ...player, abilityMemory };
+}
+
+/** dropLegacyEmptyTriggers at most once ever, saved (when there was a stored blob) before the marker is written. */
+function cleanLegacyTriggersOnce(store, stored) {
+  try {
+    if (localStorage.getItem(TRIGGER_MEMORY_MARKER_KEY)) return store;
+  } catch {
+    return store; // No storage: nothing was saved under the old rule either.
+  }
+  const cleaned = stored ? dropLegacyEmptyTriggers(store) : store;
+  if (stored) saveCharacters(cleaned);
+  try {
+    localStorage.setItem(TRIGGER_MEMORY_MARKER_KEY, new Date().toISOString());
+  } catch {
+    // Quota or private browsing: it will simply run again.
+  }
+  return cleaned;
 }
 
 export function saveCharacters(store) {

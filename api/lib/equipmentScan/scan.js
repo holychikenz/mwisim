@@ -113,15 +113,100 @@ function averageMetrics(metricsList) {
   // Carried through unaveraged: these are run properties, not rates.
   out.consumableCostsKnown = !!list[0]?.consumableCostsKnown;
   out.ranOutOfMana = list.some((m) => m?.ranOutOfMana);
+  if (list.some((m) => m?.dropCreditFloored)) out.dropCreditFloored = true; // only with drop credit on
   return out;
 }
 
-function throwIfAborted(signal) {
-  if (signal?.aborted) throw new AbortError('Equipment scan cancelled');
+function throwIfAborted(signal, message) {
+  if (signal?.aborted) throw new AbortError(message);
 }
 
 /**
- * Measure the marginal value of enhancement, slot by slot.
+ * The paired run itself, shared by scanEquipment and rankCandidates: replicate r
+ * runs the baseline and every candidate on seed seedBase + r (THE SHAPE OF THE
+ * RUN, above), then pairs each candidate with the baseline seed by seed.
+ * Candidates arrive filtered; their ids must not contain '#', which the job ids
+ * use to carry the replicate.
+ */
+async function runPaired({ playerDTOs, candidates, evaluate, applyCandidate, objective, hours, replicates, alpha, seedBase, signal, onProgress, cancelMessage }) {
+  const reps = Math.max(1, Math.floor(Number(replicates) || DEFAULT_SCAN.replicates));
+  const simulationTimeLimit = hours * ONE_HOUR_NS;
+  const workload = estimateWorkload(candidates.length, { hours, replicates: reps });
+
+  // id -> array indexed by replicate. Holes are failed simulations and are
+  // dropped pairwise later rather than being coerced to zero, which would read
+  // as "this build scored nothing" instead of "this build was not measured".
+  const baselineRuns = [];
+  const candidateRuns = new Map(candidates.map((row) => [row.id, []]));
+
+  let completed = 0;
+  const report = (label) => {
+    onProgress?.({
+      stage: 'scan',
+      label,
+      completed,
+      total: workload.total,
+      progress: workload.total ? completed / workload.total : 0,
+    });
+  };
+
+  report('preparing');
+
+  for (let replicate = 0; replicate < reps; replicate += 1) {
+    throwIfAborted(signal, cancelMessage);
+    const seed = seedBase + replicate;
+
+    const jobs = [
+      {
+        id: `baseline#${replicate}`,
+        playerDTOs,
+        simulationTimeLimit,
+        seed,
+      },
+      ...candidates.map((row) => ({
+        id: `${row.id}#${replicate}`,
+        playerDTOs: applyCandidate(playerDTOs, row),
+        simulationTimeLimit,
+        seed,
+      })),
+    ];
+
+    report(`replicate ${replicate + 1} of ${reps}`);
+    const results = await evaluate(jobs, { stage: 'scan', replicate });
+    completed += jobs.length;
+
+    for (const result of results) {
+      const [id] = String(result.id).split('#');
+      const metrics = result.error ? null : result.metrics;
+      if (id === 'baseline') baselineRuns[replicate] = metrics;
+      else candidateRuns.get(id)[replicate] = metrics;
+    }
+
+    report(`replicate ${replicate + 1} of ${reps}`);
+  }
+
+  const baselineSamples = baselineRuns.map((m) => (m ? Number(m[objective]) : NaN));
+  const usableBaseline = baselineSamples.filter(Number.isFinite);
+  if (usableBaseline.length === 0) {
+    throw new Error('Every baseline simulation failed; nothing to compare against');
+  }
+
+  return {
+    reps, completed, workload, baselineSamples, usableBaseline,
+    baselineMetrics: averageMetrics(baselineRuns),
+    noise: coefficientOfVariation(usableBaseline),
+    compared: candidates.map((row) => {
+      const runs = candidateRuns.get(row.id) || [];
+      const samples = runs.map((m) => (m ? Number(m[objective]) : NaN));
+      return { row, samples, metrics: averageMetrics(runs),
+        comparison: pairedComparison(samples, baselineSamples, { alpha, familySize: candidates.length }) };
+    }),
+  };
+}
+
+/**
+ * Measure the marginal value of enhancement, slot by slot. Also the Progress
+ * tool's scan: its rows are skill and ability levels (api/lib/progressSearch.js).
  *
  * @param {object} args
  * @param {object[]} args.playerDTOs
@@ -163,84 +248,17 @@ export async function scanEquipment({
   seedBase = DEFAULT_SEED_BASE,
   signal = null,
   onProgress = null,
+  cancelMessage = 'Equipment scan cancelled',
 }) {
   const scannable = (candidates || []).filter((row) => row.scannable);
   if (!scannable.length) throw new Error('No scannable equipment in the selection');
 
-  const reps = Math.max(1, Math.floor(Number(replicates) || DEFAULT_SCAN.replicates));
-  const simulationTimeLimit = hours * ONE_HOUR_NS;
-  const workload = estimateWorkload(scannable.length, { hours, replicates: reps });
+  const { reps, completed, workload, baselineSamples, usableBaseline, baselineMetrics, noise, compared } = await runPaired({
+    playerDTOs, candidates: scannable, evaluate, applyCandidate, objective, hours, replicates, alpha, seedBase, signal, onProgress,
+    cancelMessage,
+  });
 
-  // id -> array indexed by replicate. Holes are failed simulations and are
-  // dropped pairwise later rather than being coerced to zero, which would read
-  // as "this build scored nothing" instead of "this build was not measured".
-  const baselineRuns = [];
-  const candidateRuns = new Map(scannable.map((row) => [row.id, []]));
-
-  let completed = 0;
-  const report = (label) => {
-    onProgress?.({
-      stage: 'scan',
-      label,
-      completed,
-      total: workload.total,
-      progress: workload.total ? completed / workload.total : 0,
-    });
-  };
-
-  report('preparing');
-
-  for (let replicate = 0; replicate < reps; replicate += 1) {
-    throwIfAborted(signal);
-    const seed = seedBase + replicate;
-
-    const jobs = [
-      {
-        id: `baseline#${replicate}`,
-        playerDTOs,
-        simulationTimeLimit,
-        seed,
-      },
-      ...scannable.map((row) => ({
-        id: `${row.id}#${replicate}`,
-        playerDTOs: applyCandidate(playerDTOs, row),
-        simulationTimeLimit,
-        seed,
-      })),
-    ];
-
-    report(`replicate ${replicate + 1} of ${reps}`);
-    const results = await evaluate(jobs, { stage: 'scan', replicate });
-    completed += jobs.length;
-
-    for (const result of results) {
-      const [id] = String(result.id).split('#');
-      const metrics = result.error ? null : result.metrics;
-      if (id === 'baseline') baselineRuns[replicate] = metrics;
-      else candidateRuns.get(id)[replicate] = metrics;
-    }
-
-    report(`replicate ${replicate + 1} of ${reps}`);
-  }
-
-  const baselineSamples = baselineRuns.map((m) => (m ? Number(m[objective]) : NaN));
-  const usableBaseline = baselineSamples.filter(Number.isFinite);
-  if (usableBaseline.length === 0) {
-    throw new Error('Every baseline simulation failed; nothing to compare against');
-  }
-
-  const baselineMetrics = averageMetrics(baselineRuns);
-  const noise = coefficientOfVariation(usableBaseline);
-
-  const rows = scannable.map((row) => {
-    const runs = candidateRuns.get(row.id) || [];
-    const samples = runs.map((m) => (m ? Number(m[objective]) : NaN));
-    const comparison = pairedComparison(samples, baselineSamples, {
-      alpha,
-      familySize: scannable.length,
-    });
-    const metrics = averageMetrics(runs);
-
+  const rows = compared.map(({ row, samples, metrics, comparison }) => {
     const step = row.step || 1;
     const scale = Math.abs(comparison.baselineMean) > 1e-9 ? Math.abs(comparison.baselineMean) : null;
 
@@ -351,5 +369,48 @@ export async function scanEquipment({
     // or that none of them ever will ('floor') — not "we could not tell".
     // Reported separately, and named, because the two ends want opposite advice.
     saturated: saturationOf(objective, noise.mean, rows),
+  };
+}
+
+/**
+ * Rank whole alternatives to one baseline: the Loadout and Abilities tools (and
+ * any later tool that varies one player). The scan's paired run, but each row
+ * is the candidate itself rather than a per-level rate: `delta` is the paired
+ * mean difference on the objective, `deltaPct` that over the baseline mean,
+ * `marginPct` the Student-t half-width on the same scale. Best first, ties by
+ * id, so the order is deterministic. Candidate ids must not contain '#'.
+ * A candidate with no usable pair (every simulation of it failed) is `unmeasured`:
+ * delta null, no rank, listed last — not a delta of zero.
+ */
+export async function rankCandidates({
+  candidates, objective, hours = DEFAULT_SCAN.hours, replicates = DEFAULT_SCAN.replicates,
+  alpha = DEFAULT_SCAN.alpha, seedBase = DEFAULT_SEED_BASE, ...run // playerDTOs, evaluate, applyCandidate, signal, onProgress, cancelMessage
+}) {
+  if (!candidates?.length) throw new Error('Nothing to rank');
+  const paired = await runPaired({ ...run, candidates, objective, hours, replicates, alpha, seedBase });
+  const rows = paired.compared.map(({ row, samples, metrics, comparison }) => {
+    const scale = Math.abs(comparison.baselineMean) > 1e-9 ? Math.abs(comparison.baselineMean) : null;
+    const unmeasured = comparison.samples === 0;
+    return {
+      ...row, metrics, samples, unmeasured,
+      deltas: computeDeltas(metrics, paired.baselineMetrics),
+      statistics: comparison,
+      delta: unmeasured ? null : comparison.deltaMean,
+      deltaPct: scale == null ? null : comparison.deltaMean / scale,
+      marginPct: scale == null || comparison.marginOfError == null ? null : comparison.marginOfError / scale,
+      significant: comparison.significant,
+      significantFamilywise: comparison.significantFamilywise,
+    };
+  });
+  rows.sort((a, b) => a.unmeasured - b.unmeasured || b.delta - a.delta || String(a.id).localeCompare(String(b.id)));
+  rows.forEach((row, index) => { row.rank = row.unmeasured ? null : index + 1; });
+  return {
+    objective, hours, replicates: paired.reps, seedBase, alpha,
+    baseline: { metrics: paired.baselineMetrics, samples: paired.baselineSamples, mean: paired.noise.mean,
+      standardDeviation: paired.noise.sd, coefficientOfVariation: paired.noise.cv, usableSamples: paired.usableBaseline.length },
+    rows, familySize: rows.length, simulationsRun: paired.completed, estimatedSimulations: paired.workload.total,
+    // As the scan: only a family-wise significant GAIN concludes anything.
+    inconclusive: !rows.some((row) => row.significantFamilywise && row.delta > 0),
+    saturated: saturationOf(objective, paired.noise.mean, rows),
   };
 }

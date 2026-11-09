@@ -7,6 +7,10 @@ import express from 'express';
 
 import triggerRoutes from '../routes/optimizeTriggers.js';
 import equipmentRoutes from '../routes/optimizeEquipment.js';
+import loadoutRoutes from '../routes/optimizeLoadout.js';
+import abilityRoutes from '../routes/optimizeAbilities.js';
+import progressRoutes from '../routes/optimizeProgress.js';
+import swapRoutes from '../routes/optimizeSwaps.js';
 
 const HOSTILE = {
   players: [{}],
@@ -19,11 +23,17 @@ test('audit3-4: a body that makes validation throw answers 400 on every optimise
   app.use(express.json());
   app.use('/api', triggerRoutes);
   app.use('/api', equipmentRoutes);
+  app.use('/api', loadoutRoutes);
+  app.use('/api', abilityRoutes);
+  app.use('/api', progressRoutes);
+  app.use('/api', swapRoutes);
   const server = app.listen(0, '127.0.0.1');
   await new Promise((r) => server.once('listening', r));
   const base = `http://127.0.0.1:${server.address().port}/api`;
   try {
-    for (const path of ['optimize-triggers', 'optimize-equipment', 'optimize-triggers/preview', 'optimize-equipment/preview']) {
+    for (const path of ['optimize-triggers', 'optimize-equipment', 'optimize-triggers/preview', 'optimize-equipment/preview',
+      'optimize-loadout', 'optimize-abilities', 'optimize-loadout/preview', 'optimize-abilities/preview',
+      'optimize-progress', 'optimize-progress/preview', 'optimize-swaps', 'optimize-swaps/preview']) {
       const res = await fetch(`${base}/${path}`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },

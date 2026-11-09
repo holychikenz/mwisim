@@ -12,6 +12,12 @@ body {
   background-color: var(--app-surface);
 }
 
+/* The header's tool tabs sit on the header's own border, so drop the list's
+   grey baseline only; --tab-border-color still drives the hover underline. */
+.header-tabs .mantine-Tabs-list::before {
+  display: none;
+}
+
 /* Drag-to-resize handle for the AppShell navbar (left column). Pinned to the
    navbar's right edge; widens/tints on hover and while dragging. */
 .nav-resize-handle {

@@ -15,7 +15,7 @@
 
 import { Router } from 'express';
 import { buildExtraBuffs } from '../lib/simulator.js';
-import { poolSizeFor, sanitiseConsumableCosts, streamPoolRun, validateBody } from '../lib/optimizerRoute.js';
+import { costTables, poolSizeFor, sanitiseFidelity, streamPoolRun, validateBody } from '../lib/optimizerRoute.js';
 import { markDungeon, normaliseTarget, targetExtraBuffs, targetPlayerDTOs } from '../lib/target.js';
 import { makePoolEvaluator } from '../lib/triggerSearch/pool.js';
 import { defaultObjective, reportedMetricsFor } from '../lib/triggerSearch/score.js';
@@ -25,25 +25,19 @@ import {
   applyEnhancement,
   enumerateEquipment,
 } from '../lib/equipmentScan/candidates.js';
-import { DEFAULT_SCAN, DEFAULT_SEED_BASE, estimateWorkload, scanEquipment } from '../lib/equipmentScan/scan.js';
+import { DEFAULT_SEED_BASE, estimateWorkload, scanEquipment } from '../lib/equipmentScan/scan.js';
 
 const router = Router();
 
-/** Guard rails on user-supplied configuration. */
-const MAX_HOURS = 1000;
-const MAX_REPLICATES = 40;
+/** Guard rail on user-supplied configuration. */
 const MAX_CANDIDATES = 40;
 
 /**
  * Clamp the scan configuration. These arrive from NumberInputs, so they are user
- * data rather than trusted settings.
+ * data rather than trusted settings. Hours, replicates and alpha clamp as every
+ * paired run's do (optimizerRoute.js sanitiseFidelity); the step is the scan's own.
  */
-function sanitiseScan(input = {}) {
-  const number = (value, fallback, min, max) => {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed) || parsed < min) return fallback;
-    return Math.min(max, parsed);
-  };
+function sanitiseScan(input) {
   const integer = (value, fallback, min, max) => {
     const parsed = Math.floor(Number(value));
     if (!Number.isFinite(parsed) || parsed < min) return fallback;
@@ -51,14 +45,10 @@ function sanitiseScan(input = {}) {
   };
 
   return {
-    hours: number(input.hours, DEFAULT_SCAN.hours, 0.1, MAX_HOURS),
-    // Two replicates is the floor for any error bar at all; one would report a
-    // difference with no way to say whether it was real.
-    replicates: integer(input.replicates, DEFAULT_SCAN.replicates, 2, MAX_REPLICATES),
+    ...sanitiseFidelity(input),
     // A step of at least one, and never past the cap — an over-cap level yields
     // an undefined multiplier and silently NaN stats.
-    step: integer(input.step, DEFAULT_STEP, 1, MAX_ENHANCEMENT_LEVEL),
-    alpha: number(input.alpha, DEFAULT_SCAN.alpha, 0.0001, 0.5),
+    step: integer(input?.step, DEFAULT_STEP, 1, MAX_ENHANCEMENT_LEVEL),
   };
 }
 
@@ -106,7 +96,7 @@ function prepare(body) {
   const skipped = equipment.filter((row) => !row.scannable);
   // Nothing is eaten in a labyrinth, so there is no bill to count and the
   // time-denominated objective would only pretend to discriminate.
-  const consumableCosts = labyrinth ? null : sanitiseConsumableCosts(body.consumableCosts);
+  const { consumableCosts, dropCreditCosts, consumableCostsKnown } = costTables(body, { labyrinth, simPlayers });
 
   // Default to the time-denominated objective whenever the food can be priced.
   // Raw throughput cannot see the consumable bill, and an enhancement that lets
@@ -114,7 +104,7 @@ function prepare(body) {
   // completion chance instead, and a dungeon on completed runs per hour — see
   // score.js defaultObjective.
   const objective =
-    body.objective || defaultObjective({ consumableCostsKnown: !!consumableCosts, labyrinth, dungeon });
+    body.objective || defaultObjective({ consumableCostsKnown, labyrinth, dungeon });
 
   return {
     scan,
@@ -125,6 +115,8 @@ function prepare(body) {
     skipped,
     extraBuffs,
     consumableCosts,
+    dropCreditCosts,
+    consumableCostsKnown,
     objective,
   };
 }
@@ -138,7 +130,7 @@ router.post('/optimize-equipment/preview', (req, res) => {
     const invalid = validateBody(req.body);
     if (invalid) return res.status(400).json({ success: false, error: invalid });
 
-    const { scan, target, equipment, candidates, skipped, consumableCosts, objective } =
+    const { scan, target, equipment, candidates, skipped, consumableCosts, consumableCostsKnown, objective } =
       prepare(req.body);
 
     return res.json({
@@ -148,7 +140,7 @@ router.post('/optimize-equipment/preview', (req, res) => {
       // crates actually in force, not the ones it hoped it sent.
       target,
       reportedMetrics: reportedMetricsFor(target),
-      consumableCostsKnown: !!consumableCosts,
+      consumableCostsKnown,
       pricedConsumables: consumableCosts ? Object.keys(consumableCosts) : [],
       maxEnhancementLevel: MAX_ENHANCEMENT_LEVEL,
       equipment,
@@ -196,7 +188,7 @@ router.post('/optimize-equipment', async (req, res) => {
       objective: prepared.objective,
       target: prepared.target,
       reportedMetrics: reportedMetricsFor(prepared.target),
-      consumableCostsKnown: !!prepared.consumableCosts,
+      consumableCostsKnown: prepared.consumableCostsKnown,
       candidates: prepared.candidates,
       skipped: prepared.skipped,
       workload: estimateWorkload(prepared.candidates.length, prepared.scan),
@@ -208,6 +200,7 @@ router.post('/optimize-equipment', async (req, res) => {
       labyrinthConfig: prepared.target.labyrinth,
       extraBuffs: prepared.extraBuffs,
       consumableCosts: prepared.consumableCosts,
+      dropCreditCosts: prepared.dropCreditCosts,
       signal,
       cancelMessage: 'Equipment scan cancelled',
     });
@@ -235,7 +228,7 @@ router.post('/optimize-equipment', async (req, res) => {
         skipped: prepared.skipped,
         target: prepared.target,
         reportedMetrics: reportedMetricsFor(prepared.target),
-        consumableCostsKnown: !!prepared.consumableCosts,
+        consumableCostsKnown: prepared.consumableCostsKnown,
         pricedConsumables: prepared.consumableCosts ? Object.keys(prepared.consumableCosts) : [],
       },
     });

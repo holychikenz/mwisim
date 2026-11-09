@@ -1,0 +1,46 @@
+/* Roboburble's panel. Theme variables only, so light and dark follow Moss & Stone.
+   z 150: above AppShell (100), below modals (200) and Mantine popovers (300). */
+.robo-panel {
+  position: fixed;
+  z-index: 150;
+  right: calc(var(--app-shell-aside-offset, 0px) + 16px);
+  bottom: 84px;
+  width: min(380px, calc(100vw - 32px));
+  height: min(560px, calc(100dvh - 200px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--mantine-color-body);
+}
+.robo-panel[data-hidden] { display: none; }
+@media (max-width: 48em) {
+  .robo-panel { left: 8px; right: 8px; width: auto; height: 70dvh; }
+}
+.robo-head { padding: 8px 10px; border-bottom: 1px solid var(--mantine-color-default-border); }
+.robo-model {
+  margin-left: auto;
+  font-size: var(--mantine-font-size-xs);
+  border: 1px solid var(--mantine-color-default-border);
+  border-radius: var(--mantine-radius-sm);
+  padding: 2px 8px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 55%;
+  color: var(--mantine-color-dimmed);
+}
+.robo-body { flex: 1; min-height: 0; }
+.robo-msgs { padding: 12px; display: grid; gap: 10px; font-size: var(--mantine-font-size-sm); }
+.robo-msg { padding: 8px 11px; border-radius: 11px; max-width: 88%; line-height: 1.45; white-space: pre-wrap; overflow-wrap: anywhere; }
+.robo-msg[data-role="user"] {
+  justify-self: end;
+  background: var(--mantine-primary-color-filled);
+  color: var(--mantine-primary-color-contrast);
+}
+.robo-msg[data-role="assistant"] {
+  background: var(--app-surface);
+  border: 1px solid var(--mantine-color-default-border);
+}
+.robo-msg[data-error] { border-color: var(--mantine-color-red-filled); }
+.robo-chip { margin-top: 6px; white-space: normal; }
+.robo-foot { padding: 10px; border-top: 1px solid var(--mantine-color-default-border); }

@@ -11,18 +11,17 @@ import {
   NumberInput,
   Paper,
   ScrollArea,
-  SegmentedControl,
   SimpleGrid,
   Stack,
   Text,
   Tooltip
 } from '@mantine/core';
-import { Select } from './SearchSelect';
+import { ConsumableCostSource } from './ConsumableCostSource';
 import {
   DEFAULT_EQUIPMENT_OPT_CONFIG,
   estimateSeconds,
 } from '../utils/equipmentOptimizer';
-import { formatAge, formatDuration, formatSeconds } from '../utils/triggerOptimizer';
+import { formatDuration } from '../utils/triggerOptimizer';
 
 // =============================================================================
 // EquipmentOptimizerPanel — navbar view for the Equipment Optimizer mode.
@@ -30,14 +29,12 @@ import { formatAge, formatDuration, formatSeconds } from '../utils/triggerOptimi
 // Presentational plus callbacks; every piece of state lives in App, following
 // GuildTrialPanel and TriggerOptimizerPanel.
 //
-// The consumable-cost block below is deliberately a near-twin of the trigger
-// panel's rather than a shared component. What must never diverge is the
-// ARITHMETIC — which item costs what, and whether a 0 means free or unknown —
-// and that already lives in one place (utils/consumableCosts.js over
-// shared/consumableCost.js). The chrome around it is presentation, and factoring
-// presentation out of a working 600-line panel to save a Select and a Button is
-// a poor trade in risk. It is here at all because the results pane, which
-// normally carries the price source, is not rendered in this mode.
+// The consumable-cost card is ConsumableCostSource, shared with the Loadout and
+// Abilities panels. What must never diverge is the ARITHMETIC — which item costs
+// what, and whether a 0 means free or unknown — and that lives in one place
+// (utils/consumableCosts.js over shared/consumableCost.js). It is here at all
+// because the results pane, which normally carries the price source, is not
+// rendered in this mode.
 // =============================================================================
 
 /** One equipment row: a checkbox when it can be probed, a dimmed reason when not. */
@@ -134,7 +131,6 @@ export function EquipmentOptimizerPanel({
   };
 
   const costed = !!preview?.consumableCostsKnown;
-  const overrideCount = consumableCostRows.filter((row) => row.override != null).length;
   // Read from the preview rather than from a prop: the server echoes the target
   // back clamped and validated, so the panel describes the run that will
   // actually happen rather than the one the header hoped to ask for.
@@ -269,71 +265,7 @@ export function EquipmentOptimizerPanel({
         {/* Price source. Only the Iron source yields production time in seconds, and
             only seconds are commensurable with combat time — so without it the scan
             ranks on raw throughput and cannot see the food bill at all. */}
-        {!labyrinth && pricing && (
-          <Paper p="xs" radius="sm" withBorder>
-            <Stack gap={6}>
-              <Text size="xs" fw={600}>
-                Consumable cost
-              </Text>
-              <SegmentedControl
-                size="xs"
-                fullWidth
-                value={pricing.source}
-                onChange={pricing.setSource}
-                disabled={loading}
-                data={[
-                  { value: 'vendor', label: 'None' },
-                  { value: 'market', label: 'Coins' },
-                  { value: 'iron', label: 'Iron time' },
-                ]}
-              />
-              {pricing.source === 'iron' && (
-                <>
-                  <Select
-                    size="xs"
-                    placeholder="Character"
-                    data={[
-                      ...new Set(
-                        [...(pricing.characters || []), pricing.ironCharacter].filter(Boolean)
-                      ),
-                    ].map((name) => ({ value: name, label: name }))}
-                    value={pricing.ironCharacter}
-                    onChange={pricing.setIronCharacter}
-                    disabled={loading}
-                    searchable
-                  />
-                  <Button
-                    variant="default"
-                    size="compact-xs"
-                    loading={pricing.fetching}
-                    onClick={pricing.fetchPrices}
-                    disabled={loading}
-                  >
-                    {pricing.fetchedLabel ? 'Refetch production times' : 'Fetch production times'}
-                  </Button>
-                  {pricing.fetchedLabel && (
-                    <Text size="xs" c="dimmed">
-                      {pricing.fetchedLabel}
-                      {formatAge(pricing.fetchedAt) ? ` · cached ${formatAge(pricing.fetchedAt)}` : ''}
-                    </Text>
-                  )}
-                  {overrideCount > 0 && (
-                    <Text size="10px" c="dimmed">
-                      {overrideCount} per-item override{overrideCount === 1 ? '' : 's'} in effect
-                      {consumableCostRows.length
-                        ? ` (${consumableCostRows
-                            .filter((row) => row.override != null)
-                            .map((row) => formatSeconds(row.effective))
-                            .join(', ')})`
-                        : ''}
-                      . Edit them on the Triggers tab.
-                    </Text>
-                  )}
-                </>
-              )}
-            </Stack>
-          </Paper>
-        )}
+        {!labyrinth && pricing && <ConsumableCostSource pricing={pricing} loading={loading} consumableCostRows={consumableCostRows} />}
 
         <Paper p="xs" radius="sm" withBorder>
           <Group justify="space-between" gap={4}>

@@ -3,8 +3,8 @@ import { Accordion, Badge, Button, Group, Progress, ScrollArea, SimpleGrid, Stac
 import { DropsEconomy } from './DropsEconomy';
 import { ClearResultsButton, NumTd, Section, StatGroup } from './ResultParts';
 import { nameOf } from '../utils/names';
-import { effectiveRatePerHour, summariseConsumableCost } from '../utils/consumableCosts';
-import { formatSeconds } from '../utils/triggerOptimizer';
+import { effectiveHint, effectiveRateFor, summariseConsumableCost } from '../utils/consumableCosts';
+import { formatNetSeconds, formatSeconds } from '../utils/triggerOptimizer';
 import { usePersistentState } from '../hooks/usePersistentState';
 
 const LAB_TABS = ['labstats', 'outcomes'];
@@ -50,10 +50,15 @@ function SummaryStats({ results, monsters, pricing, zones }) {
         consumablesUsed: results.consumablesUsed,
         hours: hoursSimulated,
         pricing,
-        players: Object.keys(results.manaUsed || {})
+        players: Object.keys(results.manaUsed || {}),
+        // Drop credit: each member's own consumable drops against their own eating.
+        drops: results.isLabyrinth ? null : results
       }),
-    [results.consumablesUsed, results.manaUsed, hoursSimulated, pricing]
+    [results, hoursSimulated, pricing]
   );
+  // consumed − drop credit = net, when the credit is on (Costs page).
+  const netText = consumableCost.netSecondsPerHour == null ? null : formatNetSeconds(consumableCost.secondsPerHour,
+    consumableCost.creditSecondsPerHour, consumableCost.netSecondsPerHour, consumableCost.creditFloored);
 
   const kpis = [];
 
@@ -110,14 +115,15 @@ function SummaryStats({ results, monsters, pricing, zones }) {
       kpis.push({
         group: 'pace',
         label: dungeon ? 'Effective Completions/Hour' : 'Effective Enc/Hour',
-        value: formatNumber(effectiveRatePerHour(ratePerHour, consumableCost.secondsPerHour)),
+        value: formatNumber(effectiveRateFor(ratePerHour, consumableCost)),
         // A run that ate nothing owes no production time, so its effective rate
         // IS its raw rate — said plainly, rather than as "0 items priced", which
-        // reads like a failure to price something.
-        hint: consumableCost.nothingConsumed
-          ? 'nothing consumed'
-          : `${(consumableCost.timeShare * 100).toFixed(0)}% of time cooking`,
-        tip: consumableCost.nothingConsumed
+        // reads like a failure to price something. With drop credit, the net's.
+        hint: effectiveHint(consumableCost),
+        tip: netText
+          ? `${rateNoun} per hour of total time, each character's own consumable drops set against ` +
+            `their own eating: ${netText} production per hour of combat.`
+          : consumableCost.nothingConsumed
           ? `Nothing was eaten or drunk during this run, so no production time is owed — ` +
             `the effective rate is the raw rate.`
           : `${rateNoun} per hour of total time — combat plus the ` +
@@ -154,9 +160,11 @@ function SummaryStats({ results, monsters, pricing, zones }) {
   if (consumableCost.known) kpis.push({
     group: 'outcome',
     label: 'Effective Experience/Hour',
-    value: formatNumber(effectiveRatePerHour(experiencePerHour, consumableCost.secondsPerHour)),
+    value: formatNumber(effectiveRateFor(experiencePerHour, consumableCost)),
     tip: !consumableCost.known
       ? undefined
+      : netText
+        ? `Total experience across every player and skill, per hour of total time: ${netText} production per hour of combat.`
       : consumableCost.nothingConsumed
         ? `Total experience across every player and skill. Nothing was consumed, so no ` +
           `production time is owed and the two figures agree.`

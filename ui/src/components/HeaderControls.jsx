@@ -1,5 +1,7 @@
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import {
+  ActionIcon,
+  Tabs,
   Group,
   NumberInput,
   Button,
@@ -26,6 +28,7 @@ import {
 import { levelToTierIndex, tierIndexToLevel, MAX_TIER_INDEX } from '../utils/trialTiers';
 import { simulableZones, zoneTiers, findZone } from '../utils/zones';
 import { SettingsMenu } from './SettingsMenu';
+import { TARGETS, TOOLS, isTool, supports, toRoute, fromRoute } from '../utils/optimizerTarget';
 import { usePersistentState, isBool } from '../hooks/usePersistentState';
 import { MAX_DUNGEON_RUNS, MIN_RUN_HOURS, MAX_RUN_HOURS, MAX_ZONE_WORKERS, MIN_DURATION_HOURS, MAX_DURATION_HOURS, clampDuration, clampRunCount, clampRunHours, clampZoneWorkers } from '../../../shared/dungeonRuns.js';
 
@@ -69,9 +72,9 @@ function crateLabel(hrid) {
 export function HeaderControls({
   simMode,
   onSimModeChange,
-  // Which target the two optimisers fight. The Zone and Lab simulation modes
-  // pick their own; only Triggers and Gear need to be told, because they are
-  // modes rather than targets and can be pointed at either.
+  // Which target the optimisers fight. The header sets it from its target
+  // segment whenever an optimiser tab is picked; the strip shows that target's
+  // controls.
   optTarget = 'zone',
   onOptTargetChange,
   zones,
@@ -110,9 +113,13 @@ export function HeaderControls({
   // because they change what a run MEANS, not merely what it targets.
   experimental,
   onExperimentalChange,
-  // 'header' renders the mode tabs and the settings cog; 'strip' renders the
-  // run strip (target, duration, All Zones, Run/Stop) above the results.
-  part = 'strip'
+  // 'header' renders both header rows around the brand passed as children:
+  // target, Costs and the cog, then the tool tabs. 'strip' renders the run
+  // strip (target, duration, All Zones, Run/Stop) above the results.
+  part = 'strip',
+  children,
+  // Header only: the main-character chip, far right of row 1.
+  characterChip
 }) {
   // Planets and dungeons only. The 44 solo-monster combat actions ("Fly",
   // "Granite Golem") are spawns inside a planet rather than places to send a
@@ -172,9 +179,9 @@ export function HeaderControls({
     activeShrineCount +
     activeBuildingCount;
 
-  // Modes vs targets. Zone and Lab are both; Triggers and Gear are modes that
+  // Modes vs targets. Zone and Lab are both; the tools (TOOLS) are modes that
   // must be pointed at a target, and Trial and Costs have none at all.
-  const isOptimiser = simMode === 'triggerOpt' || simMode === 'equipOpt';
+  const isOptimiser = isTool(simMode);
   const targetKind =
     simMode === 'labyrinth' ? 'labyrinth' : isOptimiser ? optTarget : 'zone';
 
@@ -202,29 +209,82 @@ export function HeaderControls({
     />
   ));
 
+  // Where the Costs toggle returns to: the mode that was open when it was pressed.
+  const costsReturn = useRef('zone');
+
   if (part === 'header') {
+    const route = toRoute(simMode, optTarget);
+    // One pick can move both halves of the state; React batches the two sets.
+    const go = (target, tool) => {
+      const next = fromRoute(target, tool, optTarget);
+      onOptTargetChange?.(next.optTarget);
+      onSimModeChange(next.simMode);
+    };
+    // Costs is a view, not a target: pressed again, it returns to exactly the
+    // target and tool that were open.
+    const toggleCosts = () => {
+      if (!route.costs) costsReturn.current = simMode;
+      onSimModeChange(route.costs ? costsReturn.current : 'itemCosts');
+    };
     return (
-      // Scrolls rather than overflowing when a phone squeezes the header.
-      <Group gap="sm" wrap="nowrap" style={{ minWidth: 0, overflowX: 'auto' }}>
-        <SegmentedControl
-          size="sm"
-          radius="xl"
-          value={simMode}
-          onChange={onSimModeChange}
-          data={[
-            { value: 'zone', label: 'Zone' },
-            { value: 'labyrinth', label: 'Lab' },
-            { value: 'guildTrial', label: 'Trial' },
-            { value: 'triggerOpt', label: 'Triggers' },
-            { value: 'equipOpt', label: 'Gear' },
-            { value: 'itemCosts', label: 'Costs' }
-          ]}
-        />
-        {/* The cog. Present in every mode, including Costs — an experiment
-            left on is a fact about the whole app, so hiding it anywhere would
-            be a way to forget it. */}
-        <SettingsMenu settings={experimental} onChange={onExperimentalChange} />
-      </Group>
+      <Stack gap={0} h="100%" justify="space-between">
+        {/* Where. The burger and brand (children) and the right-hand group stay
+            put; only the target scrolls sideways when a phone squeezes it. */}
+        <Group h={56} px="md" wrap="nowrap">
+          {children}
+          <Group wrap="nowrap" style={{ flex: 1, minWidth: 0, overflowX: 'auto' }}>
+            <SegmentedControl
+              size="sm"
+              radius="xl"
+              value={route.target}
+              onChange={(target) => go(target, route.tool)}
+              data={TARGETS}
+              aria-label="Target"
+            />
+          </Group>
+          <Group gap="xs" wrap="nowrap">
+            <Tooltip label={route.costs ? 'Close item costs' : 'Item costs'} withArrow>
+              <ActionIcon
+                variant={route.costs ? 'filled' : 'default'}
+                size="lg"
+                onClick={toggleCosts}
+                aria-label="Item costs"
+                aria-pressed={route.costs}
+              >
+                {/* A ledger, drawn inline: the UI has no icon package. */}
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="4" y="3" width="16" height="18" rx="2" />
+                  <path d="M8 3v18M11 8h6M11 12h6M11 16h4" />
+                </svg>
+              </ActionIcon>
+            </Tooltip>
+            {/* The cog. Present in every mode, including Costs — an experiment
+                left on is a fact about the whole app, so hiding it anywhere would
+                be a way to forget it. */}
+            <SettingsMenu settings={experimental} onChange={onExperimentalChange} />
+            {characterChip}
+          </Group>
+        </Group>
+        {/* What to do there. A tool that cannot fight the target is disabled; in
+            Costs nothing is selected and every tab is off. The header's own
+            border is the baseline (index.css hides the list's). */}
+        <Tabs
+          className="header-tabs"
+          value={route.tool}
+          onChange={(tool) => go(route.target, tool)}
+          styles={{ list: { flexWrap: 'nowrap', overflowX: 'auto' } }}
+        >
+          <Tabs.List px="md">
+            <Tabs.Tab value="simulate" disabled={!supports('simulate', route.target)}>Simulate</Tabs.Tab>
+            <Divider orientation="vertical" my="xs" mx={4} aria-hidden />
+            {TOOLS.map(t => (
+              <Tabs.Tab key={t.value} value={t.value} disabled={!supports(t.value, route.target)}>
+                {t.label}
+              </Tabs.Tab>
+            ))}
+          </Tabs.List>
+        </Tabs>
+      </Stack>
     );
   }
 
@@ -365,22 +425,6 @@ export function HeaderControls({
         </>
       ) : (
         <>
-          {/* Zone or labyrinth. Only the optimisers get a choice — the Zone and
-              Lab simulation modes ARE the choice. Placed before the target
-              controls so the pair reads left to right as "what, then which". */}
-          {isOptimiser && (
-            <SegmentedControl
-              size="xs"
-              value={optTarget}
-              onChange={onOptTargetChange}
-              data={[
-                { value: 'zone', label: 'Zone' },
-                { value: 'labyrinth', label: 'Lab' }
-              ]}
-              aria-label="Optimisation target"
-            />
-          )}
-
           {targetKind === 'zone' ? (
             // Both optimisers work against a zone and tier just as a normal zone
             // run does, so they reuse these controls. Neither uses `duration`:
@@ -506,7 +550,7 @@ export function HeaderControls({
           suffix=" runs"
           aria-label="Trial iterations"
         />
-      ) : simMode === 'triggerOpt' || simMode === 'equipOpt' || simMode === 'itemCosts' ? null : dungeonRunMode ? (
+      ) : isTool(simMode) || simMode === 'itemCosts' ? null : dungeonRunMode ? (
         <>
           {/* Both run fields take what is typed as is and clamp when they
               lose focus (App clamps again on start): clamping per keystroke

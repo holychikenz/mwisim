@@ -136,7 +136,7 @@ the fix, and the notice says that too.
 | Column | Meaning | Whose |
 |---|---|---|
 | Enc/h | Encounters per hour of combat | Party — every member fights all of them, so it is this player's figure too |
-| Effective enc/h | …per hour of **total** time: combat plus the production owed for what **this player** ate | Selected player |
+| Effective enc/h | …per hour of **total** time: combat plus the production owed for what **this player** ate, less what their own consumable drops stand in for (drop credit, TRIGGER-OPTIMIZER.md) | Selected player |
 | XP/h | Experience across all of **this player's** skills, per combat hour | Selected player |
 | Effective XP/h | The same, on the real clock | Selected player |
 | Deaths/h | **This player's** deaths (monster deaths are excluded) | Selected player |

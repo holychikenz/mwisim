@@ -70,7 +70,7 @@ function buildGuildTrials() {
     }));
 }
 
-function buildGameData() {
+export function buildGameData() {
   return {
     abilities: abilityDetailMap,
     items: itemDetailMap,

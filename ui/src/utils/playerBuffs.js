@@ -25,6 +25,7 @@
 // consumers deserves to know the set is not uniform.
 // =============================================================================
 import { resolveGuildBuffs, resolveUnitShrineBuffs } from './guildBuffs';
+import { isTool } from './optimizerTarget';
 import { resolveSealBuffs } from '../../../shared/personalBuffs.js';
 
 /**
@@ -65,6 +66,6 @@ export function resolvePlayerExtraBuffs(
  */
 export function sealsApply({ simMode, optTarget = 'zone', mazeContext = false }) {
   if (simMode === 'guildTrial' || simMode === 'labyrinth') return false;
-  if (simMode === 'triggerOpt' || simMode === 'equipOpt') return optTarget !== 'labyrinth';
+  if (isTool(simMode)) return optTarget !== 'labyrinth';
   return !mazeContext;
 }
