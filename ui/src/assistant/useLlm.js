@@ -22,6 +22,8 @@ export function useLlm(settings) {
   const [cache, setCache] = useState({});
   const [keys, setKeys] = useState(() => ({ anthropic: readKey('anthropic'), openai: readKey('openai') }));
   const client = useRef(null);
+  // Why the last local worker died: a turn's next step then reports it, not a TypeError on a null client.
+  const dead = useRef(null);
 
   useEffect(() => {
     let live = true;
@@ -33,6 +35,7 @@ export function useLlm(settings) {
   // A worker that errors is dropped (localLlm terminates it); the next call starts a fresh one.
   const getClient = useCallback(() => (client.current ??= createLocalClient((e) => {
     client.current = null;
+    dead.current = e;
     setLocal({ ...IDLE, error: e.message });
   })), []);
   const rec = useMemo(() => (gpu ? recommendModel(gpu) : null), [gpu]);
@@ -83,6 +86,7 @@ export function useLlm(settings) {
   const chat = useCallback(async ({ transcript, tools, signal }) => {
     if (provider === 'local') {
       const c = client.current;
+      if (!c) throw dead.current || new Error('No local model is loaded.');
       const messages = toLocalMessages(buildSystemPrompt({ tools, protocol: 'prompt' }), fitHistory(transcript, BUDGET.localHistory));
       const onAbort = () => c.interrupt();
       signal?.addEventListener('abort', onAbort);

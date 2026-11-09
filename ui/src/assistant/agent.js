@@ -5,8 +5,9 @@
 // Transcript entries: {role:'user', text, now?} | {role:'assistant', text, calls, raw}
 // | {role:'tool', results}. `now` (the state line) is stamped once on the turn's
 // user entry, so every request only appends to the last. The caller keeps the
-// returned transcript only when a turn completes; a stopped turn runs no further
-// tools and is not remembered.
+// returned transcript: a finished turn's, or the rounds a stopped or failed turn
+// completed — their tools already changed the app, and the next turn must know.
+// A stopped turn runs no further tools.
 // Pure: no React, no browser globals.
 // =============================================================================
 
@@ -24,15 +25,17 @@ export async function runAgent({ llm, execute, transcript, tools, now, signal, o
   // The state line rides on this turn's user entry, never the system prompt, so each request only
   // appends: web-llm reuses its KV cache and Claude's thinking blocks stay valid.
   if (now != null && t.length) t[t.length - 1] = { ...t[t.length - 1], now: typeof now === 'function' ? now() : now };
+  // Ended early: the completed rounds (each ends on its tool results), if there are any.
+  const early = (r) => (t.length > transcript.length ? { ...r, transcript: t } : r);
   for (let step = 0; step < maxSteps; step++) {
-    if (signal?.aborted) return { stopped: true };
+    if (signal?.aborted) return early({ stopped: true });
     let reply;
     try {
       reply = await llm.chat({ transcript: t, tools, signal });
     } catch (error) {
-      return signal?.aborted ? { stopped: true } : { error };
+      return early(signal?.aborted ? { stopped: true } : { error });
     }
-    if (signal?.aborted) return { stopped: true };
+    if (signal?.aborted) return early({ stopped: true });
     t.push({ role: 'assistant', text: reply.text, calls: reply.calls, raw: reply.raw });
     if (!reply.calls.length) {
       if (reply.parseErrors?.length && step < maxSteps - 1) {

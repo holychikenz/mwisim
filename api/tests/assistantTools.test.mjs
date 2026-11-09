@@ -146,6 +146,12 @@ test('6: player targeting', () => {
     assert.equal(commit(s, out).characters.characters.bea.attackLevel, 50);
   }
   assert.equal(run(s, 'adjust_enhancement', { delta: 1, player: 4 }).content, 'P4 is empty.');
+  // The labels get_state prints name a slot (Trial: a roster row) as its number does.
+  const byLabel = run(s, 'set_skill_level', { skill: 'attack', level: 51, player: 'P2' });
+  assert.ok(!byLabel.isError, byLabel.content);
+  assert.equal(commit(s, byLabel).characters.characters.bea.attackLevel, 51);
+  assert.ok(!run(trialState(), 'adjust_enhancement', { delta: 1, player: 'Row 1' }).isError);
+  assert.match(run(trialState(), 'adjust_enhancement', { delta: 1, player: 'row 2' }).content, /no roster row 2/);
   assert.ok(run(s, 'adjust_enhancement', { delta: 1, value: 3 }).isError);
   assert.ok(run(s, 'adjust_enhancement', {}).isError);
 });

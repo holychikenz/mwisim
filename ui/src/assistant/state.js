@@ -36,13 +36,17 @@ function rows(state) {
 
 /**
  * The player a tool edits. `player` omitted: the open slot (Trial: the selected
- * roster row). An integer: that slot or row. A string: a character name —
+ * roster row). An integer, or the label get_state prints ("P2", "Row 3"): that
+ * slot or row. Any other string: a character name —
  * exact (ignoring case), then a unique word match — among bound rows.
  * @returns {{ref, label}|{error}}
  */
 export function resolveTarget(state, player) {
   const list = rows(state);
   const trial = state.simMode === 'guildTrial';
+  // The labels get_state prints, "P2" (Trial: "Row 3"), name that slot or row as its number does.
+  const label = typeof player === 'string' && player.trim().match(trial ? /^row\s*(\d+)$/i : /^p\s*(\d+)$/i);
+  if (label) player = Number(label[1]);
   let row;
   if (player == null || player === '') {
     row = list.find(r => r.open);

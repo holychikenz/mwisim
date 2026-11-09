@@ -119,3 +119,16 @@ test('10: the state line is stamped once on the user turn, never passed to the L
   assert.equal(args.length, 2);
   for (const a of args) assert.ok(!('now' in a));
 });
+
+test('11: a turn that fails or is stopped after a tool round keeps that round; with none, nothing', async () => {
+  const failed = await runAgent({ llm: scripted([{ calls: [call('a', 'adjust_enhancement', { delta: 2 })] }, new Error('overloaded')]),
+    execute: executor().execute, transcript: user });
+  assert.equal(failed.error.message, 'overloaded');
+  assert.deepEqual(failed.transcript.map(e => e.role), ['user', 'assistant', 'tool']);
+  const ac = new AbortController();
+  const stopped = await runAgent({ llm: scripted([{ calls: [call('a', 'set_zone')] }, { text: 'never asked' }]),
+    execute: executor((c) => { ac.abort(); return { id: c.id, name: c.name, content: 'ok' }; }).execute, transcript: user, signal: ac.signal });
+  assert.equal(stopped.stopped, true);
+  assert.deepEqual(stopped.transcript.map(e => e.role), ['user', 'assistant', 'tool']);
+  assert.equal((await runAgent({ llm: scripted([new Error('down')]), execute: executor().execute, transcript: user })).transcript, undefined);
+});

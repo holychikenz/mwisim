@@ -156,6 +156,15 @@ test('11: fitCloudHistory keeps thinking within budget and strips it once rounds
   assert.equal(P.fitCloudHistory(o)[1].raw, openaiRaw);
 });
 
+test('11b: past the budget the rounds are fitted as sent, without thinking, so signatures push none out', () => {
+  const sig = 'S'.repeat(30000); // about 10k estimated tokens of signature per reply
+  const round = (q) => [{ role: 'user', text: q },
+    { role: 'assistant', text: 'ok', raw: [{ type: 'thinking', thinking: '', signature: sig }, { type: 'text', text: 'ok' }], calls: [] }];
+  const kept = P.fitCloudHistory([...round('a'), ...round('b'), ...round('c')]);
+  assert.deepEqual(kept.filter(e => e.role === 'user').map(e => e.text), ['a', 'b', 'c']);
+  for (const e of kept) if (Array.isArray(e.raw)) assert.deepEqual(e.raw.map(b => b.type), ['text']);
+});
+
 test('12: a worker error rejects pending and later calls and reports the death once', { timeout: 2000 }, async () => {
   const { createLocalClient } = await import('../../ui/src/assistant/localLlm.js');
   const workers = [];

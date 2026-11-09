@@ -128,17 +128,21 @@ export function parseOpenAI(json) {
 
 // -- history ------------------------------------------------------------------
 
+const withoutThinking = (e) => (Array.isArray(e.raw)
+  ? { ...e, raw: e.raw.filter(b => b.type !== 'thinking' && b.type !== 'redacted_thinking') } : e);
+
 /**
  * The cloud history: the newest whole rounds within budget. Claude binds each thinking block to
  * everything sent before it, so once older rounds are dropped no thinking block is replayed
- * (dropping all of them is allowed; changing the history before them is not).
+ * (dropping all of them is allowed; changing the history before them is not) — the current
+ * round's included, whose blocks were made before the cut moved. Untrimmed, the thinking is
+ * sent and counted; trimmed, the rounds are fitted as sent, without it.
  */
 export function fitCloudHistory(transcript) {
   const kept = fitHistory(transcript, BUDGET.cloudHistory);
   if (kept.length === transcript.length) return kept;
   // shortcut: past the budget every request replays no thinking (Claude re-plans each step); move to server-side compaction if long chats get slow or costly.
-  return kept.map(e => (Array.isArray(e.raw)
-    ? { ...e, raw: e.raw.filter(b => b.type !== 'thinking' && b.type !== 'redacted_thinking') } : e));
+  return fitHistory(transcript.map(withoutThinking), BUDGET.cloudHistory);
 }
 
 // -- the call -----------------------------------------------------------------

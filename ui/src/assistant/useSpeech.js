@@ -74,6 +74,12 @@ export function useSpeech({ pref, onText, onFinal, onError, onStatus }) {
           cbs.current.onError(`Whisper failed: ${data.message}`);
         }
       };
+      // A worker that fails to load, or crashes, posts nothing: say so, and start a fresh one next time.
+      worker.current.onerror = (e) => {
+        worker.current?.terminate();
+        worker.current = null;
+        cbs.current.onError(`Whisper failed: ${e?.message || 'the speech worker stopped'}`);
+      };
       worker.current.postMessage(pcm, [pcm.buffer]);
     } catch (e) {
       cbs.current.onError(`Could not read the recording: ${e?.message || e}`);

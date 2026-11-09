@@ -66,6 +66,7 @@ export function Panel({ opened, onClose, bridge, avatarUrl }) {
 
   const clearChat = () => {
     abort.current?.abort();
+    abort.current = null;   // a turn still in flight no longer belongs to this chat: it keeps nothing
     setMessages([]);
     setTranscript([]);
   };
@@ -108,6 +109,8 @@ export function Panel({ opened, onClose, bridge, avatarUrl }) {
     } catch (error) {
       r = { error };   // whatever throws, the panel must not stay busy
     }
+    // A stopped or failed turn still returns the rounds it completed (runAgent): their tools already ran.
+    if (r.transcript && abort.current === ac) setTranscript(r.transcript);
     if (r.stopped) {
       patchMessage(aid, m => ({ ...m, pending: false, text: m.text || 'Stopped.' }));
       setStatus('Stopped');
@@ -115,7 +118,6 @@ export function Panel({ opened, onClose, bridge, avatarUrl }) {
       patchMessage(aid, m => ({ ...m, pending: false, error: true, text: r.error.message || String(r.error) }));
       setStatus(`Error: ${r.error.message || r.error}`);
     } else {
-      setTranscript(r.transcript);
       patchMessage(aid, m => ({ ...m, pending: false, text: r.text || m.text || 'Done.' }));
       setStatus('Done');
     }
@@ -126,6 +128,8 @@ export function Panel({ opened, onClose, bridge, avatarUrl }) {
   const undo = (chip) => {
     const patch = undoPatch(bridge.getState(), chip.undo);
     if (patch.error) { setStatus(patch.error); return; }
+    // The characters as a functional update: the undo lands on the store as committed, not on the last render's copy.
+    if (patch.characters) patch.characters = (prev) => undoPatch({ characters: prev }, chip.undo).characters ?? prev;
     bridge.commit(patch);
     setMessages(ms => ms.map(m => (m.chips ? { ...m, chips: m.chips.map(c => (c.id === chip.id ? { ...c, status: 'undone' } : c)) } : m)));
     setStatus(`Undid ${chip.name}`);

@@ -2041,7 +2041,7 @@ function App() {
     { gameData, characters, party, activeTab, selectedPlayers, roster, selectedEntryId, simMode, optTarget,
       zone, difficultyTier, duration, labConfig, trialConfig, results: activeResults, loading: activeLoading,
       progress: activeProgress, error: activeError, runDisabled: !!tool?.runDisabled },
-    { characters: setCharacters, zone: setZone, difficultyTier: setDifficultyTier, duration: setDuration,
+    { characters: setCharacters, zone: handleZoneChange, difficultyTier: setDifficultyTier, duration: setDuration,
       labConfig: setLabConfig, trialConfig: setTrialConfig, simMode: setSimMode, optTarget: setOptTarget },
     handleStartSimulation
   );
