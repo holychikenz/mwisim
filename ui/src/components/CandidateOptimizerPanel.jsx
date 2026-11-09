@@ -18,7 +18,7 @@ import { DEFAULT_LOADOUT_OPT_CONFIG, OBJECTIVE_OPTIONS } from '../utils/candidat
 
 // =============================================================================
 // CandidateOptimizerPanel — the settings of a tool that ranks alternatives for
-// ONE party member (Loadout, Abilities): whose, what to rank on, the price
+// ONE party member (Loadout, Abilities, Progress, Swaps): whose, what to rank on, the price
 // source, the workload and the fidelity. The tool's own options are children.
 // Presentational; every piece of state lives in App.
 // =============================================================================
@@ -224,6 +224,32 @@ export function AbilitySearchOptions({ preview, config, onConfigChange, loading 
         Tries every ability this character has a level for: imported from the game, or set by slotting it on its
         Abilities tab. Each goes in with the triggers this loadout last gave it, else the game&apos;s defaults.
       </Text>
+    </Stack>
+  );
+}
+
+const EXTRA_STAT_OPTIONS = [['defense', 'Defense'], ['stamina', 'Stamina'], ['intelligence', 'Intelligence']]; // api/lib/progressSearch.js EXTRA_STATS
+
+/** The Progress tool's own options: how many levels each probe adds, and which extra stats to probe. */
+export function ProgressOptions({ preview, config, onConfigChange, loading }) {
+  const setCfg = (patch) => onConfigChange?.({ ...config, ...patch });
+  const ticked = new Set(config.stats);
+  const probes = preview?.probes || [];
+  return (
+    <Stack gap={6}>
+      <NumberInput size="xs" label="Levels per probe" min={1} max={200} value={config.levels} disabled={loading}
+        description="Each stat and ability is raised this many levels (never past 200); the gain is divided by the levels added."
+        onChange={(value) => setCfg({ levels: Number(value) || 10 })} />
+      <Group gap="xs">
+        {EXTRA_STAT_OPTIONS.map(([key, label]) => (
+          <Checkbox key={key} size="xs" label={label} checked={ticked.has(key)} disabled={loading}
+            onChange={() => setCfg({ stats: ticked.has(key) ? config.stats.filter((k) => k !== key) : [...config.stats, key] })} />
+        ))}
+      </Group>
+      {probes.some((p) => p.scannable) && (
+        <Text size="xs" c="dimmed">Probes: {probes.filter((p) => p.scannable).map((p) => p.label).join(', ')}.</Text>
+      )}
+      {probes.filter((p) => !p.scannable).map((p) => <Text key={p.id} size="xs" c="orange">{p.label}: {p.reason}</Text>)}
     </Stack>
   );
 }

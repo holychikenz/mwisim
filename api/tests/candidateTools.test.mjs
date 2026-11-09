@@ -13,10 +13,11 @@ import { loadEngine } from '../eval/engine.mjs';
 import { BUILDS, toCsimPlayer } from '../bench/builds.mjs';
 import loadoutRoutes, { prepareLoadoutRun } from '../routes/optimizeLoadout.js';
 import abilityRoutes from '../routes/optimizeAbilities.js';
+import progressRoutes from '../routes/optimizeProgress.js';
 import { prepareEquipmentRun } from '../routes/optimizeEquipment.js';
 import { sanitiseFidelity } from '../lib/optimizerRoute.js';
 
-const { pickSubjectSlot, loadoutCandidates } = await import('../../ui/src/utils/candidateOptimizer.js');
+const { pickSubjectSlot, loadoutCandidates, progressColumns } = await import('../../ui/src/utils/candidateOptimizer.js');
 const { resolvePlayer } = await import('../../ui/src/utils/characterStore.js');
 const { toPlayerDTO } = await import('../../ui/src/utils/playerDTO.js');
 
@@ -75,6 +76,7 @@ const engine = await loadEngine(ROOT);
 const { itemDetailMap: items, abilityDetailMap: abilityData } = engine.gameData;
 const melee = toCsimPlayer(BUILDS.melee, { level: 100, index: 1, items, abilityData });
 const bare = toCsimPlayer(BUILDS.bare, { level: 100, index: 1, items, abilityData });
+const ranged = toCsimPlayer(BUILDS.ranged, { level: 100, index: 1, items, abilityData });
 const BASE_BODY = { zone: { zoneHrid: '/actions/combat/fly', difficultyTier: 0 }, scan: { hours: 0.1, replicates: 2 }, workers: 1 };
 
 async function serve(t) {
@@ -82,6 +84,7 @@ async function serve(t) {
   app.use(express.json({ limit: '10mb' }));
   app.use('/api', loadoutRoutes);
   app.use('/api', abilityRoutes);
+  app.use('/api', progressRoutes);
   const server = app.listen(0, '127.0.0.1');
   await new Promise((r) => server.once('listening', r));
   t.after(() => { server.closeAllConnections(); server.close(); });
@@ -205,4 +208,32 @@ test('the equipment scan clamps hours, replicates and alpha exactly as sanitiseF
   assert.deepEqual(prepareEquipmentRun({ players: [melee], zone, scan: scans[0] }).scan, { hours: 1000, replicates: 40, alpha: 0.5, step: 20 });
   assert.deepEqual(prepareEquipmentRun({ players: [melee], zone, scan: scans[1] }).scan, { hours: 24, replicates: 2, alpha: 0.0001, step: 6 });
   assert.deepEqual(prepareEquipmentRun({ players: [melee], zone, scan: null }).scan, { hours: 24, replicates: 6, alpha: 0.05, step: 6 });
+});
+
+test('Progress route end to end: the probes, per-level rows with costs, deterministic', async (t) => {
+  const base = await serve(t);
+  const subject = { ...ranged, abilities: [null, ranged.abilities[1], null, null, null] };
+  const body = { ...BASE_BODY, players: [subject], subjectIndex: 0, levels: 10 };
+  const preview = await (await post(`${base}/optimize-progress/preview`, body)).json();
+  assert.equal(preview.success, true);
+  assert.deepEqual(preview.probes.map((p) => p.label), ['Ranged +10', 'Attack +10', 'Rain Of Arrows +10 lvls']);
+  assert.equal(preview.workload.total, 8);
+
+  const result = assertRunShape(await frames(`${base}/optimize-progress`, body));
+  assert.equal(result.rows.length, 3);
+  for (const row of result.rows) {
+    assert.ok('perLevel' in row, row.id);
+    assert.ok(Number.isFinite(row.metrics.encountersPerHour), row.id);
+  }
+  assert.ok(Number.isFinite(result.rows.find((r) => r.id === 'stat:ranged').xpPerLevel));
+  const again = assertRunShape(await frames(`${base}/optimize-progress`, body));
+  assert.deepEqual(again.rows, result.rows);
+});
+
+test('progressColumns: cost and yield always; a book-price column only when the source prices books', () => {
+  assert.deepEqual(progressColumns(null).map((c) => c.key), ['cost', 'yield']);
+  const columns = progressColumns({ prices: { '/items/poke': { ask: 2e6, bid: -1, vendor: 0 } }, unit: 'coins', expenseMode: 'ask' });
+  const price = columns.find((c) => c.key === 'price');
+  assert.equal(price.cell({ kind: 'ability', bookHrid: '/items/poke', pctPerBook: 0.001 }), '+0.050%');
+  assert.equal(price.cell({ kind: 'stat', xpPerLevel: 1, pctPerMillionXp: 0.1 }), '—');
 });

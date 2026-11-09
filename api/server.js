@@ -6,6 +6,7 @@ import optimizeTriggerRoutes from './routes/optimizeTriggers.js';
 import optimizeEquipmentRoutes from './routes/optimizeEquipment.js';
 import optimizeLoadoutRoutes from './routes/optimizeLoadout.js';
 import optimizeAbilityRoutes from './routes/optimizeAbilities.js';
+import optimizeProgressRoutes from './routes/optimizeProgress.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -24,6 +25,7 @@ app.use('/api', optimizeTriggerRoutes);
 app.use('/api', optimizeEquipmentRoutes);
 app.use('/api', optimizeLoadoutRoutes);
 app.use('/api', optimizeAbilityRoutes);
+app.use('/api', optimizeProgressRoutes);
 
 // Health check
 app.get('/health', (req, res) => {

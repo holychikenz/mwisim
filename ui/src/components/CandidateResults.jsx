@@ -5,7 +5,8 @@ import { ClearResultsButton, NumTd, VerdictBadge } from './ResultParts';
 // =============================================================================
 // CandidateResults — a rankCandidates result (api/lib/equipmentScan/scan.js):
 // what the member wears now, then every alternative best first, each with its
-// paired delta, p-value, verdict and an Apply. Shared by Loadout and Abilities.
+// paired delta, p-value, verdict and an Apply. Shared by the subject tools; a
+// scanEquipment result (Progress) shows its per-level gain instead.
 // =============================================================================
 
 const COLUMNS = {
@@ -36,17 +37,24 @@ const OBJECTIVE_NAMES = {
 
 const fmt = (value) => (Number.isFinite(value) ? value.toFixed(2) : '—');
 const formatP = (p) => (p == null || !Number.isFinite(p) ? '—' : p < 0.001 ? '<0.001' : p.toFixed(3));
-const formatDelta = (row) => (row.deltaPct == null
-  ? fmt(row.delta)
-  : `${formatSignedPct(row.deltaPct, 2)} ±${formatPct(row.marginPct, 2)}`);
+/** perLevel on a scan row (scanEquipment), delta on a whole-candidate row (rankCandidates). */
+const gainOf = (row) => row.perLevel ?? row.delta;
+const formatDelta = (row) => {
+  if ('perLevel' in row) {
+    return row.perLevelPct == null ? fmt(row.perLevel) : `${formatSignedPct(row.perLevelPct, 3)} ±${formatPct(row.perLevelMarginPct, 3)}`;
+  }
+  return row.deltaPct == null ? fmt(row.delta) : `${formatSignedPct(row.deltaPct, 2)} ±${formatPct(row.marginPct, 2)}`;
+};
 
-export function CandidateResults({ results, title, currentLabel, applyLabel = 'Apply', onApply, onClear }) {
+/** extraColumns: [{ key, label, cell(row) → string }], shown after the verdict. */
+export function CandidateResults({ results, title, currentLabel, applyLabel = 'Apply', onApply, onClear, extraColumns = [] }) {
   const target = results.target || {};
   const kind = target.kind === 'labyrinth' ? 'labyrinth' : target.dungeon ? 'dungeon' : 'zone';
   const columns = COLUMNS[kind];
   const rows = results.rows || [];
   const objectiveName = OBJECTIVE_NAMES[results.objective] || results.objective;
-  const best = rows.find((row) => row.significantFamilywise && row.delta > 0);
+  const perLevel = rows.some((row) => 'perLevel' in row);
+  const best = rows.find((row) => row.significantFamilywise && gainOf(row) > 0);
   // The run's own alpha (the panel's significance level), so the caption names the interval ± really is.
   const confidence = Number(((1 - results.alpha) * 100).toFixed(2));
 
@@ -64,9 +72,9 @@ export function CandidateResults({ results, title, currentLabel, applyLabel = 'A
     );
   } else if (best) {
     headline = (
-      <Alert color="teal" variant="light" p="xs" title={`Best: ${best.label}`}>
+      <Alert color="teal" variant="light" p="xs" title={`${perLevel ? 'Best next' : 'Best'}: ${best.label}`}>
         <Text size="xs">
-          {formatDelta(best)} {objectiveName} against the current setup, beyond noise even allowing for{' '}
+          {formatDelta(best)} {objectiveName}{perLevel ? ' per level' : ''} against the current setup, beyond noise even allowing for{' '}
           {results.familySize} comparison{results.familySize === 1 ? '' : 's'}.
         </Text>
       </Alert>
@@ -93,22 +101,23 @@ export function CandidateResults({ results, title, currentLabel, applyLabel = 'A
       {headline}
 
       <Text size="xs" c="dimmed">
-        Ranked on {objectiveName}. Δ is against the current setup on the same seeds; ± is the {confidence}% interval (Student-t).
+        Ranked on {objectiveName}. Δ is against the current setup on the same seeds{perLevel ? ', divided by the levels added' : ''}; ± is the {confidence}% interval (Student-t).
         {kind === 'zone' && !results.consumableCostsKnown
           ? ' No production times were loaded, so effective EPH equals EPH.'
           : ''}
       </Text>
 
-      <Table.ScrollContainer minWidth={640}>
+      <Table.ScrollContainer minWidth={640 + 120 * extraColumns.length}>
         <Table striped highlightOnHover fz="xs">
           <Table.Thead>
             <Table.Tr>
               <Table.Th>#</Table.Th>
               <Table.Th>Candidate</Table.Th>
               {columns.map(([key, label]) => <Table.Th key={key} ta="right">{label}</Table.Th>)}
-              <Table.Th ta="right">Δ</Table.Th>
+              <Table.Th ta="right">{perLevel ? 'Δ / level' : 'Δ'}</Table.Th>
               <Table.Th ta="right">p</Table.Th>
               <Table.Th>Verdict</Table.Th>
+              {extraColumns.map((c) => <Table.Th key={c.key} ta="right">{c.label}</Table.Th>)}
               {onApply && <Table.Th />}
             </Table.Tr>
           </Table.Thead>
@@ -120,6 +129,7 @@ export function CandidateResults({ results, title, currentLabel, applyLabel = 'A
               <NumTd>—</NumTd>
               <NumTd>—</NumTd>
               <Table.Td>—</Table.Td>
+              {extraColumns.map((c) => <NumTd key={c.key}>—</NumTd>)}
               {onApply && <Table.Td />}
             </Table.Tr>
             {rows.map((row) => (
@@ -134,6 +144,7 @@ export function CandidateResults({ results, title, currentLabel, applyLabel = 'A
                     ? <Badge size="xs" color="red" variant="outline" title="Every simulation of it failed">Not measured</Badge>
                     : <VerdictBadge row={row} />}
                 </Table.Td>
+                {extraColumns.map((c) => <NumTd key={c.key}>{c.cell(row)}</NumTd>)}
                 {onApply && (
                   <Table.Td>
                     {!row.unmeasured && (

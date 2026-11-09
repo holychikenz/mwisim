@@ -29,6 +29,7 @@ import { useTriggerOptimizer } from './hooks/useTriggerOptimizer';
 import { useEquipmentOptimizer } from './hooks/useEquipmentOptimizer';
 import { useLoadoutOptimizer } from './hooks/useLoadoutOptimizer';
 import { useAbilityOptimizer } from './hooks/useAbilityOptimizer';
+import { useProgressOptimizer } from './hooks/useProgressOptimizer';
 import { usePrices } from './hooks/usePrices';
 import { usePersistentState, isBool } from './hooks/usePersistentState';
 import { exportFormatToPlayer } from './utils/importSet';
@@ -86,10 +87,13 @@ import {
 import {
   DEFAULT_ABILITY_OPT_CONFIG,
   DEFAULT_LOADOUT_OPT_CONFIG,
+  DEFAULT_PROGRESS_OPT_CONFIG,
   isAbilityOptConfig,
   isLoadoutOptConfig,
+  isProgressOptConfig,
   loadoutCandidates,
-  pickSubjectSlot
+  pickSubjectSlot,
+  progressColumns
 } from './utils/candidateOptimizer';
 // The ONE atomic repair: party AND roster (AND the trial selection) rewritten
 // together, so neither holder can be mended at the other's expense.
@@ -147,6 +151,7 @@ const EquipmentOptimizerPanel = lazyNamed(() => import('./components/EquipmentOp
 const EquipmentOptimizerResults = lazyNamed(() => import('./components/EquipmentOptimizerResults'), 'EquipmentOptimizerResults');
 const CandidateOptimizerPanel = lazyNamed(() => import('./components/CandidateOptimizerPanel'), 'CandidateOptimizerPanel');
 const AbilitySearchOptions = lazyNamed(() => import('./components/CandidateOptimizerPanel'), 'AbilitySearchOptions');
+const ProgressOptions = lazyNamed(() => import('./components/CandidateOptimizerPanel'), 'ProgressOptions');
 const CandidateResults = lazyNamed(() => import('./components/CandidateResults'), 'CandidateResults');
 const ItemCostsView = lazyNamed(() => import('./components/ItemCostsView'), 'ItemCostsView');
 const TrialMonsterCards = lazyNamed(() => import('./components/TrialMonsterCards'), 'TrialMonsterCards');
@@ -246,11 +251,13 @@ function App() {
   // survives edits that would invalidate a trigger address.
   const [equipOptSelection, setEquipOptSelection] = useState([]);
 
-  // Loadout and Abilities vary ONE party member; both read the same pick (null = follow the main character).
+  // The subject tools (Loadout, Abilities, Progress, Swaps) vary ONE party member; all read the same pick (null = follow the main character).
   const loadoutOpt = useLoadoutOptimizer();
   const [loadoutOptConfig, setLoadoutOptConfig] = usePersistentState('csim_ui_loadout_opt', DEFAULT_LOADOUT_OPT_CONFIG, isLoadoutOptConfig);
   const abilityOpt = useAbilityOptimizer();
   const [abilityOptConfig, setAbilityOptConfig] = usePersistentState('csim_ui_ability_opt', DEFAULT_ABILITY_OPT_CONFIG, isAbilityOptConfig);
+  const progressOpt = useProgressOptimizer();
+  const [progressOptConfig, setProgressOptConfig] = usePersistentState('csim_ui_progress_opt', DEFAULT_PROGRESS_OPT_CONFIG, isProgressOptConfig);
   const [subjectPick, setSubjectPick] = useState(null);
 
   // Zone or labyrinth for BOTH optimisers, set from the header's target whenever
@@ -1581,6 +1588,12 @@ function App() {
       objective: planetTarget ? abilityOptConfig.objective : undefined, scan: abilityOptConfig };
   }, [toolBase, subjectIndex, subjectSlot, party, characters, planetTarget, abilityOptConfig]);
 
+  const progressOptPayload = useMemo(() => {
+    if (!toolBase || subjectIndex < 0) return null;
+    return { ...toolBase, subjectIndex, levels: progressOptConfig.levels, stats: progressOptConfig.stats,
+      objective: planetTarget ? progressOptConfig.objective : undefined, scan: progressOptConfig };
+  }, [toolBase, subjectIndex, planetTarget, progressOptConfig]);
+
   // A run remembers whose loadout it measured, so Apply writes there.
   const startSubjectRun = useCallback((run, payload) => {
     if (!payload) return;
@@ -1594,6 +1607,9 @@ function App() {
     () => startSubjectRun(runLoadoutOptimizer, loadoutOptPayload), [startSubjectRun, runLoadoutOptimizer, loadoutOptPayload]);
   const handleStartAbilityOpt = useCallback(
     () => startSubjectRun(runAbilityOptimizer, abilityOptPayload), [startSubjectRun, runAbilityOptimizer, abilityOptPayload]);
+  const { runOptimizer: runProgressOptimizer } = progressOpt;
+  const handleStartProgressOpt = useCallback(
+    () => startSubjectRun(runProgressOptimizer, progressOptPayload), [startSubjectRun, runProgressOptimizer, progressOptPayload]);
 
   /** Loadout's Apply: wear that loadout in the slot the run measured. */
   const applyLoadoutRow = useCallback((row, subject) => {
@@ -1618,6 +1634,7 @@ function App() {
   // What the server will compare: it caps the list and reports the rest as skipped (api/routes/optimizeLoadout.js).
   const loadoutCount = (loadoutOptPayload && loadoutOpt.preview?.candidates) || 0;
   const abilityCount = abilityOpt.preview?.candidates ?? 0;
+  const progressCount = progressOpt.preview?.candidates ?? 0;
 
   // The optimiser tools, keyed by their TOOLS value. Every mode-generic site
   // below (Run, Stop, the settings panel, the results pane) reads the open one,
@@ -1729,6 +1746,23 @@ function App() {
       results: (r, onClear) => (
         <CandidateResults results={r} title="Abilities" currentLabel="Current abilities"
           onApply={(row) => applyAbilityRow(row, r.meta?.subject)} onClear={onClear} />
+      )
+    },
+    progressOpt: {
+      engine: progressOpt,
+      payload: progressOptPayload,
+      start: handleStartProgressOpt,
+      runLabel: `Measure ${progressCount} level-up${progressCount === 1 ? '' : 's'}`,
+      runDisabled: !progressCount || progressOpt.previewing,
+      empty: 'Pick whose levels to probe above, then press Run.',
+      panel: (costRows) => (
+        <CandidateOptimizerPanel {...subjectPanelProps(progressOpt, progressOptConfig, setProgressOptConfig, costRows)}
+          title="Progress" blurb="Raises the weapon's damage stat, attack, any ticked stat and each slotted ability by the same number of levels, one at a time, against the current levels on shared seeds; the gain is divided by the levels added.">
+          <ProgressOptions preview={progressOpt.preview} config={progressOptConfig} onConfigChange={setProgressOptConfig} loading={progressOpt.loading} />
+        </CandidateOptimizerPanel>
+      ),
+      results: (r, onClear) => (
+        <CandidateResults results={r} title="Progress" currentLabel="Current levels" extraColumns={progressColumns(pricing)} onClear={onClear} />
       )
     }
   };

@@ -204,7 +204,8 @@ async function runPaired({ playerDTOs, candidates, evaluate, applyCandidate, obj
 }
 
 /**
- * Measure the marginal value of enhancement, slot by slot.
+ * Measure the marginal value of enhancement, slot by slot. Also the Progress
+ * tool's scan: its rows are skill and ability levels (api/lib/progressSearch.js).
  *
  * @param {object} args
  * @param {object[]} args.playerDTOs
@@ -246,13 +247,14 @@ export async function scanEquipment({
   seedBase = DEFAULT_SEED_BASE,
   signal = null,
   onProgress = null,
+  cancelMessage = 'Equipment scan cancelled',
 }) {
   const scannable = (candidates || []).filter((row) => row.scannable);
   if (!scannable.length) throw new Error('No scannable equipment in the selection');
 
   const { reps, completed, workload, baselineSamples, usableBaseline, baselineMetrics, noise, compared } = await runPaired({
     playerDTOs, candidates: scannable, evaluate, applyCandidate, objective, hours, replicates, alpha, seedBase, signal, onProgress,
-    cancelMessage: 'Equipment scan cancelled',
+    cancelMessage,
   });
 
   const rows = compared.map(({ row, samples, metrics, comparison }) => {
