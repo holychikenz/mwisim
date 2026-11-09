@@ -146,7 +146,9 @@ export function Panel({ opened, onClose, bridge, avatarUrl }) {
   const setup = settings.provider === 'local'
     ? (llm.rec?.reason === 'no-webgpu'
       ? "This browser has no WebGPU, so a model can't run on this device. Add an Anthropic or OpenAI key in Settings, or use a browser with WebGPU."
-      : 'Pick a model in Settings and press Load (downloads once, then cached).')
+      : llm.rec?.reason === 'limits'
+        ? "This GPU's WebGPU limits are too low for the local models. Add an Anthropic or OpenAI key in Settings."
+        : 'Pick a model in Settings and press Load (downloads once, then cached).')
     : 'Add your key in Settings.';
 
   return (

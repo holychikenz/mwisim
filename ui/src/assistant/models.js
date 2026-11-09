@@ -19,14 +19,16 @@ export const MODEL_TIERS = [
 export const modelId = (tier, quant) => `${tier.base}-${quant}-MLC`;
 
 const MIN_BUFFER = 256 * 1024 * 1024;   // the runtime's fallback floor for maxBufferSize
+// tvmjs detectGPUDevice requests exactly this for every model and quant (0.2.86 and 0.2.87); fewer and no model can initialise.
+const MIN_STORAGE_BUFFERS = 10;
 
 /**
- * @param {{hasGpu: boolean, shaderF16: boolean, maxBufferSize: number, deviceMemory?: number}} gpu
+ * @param {{hasGpu: boolean, shaderF16: boolean, maxBufferSize: number, maxStorageBuffersPerShaderStage: number, deviceMemory?: number}} gpu
  * @returns {{quant, budgetMB, reason: 'no-webgpu'|'limits'|'memory'|null, recommended: string|null,
  *            list: {base, label, id, vramMB, downloadMB, fits, recommended}[]}}
  */
-export function recommendModel({ hasGpu, shaderF16, maxBufferSize, deviceMemory } = {}) {
-  const usable = !!hasGpu && (maxBufferSize || 0) >= MIN_BUFFER;
+export function recommendModel({ hasGpu, shaderF16, maxBufferSize, maxStorageBuffersPerShaderStage, deviceMemory } = {}) {
+  const usable = !!hasGpu && (maxBufferSize || 0) >= MIN_BUFFER && (maxStorageBuffersPerShaderStage || 0) >= MIN_STORAGE_BUFFERS;
   // shortcut: the web cannot see GPU memory; budget = half of navigator.deviceMemory (Chrome caps it at 8 GB; unknown counts as 8). Upgrade if WebGPU exposes memory.
   const budgetMB = Math.min(deviceMemory ?? 8, 8) * 512;
   const quant = shaderF16 ? 'q4f16_1' : 'q4f32_1';

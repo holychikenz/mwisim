@@ -6,8 +6,11 @@ import { CUT, chatAnthropic, chatOpenAI, fitCloudHistory } from './providers';
 import { readKey, saveKey } from './settings';
 
 async function detectGpu() {
-  const adapter = navigator.gpu ? await navigator.gpu.requestAdapter().catch(() => null) : null;
-  return { hasGpu: !!adapter, shaderF16: !!adapter?.features.has('shader-f16'), maxBufferSize: adapter?.limits.maxBufferSize ?? 0, deviceMemory: navigator.deviceMemory };
+  // The same adapter web-llm's detectGPUDevice will ask for.
+  const adapter = navigator.gpu ? await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' }).catch(() => null) : null;
+  const limits = adapter?.limits;
+  return { hasGpu: !!adapter, shaderF16: !!adapter?.features.has('shader-f16'), maxBufferSize: limits?.maxBufferSize ?? 0,
+    maxStorageBuffersPerShaderStage: limits?.maxStorageBuffersPerShaderStage ?? 0, deviceMemory: navigator.deviceMemory };
 }
 
 const IDLE = { loaded: null, loading: null, progress: 0, text: '', error: null };
@@ -59,7 +62,8 @@ export function useLlm(settings) {
       setLocal({ ...IDLE, loaded: id, progress: 1 });
       setCache(c => ({ ...c, [id]: true }));
     } catch (e) {
-      setLocal({ ...IDLE, error: e.message });
+      const limit = /requested (\w+) exceeds limit/.exec(e.message)?.[1];
+      setLocal({ ...IDLE, error: limit ? `This GPU's WebGPU ${limit} limit is too low for local models. Use an Anthropic or OpenAI key instead.` : e.message });
     }
   }, [getClient]);
 

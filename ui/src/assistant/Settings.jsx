@@ -22,6 +22,9 @@ function LocalModels({ llm, onSettings }) {
   if (!rec.list.some(m => m.fits) && rec.reason === 'no-webgpu') {
     return <Text size="sm">This browser has no WebGPU, so a model can't run on this device. Use an Anthropic or OpenAI key, or a browser with WebGPU.</Text>;
   }
+  if (rec.reason === 'limits') {
+    return <Text size="sm">This GPU's WebGPU limits are too low for the local models, so none can load here. Use an Anthropic or OpenAI key.</Text>;
+  }
   const busy = !!local.loading;
   return (
     <Stack gap="xs">
