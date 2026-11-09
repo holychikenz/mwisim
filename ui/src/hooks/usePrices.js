@@ -178,6 +178,8 @@ export function usePrices(gameData, main = null) {
   const [fetching, setFetching] = useState(false);
   // Manual fetches and main-following share one gate: only the newest iron request writes cache.iron.
   const [nextIron] = useState(createLatestGate);
+  // The manual fetch's own turn: only the newest one shows its error or stops the spinner (a follow touches neither).
+  const [nextFetch] = useState(createLatestGate);
   const [error, setError] = useState(null);
   const [revenueMode, setRevenueMode] = useState(persisted.revenueMode);
   const [expenseMode, setExpenseMode] = useState(persisted.expenseMode);
@@ -266,6 +268,7 @@ export function usePrices(gameData, main = null) {
       setError(null);
       return;
     }
+    const isCurrent = nextFetch();
     setFetching(true);
     setError(null);
     try {
@@ -300,11 +303,11 @@ export function usePrices(gameData, main = null) {
       // The cached entry is deliberately LEFT IN PLACE. A webapp that happens to be
       // down should not silently strip the production times an optimiser run is
       // about to depend on; the error is surfaced and the old values stand.
-      setError(e);
+      if (isCurrent()) setError(e);
     } finally {
-      setFetching(false);
+      if (isCurrent()) setFetching(false);
     }
-  }, [source, ironCharacter, gameData, nextIron]);
+  }, [source, ironCharacter, gameData, nextIron, nextFetch]);
 
   // Switching source clears only the error; cached entries survive.
   useEffect(() => {

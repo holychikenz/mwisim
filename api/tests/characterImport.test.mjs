@@ -798,6 +798,18 @@ test('an explicit landing id is honoured verbatim, so the slot binding cannot dr
   assert.deepEqual(Object.keys(pinned.store.characters), ['holychikenz']);
 });
 
+test('a pinned landing id never merges two game characters', () => {
+  const s = mergeImportedCharacter(emptyStore(), characterToCharacter(asGame(1, 'alice'), null, 'alice').character).store;
+  const other = mergeImportedCharacter(s, characterToCharacter(asGame(2, 'alice'), null, 'alice').character, { id: 'alice' });
+  assert.equal(other.created, true);
+  assert.notEqual(other.id, 'alice');
+  assert.equal(other.store.characters.alice.game.id, 1);
+  assert.equal(other.store.characters[other.id].game.id, 2);
+  // The same game character, and an import with no game identity, still land where pinned.
+  assert.equal(mergeImportedCharacter(s, characterToCharacter(asGame(1, 'alice'), null, 'alice').character, { id: 'alice' }).id, 'alice');
+  assert.equal(mergeImportedCharacter(s, characterToCharacter(char, null, 'alice').character, { id: 'alice' }).id, 'alice');
+});
+
 test('game.name is the in-game name, not the webapp label; a rename follows it', () => {
   const c = characterToCharacter(asGame(4242, 'holychikenz'), null, 'Holy (webapp)').character;
   assert.equal(c.name, 'Holy (webapp)');

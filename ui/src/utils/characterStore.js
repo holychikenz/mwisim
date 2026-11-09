@@ -79,6 +79,8 @@ const LEVEL_FIELDS = Object.freeze([
 const isObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 const has = (o, k) => Object.prototype.hasOwnProperty.call(o || {}, k);
 const sameGameId = (a, b) => a != null && b != null && String(a) === String(b);
+/** The record is a DIFFERENT game character: both sides carry a game id and they differ. */
+const otherGame = (record, gameId) => record?.game?.id != null && gameId != null && !sameGameId(record.game.id, gameId);
 
 /** Slug a display name into a stable character id. */
 export function makeCharacterId(name) {
@@ -368,8 +370,7 @@ function importTargetId(store, incoming) {
   const same = Object.values(characters).find(c => sameGameId(c?.game?.id, gameId));
   if (same) return same.id;
   const slug = incoming?.id || makeCharacterId(incoming?.name);
-  return characters[slug]?.game?.id != null && gameId != null && !sameGameId(characters[slug].game.id, gameId)
-    ? makeCharacterId(`${slug} ${gameId}`) : slug;
+  return otherGame(characters[slug], gameId) ? makeCharacterId(`${slug} ${gameId}`) : slug;
 }
 
 /**
@@ -399,12 +400,14 @@ function importTargetId(store, incoming) {
  * end, as always.
  *
  * `{ id }` lands the import on exactly that record, skipping importTargetId, for a
- * caller that already bound a slot to a preview's id.
+ * caller that already bound a slot to a preview's id — unless that record is now
+ * a different game character: characterId is identity, so two are never merged.
  *
  * @returns {{store, id: string, created: boolean, replaced: string[], added: string[], kept: string[]}}
  */
 export function mergeImportedCharacter(store, incoming, { id: landing } = {}) {
-  const id = landing || importTargetId(store, incoming);
+  const id = landing && !otherGame(store?.characters?.[landing], incoming?.game?.id)
+    ? landing : importTargetId(store, incoming);
   const existing = store?.characters?.[id];
   const incomingLoadouts = isObject(incoming?.loadouts) ? incoming.loadouts : {};
 
