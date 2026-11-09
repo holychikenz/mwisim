@@ -19,6 +19,7 @@
 // =============================================================================
 
 import {
+  MIN_CLOCK_DIVISOR,
   partyConsumableSeconds,
   partyNetConsumableSeconds,
   consumableClassHrids,
@@ -233,6 +234,22 @@ export function effectiveRateFor(ratePerHour, summary) {
   return summary?.netSecondsPerHour == null
     ? effectiveRatePerHour(ratePerHour, summary?.secondsPerHour)
     : effectiveNetRatePerHour(ratePerHour, summary.netSecondsPerHour);
+}
+
+/** What an effective rate is when drop credit hits the clock floor (shared/consumableCost.js MIN_CLOCK_DIVISOR). */
+export const CAPPED = `capped: effective ≤ ${1 / MIN_CLOCK_DIVISOR}× raw`;
+
+/**
+ * The zone results' hint under an effective rate, from what effectiveRateFor builds it on: the net of drop credit when
+ * the summary carries one (a surplus, a net of zero, or the floor, said as such), else the bill.
+ */
+export function effectiveHint(cost) {
+  const net = cost.netSecondsPerHour; // undefined without drop credit: the bill's hint, as it always was
+  if (cost.creditFloored) return CAPPED;
+  if (net < 0) return 'drops outweigh the cooking';
+  // A net of exactly zero is the rate's own divisor too: say 0%, not the gross bill's share.
+  if (net >= 0 && !cost.nothingConsumed) return `${(consumableTimeShare(net) * 100).toFixed(0)}% of time cooking, net of drops`;
+  return cost.nothingConsumed ? 'nothing consumed' : `${(cost.timeShare * 100).toFixed(0)}% of time cooking`;
 }
 
 /**

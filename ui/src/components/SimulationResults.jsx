@@ -3,8 +3,8 @@ import { Accordion, Badge, Button, Group, Progress, ScrollArea, SimpleGrid, Stac
 import { DropsEconomy } from './DropsEconomy';
 import { ClearResultsButton, NumTd, Section, StatGroup } from './ResultParts';
 import { nameOf } from '../utils/names';
-import { effectiveRateFor, summariseConsumableCost } from '../utils/consumableCosts';
-import { effectiveHint, formatNetSeconds, formatSeconds } from '../utils/triggerOptimizer';
+import { effectiveHint, effectiveRateFor, summariseConsumableCost } from '../utils/consumableCosts';
+import { formatNetSeconds, formatSeconds } from '../utils/triggerOptimizer';
 import { usePersistentState } from '../hooks/usePersistentState';
 
 const LAB_TABS = ['labstats', 'outcomes'];

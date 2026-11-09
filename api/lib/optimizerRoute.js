@@ -47,17 +47,31 @@ export function sanitiseConsumableCosts(input) {
 
 /**
  * The drop-credit table (body.dropCreditCosts: itemHrid → seconds over the
- * consumable class) on the cost table's rules, wherever the zone results credit
- * it: beside a KNOWN bill — a cost table, or a party that slots nothing to eat
- * (a bill of zero, the zone tab's "nothing consumed"). Consumables slotted with
- * no price leave the bill unknown, so there it is refused, as the zone tab then
- * omits its effective rate; and never in a labyrinth. Present, it makes the
- * objective time-denominated (consumableCostsKnown).
+ * consumable class) on the cost table's rules, beside a bill known BEFORE the
+ * run: a cost table, or nothing slotted to eat by the party or by any whole
+ * loadout the run swaps in (body.candidates, the Loadout tool). Consumables
+ * slotted with no price leave the bill unknown, so there it is refused; and
+ * never in a labyrinth. The zone results ask the same question of what was
+ * EATEN, which only a finished run knows, so they also credit a run whose
+ * unpriced slot never fired — no optimiser can promise that of a candidate.
+ * Present, it makes the objective time-denominated (consumableCostsKnown).
  */
 export function sanitiseDropCreditCosts(body, { labyrinth, consumableCosts, simPlayers }) {
   if (labyrinth) return null;
-  const eats = (simPlayers || []).some((p) => [...(p?.food || []), ...(p?.drinks || [])].some((c) => c?.hrid));
+  const parties = [...(simPlayers || []), ...(Array.isArray(body?.candidates) ? body.candidates.map((c) => c?.player) : [])];
+  const eats = parties.some((p) => [p?.food, p?.drinks].some((list) => Array.isArray(list) && list.some((c) => c?.hrid)));
   return consumableCosts || !eats ? sanitiseConsumableCosts(body?.dropCreditCosts) : null;
+}
+
+/**
+ * Both tables on their rules, and the one flag every objective and echo reads:
+ * the bill is known, so the objective is time-denominated, with either table.
+ */
+export function costTables(body, { labyrinth, simPlayers }) {
+  // Nothing is eaten in a labyrinth, so there is no bill to count.
+  const consumableCosts = labyrinth ? null : sanitiseConsumableCosts(body?.consumableCosts);
+  const dropCreditCosts = sanitiseDropCreditCosts(body, { labyrinth, consumableCosts, simPlayers });
+  return { consumableCosts, dropCreditCosts, consumableCostsKnown: !!(consumableCosts || dropCreditCosts) };
 }
 
 /**
@@ -178,23 +192,21 @@ export function subjectRoutes({ path, prepare, run, cancelMessage, emptyError })
     if (invalid) return { invalid };
     const target = markDungeon(normaliseTarget(body));
     const labyrinth = target.kind === 'labyrinth';
-    // Nothing is eaten in a labyrinth, so there is no bill to count.
-    const consumableCosts = labyrinth ? null : sanitiseConsumableCosts(body.consumableCosts);
     // Food and drinks blanked in a labyrinth, as the game blanks them (target.js).
     const simPlayers = targetPlayerDTOs(body.players, target);
-    const dropCreditCosts = sanitiseDropCreditCosts(body, { labyrinth, consumableCosts, simPlayers });
+    const { consumableCosts, dropCreditCosts, consumableCostsKnown } = costTables(body, { labyrinth, simPlayers });
     const base = {
-      target, subjectIndex: k, scan: sanitiseFidelity(body.scan), consumableCosts, dropCreditCosts,
+      target, subjectIndex: k, scan: sanitiseFidelity(body.scan), consumableCosts, dropCreditCosts, consumableCostsKnown,
       // Same composition runSimulation uses, plus the lab-shop upgrades in a labyrinth.
       extraBuffs: buildExtraBuffs(body.extra || {}).concat(body.guildBuffs || []).concat(targetExtraBuffs(target)),
       simPlayers,
-      objective: body.objective || defaultObjective({ consumableCostsKnown: !!(consumableCosts || dropCreditCosts), labyrinth, dungeon: !!target.dungeon }),
+      objective: body.objective || defaultObjective({ consumableCostsKnown, labyrinth, dungeon: !!target.dungeon }),
     };
     return { prepared: { ...base, ...prepare(base, body) } };
   };
   // What the panel and the results describe the run by. Never the DTOs.
   const echo = (p) => ({ objective: p.objective, target: p.target, reportedMetrics: reportedMetricsFor(p.target),
-    consumableCostsKnown: !!(p.consumableCosts || p.dropCreditCosts), subjectIndex: p.subjectIndex, scan: p.scan, workload: p.workload,
+    consumableCostsKnown: p.consumableCostsKnown, subjectIndex: p.subjectIndex, scan: p.scan, workload: p.workload,
     candidates: p.candidates.length, refusal: p.refusal ?? null, ...p.echo });
 
   router.post(`/${path}/preview`, (req, res) => {

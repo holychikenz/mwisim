@@ -174,8 +174,8 @@ export function ItemCostsView({ playerDTOs, gameItems, pricing, protectionPricin
   );
 
   const unpricedCount = buildRows.filter((row) => row.effective == null).length;
-  const overrideCount = Object.keys(pricing?.itemCostOverrides || {}).length;
-  const isSeconds = pricing?.unit === 'seconds';
+  const overrideCount = Object.keys(pricing.itemCostOverrides || {}).length;
+  const isSeconds = pricing.unit === 'seconds';
 
   // Drop credit's list: the last zone run (App's useSimulation results), for the
   // P-tab member when they were in it, else the first member simulated. Never a
@@ -184,7 +184,7 @@ export function ItemCostsView({ playerDTOs, gameItems, pricing, protectionPricin
   const zoneRun = !!simResult?.zoneName && !simResult.isLabyrinth;
   const simulated = Object.keys(simResult?.dropRateMultiplier || {});
   const dropper = simulated.includes(focusHrid) ? focusHrid : simulated[0];
-  const { fetchedPrices, prices, unit, expenseMode, itemCostOverrides } = pricing || {};
+  const { fetchedPrices, prices, unit, expenseMode, itemCostOverrides, dropCreditUndo } = pricing;
   const dropRows = useMemo(
     () => (zoneRun ? describeDropCredit(simResult, { fetchedPrices, prices, unit, expenseMode, itemCostOverrides }, dropper) : [])
       .map((row) => ({
@@ -195,7 +195,7 @@ export function ItemCostsView({ playerDTOs, gameItems, pricing, protectionPricin
   );
   // The preset keeps what it replaced (null: no override); Revert restores only
   // what is still its 0 (a later edit wins), then nothing is left to revert.
-  const pending = Object.entries(revertPatch(pricing.dropCreditUndo, itemCostOverrides));
+  const pending = Object.entries(revertPatch(dropCreditUndo, itemCostOverrides));
   const nameOf = (hrid) => gameItems?.[hrid]?.name || lastSegment(hrid);
   const zeroBearPools = () => {
     pricing.setDropCreditUndo(Object.fromEntries(BEAR_ZONE_ZEROED.map((hrid) => [hrid, itemCostOverrides?.[hrid] ?? null])));

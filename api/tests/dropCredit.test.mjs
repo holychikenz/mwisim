@@ -26,10 +26,11 @@ import {
   BEAR_ZONE_ZEROED,
   buildDropCreditCosts,
   describeDropCredit,
+  effectiveHint,
   revertPatch,
   summariseConsumableCost,
 } from '../../ui/src/utils/consumableCosts.js';
-import { effectiveHint, formatNetSeconds } from '../../ui/src/utils/triggerOptimizer.js';
+import { formatNetSeconds } from '../../ui/src/utils/triggerOptimizer.js';
 
 const { itemDetailMap, actionDetailMap } = await import('../../src/combatsimulator/dataProvider.js');
 const CLASS = consumableClassHrids(itemDetailMap, actionDetailMap);
@@ -205,6 +206,7 @@ test('the breakdown says when the floor binds, and the hint under an effective r
   assert.equal(effectiveHint(summary(pricing())), 'drops outweigh the cooking');
   assert.equal(effectiveHint(summary(pricing({ '/items/sugar': 0, '/items/apple_gummy': 0 }))), 'nothing consumed');
   assert.equal(effectiveHint({ nothingConsumed: false, timeShare: 0.5, netSecondsPerHour: 1800 }), '33% of time cooking, net of drops');
+  assert.equal(effectiveHint({ nothingConsumed: false, timeShare: 0.5, netSecondsPerHour: 0 }), '0% of time cooking, net of drops', 'credit exactly cancels the bill');
   assert.equal(effectiveHint(summary(pricing({ '/items/sugar': 20 }))), 'capped: effective ≤ 10× raw');
 });
 

@@ -16,7 +16,7 @@ import abilityRoutes from '../routes/optimizeAbilities.js';
 import progressRoutes from '../routes/optimizeProgress.js';
 import swapRoutes from '../routes/optimizeSwaps.js';
 import { prepareEquipmentRun } from '../routes/optimizeEquipment.js';
-import { sanitiseFidelity } from '../lib/optimizerRoute.js';
+import { sanitiseDropCreditCosts, sanitiseFidelity } from '../lib/optimizerRoute.js';
 
 const { pickSubjectSlot, loadoutCandidates, progressColumns, applySwapChanges, applyAbilityChanges, headlineRow, samePayload } =
   await import('../../ui/src/utils/candidateOptimizer.js');
@@ -186,6 +186,22 @@ test('drop credit makes a run costed where the bill is known — nothing slotted
   assert.equal(unpriced.consumableCostsKnown, false);
   assert.equal(unpriced.objective, 'encountersPerHour');
   assert.equal((await preview(bare, {})).consumableCostsKnown, false);
+  // A Loadout candidate that eats, with nothing priced, leaves the bill as unknown as the party's own plate would.
+  const mixed = await (await post(`${base}/optimize-loadout/preview`,
+    { ...BASE_BODY, players: [bare], subjectIndex: 0, candidates: [{ name: 'eats', player: melee }], ...credit })).json();
+  assert.equal(mixed.consumableCostsKnown, false);
+  assert.equal(mixed.objective, 'encountersPerHour');
+});
+
+test('sanitiseDropCreditCosts: a candidate loadout that slots food counts as eating; a cost table admits it', () => {
+  const credit = { '/items/sugar': 1 };
+  const none = { food: [null, null, null], drinks: [null, null, null] };
+  const eats = { food: [{ hrid: '/items/donut', triggers: [] }, null, null], drinks: [] };
+  const sanitise = (body, consumableCosts) => sanitiseDropCreditCosts({ dropCreditCosts: credit, ...body }, { consumableCosts, simPlayers: [none] });
+  assert.deepEqual(sanitise({}, null), credit);
+  assert.equal(sanitise({ candidates: [{ name: 'eats', player: eats }] }, null), null);
+  assert.deepEqual(sanitise({ candidates: [{ name: 'eats', player: eats }] }, { '/items/donut': 30 }), credit);
+  assert.deepEqual(sanitise({ candidates: [{ name: 'bare', player: none }, null, { player: 'junk' }] }, null), credit);
 });
 
 test('Abilities route end to end: one swap and one cast order, default triggers, deterministic', async (t) => {

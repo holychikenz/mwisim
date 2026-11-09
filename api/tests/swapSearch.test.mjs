@@ -9,6 +9,7 @@ import assert from 'node:assert/strict';
 
 import { COORDINATES, bestSwap, candidatesAt, estimateSwapDescent, swapContext, swapGroups } from '../lib/swapSearch.js';
 import { prepareSwapRun, runSwapSearch } from '../routes/optimizeSwaps.js';
+import { costTables } from '../lib/optimizerRoute.js';
 
 const { itemDetailMap } = await import('../../src/combatsimulator/dataProvider.js');
 
@@ -145,8 +146,11 @@ test('a starting consumable swapped out and back keeps the user\'s own triggers,
 
 test('under a costed objective an unpriced consumable is not ticked by default and says so; a cost of 0 is a price', () => {
   const owned = [own('defense_coffee'), own('attack_coffee')];
-  const at = (extra) => prepareSwapRun({ ...BASE, simPlayers: [subject()], objective: 'effectiveEncountersPerHour',
-    consumableCosts: { [I('defense_coffee')]: 0 }, ...extra }, { owned });
+  const at = (extra) => {
+    const base = { ...BASE, simPlayers: [subject()], objective: 'effectiveEncountersPerHour', consumableCosts: { [I('defense_coffee')]: 0 }, ...extra };
+    // The tables and the flag as subjectRoutes' setup makes them.
+    return prepareSwapRun({ ...base, ...costTables(base, { labyrinth: false, simPlayers: base.simPlayers }) }, { owned });
+  };
   const costed = at({});
   const drinks = costed.echo.groups.find((g) => g.key === 'drinks').items;
   const attack = drinks.find((i) => i.hrid === I('attack_coffee'));

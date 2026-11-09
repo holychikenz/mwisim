@@ -1327,7 +1327,8 @@ function App() {
       }),
       // Drop credit: seconds each over the consumable class, only with the Costs
       // page's toggle on and a seconds source (buildDropCreditCosts). The server
-      // uses it only beside consumableCosts, and never in a labyrinth.
+      // credits it beside a known bill — a cost table, or nothing slotted to eat
+      // (api/lib/optimizerRoute.js sanitiseDropCreditCosts) — never in a labyrinth.
       dropCreditCosts: buildDropCreditCosts({
         prices: pricing.prices,
         fetchedPrices: pricing.fetchedPrices,
@@ -1596,10 +1597,15 @@ function App() {
   const loadoutOptPayload = useMemo(() => {
     if (!toolBase || subjectIndex < 0) return null;
     const ref = party[subjectSlot];
-    return { ...toolBase, subjectIndex,
-      candidates: loadoutCandidates(characters.characters?.[ref.characterId], ref.loadoutName),
+    const candidates = loadoutCandidates(characters.characters?.[ref.characterId], ref.loadoutName);
+    return { ...toolBase, subjectIndex, candidates,
+      // Price what every candidate loadout eats too (as Swaps prices what is owned): left out, a candidate's food is free.
+      consumableCosts: buildConsumableCosts([...toolBase.players, ...candidates.map(c => c.player)], {
+        prices: pricing.prices, fetchedPrices: pricing.fetchedPrices, unit: pricing.unit,
+        expenseMode: pricing.expenseMode, itemCostOverrides: pricing.itemCostOverrides }),
       objective: planetTarget ? loadoutOptConfig.objective : undefined, scan: loadoutOptConfig };
-  }, [toolBase, subjectIndex, subjectSlot, party, characters, planetTarget, loadoutOptConfig]);
+  }, [toolBase, subjectIndex, subjectSlot, party, characters, planetTarget, loadoutOptConfig,
+    pricing.prices, pricing.fetchedPrices, pricing.unit, pricing.expenseMode, pricing.itemCostOverrides]);
 
   const abilityOptPayload = useMemo(() => {
     if (!toolBase || subjectIndex < 0) return null;

@@ -15,7 +15,7 @@
 
 import { Router } from 'express';
 import { buildExtraBuffs } from '../lib/simulator.js';
-import { poolSizeFor, sanitiseConsumableCosts, sanitiseDropCreditCosts, sanitiseFidelity, streamPoolRun, validateBody } from '../lib/optimizerRoute.js';
+import { costTables, poolSizeFor, sanitiseFidelity, streamPoolRun, validateBody } from '../lib/optimizerRoute.js';
 import { markDungeon, normaliseTarget, targetExtraBuffs, targetPlayerDTOs } from '../lib/target.js';
 import { makePoolEvaluator } from '../lib/triggerSearch/pool.js';
 import { defaultObjective, reportedMetricsFor } from '../lib/triggerSearch/score.js';
@@ -96,8 +96,7 @@ function prepare(body) {
   const skipped = equipment.filter((row) => !row.scannable);
   // Nothing is eaten in a labyrinth, so there is no bill to count and the
   // time-denominated objective would only pretend to discriminate.
-  const consumableCosts = labyrinth ? null : sanitiseConsumableCosts(body.consumableCosts);
-  const dropCreditCosts = sanitiseDropCreditCosts(body, { labyrinth, consumableCosts, simPlayers });
+  const { consumableCosts, dropCreditCosts, consumableCostsKnown } = costTables(body, { labyrinth, simPlayers });
 
   // Default to the time-denominated objective whenever the food can be priced.
   // Raw throughput cannot see the consumable bill, and an enhancement that lets
@@ -105,7 +104,7 @@ function prepare(body) {
   // completion chance instead, and a dungeon on completed runs per hour — see
   // score.js defaultObjective.
   const objective =
-    body.objective || defaultObjective({ consumableCostsKnown: !!(consumableCosts || dropCreditCosts), labyrinth, dungeon });
+    body.objective || defaultObjective({ consumableCostsKnown, labyrinth, dungeon });
 
   return {
     scan,
@@ -117,6 +116,7 @@ function prepare(body) {
     extraBuffs,
     consumableCosts,
     dropCreditCosts,
+    consumableCostsKnown,
     objective,
   };
 }
@@ -130,7 +130,7 @@ router.post('/optimize-equipment/preview', (req, res) => {
     const invalid = validateBody(req.body);
     if (invalid) return res.status(400).json({ success: false, error: invalid });
 
-    const { scan, target, equipment, candidates, skipped, consumableCosts, dropCreditCosts, objective } =
+    const { scan, target, equipment, candidates, skipped, consumableCosts, consumableCostsKnown, objective } =
       prepare(req.body);
 
     return res.json({
@@ -140,7 +140,7 @@ router.post('/optimize-equipment/preview', (req, res) => {
       // crates actually in force, not the ones it hoped it sent.
       target,
       reportedMetrics: reportedMetricsFor(target),
-      consumableCostsKnown: !!(consumableCosts || dropCreditCosts),
+      consumableCostsKnown,
       pricedConsumables: consumableCosts ? Object.keys(consumableCosts) : [],
       maxEnhancementLevel: MAX_ENHANCEMENT_LEVEL,
       equipment,
@@ -188,7 +188,7 @@ router.post('/optimize-equipment', async (req, res) => {
       objective: prepared.objective,
       target: prepared.target,
       reportedMetrics: reportedMetricsFor(prepared.target),
-      consumableCostsKnown: !!(prepared.consumableCosts || prepared.dropCreditCosts),
+      consumableCostsKnown: prepared.consumableCostsKnown,
       candidates: prepared.candidates,
       skipped: prepared.skipped,
       workload: estimateWorkload(prepared.candidates.length, prepared.scan),
@@ -228,7 +228,7 @@ router.post('/optimize-equipment', async (req, res) => {
         skipped: prepared.skipped,
         target: prepared.target,
         reportedMetrics: reportedMetricsFor(prepared.target),
-        consumableCostsKnown: !!(prepared.consumableCosts || prepared.dropCreditCosts),
+        consumableCostsKnown: prepared.consumableCostsKnown,
         pricedConsumables: prepared.consumableCosts ? Object.keys(prepared.consumableCosts) : [],
       },
     });
