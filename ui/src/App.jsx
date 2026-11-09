@@ -719,10 +719,10 @@ function App() {
   const handleImportCharacter = useCallback((slotId, character, defaultLoadoutName) => {
     // Where it lands depends on the base now (game-id match), so the pure preview
     // names the record and the write is pinned to it: the slot binding holds even
-    // if the base moved during the fetch.
+    // if the base moved during the fetch — the write lands on that id verbatim (third argument).
     const preview = mergeImportedCharacter(characters, character);
     const { id } = preview;
-    setCharacters(prev => mergeImportedCharacter(prev, { ...character, id }).store);
+    setCharacters(prev => mergeImportedCharacter(prev, character, { id }).store);
 
     // Which loadout to bind depends only on the INCOMING character, never on
     // the base: the merge is a union, so any loadout the import carries is in

@@ -169,10 +169,10 @@ export function characterToCharacter(char, gameData, displayName) {
     abilityLevels: {},
     loadouts: {}
   };
-  // IDENTITY: the game's characterId (players rename; the id never changes) and the
-  // name this import used — see mergeImportedCharacter. Absent from older payloads.
+  // IDENTITY: the game's characterId (players rename; the id never changes) and the in-game
+  // name (the webapp label only if the payload has none) — see mergeImportedCharacter.
   const gameId = char.character?.id;
-  if (gameId != null) character.game = { id: gameId, name };
+  if (gameId != null) character.game = { id: gameId, name: char.character?.name || name };
 
   // Ability LEVELS, seeded from every ability the character has actually
   // trained — not merely the five a loadout slots. This was always character

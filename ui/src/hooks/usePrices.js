@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { buildMarketPrices, buildIronPrices, autoIronDecision } from '../utils/prices';
+import { createLatestGate } from '../utils/latestRequest';
 
 // =============================================================================
 // usePrices — price-source state + fetchers, with a persistent per-source cache.
@@ -167,6 +168,8 @@ export function usePrices(gameData, main = null) {
   const [source, setSource] = useState(persisted.source);
   const [cache, setCache] = useState(persisted.cache);
   const [fetching, setFetching] = useState(false);
+  // Manual fetches and main-following share one gate: only the newest iron request writes cache.iron.
+  const [nextIron] = useState(createLatestGate);
   const [error, setError] = useState(null);
   const [revenueMode, setRevenueMode] = useState(persisted.revenueMode);
   const [expenseMode, setExpenseMode] = useState(persisted.expenseMode);
@@ -279,8 +282,9 @@ export function usePrices(gameData, main = null) {
           }
         }));
       } else if (source === 'iron') {
+        const isLatest = nextIron();
         const iron = await fetchIronEntry(ironCharacter, gameData.items);
-        setCache((prev) => ({ ...prev, iron }));
+        if (isLatest()) setCache((prev) => ({ ...prev, iron }));
       }
     } catch (e) {
       // The cached entry is deliberately LEFT IN PLACE. A webapp that happens to be
@@ -290,7 +294,7 @@ export function usePrices(gameData, main = null) {
     } finally {
       setFetching(false);
     }
-  }, [source, ironCharacter, gameData]);
+  }, [source, ironCharacter, gameData, nextIron]);
 
   // Switching source clears only the error; cached entries survive.
   useEffect(() => {
@@ -298,22 +302,21 @@ export function usePrices(gameData, main = null) {
   }, [source]);
 
   // Following the main character — the one automatic fetch (see the header).
-  // `followed`: the webapp name last acted on this session (loop guard, and how a
-  // late reply for a former main is recognised).
+  // `followed`: the webapp name last acted on this session (loop guard).
   const followed = useRef(null);
   const followMain = useCallback(async (name, needsFetch) => {
+    // A turn is taken even without a fetch: following main to cached times must still void
+    // an older iron reply in flight. No `fetching`: that is the manual fetch's spinner.
+    const isLatest = nextIron();
     setIronCharacter(name);
     if (!needsFetch) return;
-    setFetching(true);
     try {
       const iron = await fetchIronEntry(name, gameData.items);
-      if (followed.current === name) setCache((prev) => ({ ...prev, iron }));
+      if (isLatest()) setCache((prev) => ({ ...prev, iron }));
     } catch {
       // Quiet by design: an offline webapp is normal, and the cached times stand.
-    } finally {
-      setFetching(false);
     }
-  }, [gameData]);
+  }, [gameData, nextIron]);
   useEffect(() => {
     if (!gameData?.items) return;
     const next = autoIronDecision({ main, webapp, cache, followed: followed.current });

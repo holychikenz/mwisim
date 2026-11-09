@@ -783,3 +783,35 @@ test('a legacy record (no game) is re-imported in place, keeps its name, gains t
   assert.equal(merged.store.characters.holychikenz.name, 'Holy');
   assert.deepEqual(merged.store.characters.holychikenz.game, { id: 4242, name: 'holychikenz' });
 });
+
+test('an explicit landing id is honoured verbatim, so the slot binding cannot drift', () => {
+  const s = mergeImportedCharacter(
+    emptyStore(), characterToCharacter(asGame(4242, 'holychikenz'), null, 'holychikenz').character
+  ).store;
+  const incoming = characterToCharacter(asGame(4242, 'chikenz'), null, 'chikenz').character;
+  const { id } = mergeImportedCharacter(s, incoming); // App's preview, pre-fetch base
+  assert.equal(id, 'holychikenz');
+  const live = deleteCharacter(s, 'holychikenz');     // base moved during the fetch
+  assert.equal(mergeImportedCharacter(live, incoming).id, 'chikenz', 'unpinned, the write drifts');
+  const pinned = mergeImportedCharacter(live, incoming, { id });
+  assert.equal(pinned.id, 'holychikenz');
+  assert.deepEqual(Object.keys(pinned.store.characters), ['holychikenz']);
+});
+
+test('game.name is the in-game name, not the webapp label; a rename follows it', () => {
+  const c = characterToCharacter(asGame(4242, 'holychikenz'), null, 'Holy (webapp)').character;
+  assert.equal(c.name, 'Holy (webapp)');
+  assert.deepEqual(c.game, { id: 4242, name: 'holychikenz' });
+  assert.deepEqual(
+    characterToCharacter({ ...char, character: { id: 4242 } }, null, 'label').character.game,
+    { id: 4242, name: 'label' }
+  );
+  const s = mergeImportedCharacter(
+    emptyStore(), characterToCharacter(asGame(4242, 'holychikenz'), null, 'holychikenz').character
+  ).store;
+  const stored = mergeImportedCharacter(
+    s, characterToCharacter(asGame(4242, 'chikenz'), null, 'Chik (webapp)').character
+  ).store.characters.holychikenz;
+  assert.equal(stored.name, 'chikenz');
+  assert.deepEqual(stored.game, { id: 4242, name: 'chikenz' });
+});

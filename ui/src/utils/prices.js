@@ -140,20 +140,19 @@ const sameName = (a, b) =>
   typeof a === 'string' && typeof b === 'string' && a.trim().toLowerCase() === b.trim().toLowerCase();
 
 /** The cow webapp's name for `main`, or null. `webapp` = GET /api/characters
- *  ({ characters: [name], details: [{ name, … }] }). By name — the one the import
- *  used (game.name), then the character's own — ignoring case, returning the
- *  webapp's spelling; failing that by game characterId, should a details entry
- *  ever carry one (`characterId` or `id`; none does today). */
+ *  ({ characters: [name], details: [{ name, … }] }). Identity first: the game
+ *  characterId, should a details entry carry one (`characterId` or `id`; none
+ *  does today). Then by name, ignoring case, returning the webapp's spelling:
+ *  the in-game name (game.name); the record's own, locally editable name only
+ *  for a record with no game identity — it could name another character. */
 export function matchWebappCharacter(main, webapp) {
-  const names = Array.isArray(webapp?.characters) ? webapp.characters : [];
-  for (const want of [main?.game?.name, main?.name]) {
-    const hit = names.find(n => sameName(n, want));
-    if (hit) return hit;
-  }
   const gameId = main?.game?.id;
-  if (gameId == null || !Array.isArray(webapp?.details)) return null;
-  const entry = webapp.details.find(d => d && String(d.characterId ?? d.id) === String(gameId));
-  return typeof entry?.name === 'string' ? entry.name : null;
+  const entry = gameId == null || !Array.isArray(webapp?.details) ? null
+    : webapp.details.find(d => d && String(d.characterId ?? d.id) === String(gameId));
+  if (typeof entry?.name === 'string') return entry.name;
+  const names = Array.isArray(webapp?.characters) ? webapp.characters : [];
+  const want = main?.game ? main.game.name : main?.name;
+  return names.find(n => sameName(n, want)) ?? null;
 }
 
 /** Following main with the iron source (hooks/usePrices.js): null when nothing

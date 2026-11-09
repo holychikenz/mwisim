@@ -376,10 +376,13 @@ function importTargetId(store, incoming) {
  * very `personalBuffs: []` we are avoiding. `upsertCharacter` sanitizes at the
  * end, as always.
  *
+ * `{ id }` lands the import on exactly that record, skipping importTargetId, for a
+ * caller that already bound a slot to a preview's id.
+ *
  * @returns {{store, id: string, created: boolean, replaced: string[], added: string[], kept: string[]}}
  */
-export function mergeImportedCharacter(store, incoming) {
-  const id = importTargetId(store, incoming);
+export function mergeImportedCharacter(store, incoming, { id: landing } = {}) {
+  const id = landing || importTargetId(store, incoming);
   const existing = store?.characters?.[id];
   const incomingLoadouts = isObject(incoming?.loadouts) ? incoming.loadouts : {};
 
@@ -406,8 +409,8 @@ export function mergeImportedCharacter(store, incoming) {
   }
   // Follow an in-game rename only while the stored name is still the one the
   // last import gave it: a name chosen here stands, as it always has.
-  const follows = incoming?.game && incoming.name && existing.game?.name != null && existing.name === existing.game.name;
-  let next = upsertCharacter(store, { ...existing, ...partial, id, name: follows ? incoming.name : existing.name });
+  const follows = incoming?.game?.name && existing.game?.name != null && existing.name === existing.game.name;
+  let next = upsertCharacter(store, { ...existing, ...partial, id, name: follows ? incoming.game.name : existing.name });
 
   const replaced = [];
   const added = [];

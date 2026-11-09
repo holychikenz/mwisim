@@ -39,7 +39,7 @@ test('audit-18: formatValue rounds the total before splitting it', async () => {
 // Following the main character with the iron source (hooks/usePrices.js).
 const WEBAPP = { characters: ['alt', 'HolyChikenz'], details: [{ name: 'alt' }, { name: 'HolyChikenz' }] };
 
-test('matchWebappCharacter: by name ignoring case, then by game id', () => {
+test('matchWebappCharacter: by game id, then in-game name, then (no game identity) the record name', () => {
   assert.equal(matchWebappCharacter({ name: 'holychikenz' }, WEBAPP), 'HolyChikenz');
   assert.equal(matchWebappCharacter({ name: 'Holy (main)', game: { id: 7, name: 'holychikenz' } }, WEBAPP), 'HolyChikenz');
   assert.equal(matchWebappCharacter({ name: 'nobody' }, WEBAPP), null);
@@ -48,6 +48,9 @@ test('matchWebappCharacter: by name ignoring case, then by game id', () => {
   assert.equal(matchWebappCharacter({ name: 'x', game: { id: '7' } }, { details: [{ name: 'r', id: 7 }] }), 'r');
   for (const bad of [null, {}, { characters: 'x' }]) assert.equal(matchWebappCharacter({ name: 'x' }, bad), null);
   assert.equal(matchWebappCharacter(null, WEBAPP), null);
+  const both = { characters: ['alt', 'main'], details: [{ name: 'alt' }, { name: 'main', characterId: 7 }] };
+  assert.equal(matchWebappCharacter({ name: 'alt', game: { id: 7, name: 'alt' } }, both), 'main', 'id beats a name');
+  assert.equal(matchWebappCharacter({ name: 'alt', game: { id: 9, name: 'gone' } }, WEBAPP), null, 'editable name unused when game is known');
 });
 
 test('autoIronDecision: fetch once, never over the cached times, follow back', () => {
