@@ -13,6 +13,8 @@ import { loadEngine } from '../eval/engine.mjs';
 import { BUILDS, toCsimPlayer } from '../bench/builds.mjs';
 import loadoutRoutes, { prepareLoadoutRun } from '../routes/optimizeLoadout.js';
 import abilityRoutes from '../routes/optimizeAbilities.js';
+import { prepareEquipmentRun } from '../routes/optimizeEquipment.js';
+import { sanitiseFidelity } from '../lib/optimizerRoute.js';
 
 const { pickSubjectSlot, loadoutCandidates } = await import('../../ui/src/utils/candidateOptimizer.js');
 const { resolvePlayer } = await import('../../ui/src/utils/characterStore.js');
@@ -164,4 +166,42 @@ test('Loadout route: no candidates, or a subjectIndex outside the party, is a 40
   const outside = await post(`${base}/optimize-loadout`, { ...BASE_BODY, players: [melee], subjectIndex: 3, candidates: [{ name: 'b', player: bare }] });
   assert.equal(outside.status, 400);
   assert.equal((await outside.json()).success, false);
+});
+
+test('Abilities route: a best-combination pass bigger than one change at a time is refused, with the reason in the preview', async (t) => {
+  const base = await serve(t);
+  const everything = Object.fromEntries(Object.keys(abilityData).map((hrid) => [hrid, 1]));
+  const body = { ...BASE_BODY, players: [{ ...melee, intelligenceLevel: 100 }], subjectIndex: 0, search: 'best', ownedAbilities: everything };
+  const preview = await (await post(`${base}/optimize-abilities/preview`, body)).json();
+  assert.equal(preview.success, true); // a 200, so the panel keeps its slot checkboxes
+  assert.ok(preview.workload.candidates > 151, `${preview.workload.candidates} per pass`);
+  assert.match(preview.refusal, /Untick a slot/);
+  const run = await post(`${base}/optimize-abilities`, body);
+  assert.equal(run.status, 400);
+  assert.equal((await run.json()).error, preview.refusal);
+  assert.equal((await (await post(`${base}/optimize-abilities/preview`, { ...body, coordinates: ['s0', 'order'] })).json()).refusal, null);
+  const swaps = await (await post(`${base}/optimize-abilities/preview`, { ...body, search: 'swaps' })).json();
+  assert.equal(swaps.refusal, null);
+  assert.ok(swaps.skipped > 0);
+});
+
+test('prepareLoadoutRun: loadouts past the cap are reported as skipped, not dropped silently', () => {
+  const out = prepareLoadoutRun(
+    { target: { kind: 'zone' }, simPlayers: [{ hrid: 'player1' }], subjectIndex: 0, scan: { hours: 1, replicates: 2 } },
+    { candidates: Array.from({ length: 42 }, (_, i) => ({ name: `l${i}`, player: {} })) });
+  assert.equal(out.candidates.length, 40);
+  assert.equal(out.echo.skipped, 2);
+  assert.equal(out.workload.total, 41 * 2);
+});
+
+test('the equipment scan clamps hours, replicates and alpha exactly as sanitiseFidelity does', () => {
+  const zone = BASE_BODY.zone;
+  const scans = [{ hours: 5000, replicates: 45.5, alpha: 0.9, step: 99 }, { hours: 0.05, replicates: 2.5, alpha: 0.0001, step: 0 },
+    { hours: 'x', replicates: 1.99, alpha: -1, step: 2.7 }, undefined];
+  for (const scan of scans) {
+    const { hours, replicates, alpha } = prepareEquipmentRun({ players: [melee], zone, scan }).scan;
+    assert.deepEqual({ hours, replicates, alpha }, sanitiseFidelity(scan), JSON.stringify(scan));
+  }
+  assert.deepEqual(prepareEquipmentRun({ players: [melee], zone, scan: scans[0] }).scan, { hours: 1000, replicates: 40, alpha: 0.5, step: 20 });
+  assert.deepEqual(prepareEquipmentRun({ players: [melee], zone, scan: scans[1] }).scan, { hours: 24, replicates: 2, alpha: 0.0001, step: 6 });
 });

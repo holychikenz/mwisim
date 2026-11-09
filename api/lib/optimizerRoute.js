@@ -128,7 +128,7 @@ export async function streamPoolRun(req, res, body) {
   }
 }
 
-/** hours / replicates / alpha for a paired run, clamped as the equipment scan clamps them: user data from NumberInputs. */
+/** hours / replicates / alpha for every paired run (the subject tools and the equipment scan): user data from NumberInputs. */
 export function sanitiseFidelity(input) {
   const clamp = (value, fallback, min, max) => {
     const parsed = Number(value);
@@ -136,6 +136,8 @@ export function sanitiseFidelity(input) {
   };
   return {
     hours: clamp(input?.hours, DEFAULT_SCAN.hours, 0.1, 1000),
+    // Two replicates is the floor for any error bar at all; one would report a
+    // difference with no way to say whether it was real.
     replicates: Math.floor(clamp(input?.replicates, DEFAULT_SCAN.replicates, 2, 40)),
     alpha: clamp(input?.alpha, DEFAULT_SCAN.alpha, 0.0001, 0.5),
   };
@@ -145,7 +147,8 @@ export function sanitiseFidelity(input) {
  * POST /api/<path>/preview (JSON) and POST /api/<path> (SSE) for a tool that
  * ranks replacements for ONE member of the party, players[subjectIndex]:
  * Loadout and Abilities. The tool supplies
- *   prepare(base, body) → { candidates, workload, echo?, ...its own state }
+ *   prepare(base, body) → { candidates, workload, refusal?, echo?, ...its own state }
+ *     (refusal: why this run must not start — the preview echoes it, the run answers 400 with it)
  *   run(prepared, { evaluate, signal, onProgress, seedBase, cancelMessage }) → result
  * and this owns validation, the target, buffs and costs (as optimizeEquipment.js),
  * the pool, the evaluator and the frames.
@@ -175,7 +178,7 @@ export function subjectRoutes({ path, prepare, run, cancelMessage, emptyError })
   // What the panel and the results describe the run by. Never the DTOs.
   const echo = (p) => ({ objective: p.objective, target: p.target, reportedMetrics: reportedMetricsFor(p.target),
     consumableCostsKnown: !!p.consumableCosts, subjectIndex: p.subjectIndex, scan: p.scan, workload: p.workload,
-    candidates: p.candidates.length, ...p.echo });
+    candidates: p.candidates.length, refusal: p.refusal ?? null, ...p.echo });
 
   router.post(`/${path}/preview`, (req, res) => {
     try {
@@ -197,7 +200,7 @@ export function subjectRoutes({ path, prepare, run, cancelMessage, emptyError })
     } catch (error) {
       return res.status(400).json({ success: false, error: error.message });
     }
-    if (!prepared.candidates.length) return res.status(400).json({ success: false, error: emptyError });
+    if (prepared.refusal || !prepared.candidates.length) return res.status(400).json({ success: false, error: prepared.refusal || emptyError });
     await streamPoolRun(req, res, async ({ pool, poolSize, send, signal }) => {
       send({ type: 'start', poolSize, ...echo(prepared) });
       const evaluate = makePoolEvaluator({ pool, zoneConfig: prepared.target.zone, labyrinthConfig: prepared.target.labyrinth,

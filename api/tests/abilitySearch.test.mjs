@@ -10,6 +10,7 @@ import {
   COORDINATES, abilityContext, bestCandidate, candidatesAt, coordinateSummary, descendAbilities, estimateDescent,
 } from '../lib/abilitySearch.js';
 import { rankCandidates } from '../lib/equipmentScan/scan.js';
+import { prepareAbilityRun, runAbilitySearch } from '../routes/optimizeAbilities.js';
 
 const { abilityDetailMap } = await import('../../src/combatsimulator/dataProvider.js');
 
@@ -92,20 +93,19 @@ test('cast orders permute the filled unlocked slots 1-4 and move triggers with t
   assert.equal(candidatesAt(one.abilities, 'order', one).length, 0);
 });
 
+const WORTH = { [A('fierce_aura')]: 10, [A('precision')]: 5, [A('cleave')]: 4, [A('maim')]: 3, [A('poke')]: 2 };
+const score = (abilities) => abilities.reduce((sum, a, i) => sum + (a ? WORTH[a.hrid] * (6 - i) : 0), 0);
+const byWorth = async (jobs) => jobs.map((job) => ({ id: job.id, metrics: { encountersPerHour: 100 + score(job.playerDTOs[0].abilities) } }));
+const DESCENT_OWNED = owned('poke', 'cleave', 'maim', 'precision', 'fierce_aura');
+
 test('descent climbs to the best combination and stops on a pass that changes nothing', async () => {
-  const worth = { [A('fierce_aura')]: 10, [A('precision')]: 5, [A('cleave')]: 4, [A('maim')]: 3, [A('poke')]: 2 };
-  const score = (abilities) => abilities.reduce((sum, a, i) => sum + (a ? worth[a.hrid] * (6 - i) : 0), 0);
-  const evaluate = async (jobs) => jobs.map((job) => {
-    const value = 100 + score(job.playerDTOs[0].abilities);
-    return { id: job.id, metrics: { encountersPerHour: value } };
-  });
   const subject = { intelligenceLevel: 90, abilities: [null, slot(A('poke')), null, null, null] };
-  const ctx = abilityContext(subject, owned('poke', 'cleave', 'maim', 'precision', 'fierce_aura'));
+  const ctx = abilityContext(subject, DESCENT_OWNED);
   const scan = { hours: 1, replicates: 2 };
   let sims = 0;
   const rank = async (abilities, candidates) => {
     const result = await rankCandidates({
-      playerDTOs: [{ ...subject, abilities }], candidates, evaluate, objective: 'encountersPerHour', ...scan,
+      playerDTOs: [{ ...subject, abilities }], candidates, evaluate: byWorth, objective: 'encountersPerHour', ...scan,
       applyCandidate: (dtos, row) => dtos.map((dto) => ({ ...dto, abilities: row.abilities })),
     });
     sims += result.simulationsRun;
@@ -120,7 +120,7 @@ test('descent climbs to the best combination and stops on a pass that changes no
   assert.equal(best.id, 'best');
   assert.match(best.label, /Aura: empty → Fierce Aura/);
   assert.match(best.label, /Ability 1: Poke → Precision/);
-  assert.equal(bestCandidate(ctx, ctx.abilities).label, 'No change found');
+  assert.equal(bestCandidate(ctx, ctx.abilities), null);
 });
 
 test('coordinateSummary reports counts, locks and unlock levels; the cast order is always open', () => {
@@ -134,4 +134,40 @@ test('coordinateSummary reports counts, locks and unlock levels; the cast order 
   assert.equal(summary.s2.count, 0);
   assert.equal(summary.order.unlocked, true);
   assert.equal(summary.order.unlockLevel, null);
+});
+
+test('a swapped-in ability carries the triggers its loadout remembers; none, [] or junk means the game defaults', () => {
+  const subject = { intelligenceLevel: 20, abilities: [slot(A('critical_aura')), slot(A('berserk')), null, null, null] };
+  const mine = [{ ...TRIGGER, value: 42 }];
+  const memory = { [A('cleave')]: mine, [A('maim')]: [], [A('fierce_aura')]: 'junk', [A('poke')]: [7], '/abilities/not_a_thing': mine };
+  const ctx = abilityContext(subject, owned('critical_aura', 'fierce_aura', 'berserk', 'cleave', 'maim', 'poke'), memory);
+  const into = (hrid) => all(ctx.abilities, ctx).find((c) => c.to === hrid);
+  const triggersOf = (c) => c.abilities[c.slot].triggers;
+  assert.deepEqual(triggersOf(into(A('cleave'))), mine);
+  assert.notEqual(triggersOf(into(A('cleave')))[0], mine[0]); // copied
+  for (const hrid of [A('maim'), A('fierce_aura'), A('poke')]) {
+    assert.deepEqual(triggersOf(into(hrid)), abilityDetailMap[hrid].defaultCombatTriggers, hrid);
+  }
+  const base = { simPlayers: [subject], subjectIndex: 0, scan: { hours: 1, replicates: 2, alpha: 0.05 } };
+  const p = prepareAbilityRun(base, { ownedAbilities: owned('cleave'), triggerMemory: { [A('cleave')]: mine } });
+  assert.deepEqual(triggersOf(p.candidates.find((c) => c.to === A('cleave'))), mine);
+});
+
+test('best combination: the result counts the whole search; ending where it started confirms and offers nothing', async () => {
+  const scan = { hours: 1, replicates: 2, alpha: 0.05 };
+  const search = async (abilities) => {
+    const base = { simPlayers: [{ intelligenceLevel: 90, abilities }], subjectIndex: 0, scan, objective: 'encountersPerHour' };
+    const p = { ...base, ...prepareAbilityRun(base, { search: 'best', passes: 3, ownedAbilities: DESCENT_OWNED }) };
+    const result = await runAbilitySearch(p, { evaluate: byWorth, seedBase: 1, onProgress: () => {} });
+    return { p, result, searched: result.steps.reduce((sims, s) => sims + (s.tried + 1) * scan.replicates, 0) };
+  };
+  const climb = await search([null, slot(A('poke')), null, null, null]);
+  assert.deepEqual(climb.result.rows.map((r) => r.id), ['best']);
+  assert.equal(climb.result.simulationsRun, climb.searched + 2 * scan.replicates); // + the confirmation
+  assert.equal(climb.result.estimatedSimulations, climb.p.workload.total);
+  const top = await search(climb.result.rows[0].abilities);
+  assert.deepEqual(top.result.rows, []);
+  assert.ok(top.result.steps.length > 0 && top.result.steps.every((s) => !s.taken));
+  assert.equal(top.result.simulationsRun, top.searched); // no confirmation
+  assert.equal(top.result.baseline.metrics.encountersPerHour, 100 + score(climb.result.rows[0].abilities));
 });

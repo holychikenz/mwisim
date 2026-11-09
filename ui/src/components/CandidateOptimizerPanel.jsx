@@ -219,8 +219,10 @@ export function AbilitySearchOptions({ preview, config, onConfigChange, loading 
       {preview?.skipped > 0 && (
         <Text size="xs" c="orange">{preview.skipped} more not tried: untick a slot to fit them in.</Text>
       )}
+      {preview?.refusal && <Text size="xs" c="orange">{preview.refusal}</Text>}
       <Text size="xs" c="dimmed">
-        Only abilities this character has a level for are tried, each with the game&apos;s default triggers.
+        Tries every ability this character has a level for: imported from the game, or set by slotting it on its
+        Abilities tab. Each goes in with the triggers this loadout last gave it, else the game&apos;s defaults.
       </Text>
     </Stack>
   );

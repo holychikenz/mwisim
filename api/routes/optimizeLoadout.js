@@ -12,9 +12,8 @@ const MAX_CANDIDATES = 40;
 function prepare({ target, simPlayers, subjectIndex, scan }, body) {
   const subject = simPlayers[subjectIndex];
   const dtos = new Map();
-  const candidates = (Array.isArray(body.candidates) ? body.candidates : [])
-    .filter((c) => c?.player && typeof c.player === 'object')
-    .slice(0, MAX_CANDIDATES)
+  const valid = (Array.isArray(body.candidates) ? body.candidates : []).filter((c) => c?.player && typeof c.player === 'object');
+  const candidates = valid.slice(0, MAX_CANDIDATES)
     .map((c, i) => {
       // Ours, not the client's: a loadout name may contain the '#' that job ids split on.
       const id = `loadout${i}`;
@@ -24,7 +23,7 @@ function prepare({ target, simPlayers, subjectIndex, scan }, body) {
         debuffOnLevelGap: subject.debuffOnLevelGap }], target)[0]);
       return { id, name, label: name };
     });
-  return { candidates, dtos, workload: estimateWorkload(candidates.length, scan) };
+  return { candidates, dtos, workload: estimateWorkload(candidates.length, scan), echo: { skipped: valid.length - candidates.length } };
 }
 
 const run = (p, { evaluate, signal, onProgress, seedBase, cancelMessage }) => rankCandidates({

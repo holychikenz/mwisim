@@ -12,7 +12,8 @@
 //   * an ability is never slotted twice, and only owned ones are tried.
 //   * the engine casts an ability with NO triggers always (ability.js
 //     shouldTrigger) and reads defaultCombatTriggers only when a DTO has none at
-//     all, so a swapped-in ability carries the game's defaults explicitly. Kept
+//     all, so a swapped-in ability carries explicit triggers: the ones its
+//     loadout remembers for it (triggerMemory), else the game's defaults. Kept
 //     abilities keep theirs; a re-order moves them with the ability.
 // =============================================================================
 const { abilityDetailMap, abilitySlotsLevelRequirementList } =
@@ -27,11 +28,12 @@ const labelOf = (coordinate) => (coordinate === 'order' ? 'Cast order' : SLOT_LA
 const nameOf = (hrid) => (hrid ? abilityDetailMap[hrid]?.name ?? hrid : 'empty');
 const isSpecial = (hrid) => !!abilityDetailMap[hrid]?.isSpecialAbility;
 
-/** A slot as the engine reads it, with the game's default triggers spelled out. */
-const slotted = (hrid, level) => ({ hrid, level, triggers: (abilityDetailMap[hrid].defaultCombatTriggers || []).map((t) => ({ ...t })) });
+/** A slot as the engine reads it: the remembered triggers (a non-empty list), else the game's defaults — copied, never absent. */
+const slotted = (hrid, level, remembered) =>
+  ({ hrid, level, triggers: (remembered || abilityDetailMap[hrid].defaultCombatTriggers || []).map((t) => ({ ...t })) });
 
-/** The subject's five slots, what it may slot ({hrid: level}: known hrids at level >= 1, plus anything already slotted), and which slots are unlocked. */
-export function abilityContext(subject, ownedAbilities) {
+/** The subject's five slots, what it may slot ({hrid: level}: known hrids at level >= 1, plus anything already slotted), which slots are unlocked, and the triggers its loadout remembers per ability. */
+export function abilityContext(subject, ownedAbilities, triggerMemory) {
   const abilities = [0, 1, 2, 3, 4].map((i) => subject?.abilities?.[i] ?? null);
   const owned = {};
   for (const [hrid, value] of Object.entries(ownedAbilities && typeof ownedAbilities === 'object' ? ownedAbilities : {})) {
@@ -44,7 +46,12 @@ export function abilityContext(subject, ownedAbilities) {
   const list = abilitySlotsLevelRequirementList;
   const intelligence = Number(subject?.intelligenceLevel);
   const unlocked = abilities.map((_, i) => list.length === 0 || intelligence >= (list[i + 1] ?? Infinity));
-  return { abilities, owned, unlocked };
+  // Non-empty lists of objects only: the store writes [] for every ability never set up in this loadout.
+  const remembered = {};
+  for (const [hrid, list] of Object.entries(triggerMemory && typeof triggerMemory === 'object' ? triggerMemory : {})) {
+    if (Object.hasOwn(abilityDetailMap, hrid) && Array.isArray(list) && list.length && list.every((t) => t && typeof t === 'object')) remembered[hrid] = list;
+  }
+  return { abilities, owned, unlocked, remembered };
 }
 
 function swapsAt(abilities, slot, ctx) {
@@ -55,7 +62,7 @@ function swapsAt(abilities, slot, ctx) {
     .sort()
     .map((hrid) => {
       const next = abilities.slice();
-      next[slot] = slotted(hrid, ctx.owned[hrid]);
+      next[slot] = slotted(hrid, ctx.owned[hrid], ctx.remembered[hrid]);
       return { id: `s${slot}:${hrid}`, label: `${SLOT_LABELS[slot]}: ${nameOf(abilities[slot]?.hrid)} → ${nameOf(hrid)}`, slot, to: hrid, abilities: next };
     });
 }
@@ -135,10 +142,10 @@ export async function descendAbilities({ ctx, coordinates, passes, rank }) {
   return { abilities, steps };
 }
 
-/** The descent's answer as one candidate against where it started. */
+/** The descent's answer as one candidate against where it started, or null when it ended where it started. */
 export function bestCandidate(ctx, abilities) {
   const changes = [0, 1, 2, 3, 4]
     .filter((i) => abilities[i]?.hrid !== ctx.abilities[i]?.hrid)
     .map((i) => `${SLOT_LABELS[i]}: ${nameOf(ctx.abilities[i]?.hrid)} → ${nameOf(abilities[i]?.hrid)}`);
-  return { id: 'best', label: changes.join(', ') || 'No change found', abilities };
+  return changes.length ? { id: 'best', label: changes.join(', '), abilities } : null;
 }

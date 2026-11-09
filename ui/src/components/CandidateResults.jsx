@@ -47,6 +47,8 @@ export function CandidateResults({ results, title, currentLabel, applyLabel = 'A
   const rows = results.rows || [];
   const objectiveName = OBJECTIVE_NAMES[results.objective] || results.objective;
   const best = rows.find((row) => row.significantFamilywise && row.delta > 0);
+  // The run's own alpha (the panel's significance level), so the caption names the interval ± really is.
+  const confidence = Number(((1 - results.alpha) * 100).toFixed(2));
 
   let headline;
   if (results.saturated) {
@@ -91,7 +93,7 @@ export function CandidateResults({ results, title, currentLabel, applyLabel = 'A
       {headline}
 
       <Text size="xs" c="dimmed">
-        Ranked on {objectiveName}. Δ is against the current setup on the same seeds; ± is the 95% interval (Student-t).
+        Ranked on {objectiveName}. Δ is against the current setup on the same seeds; ± is the {confidence}% interval (Student-t).
         {kind === 'zone' && !results.consumableCostsKnown
           ? ' No production times were loaded, so effective EPH equals EPH.'
           : ''}
@@ -122,15 +124,21 @@ export function CandidateResults({ results, title, currentLabel, applyLabel = 'A
             </Table.Tr>
             {rows.map((row) => (
               <Table.Tr key={row.id}>
-                <Table.Td>{row.rank}</Table.Td>
+                <Table.Td>{row.rank ?? '—'}</Table.Td>
                 <Table.Td>{row.label}</Table.Td>
                 {columns.map(([key]) => <NumTd key={key}>{fmt(row.metrics?.[key])}</NumTd>)}
                 <NumTd>{formatDelta(row)}</NumTd>
                 <NumTd>{formatP(row.statistics?.pValue)}</NumTd>
-                <Table.Td><VerdictBadge row={row} /></Table.Td>
+                <Table.Td>
+                  {row.unmeasured
+                    ? <Badge size="xs" color="red" variant="outline" title="Every simulation of it failed">Not measured</Badge>
+                    : <VerdictBadge row={row} />}
+                </Table.Td>
                 {onApply && (
                   <Table.Td>
-                    <Button size="compact-xs" variant="light" onClick={() => onApply(row)}>{applyLabel}</Button>
+                    {!row.unmeasured && (
+                      <Button size="compact-xs" variant="light" onClick={() => onApply(row)}>{applyLabel}</Button>
+                    )}
                   </Table.Td>
                 )}
               </Table.Tr>

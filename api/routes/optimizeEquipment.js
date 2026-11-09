@@ -15,7 +15,7 @@
 
 import { Router } from 'express';
 import { buildExtraBuffs } from '../lib/simulator.js';
-import { poolSizeFor, sanitiseConsumableCosts, streamPoolRun, validateBody } from '../lib/optimizerRoute.js';
+import { poolSizeFor, sanitiseConsumableCosts, sanitiseFidelity, streamPoolRun, validateBody } from '../lib/optimizerRoute.js';
 import { markDungeon, normaliseTarget, targetExtraBuffs, targetPlayerDTOs } from '../lib/target.js';
 import { makePoolEvaluator } from '../lib/triggerSearch/pool.js';
 import { defaultObjective, reportedMetricsFor } from '../lib/triggerSearch/score.js';
@@ -25,25 +25,19 @@ import {
   applyEnhancement,
   enumerateEquipment,
 } from '../lib/equipmentScan/candidates.js';
-import { DEFAULT_SCAN, DEFAULT_SEED_BASE, estimateWorkload, scanEquipment } from '../lib/equipmentScan/scan.js';
+import { DEFAULT_SEED_BASE, estimateWorkload, scanEquipment } from '../lib/equipmentScan/scan.js';
 
 const router = Router();
 
-/** Guard rails on user-supplied configuration. */
-const MAX_HOURS = 1000;
-const MAX_REPLICATES = 40;
+/** Guard rail on user-supplied configuration. */
 const MAX_CANDIDATES = 40;
 
 /**
  * Clamp the scan configuration. These arrive from NumberInputs, so they are user
- * data rather than trusted settings.
+ * data rather than trusted settings. Hours, replicates and alpha clamp as every
+ * paired run's do (optimizerRoute.js sanitiseFidelity); the step is the scan's own.
  */
 function sanitiseScan(input = {}) {
-  const number = (value, fallback, min, max) => {
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed) || parsed < min) return fallback;
-    return Math.min(max, parsed);
-  };
   const integer = (value, fallback, min, max) => {
     const parsed = Math.floor(Number(value));
     if (!Number.isFinite(parsed) || parsed < min) return fallback;
@@ -51,14 +45,10 @@ function sanitiseScan(input = {}) {
   };
 
   return {
-    hours: number(input.hours, DEFAULT_SCAN.hours, 0.1, MAX_HOURS),
-    // Two replicates is the floor for any error bar at all; one would report a
-    // difference with no way to say whether it was real.
-    replicates: integer(input.replicates, DEFAULT_SCAN.replicates, 2, MAX_REPLICATES),
+    ...sanitiseFidelity(input),
     // A step of at least one, and never past the cap — an over-cap level yields
     // an undefined multiplier and silently NaN stats.
     step: integer(input.step, DEFAULT_STEP, 1, MAX_ENHANCEMENT_LEVEL),
-    alpha: number(input.alpha, DEFAULT_SCAN.alpha, 0.0001, 0.5),
   };
 }
 

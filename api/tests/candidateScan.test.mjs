@@ -105,3 +105,13 @@ test('rankCandidates rejects with the caller\'s cancel message; scanEquipment ke
     { name: 'AbortError', message: 'Equipment scan cancelled' },
   );
 });
+
+test('rankCandidates: a candidate whose every simulation failed is unmeasured — no delta, no rank, listed last', async () => {
+  const ok = evaluator();
+  const evaluate = async (jobs) => (await ok(jobs)).map((r) => (r.id.startsWith('b#') ? { id: r.id, error: 'boom' } : r));
+  const result = await rankCandidates({ playerDTOs: PLAYERS, candidates: CANDIDATES, evaluate, applyCandidate,
+    objective: 'encountersPerHour', hours: 1, replicates: 3 });
+  assert.deepEqual(result.rows.map((r) => [r.id, r.rank, r.delta, r.unmeasured]),
+    [['a', 1, 5, false], ['c', 2, -3, false], ['b', null, null, true]]);
+  assert.equal(result.inconclusive, false);
+});

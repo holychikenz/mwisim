@@ -1569,9 +1569,14 @@ function App() {
 
   const abilityOptPayload = useMemo(() => {
     if (!toolBase || subjectIndex < 0) return null;
+    const ref = party[subjectSlot];
+    const character = characters.characters?.[ref.characterId];
     return { ...toolBase, subjectIndex,
       // Every ability the character has a level for; the API adds whatever is slotted.
-      ownedAbilities: characters.characters?.[party[subjectSlot].characterId]?.abilityLevels || {},
+      ownedAbilities: character?.abilityLevels || {},
+      // The triggers this loadout last gave each ability: a swapped-in one is tried, and applied, with them
+      // (toPlayerDTO drops abilityMemory, so the DTO cannot carry them).
+      triggerMemory: character?.loadouts?.[ref.loadoutName]?.triggerMemory || {},
       coordinates: abilityOptConfig.coordinates, search: abilityOptConfig.search, passes: abilityOptConfig.passes,
       objective: planetTarget ? abilityOptConfig.objective : undefined, scan: abilityOptConfig };
   }, [toolBase, subjectIndex, subjectSlot, party, characters, planetTarget, abilityOptConfig]);
@@ -1581,6 +1586,14 @@ function App() {
     if (!payload) return;
     run({ ...payload, meta: { optTarget, zone, difficultyTier, labConfig, subject: { slot: subjectSlot, ...party[subjectSlot] } } });
   }, [optTarget, zone, difficultyTier, labConfig, subjectSlot, party]);
+
+  // Stable, as handleStartTriggerOpt / handleStartEquipOpt are, so handleStartSimulation's useCallback holds.
+  const { runOptimizer: runLoadoutOptimizer } = loadoutOpt;
+  const { runOptimizer: runAbilityOptimizer } = abilityOpt;
+  const handleStartLoadoutOpt = useCallback(
+    () => startSubjectRun(runLoadoutOptimizer, loadoutOptPayload), [startSubjectRun, runLoadoutOptimizer, loadoutOptPayload]);
+  const handleStartAbilityOpt = useCallback(
+    () => startSubjectRun(runAbilityOptimizer, abilityOptPayload), [startSubjectRun, runAbilityOptimizer, abilityOptPayload]);
 
   /** Loadout's Apply: wear that loadout in the slot the run measured. */
   const applyLoadoutRow = useCallback((row, subject) => {
@@ -1602,7 +1615,8 @@ function App() {
     config, onConfigChange: setConfig, subjectOptions, subject: subjectSlot == null ? null : String(subjectSlot),
     onSubjectChange: (value) => setSubjectPick(Number(value)), subjectNotice, pricing, consumableCostRows: costRows
   });
-  const loadoutCount = loadoutOptPayload?.candidates.length ?? 0;
+  // What the server will compare: it caps the list and reports the rest as skipped (api/routes/optimizeLoadout.js).
+  const loadoutCount = (loadoutOptPayload && loadoutOpt.preview?.candidates) || 0;
   const abilityCount = abilityOpt.preview?.candidates ?? 0;
 
   // The optimiser tools, keyed by their TOOLS value. Every mode-generic site
@@ -1681,16 +1695,17 @@ function App() {
     loadoutOpt: {
       engine: loadoutOpt,
       payload: loadoutOptPayload,
-      start: () => startSubjectRun(loadoutOpt.runOptimizer, loadoutOptPayload),
+      start: handleStartLoadoutOpt,
       runLabel: `Compare ${loadoutCount} loadout${loadoutCount === 1 ? '' : 's'}`,
-      runDisabled: loadoutCount === 0,
+      runDisabled: !loadoutCount || loadoutOpt.previewing,
       empty: 'Pick whose saved loadouts to compare above, then press Run.',
       panel: (costRows) => (
         <CandidateOptimizerPanel {...subjectPanelProps(loadoutOpt, loadoutOptConfig, setLoadoutOptConfig, costRows)}
           title="Loadout" blurb="Simulates every saved loadout of one character at this target against the one it wears now, on shared seeds.">
-          <Text size="xs" c="dimmed">{loadoutCount
+          <Text size="xs" c="dimmed">{loadoutOptPayload?.candidates.length
             ? `Against ${party[subjectSlot]?.loadoutName}: ${loadoutOptPayload.candidates.map(c => c.name).join(', ')}.`
             : 'This character has no other saved loadout.'}</Text>
+          {loadoutOpt.preview?.skipped > 0 && <Text size="xs" c="orange">Only the first {loadoutCount} are compared; {loadoutOpt.preview.skipped} more are left out.</Text>}
         </CandidateOptimizerPanel>
       ),
       results: (r, onClear) => (
@@ -1701,13 +1716,13 @@ function App() {
     abilityOpt: {
       engine: abilityOpt,
       payload: abilityOptPayload,
-      start: () => startSubjectRun(abilityOpt.runOptimizer, abilityOptPayload),
+      start: handleStartAbilityOpt,
       runLabel: abilityOptConfig.search === 'best' ? 'Find the best combination' : `Try ${abilityCount} change${abilityCount === 1 ? '' : 's'}`,
-      runDisabled: !abilityCount || abilityOpt.previewing,
+      runDisabled: !abilityCount || abilityOpt.previewing || !!abilityOpt.preview?.refusal,
       empty: 'Pick which ability slots to try above, then press Run.',
       panel: (costRows) => (
         <CandidateOptimizerPanel {...subjectPanelProps(abilityOpt, abilityOptConfig, setAbilityOptConfig, costRows)}
-          title="Abilities" blurb="Tries each owned ability in each unlocked slot (the aura slot takes specials only) and each cast order of abilities 1–4, against the current setup on shared seeds.">
+          title="Abilities" blurb="Tries each ability this character has a level for in each unlocked slot (the aura slot takes specials only) and each cast order of abilities 1–4, against the current setup on shared seeds.">
           <AbilitySearchOptions preview={abilityOpt.preview} config={abilityOptConfig} onConfigChange={setAbilityOptConfig} loading={abilityOpt.loading} />
         </CandidateOptimizerPanel>
       ),
@@ -1727,6 +1742,7 @@ function App() {
   // server-side call, but editing a threshold fires this on each keystroke.
   const toolPayload = tool?.payload;
   const fetchToolPreview = tool?.engine.fetchPreview;
+  const startTool = tool?.start;
   useEffect(() => {
     if (!toolPayload) return undefined;
     const timer = setTimeout(() => fetchToolPreview(toolPayload), 350);
@@ -1741,8 +1757,8 @@ function App() {
       handleStartTrial();
       return;
     }
-    if (tool) {
-      tool.start();
+    if (startTool) {
+      startTool();
       return;
     }
     // Every selected slot is empty or dangling: there is nothing to simulate.
@@ -1811,7 +1827,7 @@ function App() {
       // Labels as of this run, so re-binding a slot later does not relabel it.
       meta: { playerNames }
     });
-  }, [resolvedParty, selectedParty, simMode, zone, difficultyTier, labConfig, mazeContext, duration, zoneWorkers, gameData, dungeonRunMode, dungeonRuns, maxRunHours, extraOptions, experimental, runSimulation, handleStartTrial, tool, playerNames]);
+  }, [resolvedParty, selectedParty, simMode, zone, difficultyTier, labConfig, mazeContext, duration, zoneWorkers, gameData, dungeonRunMode, dungeonRuns, maxRunHours, extraOptions, experimental, runSimulation, handleStartTrial, startTool, playerNames]);
 
   // Pickers for the slot binder, and the label the party checkboxes wear.
   const characterOptions = useMemo(

@@ -376,6 +376,8 @@ export async function scanEquipment({
  * mean difference on the objective, `deltaPct` that over the baseline mean,
  * `marginPct` the Student-t half-width on the same scale. Best first, ties by
  * id, so the order is deterministic. Candidate ids must not contain '#'.
+ * A candidate with no usable pair (every simulation of it failed) is `unmeasured`:
+ * delta null, no rank, listed last — not a delta of zero.
  */
 export async function rankCandidates({
   candidates, objective, hours = DEFAULT_SCAN.hours, replicates = DEFAULT_SCAN.replicates,
@@ -385,19 +387,20 @@ export async function rankCandidates({
   const paired = await runPaired({ ...run, candidates, objective, hours, replicates, alpha, seedBase });
   const rows = paired.compared.map(({ row, samples, metrics, comparison }) => {
     const scale = Math.abs(comparison.baselineMean) > 1e-9 ? Math.abs(comparison.baselineMean) : null;
+    const unmeasured = comparison.samples === 0;
     return {
-      ...row, metrics, samples,
+      ...row, metrics, samples, unmeasured,
       deltas: computeDeltas(metrics, paired.baselineMetrics),
       statistics: comparison,
-      delta: comparison.deltaMean,
+      delta: unmeasured ? null : comparison.deltaMean,
       deltaPct: scale == null ? null : comparison.deltaMean / scale,
       marginPct: scale == null || comparison.marginOfError == null ? null : comparison.marginOfError / scale,
       significant: comparison.significant,
       significantFamilywise: comparison.significantFamilywise,
     };
   });
-  rows.sort((a, b) => b.delta - a.delta || String(a.id).localeCompare(String(b.id)));
-  rows.forEach((row, index) => { row.rank = index + 1; });
+  rows.sort((a, b) => a.unmeasured - b.unmeasured || b.delta - a.delta || String(a.id).localeCompare(String(b.id)));
+  rows.forEach((row, index) => { row.rank = row.unmeasured ? null : index + 1; });
   return {
     objective, hours, replicates: paired.reps, seedBase, alpha,
     baseline: { metrics: paired.baselineMetrics, samples: paired.baselineSamples, mean: paired.noise.mean,
