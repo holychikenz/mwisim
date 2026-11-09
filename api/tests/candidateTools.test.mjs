@@ -197,11 +197,12 @@ test('prepareLoadoutRun: loadouts past the cap are reported as skipped, not drop
 test('the equipment scan clamps hours, replicates and alpha exactly as sanitiseFidelity does', () => {
   const zone = BASE_BODY.zone;
   const scans = [{ hours: 5000, replicates: 45.5, alpha: 0.9, step: 99 }, { hours: 0.05, replicates: 2.5, alpha: 0.0001, step: 0 },
-    { hours: 'x', replicates: 1.99, alpha: -1, step: 2.7 }, undefined];
+    { hours: 'x', replicates: 1.99, alpha: -1, step: 2.7 }, undefined, null];
   for (const scan of scans) {
     const { hours, replicates, alpha } = prepareEquipmentRun({ players: [melee], zone, scan }).scan;
     assert.deepEqual({ hours, replicates, alpha }, sanitiseFidelity(scan), JSON.stringify(scan));
   }
   assert.deepEqual(prepareEquipmentRun({ players: [melee], zone, scan: scans[0] }).scan, { hours: 1000, replicates: 40, alpha: 0.5, step: 20 });
   assert.deepEqual(prepareEquipmentRun({ players: [melee], zone, scan: scans[1] }).scan, { hours: 24, replicates: 2, alpha: 0.0001, step: 6 });
+  assert.deepEqual(prepareEquipmentRun({ players: [melee], zone, scan: null }).scan, { hours: 24, replicates: 6, alpha: 0.05, step: 6 });
 });

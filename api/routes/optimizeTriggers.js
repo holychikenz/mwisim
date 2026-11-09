@@ -40,7 +40,8 @@ const MAX_SELECTION = 24;
  * Clamp the caller's stage overrides. The UI offers these as inputs, so they are
  * user data, not trusted configuration.
  */
-function sanitiseStages(input = {}, { stableMode = false } = {}) {
+function sanitiseStages(input, { stableMode = false } = {}) {
+  input ??= {}; // a JSON null skips a default parameter
   const hours = (value, fallback) => {
     const number = Number(value);
     if (!Number.isFinite(number) || number <= 0) return fallback;

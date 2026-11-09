@@ -37,7 +37,7 @@ const MAX_CANDIDATES = 40;
  * data rather than trusted settings. Hours, replicates and alpha clamp as every
  * paired run's do (optimizerRoute.js sanitiseFidelity); the step is the scan's own.
  */
-function sanitiseScan(input = {}) {
+function sanitiseScan(input) {
   const integer = (value, fallback, min, max) => {
     const parsed = Math.floor(Number(value));
     if (!Number.isFinite(parsed) || parsed < min) return fallback;
@@ -48,7 +48,7 @@ function sanitiseScan(input = {}) {
     ...sanitiseFidelity(input),
     // A step of at least one, and never past the cap — an over-cap level yields
     // an undefined multiplier and silently NaN stats.
-    step: integer(input.step, DEFAULT_STEP, 1, MAX_ENHANCEMENT_LEVEL),
+    step: integer(input?.step, DEFAULT_STEP, 1, MAX_ENHANCEMENT_LEVEL),
   };
 }
 

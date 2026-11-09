@@ -28,7 +28,7 @@ const labelOf = (coordinate) => (coordinate === 'order' ? 'Cast order' : SLOT_LA
 const nameOf = (hrid) => (hrid ? abilityDetailMap[hrid]?.name ?? hrid : 'empty');
 const isSpecial = (hrid) => !!abilityDetailMap[hrid]?.isSpecialAbility;
 
-/** A slot as the engine reads it: the remembered triggers (a non-empty list), else the game's defaults — copied, never absent. */
+/** A slot as the engine reads it: the remembered triggers ([] included: cast whenever ready), else the game's defaults — copied, never absent. */
 const slotted = (hrid, level, remembered) =>
   ({ hrid, level, triggers: (remembered || abilityDetailMap[hrid].defaultCombatTriggers || []).map((t) => ({ ...t })) });
 
@@ -46,10 +46,10 @@ export function abilityContext(subject, ownedAbilities, triggerMemory) {
   const list = abilitySlotsLevelRequirementList;
   const intelligence = Number(subject?.intelligenceLevel);
   const unlocked = abilities.map((_, i) => list.length === 0 || intelligence >= (list[i + 1] ?? Infinity));
-  // Non-empty lists of objects only: the store writes [] for every ability never set up in this loadout.
+  // Lists of trigger objects, [] included; absent means never set up in this loadout.
   const remembered = {};
   for (const [hrid, list] of Object.entries(triggerMemory && typeof triggerMemory === 'object' ? triggerMemory : {})) {
-    if (Object.hasOwn(abilityDetailMap, hrid) && Array.isArray(list) && list.length && list.every((t) => t && typeof t === 'object')) remembered[hrid] = list;
+    if (Object.hasOwn(abilityDetailMap, hrid) && Array.isArray(list) && list.every((t) => t && typeof t === 'object')) remembered[hrid] = list;
   }
   return { abilities, owned, unlocked, remembered };
 }
@@ -142,10 +142,16 @@ export async function descendAbilities({ ctx, coordinates, passes, rank }) {
   return { abilities, steps };
 }
 
-/** The descent's answer as one candidate against where it started, or null when it ended where it started. */
+/** Same ability with the same triggers. A descent can end on the starting abilities with other triggers (one swapped out
+ *  and back in comes back with its remembered or default ones), and that is a change worth offering. */
+const sameSlot = (a, b) => JSON.stringify([a?.hrid ?? null, a?.triggers ?? null]) === JSON.stringify([b?.hrid ?? null, b?.triggers ?? null]);
+
+/** The descent's answer as one candidate against the true start (ctx.abilities), or null when it ended exactly there. */
 export function bestCandidate(ctx, abilities) {
   const changes = [0, 1, 2, 3, 4]
-    .filter((i) => abilities[i]?.hrid !== ctx.abilities[i]?.hrid)
-    .map((i) => `${SLOT_LABELS[i]}: ${nameOf(ctx.abilities[i]?.hrid)} → ${nameOf(abilities[i]?.hrid)}`);
+    .filter((i) => !sameSlot(abilities[i], ctx.abilities[i]))
+    .map((i) => (abilities[i]?.hrid === ctx.abilities[i]?.hrid
+      ? `${SLOT_LABELS[i]}: ${nameOf(abilities[i]?.hrid)}, other triggers`
+      : `${SLOT_LABELS[i]}: ${nameOf(ctx.abilities[i]?.hrid)} → ${nameOf(abilities[i]?.hrid)}`));
   return changes.length ? { id: 'best', label: changes.join(', '), abilities } : null;
 }

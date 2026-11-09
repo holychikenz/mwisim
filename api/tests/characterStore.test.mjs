@@ -36,7 +36,9 @@ const {
   createCharacter,
   mainCharacter,
   mainSlotRef,
-  withAbilities
+  withAbilities,
+  dropLegacyEmptyTriggers,
+  TRIGGER_MEMORY_MARKER_KEY
 } = await import('../../ui/src/utils/characterStore.js');
 const {
   deleteLoadoutEverywhere,
@@ -516,4 +518,41 @@ test('withAbilities: a swapped-in ability lands in the slot and the memory, and 
   assert.equal(split.abilityLevels['/abilities/cleave'], 7);
   assert.deepEqual(out.triggerMemory['/abilities/cleave'], [TRIGGER]);
   assert.equal(split.abilityLevels.a, 3);
+});
+
+test('trigger memory: an ability never set up in this loadout stays unset through an edit; a deliberate [] survives', () => {
+  const c = character({ abilityLevels: { '/abilities/smack': 12, '/abilities/cleave': 8, '/abilities/maim': 3 } });
+  const l = loadout({ triggerMemory: { '/abilities/smack': [TRIGGER], '/abilities/maim': [] } });
+  const player = resolvePlayer(c, l);
+  assert.equal(player.abilityMemory['/abilities/cleave'].triggers, undefined);
+  const { loadout: out } = splitPlayer(player);
+  assert.equal(Object.hasOwn(out.triggerMemory, '/abilities/cleave'), false); // was []
+  assert.deepEqual(out.triggerMemory['/abilities/maim'], []);
+  assert.deepEqual(out.triggerMemory['/abilities/smack'], [TRIGGER]);
+});
+
+test('legacy trigger memory: a stored [] for an ability not slotted in that loadout is dropped once; slotted ones are untouched', () => {
+  const legacy = loadout({
+    abilities: [{ hrid: '/abilities/smack', triggers: [] }, null, null, null, null],
+    triggerMemory: { '/abilities/smack': [], '/abilities/cleave': [], '/abilities/maim': [TRIGGER] }
+  });
+  const store = storeWith(character(), { a: legacy });
+  const out = dropLegacyEmptyTriggers(store);
+  assert.deepEqual(out.characters.c.loadouts.a.triggerMemory, { '/abilities/smack': [], '/abilities/maim': [TRIGGER] });
+  assert.deepEqual(store.characters.c.loadouts.a.triggerMemory['/abilities/cleave'], []); // not mutated
+
+  __store.clear();
+  __store.set('csim_characters', JSON.stringify(store));
+  assert.equal(Object.hasOwn(loadCharacters().characters.c.loadouts.a.triggerMemory, '/abilities/cleave'), false);
+  assert.equal(Object.hasOwn(JSON.parse(__store.get('csim_characters')).characters.c.loadouts.a.triggerMemory, '/abilities/cleave'), false);
+  assert.ok(__store.get(TRIGGER_MEMORY_MARKER_KEY));
+  // Once only: a [] written after the cleanup is deliberate and is kept.
+  __store.set('csim_characters', JSON.stringify(store));
+  assert.deepEqual(loadCharacters().characters.c.loadouts.a.triggerMemory['/abilities/cleave'], []);
+  // A first load with nothing stored marks it done without writing a store.
+  __store.clear();
+  loadCharacters();
+  assert.ok(__store.get(TRIGGER_MEMORY_MARKER_KEY));
+  assert.equal(__store.has('csim_characters'), false);
+  __store.clear();
 });

@@ -136,7 +136,7 @@ test('coordinateSummary reports counts, locks and unlock levels; the cast order 
   assert.equal(summary.order.unlockLevel, null);
 });
 
-test('a swapped-in ability carries the triggers its loadout remembers; none, [] or junk means the game defaults', () => {
+test('a swapped-in ability carries the triggers its loadout remembers; [] is kept (cast whenever ready); none or junk means the game defaults', () => {
   const subject = { intelligenceLevel: 20, abilities: [slot(A('critical_aura')), slot(A('berserk')), null, null, null] };
   const mine = [{ ...TRIGGER, value: 42 }];
   const memory = { [A('cleave')]: mine, [A('maim')]: [], [A('fierce_aura')]: 'junk', [A('poke')]: [7], '/abilities/not_a_thing': mine };
@@ -145,7 +145,8 @@ test('a swapped-in ability carries the triggers its loadout remembers; none, [] 
   const triggersOf = (c) => c.abilities[c.slot].triggers;
   assert.deepEqual(triggersOf(into(A('cleave'))), mine);
   assert.notEqual(triggersOf(into(A('cleave')))[0], mine[0]); // copied
-  for (const hrid of [A('maim'), A('fierce_aura'), A('poke')]) {
+  assert.deepEqual(triggersOf(into(A('maim'))), []);
+  for (const hrid of [A('fierce_aura'), A('poke')]) {
     assert.deepEqual(triggersOf(into(hrid)), abilityDetailMap[hrid].defaultCombatTriggers, hrid);
   }
   const base = { simPlayers: [subject], subjectIndex: 0, scan: { hours: 1, replicates: 2, alpha: 0.05 } };
@@ -170,4 +171,21 @@ test('best combination: the result counts the whole search; ending where it star
   assert.ok(top.result.steps.length > 0 && top.result.steps.every((s) => !s.taken));
   assert.equal(top.result.simulationsRun, top.searched); // no confirmation
   assert.equal(top.result.baseline.metrics.encountersPerHour, 100 + score(climb.result.rows[0].abilities));
+});
+
+test('best combination: ending on the starting abilities with other triggers is offered, measured against the true start', async () => {
+  const custom = [{ ...TRIGGER, value: 99 }];
+  const isDefault = (a) => JSON.stringify(a.triggers) === JSON.stringify(abilityDetailMap[a.hrid].defaultCombatTriggers);
+  const worth = (abilities) => (abilities[1].hrid === A('cleave') ? 20 : isDefault(abilities[1]) ? 30 : 10);
+  const evaluate = async (jobs) => jobs.map((job) => ({ id: job.id, metrics: { encountersPerHour: 100 + worth(job.playerDTOs[0].abilities) } }));
+  const scan = { hours: 1, replicates: 2, alpha: 0.05 };
+  const base = { simPlayers: [{ intelligenceLevel: 90, abilities: [null, { hrid: A('poke'), level: 1, triggers: custom }, null, null, null] }],
+    subjectIndex: 0, scan, objective: 'encountersPerHour' };
+  const p = { ...base, ...prepareAbilityRun(base, { search: 'best', passes: 3, coordinates: ['s1'], ownedAbilities: owned('poke', 'cleave') }) };
+  const result = await runAbilitySearch(p, { evaluate, seedBase: 1, onProgress: () => {} });
+  assert.deepEqual(result.rows.map((r) => r.id), ['best']); // was [] ("Nothing beats the current setup")
+  assert.match(result.rows[0].label, /Poke, other triggers/);
+  assert.ok(isDefault(result.rows[0].abilities[1]));
+  assert.equal(result.baseline.metrics.encountersPerHour, 110); // the true start, not the last ranking's
+  assert.equal(result.rows[0].delta, 20);
 });

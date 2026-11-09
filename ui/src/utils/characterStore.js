@@ -178,17 +178,18 @@ export function sanitizeCharacter(raw) {
  * { [abilityHrid]: { level, triggers } }. The LEVEL half comes from the
  * character (it is the same whichever loadout you are wearing); the TRIGGERS
  * half comes from this loadout. Slotted abilities' own triggers win, since the
- * slot is what the user is looking at.
+ * slot is what the user is looking at. An ability never set up in this loadout
+ * has no triggers here (undefined, not []): [] means "cast whenever ready".
  */
 function buildAbilityMemory(character, loadout) {
   const levels = isObject(character.abilityLevels) ? character.abilityLevels : {};
   const triggers = isObject(loadout.triggerMemory) ? loadout.triggerMemory : {};
   const memory = {};
   for (const [hrid, level] of Object.entries(levels)) {
-    memory[hrid] = { level: Number(level) || 1, triggers: triggers[hrid] || [] };
+    memory[hrid] = { level: Number(level) || 1, triggers: triggers[hrid] };
   }
   for (const [hrid, trigs] of Object.entries(triggers)) {
-    if (!memory[hrid]) memory[hrid] = { level: Number(levels[hrid]) || 1, triggers: trigs || [] };
+    if (!memory[hrid]) memory[hrid] = { level: Number(levels[hrid]) || 1, triggers: trigs };
   }
   for (const slot of loadout.abilities || []) {
     if (!slot?.hrid) continue;
@@ -270,7 +271,7 @@ export function splitPlayer(flat) {
   const triggerMemory = {};
   for (const [hrid, entry] of Object.entries(memory)) {
     abilityLevels[hrid] = Number(entry?.level) || 1;
-    triggerMemory[hrid] = entry?.triggers || [];
+    if (Array.isArray(entry?.triggers)) triggerMemory[hrid] = entry.triggers;
   }
   const abilities = (Array.isArray(p.abilities) ? p.abilities : []).map(a => {
     if (!a?.hrid) return null;
@@ -549,11 +550,54 @@ export function loadVersioned(key, expectedVersion, fallback) {
  */
 export function loadCharacters() {
   const { data, status } = loadVersioned(CHARACTERS_KEY, SCHEMA_VERSION, emptyStore());
-  return {
-    schemaVersion: SCHEMA_VERSION,
-    characters: isObject(data?.characters) ? data.characters : {},
-    status
-  };
+  let characters = isObject(data?.characters) ? data.characters : {};
+  // An empty store is marked too: what is saved from now on is written under the new rule.
+  if (status !== 'incompatible') characters = cleanLegacyTriggersOnce({ characters }, status === 'ok').characters;
+  return { schemaVersion: SCHEMA_VERSION, characters, status };
+}
+
+/** Sibling marker (not a field in the store, which saveCharacters rewrites): the legacy trigger cleanup has run. */
+export const TRIGGER_MEMORY_MARKER_KEY = 'csim_characters.triggerMemoryCleaned';
+
+/**
+ * Before [] meant "cast whenever ready", every sheet edit wrote [] into
+ * triggerMemory for every trained ability never set up in that loadout. Those
+ * cannot be told from a deliberate [], so the old reading (the game's defaults)
+ * is kept: [] is dropped for abilities NOT slotted in that loadout. Slotted
+ * ones are untouched. Pure; returns a new store.
+ */
+export function dropLegacyEmptyTriggers(store) {
+  const characters = {};
+  for (const [id, c] of Object.entries(isObject(store?.characters) ? store.characters : {})) {
+    if (!isObject(c?.loadouts)) { characters[id] = c; continue; }
+    const loadouts = {};
+    for (const [name, l] of Object.entries(c.loadouts)) {
+      if (!isObject(l?.triggerMemory)) { loadouts[name] = l; continue; }
+      const slotted = new Set((Array.isArray(l.abilities) ? l.abilities : []).map(a => a?.hrid).filter(Boolean));
+      const triggerMemory = Object.fromEntries(Object.entries(l.triggerMemory)
+        .filter(([hrid, t]) => slotted.has(hrid) || !(Array.isArray(t) && t.length === 0)));
+      loadouts[name] = { ...l, triggerMemory };
+    }
+    characters[id] = { ...c, loadouts };
+  }
+  return { ...store, characters };
+}
+
+/** dropLegacyEmptyTriggers at most once ever, saved (when there was a stored blob) before the marker is written. */
+function cleanLegacyTriggersOnce(store, stored) {
+  try {
+    if (localStorage.getItem(TRIGGER_MEMORY_MARKER_KEY)) return store;
+  } catch {
+    return store; // No storage: nothing was saved under the old rule either.
+  }
+  const cleaned = stored ? dropLegacyEmptyTriggers(store) : store;
+  if (stored) saveCharacters(cleaned);
+  try {
+    localStorage.setItem(TRIGGER_MEMORY_MARKER_KEY, new Date().toISOString());
+  } catch {
+    // Quota or private browsing: it will simply run again.
+  }
+  return cleaned;
 }
 
 export function saveCharacters(store) {
