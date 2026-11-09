@@ -52,6 +52,8 @@ import { LoadoutManager } from './components/LoadoutManager';
 import { CharacterImport } from './components/CharacterImport';
 import { ChunkBoundary } from './components/ChunkBoundary';
 import { retryableLazy } from './utils/retryableLazy';
+import { Roboburble } from './assistant/Roboburble';
+import { useAssistantBridge } from './assistant/bridge';
 import { TextInput } from '@mantine/core';
 import { toPlayerDTO } from './utils/playerDTO';
 import { withLevelGapDebuff } from './utils/combatLevel';
@@ -2024,6 +2026,16 @@ function App() {
     ? undefined
     : (isApiOpt ? apiEngine.clearResults : clearSimResults);
 
+  // Roboburble (src/assistant): reads this render's state, writes only through these setters.
+  const assistant = useAssistantBridge(
+    { gameData, characters, party, activeTab, selectedPlayers, roster, selectedEntryId, simMode, optTarget,
+      zone, difficultyTier, duration, labConfig, trialConfig, results: activeResults, loading: activeLoading,
+      progress: activeProgress, error: activeError, runDisabled: !!tool?.runDisabled },
+    { characters: setCharacters, zone: setZone, difficultyTier: setDifficultyTier, duration: setDuration,
+      labConfig: setLabConfig, trialConfig: setTrialConfig, simMode: setSimMode, optTarget: setOptTarget },
+    handleStartSimulation
+  );
+
   return (
     <AppShell
       // Two rows: brand, target, Costs and the cog (56) over the tool tabs (40).
@@ -2530,6 +2542,7 @@ function App() {
         </Suspense>
         </ChunkBoundary>
       )}
+      <Roboburble bridge={assistant} />
     </AppShell>
   );
 }

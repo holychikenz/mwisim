@@ -55,6 +55,11 @@ Decisions for the React UI redesign (agreed 2026-10-09). Theme tokens live in
   the target and tools keep the header. In row 1 the burger and the right-hand
   group (Costs, cog, chip — avatar only) stay put and only the target scrolls
   sideways; the tools row scrolls too.
+- **Roboburble** (`src/assistant/`): a 56 px round launcher at the bottom right
+  of the main pane. It sits beside the pinned sheet (`--app-shell-aside-offset`)
+  and never in the header, which is full. It opens a non-modal panel above
+  itself; Escape closes it and returns focus to the launcher. Tools write
+  through App's own setters, and every edit gets an Undo chip.
 
 ## Gear (G2)
 Paper doll: slots as a 3-column grid of tiles (slot, item, +N). Clicking a tile
@@ -104,7 +109,10 @@ opens one searchable picker with the enhancement level; owned items first.
   `csim_ui_mode_settings_open`, `csim_ui_global_buffs_open`,
   `csim_ui_drops_credit_mode`, `csim_ui_trial_monsters_collapsed`,
   `csim_ui_trigopt_stages_open`, `csim_ui_equipopt_fidelity_open`,
-  `csim_ui_allzones_sort`, `csim_ui_main_character`.
+  `csim_ui_allzones_sort`, `csim_ui_main_character`, `csim_ui_assistant`.
+  API keys are data, not choices: `csim_assistant_key_anthropic` /
+  `csim_assistant_key_openai`, written only by the assistant's settings and
+  removed by Forget key.
 
 ## Performance
 - **Mode views load lazily.** The trial panel, trial results and monster
@@ -133,6 +141,9 @@ opens one searchable picker with the enhancement level; owned items first.
   visit downloads.
 - The simulation workers are bundled on their own and are untouched by this
   splitting.
+- The assistant panel, its WebLLM worker (~6 MB) and its Whisper worker (plus
+  the 27 MB ORT wasm, fetched only when Whisper is used) are lazy; the
+  launcher is the only eager part.
 
 ## Rule of thumb
 No information is dropped: it may move, group or fade, never vanish.
