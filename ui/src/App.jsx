@@ -30,6 +30,7 @@ import { useEquipmentOptimizer } from './hooks/useEquipmentOptimizer';
 import { useLoadoutOptimizer } from './hooks/useLoadoutOptimizer';
 import { useAbilityOptimizer } from './hooks/useAbilityOptimizer';
 import { useProgressOptimizer } from './hooks/useProgressOptimizer';
+import { useSwapOptimizer } from './hooks/useSwapOptimizer';
 import { usePrices } from './hooks/usePrices';
 import { usePersistentState, isBool } from './hooks/usePersistentState';
 import { exportFormatToPlayer } from './utils/importSet';
@@ -88,9 +89,12 @@ import {
   DEFAULT_ABILITY_OPT_CONFIG,
   DEFAULT_LOADOUT_OPT_CONFIG,
   DEFAULT_PROGRESS_OPT_CONFIG,
+  DEFAULT_SWAP_OPT_CONFIG,
+  applySwapChanges,
   isAbilityOptConfig,
   isLoadoutOptConfig,
   isProgressOptConfig,
+  isSwapOptConfig,
   loadoutCandidates,
   pickSubjectSlot,
   progressColumns
@@ -152,6 +156,7 @@ const EquipmentOptimizerResults = lazyNamed(() => import('./components/Equipment
 const CandidateOptimizerPanel = lazyNamed(() => import('./components/CandidateOptimizerPanel'), 'CandidateOptimizerPanel');
 const AbilitySearchOptions = lazyNamed(() => import('./components/CandidateOptimizerPanel'), 'AbilitySearchOptions');
 const ProgressOptions = lazyNamed(() => import('./components/CandidateOptimizerPanel'), 'ProgressOptions');
+const SwapOptions = lazyNamed(() => import('./components/CandidateOptimizerPanel'), 'SwapOptions');
 const CandidateResults = lazyNamed(() => import('./components/CandidateResults'), 'CandidateResults');
 const ItemCostsView = lazyNamed(() => import('./components/ItemCostsView'), 'ItemCostsView');
 const TrialMonsterCards = lazyNamed(() => import('./components/TrialMonsterCards'), 'TrialMonsterCards');
@@ -258,6 +263,10 @@ function App() {
   const [abilityOptConfig, setAbilityOptConfig] = usePersistentState('csim_ui_ability_opt', DEFAULT_ABILITY_OPT_CONFIG, isAbilityOptConfig);
   const progressOpt = useProgressOptimizer();
   const [progressOptConfig, setProgressOptConfig] = usePersistentState('csim_ui_progress_opt', DEFAULT_PROGRESS_OPT_CONFIG, isProgressOptConfig);
+  const swapOpt = useSwapOptimizer();
+  const [swapOptConfig, setSwapOptConfig] = usePersistentState('csim_ui_swap_opt', DEFAULT_SWAP_OPT_CONFIG, isSwapOptConfig);
+  // The ticked items belong to one loadout; any other starts from the server's defaults. Derived, so no reset effect.
+  const [swapPick, setSwapPick] = useState(null); // { key, allowed }
   const [subjectPick, setSubjectPick] = useState(null);
 
   // Zone or labyrinth for BOTH optimisers, set from the header's target whenever
@@ -1594,6 +1603,23 @@ function App() {
       objective: planetTarget ? progressOptConfig.objective : undefined, scan: progressOptConfig };
   }, [toolBase, subjectIndex, planetTarget, progressOptConfig]);
 
+  const subjectRef = subjectSlot == null ? null : party[subjectSlot];
+  const swapKey = subjectRef ? `${subjectRef.characterId}|${subjectRef.loadoutName}` : null;
+  const swapAllowed = swapPick?.key === swapKey ? swapPick.allowed : null;
+  const swapInventory = characters.characters?.[subjectRef?.characterId]?.inventory;
+  const swapOptPayload = useMemo(() => {
+    if (!toolBase || subjectIndex < 0) return null;
+    // Price every owned consumable, not only the slotted ones: an unpriced candidate would look free under effective EPH.
+    const plate = (swapInventory || []).filter((e) => gameData?.items?.[e.itemHrid]?.consumableDetail).map((e) => ({ hrid: e.itemHrid }));
+    return { ...toolBase, subjectIndex, owned: swapInventory || [], allowed: swapAllowed ?? undefined,
+      search: swapOptConfig.search, passes: swapOptConfig.passes,
+      consumableCosts: buildConsumableCosts([...toolBase.players, { food: plate }], {
+        prices: pricing.prices, fetchedPrices: pricing.fetchedPrices, unit: pricing.unit,
+        expenseMode: pricing.expenseMode, itemCostOverrides: pricing.itemCostOverrides }),
+      objective: planetTarget ? swapOptConfig.objective : undefined, scan: swapOptConfig };
+  }, [toolBase, subjectIndex, swapInventory, gameData, swapAllowed, swapOptConfig, planetTarget,
+    pricing.prices, pricing.fetchedPrices, pricing.unit, pricing.expenseMode, pricing.itemCostOverrides]);
+
   // A run remembers whose loadout it measured, so Apply writes there.
   const startSubjectRun = useCallback((run, payload) => {
     if (!payload) return;
@@ -1610,6 +1636,9 @@ function App() {
   const { runOptimizer: runProgressOptimizer } = progressOpt;
   const handleStartProgressOpt = useCallback(
     () => startSubjectRun(runProgressOptimizer, progressOptPayload), [startSubjectRun, runProgressOptimizer, progressOptPayload]);
+  const { runOptimizer: runSwapOptimizer } = swapOpt;
+  const handleStartSwapOpt = useCallback(
+    () => startSubjectRun(runSwapOptimizer, swapOptPayload), [startSubjectRun, runSwapOptimizer, swapOptPayload]);
 
   /** Loadout's Apply: wear that loadout in the slot the run measured. */
   const applyLoadoutRow = useCallback((row, subject) => {
@@ -1626,6 +1655,12 @@ function App() {
     applyPlayerEdit(subject, withAbilities(player, abilities));
   }, [characters, applyPlayerEdit]);
 
+  /** Swaps' Apply: the row's changes into the loadout the run measured, through the same store path as the sheet. */
+  const applySwapRow = useCallback((row, subject) => {
+    const player = resolveRef(characters, subject);
+    if (player) applyPlayerEdit(subject, applySwapChanges(player, row.changes));
+  }, [characters, applyPlayerEdit]);
+
   const subjectPanelProps = (engine, config, setConfig, costRows) => ({
     preview: engine.preview, previewing: engine.previewing, apiReachable: engine.apiReachable, loading: engine.loading,
     config, onConfigChange: setConfig, subjectOptions, subject: subjectSlot == null ? null : String(subjectSlot),
@@ -1635,6 +1670,7 @@ function App() {
   const loadoutCount = (loadoutOptPayload && loadoutOpt.preview?.candidates) || 0;
   const abilityCount = abilityOpt.preview?.candidates ?? 0;
   const progressCount = progressOpt.preview?.candidates ?? 0;
+  const swapCount = swapOpt.preview?.candidates ?? 0;
 
   // The optimiser tools, keyed by their TOOLS value. Every mode-generic site
   // below (Run, Stop, the settings panel, the results pane) reads the open one,
@@ -1763,6 +1799,24 @@ function App() {
       ),
       results: (r, onClear) => (
         <CandidateResults results={r} title="Progress" currentLabel="Current levels" extraColumns={progressColumns(pricing)} onClear={onClear} />
+      )
+    },
+    swapOpt: {
+      engine: swapOpt,
+      payload: swapOptPayload,
+      start: handleStartSwapOpt,
+      runLabel: swapOptConfig.search === 'best' ? 'Find the best combination' : `Try ${swapCount} swap${swapCount === 1 ? '' : 's'}`,
+      runDisabled: !swapCount || swapOpt.previewing || !!swapOpt.preview?.refusal,
+      empty: 'Tick which owned items to try above, then press Run.',
+      panel: (costRows) => (
+        <CandidateOptimizerPanel {...subjectPanelProps(swapOpt, swapOptConfig, setSwapOptConfig, costRows)} title="Swaps"
+          blurb="Tries the food, drinks and gear this character owns (and can wear), one swap at a time or the best combination, against the current setup on shared seeds.">
+          <SwapOptions preview={swapOpt.preview} config={swapOptConfig} onConfigChange={setSwapOptConfig} loading={swapOpt.loading}
+            allowed={swapAllowed} onAllowedChange={(allowed) => setSwapPick({ key: swapKey, allowed })} hasInventory={!!swapInventory} />
+        </CandidateOptimizerPanel>
+      ),
+      results: (r, onClear) => (
+        <CandidateResults results={r} title="Swaps" currentLabel="Current setup" onApply={(row) => applySwapRow(row, r.meta?.subject)} onClear={onClear} />
       )
     }
   };

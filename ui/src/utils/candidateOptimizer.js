@@ -24,6 +24,8 @@ export const isLoadoutOptConfig = sameShape(DEFAULT_LOADOUT_OPT_CONFIG);
 export const isAbilityOptConfig = sameShape(DEFAULT_ABILITY_OPT_CONFIG);
 export const DEFAULT_PROGRESS_OPT_CONFIG = { ...DEFAULT_LOADOUT_OPT_CONFIG, levels: 10, stats: [] };
 export const isProgressOptConfig = sameShape(DEFAULT_PROGRESS_OPT_CONFIG);
+export const DEFAULT_SWAP_OPT_CONFIG = { ...DEFAULT_LOADOUT_OPT_CONFIG, search: 'swaps', passes: 2 };
+export const isSwapOptConfig = sameShape(DEFAULT_SWAP_OPT_CONFIG);
 
 /** Whose loadout the tools vary: the picked slot while it is selected, else the main character's slot, else the first selected. */
 export function pickSubjectSlot({ selectedParty, party, mainId, picked }) {
@@ -60,4 +62,14 @@ export function progressColumns(pricing) {
     return price > 0 && row.pctPerBook != null ? formatSignedPct((row.pctPerBook / price) * (seconds ? 3600 : 1e6), 3) : '—';
   } });
   return columns;
+}
+
+/** Swaps' Apply: a row's changes (DTO-shaped, api/lib/swapSearch.js) onto the flat player in the store's shape; only the changed slots are written. */
+export function applySwapChanges(player, changes) {
+  const next = { ...player, equipment: { ...player.equipment }, food: [...player.food], drinks: [...player.drinks] };
+  for (const c of changes || []) {
+    if (c.kind === 'gear') next.equipment[c.slot] = c.item && { itemHrid: c.item.hrid, enhancementLevel: c.item.enhancementLevel };
+    else if (c.kind === 'food' || c.kind === 'drinks') next[c.kind][c.index] = c.item && { itemHrid: c.item.hrid, triggers: c.item.triggers };
+  }
+  return next;
 }

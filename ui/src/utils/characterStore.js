@@ -46,6 +46,9 @@ export const CHARACTER_KEYS = Object.freeze([
   'guildShrines',
   'personalBuffs',
   'abilityLevels',
+  // Optional [{ itemHrid, enhancementLevel, count }] from the last import
+  // (characterToStore.js); never in a DTO.
+  'inventory',
   'loadouts'
 ]);
 
@@ -159,6 +162,10 @@ export function sanitizeCharacter(raw) {
     // likewise optional and never defaulted.
     if (key === 'guildShrines' || key === 'game') {
       if (has(raw, key) && isObject(raw[key])) out[key] = raw[key];
+      continue;
+    }
+    if (key === 'inventory') {
+      if (Array.isArray(raw[key])) out[key] = raw[key];
       continue;
     }
     if (key === 'loadouts') continue;

@@ -177,15 +177,11 @@ export function CandidateOptimizerPanel({
   );
 }
 
-/** The Abilities tool's own options: one change at a time or a descent, and which slots to vary. */
-export function AbilitySearchOptions({ preview, config, onConfigChange, loading }) {
+/** One change at a time or a best-combination descent, and its passes: shared by Abilities and Swaps. */
+function SearchModeControls({ config, onConfigChange, loading }) {
   const setCfg = (patch) => onConfigChange?.({ ...config, ...patch });
-  const ticked = new Set(config.coordinates);
-  const toggle = (key) => setCfg({
-    coordinates: ticked.has(key) ? config.coordinates.filter((k) => k !== key) : [...config.coordinates, key]
-  });
   return (
-    <Stack gap={6}>
+    <>
       <SegmentedControl
         size="xs"
         fullWidth
@@ -198,7 +194,7 @@ export function AbilitySearchOptions({ preview, config, onConfigChange, loading 
         <NumberInput
           size="xs"
           label="Passes"
-          description="Each pass revisits every ticked slot and keeps only clear gains; it stops early on a pass that changes nothing."
+          description="Each pass revisits every slot and keeps only clear gains; it stops early on a pass that changes nothing."
           min={1}
           max={3}
           value={config.passes}
@@ -206,6 +202,20 @@ export function AbilitySearchOptions({ preview, config, onConfigChange, loading 
           disabled={loading}
         />
       )}
+    </>
+  );
+}
+
+/** The Abilities tool's own options: one change at a time or a descent, and which slots to vary. */
+export function AbilitySearchOptions({ preview, config, onConfigChange, loading }) {
+  const setCfg = (patch) => onConfigChange?.({ ...config, ...patch });
+  const ticked = new Set(config.coordinates);
+  const toggle = (key) => setCfg({
+    coordinates: ticked.has(key) ? config.coordinates.filter((k) => k !== key) : [...config.coordinates, key]
+  });
+  return (
+    <Stack gap={6}>
+      <SearchModeControls config={config} onConfigChange={onConfigChange} loading={loading} />
       {(preview?.slots || []).map((s) => (
         <Checkbox
           key={s.key}
@@ -250,6 +260,32 @@ export function ProgressOptions({ preview, config, onConfigChange, loading }) {
         <Text size="xs" c="dimmed">Probes: {probes.filter((p) => p.scannable).map((p) => p.label).join(', ')}.</Text>
       )}
       {probes.filter((p) => !p.scannable).map((p) => <Text key={p.id} size="xs" c="orange">{p.label}: {p.reason}</Text>)}
+    </Stack>
+  );
+}
+
+/** The Swaps tool's own options: one swap at a time or a descent, and which owned items to try, grouped by slot. */
+export function SwapOptions({ preview, config, onConfigChange, loading, allowed, onAllowedChange, hasInventory }) {
+  const groups = preview?.groups || [];
+  // `allowed` null = the server's defaults, read from the preview; the first tick turns them into an explicit list.
+  const ticked = new Set(allowed ?? groups.flatMap((g) => g.items.filter((item) => item.default).map((item) => item.hrid)));
+  const toggle = (hrid) => onAllowedChange([...ticked].filter((h) => h !== hrid).concat(ticked.has(hrid) ? [] : [hrid]));
+  return (
+    <Stack gap={6}>
+      <SearchModeControls config={config} onConfigChange={onConfigChange} loading={loading} />
+      {!hasInventory && (
+        <Text size="xs" c="orange">Import this character from the game (again) to list what it owns; until then only what it wears is known.</Text>
+      )}
+      {groups.map((g) => (
+        <Stack key={g.key} gap={2}>
+          <Text size="xs" fw={600}>{g.label} · now {g.current}</Text>
+          {g.items.map((item) => (
+            <Checkbox key={item.hrid} size="xs" label={item.label} checked={ticked.has(item.hrid)} onChange={() => toggle(item.hrid)} disabled={loading} />
+          ))}
+        </Stack>
+      ))}
+      {preview?.skipped > 0 && <Text size="xs" c="orange">{preview.skipped} more not tried: untick some items to fit them in.</Text>}
+      {preview?.refusal && <Text size="xs" c="orange">{preview.refusal}</Text>}
     </Stack>
   );
 }

@@ -14,10 +14,11 @@ import { BUILDS, toCsimPlayer } from '../bench/builds.mjs';
 import loadoutRoutes, { prepareLoadoutRun } from '../routes/optimizeLoadout.js';
 import abilityRoutes from '../routes/optimizeAbilities.js';
 import progressRoutes from '../routes/optimizeProgress.js';
+import swapRoutes from '../routes/optimizeSwaps.js';
 import { prepareEquipmentRun } from '../routes/optimizeEquipment.js';
 import { sanitiseFidelity } from '../lib/optimizerRoute.js';
 
-const { pickSubjectSlot, loadoutCandidates, progressColumns } = await import('../../ui/src/utils/candidateOptimizer.js');
+const { pickSubjectSlot, loadoutCandidates, progressColumns, applySwapChanges } = await import('../../ui/src/utils/candidateOptimizer.js');
 const { resolvePlayer } = await import('../../ui/src/utils/characterStore.js');
 const { toPlayerDTO } = await import('../../ui/src/utils/playerDTO.js');
 
@@ -85,6 +86,7 @@ async function serve(t) {
   app.use('/api', loadoutRoutes);
   app.use('/api', abilityRoutes);
   app.use('/api', progressRoutes);
+  app.use('/api', swapRoutes);
   const server = app.listen(0, '127.0.0.1');
   await new Promise((r) => server.once('listening', r));
   t.after(() => { server.closeAllConnections(); server.close(); });
@@ -236,4 +238,43 @@ test('progressColumns: cost and yield always; a book-price column only when the 
   const price = columns.find((c) => c.key === 'price');
   assert.equal(price.cell({ kind: 'ability', bookHrid: '/items/poke', pctPerBook: 0.001 }), '+0.050%');
   assert.equal(price.cell({ kind: 'stat', xpPerLevel: 1, pctPerMillionXp: 0.1 }), '—');
+});
+
+test('Swaps route end to end: owned consumables and gear, default ticks, deterministic', async (t) => {
+  const base = await serve(t);
+  const owned = [{ itemHrid: '/items/ultra_defense_coffee', enhancementLevel: 0, count: 2 },
+    { itemHrid: '/items/anchorbound_plate_body', enhancementLevel: 5, count: 1 }, { itemHrid: '/items/cursed_bow', enhancementLevel: 0, count: 1 }];
+  const body = { ...BASE_BODY, players: [melee], subjectIndex: 0, owned };
+  const preview = await (await post(`${base}/optimize-swaps/preview`, body)).json();
+  assert.equal(preview.success, true);
+  assert.equal(preview.candidates, 4); // the coffee into each of 3 drink slots, and the unrefined body (defense, as worn)
+  assert.equal(preview.workload.total, 10);
+  const twoHand = preview.groups.find((g) => g.key === '/equipment_types/two_hand');
+  assert.equal(twoHand.items.find((i) => i.hrid === '/items/cursed_bow').default, false);
+
+  const result = assertRunShape(await frames(`${base}/optimize-swaps`, body));
+  assert.equal(result.rows.length, 4);
+  for (const row of result.rows) assert.ok(row.changes?.length, row.id);
+  const again = assertRunShape(await frames(`${base}/optimize-swaps`, body));
+  assert.deepEqual(again.rows, result.rows);
+});
+
+test('applySwapChanges writes only the changed slots, in the store\'s shape, without mutating the player', () => {
+  const sword = { itemHrid: '/items/regal_sword', enhancementLevel: 3 };
+  const body = { itemHrid: '/items/anchorbound_plate_body', enhancementLevel: 5 };
+  const player = { equipment: { '/equipment_types/two_hand': { itemHrid: '/items/cursed_bow', enhancementLevel: 0 }, '/equipment_types/body': body },
+    food: [{ itemHrid: '/items/donut', triggers: [] }, null, null], drinks: [null, null, null], abilities: [] };
+  const frozen = JSON.stringify(player);
+  const next = applySwapChanges(player, [
+    { kind: 'gear', slot: '/equipment_types/main_hand', from: null, item: { hrid: sword.itemHrid, enhancementLevel: 3 } },
+    { kind: 'gear', slot: '/equipment_types/two_hand', from: '/items/cursed_bow', item: null },
+    { kind: 'drinks', index: 1, from: null, item: { hrid: '/items/defense_coffee', triggers: [{ x: 1 }] } },
+  ]);
+  assert.deepEqual(next.equipment['/equipment_types/main_hand'], sword);
+  assert.equal(next.equipment['/equipment_types/two_hand'], null);
+  assert.deepEqual(next.drinks[1], { itemHrid: '/items/defense_coffee', triggers: [{ x: 1 }] });
+  assert.equal(next.equipment['/equipment_types/body'], body);
+  assert.equal(next.food[0], player.food[0]);
+  assert.equal(next.abilities, player.abilities);
+  assert.equal(JSON.stringify(player), frozen);
 });

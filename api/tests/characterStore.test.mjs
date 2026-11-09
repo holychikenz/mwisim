@@ -556,3 +556,11 @@ test('legacy trigger memory: a stored [] for an ability not slotted in that load
   assert.equal(__store.has('csim_characters'), false);
   __store.clear();
 });
+
+test('inventory is optional: absent stays absent, a non-array is dropped, a list is kept; never in a player', () => {
+  assert.ok(!('inventory' in sanitizeCharacter(character())));
+  assert.ok(!('inventory' in sanitizeCharacter(character({ inventory: { a: 1 } }))));
+  const inventory = [{ itemHrid: '/items/donut', enhancementLevel: 0, count: 3 }];
+  assert.deepEqual(sanitizeCharacter(character({ inventory })).inventory, inventory);
+  assert.ok(!('inventory' in resolvePlayer(character({ inventory }), loadout())));
+});

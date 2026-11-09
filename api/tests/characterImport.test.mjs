@@ -815,3 +815,35 @@ test('game.name is the in-game name, not the webapp label; a rename follows it',
   assert.equal(stored.name, 'chikenz');
   assert.deepEqual(stored.game, { id: 4242, name: 'chikenz' });
 });
+
+test('the import keeps what the character owns that combat could use: hrid, enhancement and count only', () => {
+  const item = (equipmentDetail) => ({ equipmentDetail });
+  const gameData = { items: {
+    '/items/donut': { categoryHrid: '/item_categories/food', consumableDetail: { usableInActionTypeMap: { '/action_types/combat': true } } },
+    '/items/wisdom_tea': { categoryHrid: '/item_categories/drink', consumableDetail: { usableInActionTypeMap: { '/action_types/milking': true } } },
+    '/items/cheese_sword': item({ type: '/equipment_types/main_hand', levelRequirements: [{ skillHrid: '/skills/melee', level: 120 }] }),
+    '/items/small_pouch': item({ type: '/equipment_types/pouch', levelRequirements: [{ skillHrid: '/skills/total_level', level: 1 }] }),
+    '/items/giant_pouch': item({ type: '/equipment_types/pouch', levelRequirements: [{ skillHrid: '/skills/total_level', level: 750 }] }),
+    '/items/cheese_brush': item({ type: '/equipment_types/milking_tool', levelRequirements: [] }),
+    '/items/cheese': { categoryHrid: '/item_categories/resource' },
+  } };
+  const own = (itemHrid, count = 1, extra = {}) => ({ id: 9, characterID: 7, hash: 'h', itemLocationHrid: '/item_locations/inventory', itemHrid, enhancementLevel: 2, count, ...extra });
+  const payload = { ...char, characterSkills: [...char.characterSkills, { skillHrid: '/skills/total_level', level: 600 }],
+    characterItems: [own('/items/donut', 40), own('/items/wisdom_tea'), own('/items/cheese_sword'), own('/items/small_pouch'),
+      own('/items/giant_pouch'), own('/items/cheese_brush'), own('/items/cheese', 500), own('/items/donut', 0)] };
+  const { character } = characterToCharacter(payload, gameData, 'holychikenz');
+  assert.deepEqual(character.inventory.map((e) => e.itemHrid), ['/items/donut', '/items/cheese_sword', '/items/small_pouch']);
+  for (const entry of character.inventory) assert.deepEqual(Object.keys(entry).sort(), ['count', 'enhancementLevel', 'itemHrid']);
+  assert.deepEqual(character.inventory[0], { itemHrid: '/items/donut', enhancementLevel: 2, count: 40 });
+});
+
+test('a payload without characterItems carries no inventory, and a re-import from it keeps the stored one', () => {
+  assert.equal('inventory' in result.character, false);
+  const stored = [{ itemHrid: '/items/donut', enhancementLevel: 0, count: 3 }];
+  const first = mergeImportedCharacter(emptyStore(), { ...result.character, inventory: stored });
+  const kept = mergeImportedCharacter(first.store, characterToCharacter(char, null, 'holychikenz').character, { id: first.id });
+  assert.deepEqual(kept.store.characters[first.id].inventory, stored);
+  const fresh = characterToCharacter({ ...char, characterItems: [{ itemHrid: '/items/cupcake', enhancementLevel: 0, count: 1 }] }, null, 'holychikenz').character;
+  const replaced = mergeImportedCharacter(kept.store, fresh, { id: first.id });
+  assert.deepEqual(replaced.store.characters[first.id].inventory, [{ itemHrid: '/items/cupcake', enhancementLevel: 0, count: 1 }]);
+});
