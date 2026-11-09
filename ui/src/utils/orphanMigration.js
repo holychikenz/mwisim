@@ -39,6 +39,7 @@
 // =============================================================================
 
 import {
+  dropLegacyEmptyMemory,
   loadCharacters,
   makeCharacterId,
   saveCharacters,
@@ -165,7 +166,8 @@ export function buildOrphanCharacters(blob, store) {
       skipped += 1;
       continue;
     }
-    const { character, loadout } = splitPlayer(entry.player);
+    // csim_loadouts predates [] meaning "cast whenever ready".
+    const { character, loadout } = splitPlayer(dropLegacyEmptyMemory(entry.player));
     const fp = fingerprintCharacter(character);
     let group = groups.get(fp);
     if (!group) {

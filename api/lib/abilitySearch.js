@@ -117,9 +117,11 @@ export function estimateDescent(ctx, coordinates, passes, { hours, replicates })
   return descentWorkload(perPass, passes, { hours, replicates });
 }
 
+/** A trigger list as data: each trigger's keys sorted (the order they were written in is not), the list's order kept. */
+const triggersKey = (list) => JSON.stringify(Array.isArray(list) ? list.map((t) => Object.entries(t ?? {}).sort()) : null);
 /** Same ability with the same triggers. A descent can end on the starting abilities with other triggers (one swapped out
  *  and back in comes back with its remembered or default ones), and that is a change worth offering. */
-const sameSlot = (a, b) => JSON.stringify([a?.hrid ?? null, a?.triggers ?? null]) === JSON.stringify([b?.hrid ?? null, b?.triggers ?? null]);
+const sameSlot = (a, b) => (a?.hrid ?? null) === (b?.hrid ?? null) && triggersKey(a?.triggers) === triggersKey(b?.triggers);
 
 /** The descent's answer as one candidate against the true start (ctx.abilities), or null when it ended exactly there. */
 export function bestCandidate(ctx, abilities) {

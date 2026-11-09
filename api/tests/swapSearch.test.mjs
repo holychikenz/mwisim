@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { COORDINATES, candidatesAt, swapContext, swapGroups } from '../lib/swapSearch.js';
+import { COORDINATES, candidatesAt, estimateSwapDescent, swapContext, swapGroups } from '../lib/swapSearch.js';
 import { prepareSwapRun, runSwapSearch } from '../routes/optimizeSwaps.js';
 
 const { itemDetailMap } = await import('../../src/combatsimulator/dataProvider.js');
@@ -68,7 +68,7 @@ test('weapons: no off hand under a two-hander; a main hand clears it and a two-h
   const [sword] = candidatesAt(ctx.start, E('main_hand'), ctx);
   assert.equal(sword.state.equipment[E('two_hand')], undefined);
   assert.deepEqual(candidatesAt(sword.state, E('off_hand'), ctx).map((c) => c.state.equipment[E('off_hand')].hrid), [I('knights_aegis')]);
-  const [bulwark] = candidatesAt(sword.state, E('two_hand'), ctx);
+  const bulwark = candidatesAt(sword.state, E('two_hand'), ctx).find((c) => c.id.endsWith('griffin_bulwark'));
   assert.equal(bulwark.state.equipment[E('main_hand')], undefined);
   assert.equal(bulwark.state.equipment[E('off_hand')], undefined);
 });
@@ -123,4 +123,43 @@ test('the descent climbs to the best combination and is confirmed against the st
   assert.deepEqual(state.drinks.map((d) => d?.hrid ?? null), [I('defense_coffee'), I('attack_coffee'), null]);
   assert.equal(result.baseline.metrics.encountersPerHour, 100);
   assert.ok(result.simulationsRun <= p.workload.total, `${result.simulationsRun} > ${p.workload.total}`);
+});
+
+test('a starting item is always tried, ticked or not, so a descent can put it back', () => {
+  const allowed = new Set([I('maelstrom_plate_body'), I('defense_coffee')]);
+  const ctx = swapContext(subject(), [own('maelstrom_plate_body'), own('defense_coffee')], { allowed });
+  const [body] = candidatesAt(ctx.start, E('body'), ctx);
+  assert.deepEqual(candidatesAt(body.state, E('body'), ctx).map((c) => c.state.equipment[E('body')]),
+    [{ hrid: I('anchorbound_plate_body'), enhancementLevel: 5 }]);
+  const [coffee] = candidatesAt(ctx.start, 'drinks:0', ctx);
+  assert.deepEqual(candidatesAt(coffee.state, 'drinks:0', ctx).map((c) => c.state.drinks[0].hrid), [I('stamina_coffee')]);
+});
+
+test('a starting consumable swapped out and back keeps the user\'s own triggers, not the game defaults', () => {
+  const mine = [{ dependencyHrid: '/combat_trigger_dependencies/self', conditionHrid: '/combat_trigger_conditions/current_hp', comparatorHrid: '/combat_trigger_comparators/less_than_equal', value: 1 }];
+  const ctx = swapContext(subject({ drinks: [{ hrid: I('stamina_coffee'), triggers: mine }, null, null] }), [own('defense_coffee')]);
+  const [coffee] = candidatesAt(ctx.start, 'drinks:0', ctx);
+  assert.deepEqual(candidatesAt(coffee.state, 'drinks:0', ctx).map((c) => c.state.drinks[0]), [{ hrid: I('stamina_coffee'), triggers: mine }]);
+});
+
+test('under a costed objective an unpriced consumable is not ticked by default and says so; a cost of 0 is a price', () => {
+  const owned = [own('defense_coffee'), own('attack_coffee')];
+  const at = (extra) => prepareSwapRun({ ...BASE, simPlayers: [subject()], objective: 'effectiveEncountersPerHour',
+    consumableCosts: { [I('defense_coffee')]: 0 }, ...extra }, { owned });
+  const costed = at({});
+  const drinks = costed.echo.groups.find((g) => g.key === 'drinks').items;
+  const attack = drinks.find((i) => i.hrid === I('attack_coffee'));
+  assert.equal(attack.default, false);
+  assert.match(attack.label, /no price/);
+  assert.equal(drinks.find((i) => i.hrid === I('defense_coffee')).default, true);
+  assert.deepEqual(costed.candidates.map((c) => c.id), [`drinks:0:${I('defense_coffee')}`]);
+  // Raw EPH ignores prices, and with nothing priced effective EPH is EPH: every consumable stays ticked.
+  for (const extra of [{ objective: 'encountersPerHour' }, { consumableCosts: null }]) assert.equal(at(extra).candidates.length, 2);
+});
+
+test('the descent estimate counts the off hand only where candidatesAt can offer one', () => {
+  const allowed = new Set([I('knights_aegis'), I('regal_sword')]);
+  const perPass = (names) => estimateSwapDescent(swapContext(subject(), names.map((n) => own(n)), { allowed }), 1, BASE.scan).candidates;
+  assert.equal(perPass(['knights_aegis']), perPass([])); // under the bow, and nothing to clear it
+  assert.equal(perPass(['knights_aegis', 'regal_sword']), perPass(['regal_sword']) + 2); // a main hand clears it
 });

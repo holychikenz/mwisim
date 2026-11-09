@@ -191,3 +191,12 @@ test('best combination: ending on the starting abilities with other triggers is 
   assert.equal(result.baseline.metrics.encountersPerHour, 110); // the true start, not the last ranking's
   assert.equal(result.rows[0].delta, 20);
 });
+
+test('bestCandidate: the same triggers with their keys in another order are no change; another list order is', () => {
+  const reordered = Object.fromEntries(Object.entries(TRIGGER).reverse());
+  const other = { ...TRIGGER, value: 2 };
+  const ctx = abilityContext({ intelligenceLevel: 90, abilities: [null, { hrid: A('poke'), level: 1, triggers: [TRIGGER, other] }, null, null, null] }, owned('poke'));
+  const at = (triggers) => bestCandidate(ctx, [null, { hrid: A('poke'), level: 1, triggers }, null, null, null]);
+  assert.equal(at([reordered, other]), null);
+  assert.match(at([other, TRIGGER]).label, /Poke, other triggers/);
+});

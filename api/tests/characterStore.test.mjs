@@ -47,6 +47,7 @@ const {
 } = await import('../../ui/src/utils/refRepair.js');
 const { ownsShrines } = await import('../../ui/src/utils/guildBuffs.js');
 const { toPlayerDTO } = await import('../../ui/src/utils/playerDTO.js');
+const { exportFormatToPlayer, playerToExportFormat } = await import('../../ui/src/utils/importSet.js');
 
 const TRIGGER = { dependencyHrid: '/combat_trigger_dependencies/self' };
 const SWORD = { itemHrid: '/items/cheese_sword', enhancementLevel: 4 };
@@ -563,4 +564,19 @@ test('inventory is optional: absent stays absent, a non-array is dropped, a list
   const inventory = [{ itemHrid: '/items/donut', enhancementLevel: 0, count: 3 }];
   assert.deepEqual(sanitizeCharacter(character({ inventory })).inventory, inventory);
   assert.ok(!('inventory' in resolvePlayer(character({ inventory }), loadout())));
+});
+
+test('legacy trigger memory: a set exported before the [] rule loses its unslotted []; a set stamped since keeps them; levels stay', () => {
+  const abilityMemory = {
+    '/abilities/smack': { level: 12, triggers: [] },
+    '/abilities/cleave': { level: 8, triggers: [] },
+    '/abilities/maim': { level: 3, triggers: [TRIGGER] }
+  };
+  const set = { player: {}, abilities: [{ abilityHrid: '/abilities/smack', level: 12 }], abilityMemory };
+  const old = splitPlayer(exportFormatToPlayer(set, 1));
+  assert.deepEqual(old.loadout.triggerMemory, { '/abilities/smack': [], '/abilities/maim': [TRIGGER] });
+  assert.equal(old.character.abilityLevels['/abilities/cleave'], 8);
+  const stamped = splitPlayer(exportFormatToPlayer({ ...set, abilityMemoryVersion: 2 }, 1));
+  assert.deepEqual(stamped.loadout.triggerMemory['/abilities/cleave'], []);
+  assert.equal(playerToExportFormat(resolvePlayer(character(), loadout()), 'z', 0, 24).abilityMemoryVersion, 2);
 });

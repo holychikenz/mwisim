@@ -265,9 +265,10 @@ export function ProgressOptions({ preview, config, onConfigChange, loading }) {
 }
 
 /** The Swaps tool's own options: one swap at a time or a descent, and which owned items to try, grouped by slot. */
-export function SwapOptions({ preview, config, onConfigChange, loading, allowed, onAllowedChange, hasInventory }) {
+export function SwapOptions({ preview, config, onConfigChange, loading, allowed, onAllowedChange, hasInventory, ready }) {
   const groups = preview?.groups || [];
-  // `allowed` null = the server's defaults, read from the preview; the first tick turns them into an explicit list.
+  // `allowed` null = the server's defaults, read from the preview; the first tick turns them into an explicit list,
+  // so it waits until the preview answers this payload (`ready`): the groups on screen may be another subject's.
   const ticked = new Set(allowed ?? groups.flatMap((g) => g.items.filter((item) => item.default).map((item) => item.hrid)));
   const toggle = (hrid) => onAllowedChange([...ticked].filter((h) => h !== hrid).concat(ticked.has(hrid) ? [] : [hrid]));
   return (
@@ -280,7 +281,8 @@ export function SwapOptions({ preview, config, onConfigChange, loading, allowed,
         <Stack key={g.key} gap={2}>
           <Text size="xs" fw={600}>{g.label} · now {g.current}</Text>
           {g.items.map((item) => (
-            <Checkbox key={item.hrid} size="xs" label={item.label} checked={ticked.has(item.hrid)} onChange={() => toggle(item.hrid)} disabled={loading} />
+            <Checkbox key={item.hrid} size="xs" label={item.label} checked={ticked.has(item.hrid)} onChange={() => toggle(item.hrid)}
+              disabled={loading || (allowed == null && !ready)} />
           ))}
         </Stack>
       ))}

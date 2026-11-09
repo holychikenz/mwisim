@@ -847,3 +847,12 @@ test('a payload without characterItems carries no inventory, and a re-import fro
   const replaced = mergeImportedCharacter(kept.store, fresh, { id: first.id });
   assert.deepEqual(replaced.store.characters[first.id].inventory, [{ itemHrid: '/items/cupcake', enhancementLevel: 0, count: 1 }]);
 });
+
+test("csim_loadouts predates the [] rule: an unslotted ability's [] is dropped, a slotted one's kept, levels untouched", () => {
+  localStorage.clear();
+  localStorage.setItem(LEGACY_LOADOUTS_KEY, JSON.stringify(LEGACY_BLOB));
+  const two = migrateLegacyLoadouts(emptyStore()).store.characters.orphan_2;
+  assert.deepEqual(two.loadouts.tank.triggerMemory, { '/abilities/smack': SMACK_TRIGGERS });
+  assert.deepEqual(two.loadouts.sword.triggerMemory, { '/abilities/cleave': [] });
+  assert.deepEqual(two.abilityLevels, { '/abilities/cleave': 8, '/abilities/smack': 12 });
+});

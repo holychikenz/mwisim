@@ -50,6 +50,8 @@ export function useOptimizerRun({ endpoint, kind, name }) {
   const { results, stale, publish, begin, clear } = useRunResults();
   const [error, setError] = useState(null);
   const [preview, setPreview] = useState(null);
+  // The payload the shown preview answers: a panel that seeds state from it can tell when it is stale.
+  const [previewFor, setPreviewFor] = useState(null);
   const [previewing, setPreviewing] = useState(false);
   const [apiReachable, setApiReachable] = useState(null); // null = not yet checked
 
@@ -109,6 +111,7 @@ export function useOptimizerRun({ endpoint, kind, name }) {
       }
       if (!isLatest()) return null;
       setPreview(body);
+      setPreviewFor(payload);
       setApiReachable(true);
       return body;
     } catch (caught) {
@@ -289,6 +292,7 @@ export function useOptimizerRun({ endpoint, kind, name }) {
     stale,
     error,
     preview,
+    previewFor,
     previewing,
     apiReachable,
     fetchPreview,

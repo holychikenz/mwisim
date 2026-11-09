@@ -42,10 +42,11 @@ export const labelOf = (coordinate) => { const c = parse(coordinate); return c.k
 
 /**
  * The subject's start ({ equipment, food, drinks }, three of each), what it owns by slot (pool: sorted hrids), the
- * highest enhancement owned per piece, and which items are tried: `allowed` (a Set of hrids) when posted, else the
- * defaults — every owned food and drink, and gear needing the same skills as the slot's item now (empty slot: none).
+ * highest enhancement owned per piece, and which items are tried: what it starts with, plus `allowed` (a Set of
+ * hrids) when posted, else the defaults — every owned food and drink, and gear needing the same skills as the slot's
+ * item now (empty slot: none). `unpriced(hrid)`: a consumable the objective would count as free, so never a default.
  */
-export function swapContext(subject, owned, { allowed = null, consumables = true } = {}) {
+export function swapContext(subject, owned, { allowed = null, consumables = true, unpriced = null } = {}) {
   const three = (list) => [0, 1, 2].map((i) => list?.[i] ?? null);
   const start = { equipment: { ...(subject?.equipment || {}) }, food: three(subject?.food), drinks: three(subject?.drinks) };
   const best = new Map();
@@ -66,8 +67,11 @@ export function swapContext(subject, owned, { allowed = null, consumables = true
     const slot = detail.equipmentDetail?.type;
     if (SLOT_LABELS[slot] && meets(detail)) (pool[slot] ??= []).push(hrid);
   }
-  const isDefault = (key, hrid) => !!KIND_LABELS[key] || (!!start.equipment[key] && requirementKey(hrid) === requirementKey(start.equipment[key].hrid));
-  return { start, best, pool, isDefault, tried: (key, hrid) => (allowed ? allowed.has(hrid) : isDefault(key, hrid)) };
+  const isDefault = (key, hrid) => (KIND_LABELS[key] ? !unpriced?.(hrid)
+    : !!start.equipment[key] && requirementKey(hrid) === requirementKey(start.equipment[key].hrid));
+  // What it starts with is always tried, ticked or not (the panel lists only the alternatives): a descent may put it back.
+  const startItems = new Set([...Object.values(start.equipment), ...start.food, ...start.drinks].map((x) => x?.hrid));
+  return { start, best, pool, isDefault, unpriced, tried: (key, hrid) => startItems.has(hrid) || (allowed ? allowed.has(hrid) : isDefault(key, hrid)) };
 }
 
 const consumed = (hrid) => ({ hrid, triggers: (itemDetailMap[hrid].consumableDetail.defaultCombatTriggers || []).map((t) => ({ ...t })) });
@@ -94,7 +98,7 @@ export function candidatesAt(state, coordinate, ctx) {
     if (index >= slotsOf(state.equipment[POUCH]?.hrid, kind)) return [];
     const used = new Set(state[kind].filter(Boolean).map((c) => c.hrid));
     return ctx.pool[kind].filter((hrid) => !used.has(hrid) && ctx.tried(kind, hrid)).map((hrid) =>
-      candidate(`${coordinate}:${hrid}`, state, { ...state, [kind]: state[kind].map((c, i) => (i === index ? consumed(hrid) : c)) }));
+      candidate(`${coordinate}:${hrid}`, state, { ...state, [kind]: state[kind].map((c, i) => (i === index ? (ctx.start[kind].find((s) => s?.hrid === hrid) ?? consumed(hrid)) : c)) }));
   }
   if (slot === OFF && state.equipment[TWO]) return [];
   return (ctx.pool[slot] || []).filter((hrid) => hrid !== state.equipment[slot]?.hrid && ctx.tried(slot, hrid)).map((hrid) => {
@@ -104,13 +108,18 @@ export function candidatesAt(state, coordinate, ctx) {
   });
 }
 
-/** An upper bound on a descent, in estimateWorkload's shape: a coordinate never offers more than every tried item it can take, and a consumable slot counts as open if any tried pouch opens it. */
+/**
+ * An upper bound on a descent, in estimateWorkload's shape: a coordinate never offers more than every tried item it
+ * can take; a consumable slot counts as open if any tried pouch opens it, and the off hand under a two-hander only if a
+ * main hand (which clears the two-hander) is tried, as candidatesAt offers them.
+ */
 export function estimateSwapDescent(ctx, passes, scan) {
   const tried = (key) => (ctx.pool[key] || []).filter((hrid) => ctx.tried(key, hrid)).length;
   const pouches = [ctx.start.equipment[POUCH]?.hrid, ...(ctx.pool[POUCH] || []).filter((hrid) => ctx.tried(POUCH, hrid))];
+  const offClosed = !!ctx.start.equipment[TWO] && !tried(MAIN);
   const perPass = COORDINATES.reduce((sims, coordinate) => {
     const { kind, index, slot } = parse(coordinate);
-    const count = kind ? (pouches.some((p) => index < slotsOf(p, kind)) ? tried(kind) : 0) : tried(slot);
+    const count = kind ? (pouches.some((p) => index < slotsOf(p, kind)) ? tried(kind) : 0) : slot === OFF && offClosed ? 0 : tried(slot);
     return count ? sims + count + 1 : sims;
   }, 0);
   return descentWorkload(perPass, passes, scan);
@@ -121,7 +130,8 @@ export function swapGroups(ctx) {
   const consumables = ['food', 'drinks'].map((kind) => {
     const slotted = new Set(ctx.start[kind].filter(Boolean).map((c) => c.hrid));
     return { key: kind, label: kind === 'food' ? 'Food' : 'Drinks', current: [...slotted].map(nameOf).join(', ') || 'none',
-      items: ctx.pool[kind].filter((hrid) => !slotted.has(hrid)).map((hrid) => ({ hrid, label: nameOf(hrid), default: ctx.isDefault(kind, hrid) })) };
+      items: ctx.pool[kind].filter((hrid) => !slotted.has(hrid)).map((hrid) => ({ hrid,
+        label: ctx.unpriced?.(hrid) ? `${nameOf(hrid)} · no price` : nameOf(hrid), default: ctx.isDefault(kind, hrid) })) };
   });
   const gear = GEAR.map((slot) => {
     const now = ctx.start.equipment[slot];
@@ -134,6 +144,6 @@ export function swapGroups(ctx) {
 
 /** The descent's answer as one candidate against the start, or null when it ended there. */
 export function bestSwap(ctx, state) {
-  const changes = changesBetween(ctx.start, state);
-  return changes.length ? { id: 'best', label: describe(changes), state, changes } : null;
+  const best = candidate('best', ctx.start, state);
+  return best.changes.length ? best : null;
 }

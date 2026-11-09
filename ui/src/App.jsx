@@ -72,6 +72,7 @@ import {
 } from './utils/roster';
 import {
   createCharacter,
+  dropLegacyEmptyMemory,
   emptyStore,
   loadCharacters,
   mainCharacter,
@@ -1076,7 +1077,8 @@ function App() {
       let next = prev;
       for (const [buildId, build] of Object.entries(builds)) {
         if (!build || typeof build !== 'object') continue;
-        const { character, loadout } = splitPlayer(build);
+        // A roster without abilityMemoryVersion holds the old coerced [] (characterStore.js).
+        const { character, loadout } = splitPlayer(dropLegacyEmptyMemory(build, data));
         // Merge loadouts only: upsertCharacter replaces, and a re-import must not wipe
         // saved loadouts. Not mergeImportedCharacter: a roster build carries no
         // guildShrines (SCLIRoster omits them on purpose) and must keep falling back
@@ -1812,7 +1814,8 @@ function App() {
         <CandidateOptimizerPanel {...subjectPanelProps(swapOpt, swapOptConfig, setSwapOptConfig, costRows)} title="Swaps"
           blurb="Tries the food, drinks and gear this character owns (and can wear), one swap at a time or the best combination, against the current setup on shared seeds.">
           <SwapOptions preview={swapOpt.preview} config={swapOptConfig} onConfigChange={setSwapOptConfig} loading={swapOpt.loading}
-            allowed={swapAllowed} onAllowedChange={(allowed) => setSwapPick({ key: swapKey, allowed })} hasInventory={!!swapInventory} />
+            allowed={swapAllowed} onAllowedChange={(allowed) => setSwapPick({ key: swapKey, allowed })} hasInventory={!!swapInventory}
+            ready={swapOpt.previewFor === swapOptPayload} />
         </CandidateOptimizerPanel>
       ),
       results: (r, onClear) => (

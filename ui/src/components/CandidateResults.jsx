@@ -1,5 +1,5 @@
 import { Alert, Badge, Button, Group, Stack, Table, Text, Title } from '@mantine/core';
-import { formatPct, formatSignedPct } from '../utils/equipmentOptimizer';
+import { formatPct, formatSignedPct, verdictOf } from '../utils/equipmentOptimizer';
 import { ClearResultsButton, NumTd, VerdictBadge } from './ResultParts';
 
 // =============================================================================
@@ -37,8 +37,6 @@ const OBJECTIVE_NAMES = {
 
 const fmt = (value) => (Number.isFinite(value) ? value.toFixed(2) : '—');
 const formatP = (p) => (p == null || !Number.isFinite(p) ? '—' : p < 0.001 ? '<0.001' : p.toFixed(3));
-/** perLevel on a scan row (scanEquipment), delta on a whole-candidate row (rankCandidates). */
-const gainOf = (row) => row.perLevel ?? row.delta;
 const formatDelta = (row) => {
   if ('perLevel' in row) {
     return row.perLevelPct == null ? fmt(row.perLevel) : `${formatSignedPct(row.perLevelPct, 3)} ±${formatPct(row.perLevelMarginPct, 3)}`;
@@ -54,7 +52,7 @@ export function CandidateResults({ results, title, currentLabel, applyLabel = 'A
   const rows = results.rows || [];
   const objectiveName = OBJECTIVE_NAMES[results.objective] || results.objective;
   const perLevel = rows.some((row) => 'perLevel' in row);
-  const best = rows.find((row) => row.significantFamilywise && gainOf(row) > 0);
+  const best = rows.find((row) => verdictOf(row) === 'strong-gain');
   // The run's own alpha (the panel's significance level), so the caption names the interval ± really is.
   const confidence = Number(((1 - results.alpha) * 100).toFixed(2));
 

@@ -4,6 +4,7 @@
 // users. Consumed by ImportExport.jsx (clipboard) and mwixBridge.js
 // (in-game "Open in csim" hash payloads).
 // =============================================================================
+import { ABILITY_MEMORY_VERSION, dropLegacyEmptyMemory } from './characterStore.js';
 
 // Convert internal player state to export format (compatible with old UI)
 export function playerToExportFormat(player, zone, difficultyTier, duration) {
@@ -87,10 +88,12 @@ export function playerToExportFormat(player, zone, difficultyTier, duration) {
     // `abilityMemory` travels too, even though only five abilities are slotted:
     // it is what makes swapping an ability back restore the level and triggers
     // it had, and a set that dropped it would quietly forget everything the
-    // moment it made a round trip through the clipboard.
+    // moment it made a round trip through the clipboard. Its version says a []
+    // in it is deliberate (characterStore.js ABILITY_MEMORY_VERSION).
     guildShrines: player.guildShrines || {},
     personalBuffs: player.personalBuffs || [],
-    abilityMemory: player.abilityMemory || {}
+    abilityMemory: player.abilityMemory || {},
+    abilityMemoryVersion: ABILITY_MEMORY_VERSION
   };
 }
 
@@ -188,5 +191,6 @@ export function exportFormatToPlayer(data, playerId) {
     }
   }
 
-  return player;
+  // A set without the version holds the old coerced [] for every trained ability.
+  return dropLegacyEmptyMemory(player, data);
 }

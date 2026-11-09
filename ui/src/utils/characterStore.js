@@ -567,6 +567,18 @@ export function loadCharacters() {
 export const TRIGGER_MEMORY_MARKER_KEY = 'csim_characters.triggerMemoryCleaned';
 
 /**
+ * Stamped on exported sets and rosters (importSet.js, GuildTrialPanel.jsx):
+ * their abilityMemory was written under the [] rule, so a [] in it is deliberate.
+ */
+export const ABILITY_MEMORY_VERSION = 2;
+
+/** The old coercion's mark in one loadout: a [] remembered for an ability not slotted there. */
+function coercedEmpty(abilities) {
+  const slotted = new Set((Array.isArray(abilities) ? abilities : []).map(a => a?.hrid).filter(Boolean));
+  return (hrid, triggers) => !slotted.has(hrid) && Array.isArray(triggers) && triggers.length === 0;
+}
+
+/**
  * Before [] meant "cast whenever ready", every sheet edit wrote [] into
  * triggerMemory for every trained ability never set up in that loadout. Those
  * cannot be told from a deliberate [], so the old reading (the game's defaults)
@@ -580,14 +592,27 @@ export function dropLegacyEmptyTriggers(store) {
     const loadouts = {};
     for (const [name, l] of Object.entries(c.loadouts)) {
       if (!isObject(l?.triggerMemory)) { loadouts[name] = l; continue; }
-      const slotted = new Set((Array.isArray(l.abilities) ? l.abilities : []).map(a => a?.hrid).filter(Boolean));
-      const triggerMemory = Object.fromEntries(Object.entries(l.triggerMemory)
-        .filter(([hrid, t]) => slotted.has(hrid) || !(Array.isArray(t) && t.length === 0)));
+      const legacy = coercedEmpty(l.abilities);
+      const triggerMemory = Object.fromEntries(Object.entries(l.triggerMemory).filter(([hrid, t]) => !legacy(hrid, t)));
       loadouts[name] = { ...l, triggerMemory };
     }
     characters[id] = { ...c, loadouts };
   }
   return { ...store, characters };
+}
+
+/**
+ * The same rule on a flat player from outside the store: an exported set or
+ * roster (`from`) not stamped with ABILITY_MEMORY_VERSION, or a csim_loadouts
+ * entry (no `from`). An unslotted ability's [] becomes never set; its level
+ * stays. Pure.
+ */
+export function dropLegacyEmptyMemory(player, from) {
+  if (from?.abilityMemoryVersion >= ABILITY_MEMORY_VERSION || !isObject(player?.abilityMemory)) return player;
+  const legacy = coercedEmpty(player.abilities);
+  const abilityMemory = Object.fromEntries(Object.entries(player.abilityMemory)
+    .map(([hrid, entry]) => [hrid, legacy(hrid, entry?.triggers) ? { level: entry.level } : entry]));
+  return { ...player, abilityMemory };
 }
 
 /** dropLegacyEmptyTriggers at most once ever, saved (when there was a stored blob) before the marker is written. */
