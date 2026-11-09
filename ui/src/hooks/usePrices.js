@@ -309,10 +309,14 @@ export function usePrices(gameData, main = null) {
     }
   }, [source, ironCharacter, gameData, nextIron, nextFetch]);
 
-  // Switching source clears only the error; cached entries survive.
+  // Switching source clears the error and ends the old source's manual fetch: its late
+  // error or finish no longer reaches this one (its reply still fills its own cache).
+  // Cached entries survive.
   useEffect(() => {
+    nextFetch();
     setError(null);
-  }, [source]);
+    setFetching(false);
+  }, [source, nextFetch]);
 
   // Following the main character — the one automatic fetch (see the header).
   // `followed`: the webapp name last acted on this session (loop guard).

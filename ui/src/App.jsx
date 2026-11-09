@@ -760,11 +760,17 @@ function App() {
    */
   const handleImportCharacter = useCallback((slotId, character, defaultLoadoutName) => {
     // Where it lands depends on the base now (game-id match), so the pure preview
-    // names the record and the write is pinned to it: the slot binding holds even
-    // if the base moved during the fetch — the write lands on that id verbatim (third argument).
+    // names the record and the write is pinned to it (third argument), unless that
+    // record has since become another game character's: the merge then lands elsewhere,
+    // and the slot follows it. React runs this updater before party's, declared after.
     const preview = mergeImportedCharacter(characters, character);
     const { id } = preview;
-    setCharacters(prev => mergeImportedCharacter(prev, character, { id }).store);
+    let landed = id;
+    setCharacters(prev => {
+      const merged = mergeImportedCharacter(prev, character, { id });
+      landed = merged.id;
+      return merged.store;
+    });
 
     // Which loadout to bind depends only on the INCOMING character, never on
     // the base: the merge is a union, so any loadout the import carries is in
@@ -774,7 +780,7 @@ function App() {
       ? defaultLoadoutName
       : Object.keys(incoming)[0];
     if (loadoutName) {
-      setParty(prev => ({ ...prev, [slotId]: { characterId: id, loadoutName } }));
+      setParty(prev => ({ ...prev, [slotId]: { characterId: landed, loadoutName } }));
     }
 
     // The notice is COSMETIC, so it may be computed against the snapshot: in
