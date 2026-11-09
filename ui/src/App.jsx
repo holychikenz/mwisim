@@ -27,6 +27,8 @@ import { useSimulation } from './hooks/useSimulation';
 import { useAllZones } from './hooks/useAllZones';
 import { useTriggerOptimizer } from './hooks/useTriggerOptimizer';
 import { useEquipmentOptimizer } from './hooks/useEquipmentOptimizer';
+import { useLoadoutOptimizer } from './hooks/useLoadoutOptimizer';
+import { useAbilityOptimizer } from './hooks/useAbilityOptimizer';
 import { usePrices } from './hooks/usePrices';
 import { usePersistentState, isBool } from './hooks/usePersistentState';
 import { exportFormatToPlayer } from './utils/importSet';
@@ -78,8 +80,17 @@ import {
   setLoadout,
   splitPlayer,
   uniqueLoadoutName,
-  upsertCharacter
+  upsertCharacter,
+  withAbilities
 } from './utils/characterStore';
+import {
+  DEFAULT_ABILITY_OPT_CONFIG,
+  DEFAULT_LOADOUT_OPT_CONFIG,
+  isAbilityOptConfig,
+  isLoadoutOptConfig,
+  loadoutCandidates,
+  pickSubjectSlot
+} from './utils/candidateOptimizer';
 // The ONE atomic repair: party AND roster (AND the trial selection) rewritten
 // together, so neither holder can be mended at the other's expense.
 import {
@@ -134,6 +145,9 @@ const TriggerOptimizerPanel = lazyNamed(() => import('./components/TriggerOptimi
 const TriggerOptimizerResults = lazyNamed(() => import('./components/TriggerOptimizerResults'), 'TriggerOptimizerResults');
 const EquipmentOptimizerPanel = lazyNamed(() => import('./components/EquipmentOptimizerPanel'), 'EquipmentOptimizerPanel');
 const EquipmentOptimizerResults = lazyNamed(() => import('./components/EquipmentOptimizerResults'), 'EquipmentOptimizerResults');
+const CandidateOptimizerPanel = lazyNamed(() => import('./components/CandidateOptimizerPanel'), 'CandidateOptimizerPanel');
+const AbilitySearchOptions = lazyNamed(() => import('./components/CandidateOptimizerPanel'), 'AbilitySearchOptions');
+const CandidateResults = lazyNamed(() => import('./components/CandidateResults'), 'CandidateResults');
 const ItemCostsView = lazyNamed(() => import('./components/ItemCostsView'), 'ItemCostsView');
 const TrialMonsterCards = lazyNamed(() => import('./components/TrialMonsterCards'), 'TrialMonsterCards');
 
@@ -231,6 +245,13 @@ function App() {
   // stable (player, slot) pair rather than a positional index, so a plain string
   // survives edits that would invalidate a trigger address.
   const [equipOptSelection, setEquipOptSelection] = useState([]);
+
+  // Loadout and Abilities vary ONE party member; both read the same pick (null = follow the main character).
+  const loadoutOpt = useLoadoutOptimizer();
+  const [loadoutOptConfig, setLoadoutOptConfig] = usePersistentState('csim_ui_loadout_opt', DEFAULT_LOADOUT_OPT_CONFIG, isLoadoutOptConfig);
+  const abilityOpt = useAbilityOptimizer();
+  const [abilityOptConfig, setAbilityOptConfig] = usePersistentState('csim_ui_ability_opt', DEFAULT_ABILITY_OPT_CONFIG, isAbilityOptConfig);
+  const [subjectPick, setSubjectPick] = useState(null);
 
   // Zone or labyrinth for BOTH optimisers, set from the header's target whenever
   // an optimiser tab is picked — see utils/optimizerTarget.js. Not persisted.
@@ -1529,6 +1550,61 @@ function App() {
     return out;
   }, [characters, party]);
 
+  // -- Loadout and Abilities: one member against what it wears now ---------
+  const { slot: subjectSlot, index: subjectIndex, mainSlot } =
+    pickSubjectSlot({ selectedParty, party, mainId: main?.id, picked: subjectPick });
+  const subjectOptions = selectedParty.map(id => ({ value: String(id), label: `P${id} · ${playerNames[`player${id}`] ?? ''}` }));
+  const subjectNotice = main && mainSlot == null && subjectSlot != null
+    ? `${main.name || main.id} is not in the selected party, so this uses P${subjectSlot}.` : null;
+  // EPH is a planet's measure; on a dungeon or in the labyrinth the server ranks on its own default.
+  const planetTarget = optTarget === 'zone' && !findZone(gameData?.zones, zone)?.isDungeon;
+
+  const loadoutOptPayload = useMemo(() => {
+    if (!toolBase || subjectIndex < 0) return null;
+    const ref = party[subjectSlot];
+    return { ...toolBase, subjectIndex,
+      candidates: loadoutCandidates(characters.characters?.[ref.characterId], ref.loadoutName),
+      objective: planetTarget ? loadoutOptConfig.objective : undefined, scan: loadoutOptConfig };
+  }, [toolBase, subjectIndex, subjectSlot, party, characters, planetTarget, loadoutOptConfig]);
+
+  const abilityOptPayload = useMemo(() => {
+    if (!toolBase || subjectIndex < 0) return null;
+    return { ...toolBase, subjectIndex,
+      // Every ability the character has a level for; the API adds whatever is slotted.
+      ownedAbilities: characters.characters?.[party[subjectSlot].characterId]?.abilityLevels || {},
+      coordinates: abilityOptConfig.coordinates, search: abilityOptConfig.search, passes: abilityOptConfig.passes,
+      objective: planetTarget ? abilityOptConfig.objective : undefined, scan: abilityOptConfig };
+  }, [toolBase, subjectIndex, subjectSlot, party, characters, planetTarget, abilityOptConfig]);
+
+  // A run remembers whose loadout it measured, so Apply writes there.
+  const startSubjectRun = useCallback((run, payload) => {
+    if (!payload) return;
+    run({ ...payload, meta: { optTarget, zone, difficultyTier, labConfig, subject: { slot: subjectSlot, ...party[subjectSlot] } } });
+  }, [optTarget, zone, difficultyTier, labConfig, subjectSlot, party]);
+
+  /** Loadout's Apply: wear that loadout in the slot the run measured. */
+  const applyLoadoutRow = useCallback((row, subject) => {
+    if (!characters.characters?.[subject?.characterId]?.loadouts?.[row.name]) return;
+    bindSlot(subject.slot, { characterId: subject.characterId, loadoutName: row.name });
+  }, [characters, bindSlot]);
+
+  /** Abilities' Apply: the row's slots into the loadout the run measured, at the levels the character has NOW. */
+  const applyAbilityRow = useCallback((row, subject) => {
+    const player = resolveRef(characters, subject);
+    if (!player) return;
+    // shortcut: writes all five measured slots, so an ability edit made to this loadout since the run is replaced; diff against the run's slots if that bites.
+    const abilities = row.abilities.map(a => a && { ...a, level: player.abilityMemory?.[a.hrid]?.level ?? a.level });
+    applyPlayerEdit(subject, withAbilities(player, abilities));
+  }, [characters, applyPlayerEdit]);
+
+  const subjectPanelProps = (engine, config, setConfig, costRows) => ({
+    preview: engine.preview, previewing: engine.previewing, apiReachable: engine.apiReachable, loading: engine.loading,
+    config, onConfigChange: setConfig, subjectOptions, subject: subjectSlot == null ? null : String(subjectSlot),
+    onSubjectChange: (value) => setSubjectPick(Number(value)), subjectNotice, pricing, consumableCostRows: costRows
+  });
+  const loadoutCount = loadoutOptPayload?.candidates.length ?? 0;
+  const abilityCount = abilityOpt.preview?.candidates ?? 0;
+
   // The optimiser tools, keyed by their TOOLS value. Every mode-generic site
   // below (Run, Stop, the settings panel, the results pane) reads the open one,
   // so adding a tool is a TOOLS entry, its hook and payload above, and one entry
@@ -1600,6 +1676,44 @@ function App() {
             setEquipOptConfig(prev => ({ ...prev, protectAt: value }))
           }
         />
+      )
+    },
+    loadoutOpt: {
+      engine: loadoutOpt,
+      payload: loadoutOptPayload,
+      start: () => startSubjectRun(loadoutOpt.runOptimizer, loadoutOptPayload),
+      runLabel: `Compare ${loadoutCount} loadout${loadoutCount === 1 ? '' : 's'}`,
+      runDisabled: loadoutCount === 0,
+      empty: 'Pick whose saved loadouts to compare above, then press Run.',
+      panel: (costRows) => (
+        <CandidateOptimizerPanel {...subjectPanelProps(loadoutOpt, loadoutOptConfig, setLoadoutOptConfig, costRows)}
+          title="Loadout" blurb="Simulates every saved loadout of one character at this target against the one it wears now, on shared seeds.">
+          <Text size="xs" c="dimmed">{loadoutCount
+            ? `Against ${party[subjectSlot]?.loadoutName}: ${loadoutOptPayload.candidates.map(c => c.name).join(', ')}.`
+            : 'This character has no other saved loadout.'}</Text>
+        </CandidateOptimizerPanel>
+      ),
+      results: (r, onClear) => (
+        <CandidateResults results={r} title="Loadout" currentLabel={`${r.meta?.subject?.loadoutName ?? 'Current'} (worn)`}
+          applyLabel="Wear" onApply={(row) => applyLoadoutRow(row, r.meta?.subject)} onClear={onClear} />
+      )
+    },
+    abilityOpt: {
+      engine: abilityOpt,
+      payload: abilityOptPayload,
+      start: () => startSubjectRun(abilityOpt.runOptimizer, abilityOptPayload),
+      runLabel: abilityOptConfig.search === 'best' ? 'Find the best combination' : `Try ${abilityCount} change${abilityCount === 1 ? '' : 's'}`,
+      runDisabled: !abilityCount || abilityOpt.previewing,
+      empty: 'Pick which ability slots to try above, then press Run.',
+      panel: (costRows) => (
+        <CandidateOptimizerPanel {...subjectPanelProps(abilityOpt, abilityOptConfig, setAbilityOptConfig, costRows)}
+          title="Abilities" blurb="Tries each owned ability in each unlocked slot (the aura slot takes specials only) and each cast order of abilities 1–4, against the current setup on shared seeds.">
+          <AbilitySearchOptions preview={abilityOpt.preview} config={abilityOptConfig} onConfigChange={setAbilityOptConfig} loading={abilityOpt.loading} />
+        </CandidateOptimizerPanel>
+      ),
+      results: (r, onClear) => (
+        <CandidateResults results={r} title="Abilities" currentLabel="Current abilities"
+          onApply={(row) => applyAbilityRow(row, r.meta?.subject)} onClear={onClear} />
       )
     }
   };

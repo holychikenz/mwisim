@@ -34,6 +34,8 @@ export const TARGETS = [
 export const TOOLS = [
   { value: 'triggerOpt', label: 'Triggers', targets: OPT_TARGETS },
   { value: 'equipOpt', label: 'Gear', targets: OPT_TARGETS },
+  { value: 'loadoutOpt', label: 'Loadout', targets: OPT_TARGETS },
+  { value: 'abilityOpt', label: 'Abilities', targets: OPT_TARGETS },
 ];
 
 /** Is this simMode one of the TOOLS? Mode-generic code asks this rather than naming tools. */

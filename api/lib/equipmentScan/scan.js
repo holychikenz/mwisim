@@ -368,3 +368,43 @@ export async function scanEquipment({
     saturated: saturationOf(objective, noise.mean, rows),
   };
 }
+
+/**
+ * Rank whole alternatives to one baseline: the Loadout and Abilities tools (and
+ * any later tool that varies one player). The scan's paired run, but each row
+ * is the candidate itself rather than a per-level rate: `delta` is the paired
+ * mean difference on the objective, `deltaPct` that over the baseline mean,
+ * `marginPct` the Student-t half-width on the same scale. Best first, ties by
+ * id, so the order is deterministic. Candidate ids must not contain '#'.
+ */
+export async function rankCandidates({
+  candidates, objective, hours = DEFAULT_SCAN.hours, replicates = DEFAULT_SCAN.replicates,
+  alpha = DEFAULT_SCAN.alpha, seedBase = DEFAULT_SEED_BASE, ...run // playerDTOs, evaluate, applyCandidate, signal, onProgress, cancelMessage
+}) {
+  if (!candidates?.length) throw new Error('Nothing to rank');
+  const paired = await runPaired({ ...run, candidates, objective, hours, replicates, alpha, seedBase });
+  const rows = paired.compared.map(({ row, samples, metrics, comparison }) => {
+    const scale = Math.abs(comparison.baselineMean) > 1e-9 ? Math.abs(comparison.baselineMean) : null;
+    return {
+      ...row, metrics, samples,
+      deltas: computeDeltas(metrics, paired.baselineMetrics),
+      statistics: comparison,
+      delta: comparison.deltaMean,
+      deltaPct: scale == null ? null : comparison.deltaMean / scale,
+      marginPct: scale == null || comparison.marginOfError == null ? null : comparison.marginOfError / scale,
+      significant: comparison.significant,
+      significantFamilywise: comparison.significantFamilywise,
+    };
+  });
+  rows.sort((a, b) => b.delta - a.delta || String(a.id).localeCompare(String(b.id)));
+  rows.forEach((row, index) => { row.rank = index + 1; });
+  return {
+    objective, hours, replicates: paired.reps, seedBase, alpha,
+    baseline: { metrics: paired.baselineMetrics, samples: paired.baselineSamples, mean: paired.noise.mean,
+      standardDeviation: paired.noise.sd, coefficientOfVariation: paired.noise.cv, usableSamples: paired.usableBaseline.length },
+    rows, familySize: rows.length, simulationsRun: paired.completed, estimatedSimulations: paired.workload.total,
+    // As the scan: only a family-wise significant GAIN concludes anything.
+    inconclusive: !rows.some((row) => row.significantFamilywise && row.delta > 0),
+    saturated: saturationOf(objective, paired.noise.mean, rows),
+  };
+}

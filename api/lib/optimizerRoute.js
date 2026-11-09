@@ -1,13 +1,18 @@
 // =============================================================================
 // optimizerRoute — what routes/optimizeTriggers.js and routes/optimizeEquipment.js
 // share: body validation, the consumable-cost table rule, the pool size, and the SSE run
-// lifecycle (headers, heartbeat, client-disconnect abort, pool teardown).
+// lifecycle (headers, heartbeat, client-disconnect abort, pool teardown). Plus
+// subjectRoutes, the whole preview + SSE pair for a tool that ranks replacements
+// for one party member (routes/optimizeLoadout.js, routes/optimizeAbilities.js).
 // =============================================================================
 
+import { Router } from 'express';
 import { isKnownCost } from '../../shared/consumableCost.js';
-import { markDungeon, normaliseTarget } from './target.js';
-import { createSimulationPool, defaultPoolSize, MAX_WORKERS } from './triggerSearch/pool.js';
-import { OBJECTIVE_METRICS, reportedMetricsFor } from './triggerSearch/score.js';
+import { buildExtraBuffs } from './simulator.js';
+import { markDungeon, normaliseTarget, targetExtraBuffs, targetPlayerDTOs } from './target.js';
+import { createSimulationPool, defaultPoolSize, makePoolEvaluator, MAX_WORKERS } from './triggerSearch/pool.js';
+import { defaultObjective, OBJECTIVE_METRICS, reportedMetricsFor } from './triggerSearch/score.js';
+import { DEFAULT_SCAN, DEFAULT_SEED_BASE } from './equipmentScan/scan.js';
 
 /** Heartbeat interval. Comfortably inside a 30s client stall timeout. */
 const HEARTBEAT_MS = 10_000;
@@ -121,4 +126,87 @@ export async function streamPoolRun(req, res, body) {
     await pool?.destroy();
     if (!res.writableEnded) res.end();
   }
+}
+
+/** hours / replicates / alpha for a paired run, clamped as the equipment scan clamps them: user data from NumberInputs. */
+export function sanitiseFidelity(input) {
+  const clamp = (value, fallback, min, max) => {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) && parsed >= min ? Math.min(max, parsed) : fallback;
+  };
+  return {
+    hours: clamp(input?.hours, DEFAULT_SCAN.hours, 0.1, 1000),
+    replicates: Math.floor(clamp(input?.replicates, DEFAULT_SCAN.replicates, 2, 40)),
+    alpha: clamp(input?.alpha, DEFAULT_SCAN.alpha, 0.0001, 0.5),
+  };
+}
+
+/**
+ * POST /api/<path>/preview (JSON) and POST /api/<path> (SSE) for a tool that
+ * ranks replacements for ONE member of the party, players[subjectIndex]:
+ * Loadout and Abilities. The tool supplies
+ *   prepare(base, body) → { candidates, workload, echo?, ...its own state }
+ *   run(prepared, { evaluate, signal, onProgress, seedBase, cancelMessage }) → result
+ * and this owns validation, the target, buffs and costs (as optimizeEquipment.js),
+ * the pool, the evaluator and the frames.
+ */
+export function subjectRoutes({ path, prepare, run, cancelMessage, emptyError }) {
+  const router = Router();
+  // May throw on a hostile body; both handlers call it inside their try.
+  const setup = (body) => {
+    const k = body?.subjectIndex;
+    const invalid = validateBody(body) || (Number.isInteger(k) && k >= 0 && k < body.players.length
+      && body.players[k] && typeof body.players[k] === 'object' ? null : 'subjectIndex must name one of the players');
+    if (invalid) return { invalid };
+    const target = markDungeon(normaliseTarget(body));
+    const labyrinth = target.kind === 'labyrinth';
+    // Nothing is eaten in a labyrinth, so there is no bill to count.
+    const consumableCosts = labyrinth ? null : sanitiseConsumableCosts(body.consumableCosts);
+    const base = {
+      target, subjectIndex: k, scan: sanitiseFidelity(body.scan), consumableCosts,
+      // Same composition runSimulation uses, plus the lab-shop upgrades in a labyrinth.
+      extraBuffs: buildExtraBuffs(body.extra || {}).concat(body.guildBuffs || []).concat(targetExtraBuffs(target)),
+      // Food and drinks blanked in a labyrinth, as the game blanks them (target.js).
+      simPlayers: targetPlayerDTOs(body.players, target),
+      objective: body.objective || defaultObjective({ consumableCostsKnown: !!consumableCosts, labyrinth, dungeon: !!target.dungeon }),
+    };
+    return { prepared: { ...base, ...prepare(base, body) } };
+  };
+  // What the panel and the results describe the run by. Never the DTOs.
+  const echo = (p) => ({ objective: p.objective, target: p.target, reportedMetrics: reportedMetricsFor(p.target),
+    consumableCostsKnown: !!p.consumableCosts, subjectIndex: p.subjectIndex, scan: p.scan, workload: p.workload,
+    candidates: p.candidates.length, ...p.echo });
+
+  router.post(`/${path}/preview`, (req, res) => {
+    try {
+      const { invalid, prepared } = setup(req.body);
+      if (invalid) return res.status(400).json({ success: false, error: invalid });
+      return res.json({ success: true, ...echo(prepared), poolSize: poolSizeFor(req.body.workers) });
+    } catch (error) {
+      return res.status(500).json({ success: false, error: error.message });
+    }
+  });
+
+  router.post(`/${path}`, async (req, res) => {
+    let prepared;
+    try {
+      // Inside the try: an async Express 4 handler's rejection is unhandled and kills the process.
+      const out = setup(req.body);
+      if (out.invalid) return res.status(400).json({ success: false, error: out.invalid });
+      prepared = out.prepared;
+    } catch (error) {
+      return res.status(400).json({ success: false, error: error.message });
+    }
+    if (!prepared.candidates.length) return res.status(400).json({ success: false, error: emptyError });
+    await streamPoolRun(req, res, async ({ pool, poolSize, send, signal }) => {
+      send({ type: 'start', poolSize, ...echo(prepared) });
+      const evaluate = makePoolEvaluator({ pool, zoneConfig: prepared.target.zone, labyrinthConfig: prepared.target.labyrinth,
+        extraBuffs: prepared.extraBuffs, consumableCosts: prepared.consumableCosts, signal, cancelMessage });
+      const result = await run(prepared, { evaluate, signal, cancelMessage,
+        seedBase: Number(req.body.seedBase) || DEFAULT_SEED_BASE,
+        onProgress: (progress) => send({ type: 'progress', ...progress }) });
+      send({ type: 'result', result: { ...result, ...echo(prepared) } });
+    });
+  });
+  return router;
 }
