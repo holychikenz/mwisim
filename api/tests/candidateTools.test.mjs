@@ -18,7 +18,7 @@ import swapRoutes from '../routes/optimizeSwaps.js';
 import { prepareEquipmentRun } from '../routes/optimizeEquipment.js';
 import { sanitiseFidelity } from '../lib/optimizerRoute.js';
 
-const { pickSubjectSlot, loadoutCandidates, progressColumns, applySwapChanges } = await import('../../ui/src/utils/candidateOptimizer.js');
+const { pickSubjectSlot, loadoutCandidates, progressColumns, applySwapChanges, headlineRow } = await import('../../ui/src/utils/candidateOptimizer.js');
 const { resolvePlayer } = await import('../../ui/src/utils/characterStore.js');
 const { toPlayerDTO } = await import('../../ui/src/utils/playerDTO.js');
 
@@ -33,6 +33,13 @@ test('pickSubjectSlot: main by default, a selected pick wins, falls back when th
   assert.deepEqual(pickSubjectSlot({ selectedParty: [1, 2], party, mainId: 'main', picked: 3 }), { slot: 2, index: 1, mainSlot: 2 });
   assert.deepEqual(pickSubjectSlot({ selectedParty: [3, 1], party, mainId: 'absent', picked: null }), { slot: 3, index: 0, mainSlot: null });
   assert.deepEqual(pickSubjectSlot({ selectedParty: [], party, mainId: 'main', picked: 2 }), { slot: null, index: -1, mainSlot: null });
+});
+
+test('headlineRow: "Best" needs a significant GAIN; a delta of exactly 0, or a null one, is not one', () => {
+  const sig = (id, gain) => ({ id, significantFamilywise: true, significant: true, ...gain });
+  assert.equal(headlineRow([sig('zero', { delta: 0 }), sig('none', { delta: null }), sig('up', { delta: 0.5 })])?.id, 'up');
+  assert.equal(headlineRow([sig('flat', { perLevel: 0 }), sig('level', { perLevel: 0.01 })])?.id, 'level');
+  assert.equal(headlineRow([sig('zero', { delta: 0 }), { id: 'noise', significantFamilywise: false, delta: 3 }]), undefined);
 });
 
 test('loadoutCandidates: every OTHER saved loadout as a plain DTO', () => {

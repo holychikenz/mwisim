@@ -1,5 +1,6 @@
 import { Alert, Badge, Button, Group, Stack, Table, Text, Title } from '@mantine/core';
-import { formatPct, formatSignedPct, verdictOf } from '../utils/equipmentOptimizer';
+import { formatPct, formatSignedPct } from '../utils/equipmentOptimizer';
+import { headlineRow } from '../utils/candidateOptimizer';
 import { ClearResultsButton, NumTd, VerdictBadge } from './ResultParts';
 
 // =============================================================================
@@ -52,7 +53,7 @@ export function CandidateResults({ results, title, currentLabel, applyLabel = 'A
   const rows = results.rows || [];
   const objectiveName = OBJECTIVE_NAMES[results.objective] || results.objective;
   const perLevel = rows.some((row) => 'perLevel' in row);
-  const best = rows.find((row) => verdictOf(row) === 'strong-gain');
+  const best = headlineRow(rows);
   // The run's own alpha (the panel's significance level), so the caption names the interval ± really is.
   const confidence = Number(((1 - results.alpha) * 100).toFixed(2));
 

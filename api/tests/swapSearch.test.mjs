@@ -7,7 +7,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { COORDINATES, candidatesAt, estimateSwapDescent, swapContext, swapGroups } from '../lib/swapSearch.js';
+import { COORDINATES, bestSwap, candidatesAt, estimateSwapDescent, swapContext, swapGroups } from '../lib/swapSearch.js';
 import { prepareSwapRun, runSwapSearch } from '../routes/optimizeSwaps.js';
 
 const { itemDetailMap } = await import('../../src/combatsimulator/dataProvider.js');
@@ -92,7 +92,8 @@ test('a best-combination pass past the cap is refused; one swap at a time is cap
     && /food|drink/.test(itemDetailMap[h].categoryHrid)).map((h) => ({ itemHrid: h, count: 1 }));
   const base = { ...BASE, simPlayers: [withGear(subject(), 'pouch', 'guzzling_pouch')] };
   const best = prepareSwapRun(base, { search: 'best', owned: consumables });
-  assert.equal(best.workload.candidates, 3 * 29 + 3 * 27 + 2 + 2 + 2);
+  // Every coordinate less what it never offers: the slotted stamina coffee, and the worn body, bow and pouch.
+  assert.equal(best.workload.candidates, 3 * 29 + 3 * 26);
   assert.ok(best.workload.candidates > 151);
   assert.match(best.refusal, /Untick some items/);
   assert.equal(prepareSwapRun(base, { search: 'best', owned: consumables, allowed: [] }).refusal, null);
@@ -162,4 +163,23 @@ test('the descent estimate counts the off hand only where candidatesAt can offer
   const perPass = (names) => estimateSwapDescent(swapContext(subject(), names.map((n) => own(n)), { allowed }), 1, BASE.scan).candidates;
   assert.equal(perPass(['knights_aegis']), perPass([])); // under the bow, and nothing to clear it
   assert.equal(perPass(['knights_aegis', 'regal_sword']), perPass(['regal_sword']) + 2); // a main hand clears it
+});
+
+test('a worn piece swapped out and back returns at its worn enhancement, not the best owned', () => {
+  const ctx = swapContext(subject(), [own('maelstrom_plate_body'), own('anchorbound_plate_body', 8)]);
+  const [body] = candidatesAt(ctx.start, E('body'), ctx);
+  const [back] = candidatesAt(body.state, E('body'), ctx);
+  assert.deepEqual(back.state.equipment[E('body')], { hrid: I('anchorbound_plate_body'), enhancementLevel: 5 });
+  assert.equal(bestSwap(ctx, back.state), null, 'back where it started: nothing to apply');
+});
+
+test('the descent estimate counts only what is offered: never the slot\'s own piece or a slotted consumable, unless a weapon swap empties the slot', () => {
+  const ctx = swapContext(subject(), []);
+  assert.equal(all(ctx).length, 0);
+  assert.equal(estimateSwapDescent(ctx, 1, BASE.scan).candidates, 0); // was 6: the body, bow and coffee, never offered
+  // A main hand clears the bow, and the emptied two-hand slot then offers the bow back: that stays counted.
+  const sword = swapContext(subject(), [own('regal_sword')], { allowed: new Set([I('regal_sword')]) });
+  const [main] = candidatesAt(sword.start, E('main_hand'), sword);
+  assert.equal(candidatesAt(main.state, E('two_hand'), sword).length, 1);
+  assert.equal(estimateSwapDescent(sword, 1, BASE.scan).candidates, (1 + 1) + (1 + 1));
 });

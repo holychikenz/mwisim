@@ -27,6 +27,12 @@ export const isProgressOptConfig = sameShape(DEFAULT_PROGRESS_OPT_CONFIG);
 export const DEFAULT_SWAP_OPT_CONFIG = { ...DEFAULT_LOADOUT_OPT_CONFIG, search: 'swaps', passes: 2 };
 export const isSwapOptConfig = sameShape(DEFAULT_SWAP_OPT_CONFIG);
 
+/**
+ * CandidateResults' "Best": the first family-wise significant row with a GAIN (> 0) — the bar descent.js takes a step on
+ * and scan.js calls a run conclusive by. verdictOf's >= 0 would crown a delta of exactly 0, or a null one.
+ */
+export const headlineRow = (rows) => (rows || []).find((row) => row.significantFamilywise && (row.perLevel ?? row.delta) > 0);
+
 /** Whose loadout the tools vary: the picked slot while it is selected, else the main character's slot, else the first selected. */
 export function pickSubjectSlot({ selectedParty, party, mainId, picked }) {
   const mainSlot = mainId == null ? null : selectedParty.find((id) => party[id]?.characterId === mainId) ?? null;

@@ -8,7 +8,8 @@
 //     createFromDTO). A consumable is never slotted twice (a closed slot counts)
 //     and a swapped-in one carries copies of its game default triggers.
 //   * a piece goes in the slot its equipmentDetail.type names, at the highest
-//     enhancement owned, as the game equips it. A two-hander clears the main and
+//     enhancement owned, as the game equips it — except the piece worn at the
+//     start, which goes back exactly as worn. A two-hander clears the main and
 //     off hand and either of those clears a two-hander (PlayerConfig); no off
 //     hand is tried under a two-hander.
 //   * combat-level requirements are checked against the build; the import has
@@ -101,25 +102,34 @@ export function candidatesAt(state, coordinate, ctx) {
       candidate(`${coordinate}:${hrid}`, state, { ...state, [kind]: state[kind].map((c, i) => (i === index ? (ctx.start[kind].find((s) => s?.hrid === hrid) ?? consumed(hrid)) : c)) }));
   }
   if (slot === OFF && state.equipment[TWO]) return [];
+  const worn = ctx.start.equipment[slot];
   return (ctx.pool[slot] || []).filter((hrid) => hrid !== state.equipment[slot]?.hrid && ctx.tried(slot, hrid)).map((hrid) => {
-    const equipment = { ...state.equipment, [slot]: { hrid, enhancementLevel: ctx.best.get(hrid) } };
+    // The start's own piece goes back as worn (as the consumable branch puts back the start's own triggers), not at the best owned.
+    const equipment = { ...state.equipment, [slot]: worn?.hrid === hrid ? worn : { hrid, enhancementLevel: ctx.best.get(hrid) } };
     if (slot === TWO) { delete equipment[MAIN]; delete equipment[OFF]; } else if (slot === MAIN || slot === OFF) delete equipment[TWO];
     return candidate(`${coordinate}:${hrid}`, state, { ...state, equipment });
   });
 }
 
 /**
- * An upper bound on a descent, in estimateWorkload's shape: a coordinate never offers more than every tried item it
- * can take; a consumable slot counts as open if any tried pouch opens it, and the off hand under a two-hander only if a
- * main hand (which clears the two-hander) is tried, as candidatesAt offers them.
+ * An upper bound on a descent, in estimateWorkload's shape: a coordinate never offers more than the tried items it can
+ * take, less what candidatesAt never offers there — a consumable already slotted at the start (nothing is slotted
+ * twice, and a swap never empties a slot) and the slot's own piece, unless a weapon swap can empty that slot (a
+ * tried two-hander clears the main and off hand, a tried main hand clears the two-hander), when it may offer them all.
+ * A consumable slot counts as open if any tried pouch opens it, and the off hand under a two-hander only if a main hand
+ * (which clears the two-hander) is tried, as candidatesAt offers them.
  */
 export function estimateSwapDescent(ctx, passes, scan) {
   const tried = (key) => (ctx.pool[key] || []).filter((hrid) => ctx.tried(key, hrid)).length;
+  const held = (key) => (ctx.pool[key] || []).filter((hrid) => (KIND_LABELS[key]
+    ? ctx.start[key].some((c) => c?.hrid === hrid) : ctx.start.equipment[key]?.hrid === hrid)).length;
+  const emptied = { [MAIN]: tried(TWO) > 0, [OFF]: tried(TWO) > 0, [TWO]: tried(MAIN) > 0 };
   const pouches = [ctx.start.equipment[POUCH]?.hrid, ...(ctx.pool[POUCH] || []).filter((hrid) => ctx.tried(POUCH, hrid))];
   const offClosed = !!ctx.start.equipment[TWO] && !tried(MAIN);
   const perPass = COORDINATES.reduce((sims, coordinate) => {
     const { kind, index, slot } = parse(coordinate);
-    const count = kind ? (pouches.some((p) => index < slotsOf(p, kind)) ? tried(kind) : 0) : slot === OFF && offClosed ? 0 : tried(slot);
+    const count = kind ? (pouches.some((p) => index < slotsOf(p, kind)) ? tried(kind) - held(kind) : 0)
+      : slot === OFF && offClosed ? 0 : tried(slot) - (emptied[slot] ? 0 : held(slot));
     return count ? sims + count + 1 : sims;
   }, 0);
   return descentWorkload(perPass, passes, scan);
