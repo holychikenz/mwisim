@@ -99,7 +99,7 @@ import {
   saveEquipmentOptState,
   toScan
 } from './utils/equipmentOptimizer';
-import { loadOptTarget, saveOptTarget, toTargetPayload } from './utils/optimizerTarget';
+import { toTargetPayload } from './utils/optimizerTarget';
 import { loadSession } from './utils/session';
 import {
   DEFAULT_ZONE_HRID,
@@ -227,9 +227,9 @@ function App() {
   // survives edits that would invalidate a trigger address.
   const [equipOptSelection, setEquipOptSelection] = useState([]);
 
-  // Zone or labyrinth for BOTH optimisers — see utils/optimizerTarget.js for why
-  // the choice is shared rather than held per-optimiser.
-  const [optTarget, setOptTarget] = useState(loadOptTarget);
+  // Zone or labyrinth for BOTH optimisers, set from the header's target whenever
+  // an optimiser tab is picked — see utils/optimizerTarget.js. Not persisted.
+  const [optTarget, setOptTarget] = useState('zone');
 
   // The auto-saved session, read ONCE at initialisation — see utils/session.js
   // for why this is not an effect (it was, and the save above it erased the
@@ -1440,10 +1440,6 @@ function App() {
     saveEquipmentOptState({ config: equipOptConfig });
   }, [equipOptConfig]);
 
-  useEffect(() => {
-    saveOptTarget(optTarget);
-  }, [optTarget]);
-
   const handleStartEquipOpt = useCallback(() => {
     if (!equipOptPayload || equipOptSelection.length === 0) return;
     runEquipOptimizer({
@@ -1769,13 +1765,23 @@ function App() {
 
   return (
     <AppShell
-      header={{ height: 56 }}
+      // Two rows: brand, target, Costs and the cog (56) over the tool tabs (40).
+      header={{ height: 96 }}
       navbar={{ width: navbarWidth, breakpoint: 'sm', collapsed: { mobile: !navOpened } }}
       aside={{ width: 500, breakpoint: '90em', collapsed: { desktop: !showSheet, mobile: !showSheet } }}
       padding="md"
     >
       <AppShell.Header>
-        <Group h="100%" px="md" justify="space-between" wrap="nowrap">
+        <HeaderControls
+          part="header"
+          simMode={simMode}
+          onSimModeChange={setSimMode}
+          optTarget={optTarget}
+          onOptTargetChange={setOptTarget}
+          labConfig={labConfig}
+          experimental={experimental}
+          onExperimentalChange={handleExperimentalChange}
+        >
           <Group gap="xs" wrap="nowrap">
             <Burger opened={navOpened} onClick={handleToggleNav} hiddenFrom="sm" size="sm" aria-label="Toggle party rail" />
             {/* On phones the brand moves to the top of the rail (below), so
@@ -1792,16 +1798,7 @@ function App() {
               </Badge>
             )}
           </Group>
-          <HeaderControls
-            part="header"
-            simMode={simMode}
-            onSimModeChange={setSimMode}
-            labConfig={labConfig}
-            extraOptions={extraOptions}
-            experimental={experimental}
-            onExperimentalChange={handleExperimentalChange}
-          />
-        </Group>
+        </HeaderControls>
       </AppShell.Header>
 
       <AppShell.Navbar>
@@ -2035,7 +2032,6 @@ function App() {
                 part="strip"
                 simMode={simMode}
                 optTarget={optTarget}
-                onOptTargetChange={setOptTarget}
                 zones={gameData?.zones}
                 zone={zone}
                 onZoneChange={handleZoneChange}

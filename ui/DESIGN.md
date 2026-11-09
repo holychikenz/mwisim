@@ -12,7 +12,12 @@ Decisions for the React UI redesign (agreed 2026-10-09). Theme tokens live in
   poorly at the sidebar's 12–13 px. No kanji or other decorative glyphs.
 
 ## Structure (L2)
-- **Header**: brand, mode tabs (Zone · Lab · Trial · Triggers · Gear · Costs), settings.
+- **Header** (two rows, 96 px): brand, the target (Zone · Lab · Trial), then
+  Costs (▤, a toggle: pressed again it returns to where you were) and the
+  settings cog. Under them, the tools for that target: Simulate | Triggers ·
+  Gear. A tool that cannot fight the target is disabled (Trial offers Simulate
+  only); adding one is one entry in `TOOLS` (`src/utils/optimizerTarget.js`).
+  Neither row is remembered: a reload opens Zone · Simulate.
 - **Rail** (left, narrow): one card per party member — character, loadout,
   combat level, warnings, in/out of the sim. Trial mode shows the roster as
   the same `.member-card`s: name, CL, loadout · weapon · best skill, the
@@ -37,7 +42,8 @@ Decisions for the React UI redesign (agreed 2026-10-09). Theme tokens live in
 - **Narrow screens** (below Mantine `sm`, 768 px): the rail is hidden and a
   burger in the header opens it as an overlay; picking a member closes it and
   opens the sheet. The brand moves from the header to the top of the rail, so
-  the mode tabs keep the header (they scroll sideways rather than overflow).
+  the target and tools keep the header (both rows scroll sideways rather than
+  overflow).
 
 ## Gear (G2)
 Paper doll: slots as a 3-column grid of tiles (slot, item, +N). Clicking a tile

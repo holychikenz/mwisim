@@ -1,39 +1,75 @@
 // =============================================================================
-// optimizerTarget — which fight the Triggers and Gear optimisers are pointed at
+// optimizerTarget — the header's target and tool, and which fight the
+// optimisers are pointed at
 //
-// Zone and Lab are simulation MODES; Triggers and Gear are modes that need to be
-// told which of the two to fight. That choice is deliberately shared between the
-// two optimisers rather than stored per-optimiser: a user who has just scanned
-// their gear against a labyrinth room and switches to Triggers means to tune the
-// triggers for that same room, and being silently returned to a zone would
-// produce a recommendation for a fight they are not having.
+// App holds two pieces of state: `simMode` (zone | labyrinth | guildTrial |
+// triggerOpt | equipOpt | itemCosts) and `optTarget` (zone | labyrinth, read
+// only while an optimiser is the mode). The header shows them as a TARGET
+// (Zone · Lab · Trial) over a row of TOOLS (Simulate | Triggers · Gear);
+// toRoute and fromRoute translate between the two, so none of App's
+// `simMode === …` checks has to change.
 //
-// Stored under its own key rather than inside either optimiser's config, for the
-// same reason — neither owns it.
+// The target is shared by the optimisers rather than held per optimiser: a user
+// who has just scanned their gear against a labyrinth room and switches to
+// Triggers means to tune the triggers for that same room.
+//
+// Not persisted. simMode never was, and every way into an optimiser sets
+// optTarget from the header, so a remembered one would never be read.
 // =============================================================================
-
-/** localStorage key, following the UI's `csim_*` convention. */
-export const OPT_TARGET_KEY = 'csim_optimizer_target';
 
 export const OPT_TARGETS = ['zone', 'labyrinth'];
 
-/** @returns {'zone'|'labyrinth'} */
-export function loadOptTarget() {
-  try {
-    const stored = localStorage.getItem(OPT_TARGET_KEY);
-    if (OPT_TARGETS.includes(stored)) return stored;
-  } catch {
-    /* ignore — persistence is best-effort */
-  }
-  return 'zone';
+/** The header's target segment. Each value is also the simMode that simulates it. */
+export const TARGETS = [
+  { value: 'zone', label: 'Zone' },
+  { value: 'labyrinth', label: 'Lab' },
+  { value: 'guildTrial', label: 'Trial' },
+];
+
+/**
+ * The tool tabs after Simulate. `value` is the tool's simMode in App; `targets`
+ * are the ones it can fight, a subset of OPT_TARGETS (all optTarget can hold).
+ * Adding an optimiser to the header is one entry here.
+ */
+export const TOOLS = [
+  { value: 'triggerOpt', label: 'Triggers', targets: OPT_TARGETS },
+  { value: 'equipOpt', label: 'Gear', targets: OPT_TARGETS },
+];
+
+const isTarget = (target) => TARGETS.some(t => t.value === target);
+
+/** Can this tool run against this target? Simulate runs every target. */
+export function supports(tool, target) {
+  if (tool === 'simulate') return isTarget(target);
+  return !!TOOLS.find(t => t.value === tool)?.targets.includes(target);
 }
 
-export function saveOptTarget(target) {
-  try {
-    if (OPT_TARGETS.includes(target)) localStorage.setItem(OPT_TARGET_KEY, target);
-  } catch {
-    /* ignore */
+/**
+ * What the header shows for App's state. Costs is a view rather than a place,
+ * so it selects neither target nor tool. Anything unrecognised reads as
+ * Zone · Simulate; never throws.
+ *
+ * @returns {{target: string|null, tool: string|null, costs: boolean}}
+ */
+export function toRoute(simMode, optTarget) {
+  if (simMode === 'itemCosts') return { target: null, tool: null, costs: true };
+  if (TOOLS.some(t => t.value === simMode)) {
+    return { target: OPT_TARGETS.includes(optTarget) ? optTarget : 'zone', tool: simMode, costs: false };
   }
+  return { target: isTarget(simMode) ? simMode : 'zone', tool: 'simulate', costs: false };
+}
+
+/**
+ * The App state a header pick leads to. An optimiser stays open when the new
+ * target suits it, re-aimed there; otherwise the pick lands on Simulate.
+ * optTarget changes only when an optimiser is chosen. Never throws.
+ *
+ * @returns {{simMode: string, optTarget: 'zone'|'labyrinth'}}
+ */
+export function fromRoute(target, tool, optTarget) {
+  const t = isTarget(target) ? target : 'zone';
+  if (tool !== 'simulate' && supports(tool, t)) return { simMode: tool, optTarget: t };
+  return { simMode: t, optTarget: OPT_TARGETS.includes(optTarget) ? optTarget : 'zone' };
 }
 
 /**
