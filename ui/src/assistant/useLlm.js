@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createLocalClient } from './localLlm';
-import { recommendModel, MODEL_TIERS } from './models';
+import { GPU_LIMITS, recommendModel, MODEL_TIERS } from './models';
 import { BUDGET, buildSystemPrompt, fitHistory, parseToolCalls, toLocalMessages } from './protocol';
 import { CUT, chatAnthropic, chatOpenAI, fitCloudHistory } from './providers';
 import { readKey, saveKey } from './settings';
@@ -8,9 +8,14 @@ import { readKey, saveKey } from './settings';
 async function detectGpu() {
   // The same adapter web-llm's detectGPUDevice will ask for.
   const adapter = navigator.gpu ? await navigator.gpu.requestAdapter({ powerPreference: 'high-performance' }).catch(() => null) : null;
-  const limits = adapter?.limits;
-  return { hasGpu: !!adapter, shaderF16: !!adapter?.features.has('shader-f16'), maxBufferSize: limits?.maxBufferSize ?? 0,
-    maxStorageBuffersPerShaderStage: limits?.maxStorageBuffersPerShaderStage ?? 0, deviceMemory: navigator.deviceMemory };
+  const limits = Object.fromEntries(Object.keys(GPU_LIMITS).map(k => [k, adapter?.limits[k]]));
+  return { hasGpu: !!adapter, shaderF16: !!adapter?.features.has('shader-f16'), ...limits, deviceMemory: navigator.deviceMemory };
+}
+
+// tvmjs's "requested <limit> exceeds limit" error, said plainly.
+function readable(message) {
+  const limit = /requested (\w+) exceeds limit/.exec(message)?.[1];
+  return limit ? `This GPU's WebGPU ${limit} limit is too low for local models. Use an Anthropic or OpenAI key instead.` : message;
 }
 
 const IDLE = { loaded: null, loading: null, progress: 0, text: '', error: null };
@@ -39,7 +44,7 @@ export function useLlm(settings) {
   const getClient = useCallback(() => (client.current ??= createLocalClient((e) => {
     client.current = null;
     dead.current = e;
-    setLocal({ ...IDLE, error: e.message });
+    setLocal({ ...IDLE, error: readable(e.message) });
   })), []);
   const rec = useMemo(() => (gpu ? recommendModel(gpu) : null), [gpu]);
   // A remembered model from the other quant (another device) maps to this device's id.
@@ -62,8 +67,7 @@ export function useLlm(settings) {
       setLocal({ ...IDLE, loaded: id, progress: 1 });
       setCache(c => ({ ...c, [id]: true }));
     } catch (e) {
-      const limit = /requested (\w+) exceeds limit/.exec(e.message)?.[1];
-      setLocal({ ...IDLE, error: limit ? `This GPU's WebGPU ${limit} limit is too low for local models. Use an Anthropic or OpenAI key instead.` : e.message });
+      setLocal({ ...IDLE, error: readable(e.message) });
     }
   }, [getClient]);
 

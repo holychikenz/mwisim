@@ -2,10 +2,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const { MODEL_TIERS, recommendModel } = await import('../../ui/src/assistant/models.js');
+const { GPU_LIMITS, MODEL_TIERS, recommendModel } = await import('../../ui/src/assistant/models.js');
 
 const MiB = 1024 * 1024;
-const gpu = (over = {}) => ({ hasGpu: true, shaderF16: true, maxBufferSize: 1024 * MiB, maxStorageBuffersPerShaderStage: 10, deviceMemory: 8, ...over });
+const gpu = (over = {}) => ({ hasGpu: true, shaderF16: true, ...GPU_LIMITS, maxBufferSize: 1024 * MiB, deviceMemory: 8, ...over });
 
 test('1: no WebGPU — nothing recommended, nothing fits', () => {
   const r = recommendModel({ hasGpu: false, shaderF16: false, maxBufferSize: 0 });
@@ -55,5 +55,12 @@ test('7: fewer than 10 storage buffers per shader stage — nothing fits (web-ll
     assert.equal(r.reason, 'limits');
     assert.equal(r.recommended, null);
     assert.ok(r.list.every(m => !m.fits));
+  }
+});
+
+test('8: each tvmjs floor alone blocks every model; exactly at the floor passes', () => {
+  for (const [k, min] of Object.entries(GPU_LIMITS)) {
+    assert.equal(recommendModel(gpu({ [k]: min - 1 })).reason, 'limits', k);
+    assert.equal(recommendModel(gpu({ [k]: min })).reason, null, k);
   }
 });
