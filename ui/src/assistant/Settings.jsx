@@ -19,12 +19,14 @@ function LocalModels({ llm, onSettings }) {
   // Showing cache status starts the model worker (fetched once, then HTTP-cached).
   useEffect(() => { if (ids) refreshCache(ids.split('|')); }, [ids, refreshCache]);
   if (!rec) return <Text size="sm" c="dimmed">Checking this browser for WebGPU…</Text>;
-  if (!rec.list.some(m => m.fits) && rec.reason === 'no-webgpu') {
+  if (rec.reason === 'no-webgpu') {
     return <Text size="sm">This browser has no WebGPU, so a model can't run on this device. Use an Anthropic or OpenAI key, or a browser with WebGPU.</Text>;
   }
   const busy = !!local.loading;
+  const tooLow = rec.reason === 'limits';
   return (
     <Stack gap="xs">
+      {tooLow && <Text size="sm">This browser's WebGPU limits are too low for the local models, so none can load here. Try Chrome, or use an Anthropic or OpenAI key; downloaded models can still be deleted below.</Text>}
       <Radio.Group value={localModel} onChange={(id) => onSettings({ localModel: id })} label="Model" description="Bigger models follow instructions better but download more.">
         <Stack gap={6} mt={6}>
           {rec.list.map(m => (
@@ -45,7 +47,7 @@ function LocalModels({ llm, onSettings }) {
         </Stack>
       </Radio.Group>
       <Group gap="xs">
-        <Button size="xs" onClick={() => llm.load(localModel)} loading={busy} disabled={!localModel || local.loaded === localModel}>
+        <Button size="xs" onClick={() => llm.load(localModel)} loading={busy} disabled={tooLow || !localModel || local.loaded === localModel}>
           {local.loaded === localModel ? 'Loaded' : 'Load'}
         </Button>
         {cache[localModel] && local.loaded !== localModel && (
