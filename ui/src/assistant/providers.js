@@ -8,9 +8,9 @@
 // reasoning_effort "none".
 // The key goes only in its header; errors are redacted; nothing is logged.
 // `fetch` is injected and called unbound (the hook passes fetch.bind(globalThis)).
-// Requests only append: the system prompt never changes and the state line rides
-// on the user turn, so Claude's thinking blocks stay valid (fitCloudHistory is the
-// one exception).
+// Within a turn requests only append: the system prompt never changes, the state
+// line rides on the user turn, and fitCloudHistory cuts once per turn, so the tool
+// loop's thinking blocks stay valid.
 // Pure: no React, no browser globals.
 // =============================================================================
 
@@ -132,17 +132,18 @@ const withoutThinking = (e) => (Array.isArray(e.raw)
   ? { ...e, raw: e.raw.filter(b => b.type !== 'thinking' && b.type !== 'redacted_thinking') } : e);
 
 /**
- * The cloud history: the newest whole rounds within budget. Claude binds each thinking block to
- * everything sent before it, so once older rounds are dropped no thinking block is replayed
- * (dropping all of them is allowed; changing the history before them is not) — the current
- * round's included, whose blocks were made before the cut moved. Untrimmed, the thinking is
- * sent and counted; trimmed, the rounds are fitted as sent, without it.
+ * The cloud history, cut once per turn. Claude binds each thinking block to everything sent before
+ * it, and a tool loop must send its own blocks back, so the cut is decided on the history up to this
+ * turn's user entry, which the loop never changes. If that fits the budget, everything is sent as is.
+ * If not: its newest whole rounds that fit, fitted as sent, without thinking (removing all of it is
+ * allowed, and none comes back: the transcript only grows), then this turn's loop untouched.
  */
 export function fitCloudHistory(transcript) {
-  const kept = fitHistory(transcript, BUDGET.cloudHistory);
-  if (kept.length === transcript.length) return kept;
-  // shortcut: past the budget every request replays no thinking (Claude re-plans each step); move to server-side compaction if long chats get slow or costly.
-  return fitHistory(transcript.map(withoutThinking), BUDGET.cloudHistory);
+  const at = transcript.findLastIndex(e => e.role === 'user') + 1;
+  const head = transcript.slice(0, at);
+  if (fitHistory(head, BUDGET.cloudHistory).length === head.length) return transcript;
+  // shortcut: past the budget earlier turns replay no thinking (Claude re-plans from their text); move to server-side compaction if long chats get slow or costly.
+  return [...fitHistory(head.map(withoutThinking), BUDGET.cloudHistory), ...transcript.slice(at)];
 }
 
 // -- the call -----------------------------------------------------------------

@@ -137,21 +137,35 @@ test('10: the state line is its own block on the user turn, never after tool res
   assert.equal(o.messages[1].content, 'hi\n\nNow: Zone · Simulate');
 });
 
-test('11: fitCloudHistory keeps thinking within budget and strips it once rounds are dropped', () => {
-  const round = (q, big = 0) => [
-    { role: 'user', text: q + 'x'.repeat(big) },
-    { role: 'assistant', text: 'Raising.', raw: anthropicRaw, calls: [{ id: 'tu1', name: 'get_state', args: {} }] },
-    { role: 'tool', results: [{ id: 'tu1', name: 'get_state', content: 'ok' }] },
-    { role: 'assistant', text: '', raw: [{ type: 'redacted_thinking', data: 'x' }], calls: [] },
+test('11: fitCloudHistory cuts once per turn: over budget, earlier turns lose their thinking and the current loop keeps its own', () => {
+  const step = (id, signature = 'sig') => [
+    { role: 'assistant', text: '', calls: [{ id, name: 'get_state', args: {} }],
+      raw: [{ type: 'thinking', thinking: 'hm', signature }, { type: 'tool_use', id, name: 'get_state', input: {} }] },
+    { role: 'tool', results: [{ id, name: 'get_state', content: 'ok' }] },
   ];
-  const small = P.fitCloudHistory(round('a'));
-  assert.equal(small[1].raw, anthropicRaw);
-  const kept = P.fitCloudHistory([...round('a', 80000), ...round('b')]);
-  assert.equal(kept[0].text, 'b');
-  for (const e of kept) if (Array.isArray(e.raw)) assert.ok(e.raw.every(b => b.type !== 'thinking' && b.type !== 'redacted_thinking'));
-  assert.deepEqual(kept[1].raw.map(b => b.type), ['text', 'tool_use']);
-  const body = JSON.parse(P.anthropicRequest({ key: KEY, model: 'm', system: 'S', transcript: kept, tools }).init.body);
-  assert.equal(body.messages.length, 3);
+  const done = { role: 'assistant', text: 'Done.', calls: [], raw: [{ type: 'redacted_thinking', data: 'x' }, { type: 'text', text: 'Done.' }] };
+  const turn = (q, signature) => [{ role: 'user', text: q }, ...step(`${q}1`, signature), done];
+  // Under budget: sent untouched, thinking included.
+  const small = [...turn('a'), { role: 'user', text: 'b' }, ...step('b1')];
+  assert.deepEqual(P.fitCloudHistory(small), small);
+  // Over budget (turn a's signature alone is about 25k estimated tokens): turn b's requests, step by step. The last
+  // step's tool result alone would push turn a out if the loop counted toward the cut.
+  const head = [...turn('a', 'S'.repeat(75000)), { role: 'user', text: 'b' }];
+  const big = step('b2');
+  big[1].results[0].content = 'x'.repeat(80000);
+  const loops = [[], step('b1'), [...step('b1'), ...big]];
+  const requests = loops.map(loop => P.fitCloudHistory([...head, ...loop]));
+  for (const [k, r] of requests.entries()) {
+    // The loop exactly as the model made it, thinking kept; turn a kept without its thinking.
+    assert.deepEqual(r.slice(5), loops[k]);
+    assert.deepEqual(r.slice(0, 5).map(e => (Array.isArray(e.raw) ? e.raw.map(b => b.type) : e.role)),
+      ['user', ['tool_use'], 'tool', ['text'], 'user']);
+    // The cut never moves within a turn: each request extends the one before.
+    if (k) assert.deepEqual(r.slice(0, requests[k - 1].length), requests[k - 1]);
+  }
+  const body = JSON.parse(P.anthropicRequest({ key: KEY, model: 'm', system: 'S', transcript: requests[2], tools }).init.body);
+  assert.deepEqual(body.messages.map(m => m.role), ['user', 'assistant', 'user', 'assistant', 'user', 'assistant', 'user', 'assistant', 'user']);
+  assert.deepEqual(body.messages[7].content.map(b => b.type), ['thinking', 'tool_use']);
   const o = [{ role: 'user', text: 'x'.repeat(80000) }, { role: 'user', text: 'b' }, { role: 'assistant', text: '', raw: openaiRaw, calls: [] }];
   assert.equal(P.fitCloudHistory(o)[1].raw, openaiRaw);
 });
@@ -160,8 +174,8 @@ test('11b: past the budget the rounds are fitted as sent, without thinking, so s
   const sig = 'S'.repeat(30000); // about 10k estimated tokens of signature per reply
   const round = (q) => [{ role: 'user', text: q },
     { role: 'assistant', text: 'ok', raw: [{ type: 'thinking', thinking: '', signature: sig }, { type: 'text', text: 'ok' }], calls: [] }];
-  const kept = P.fitCloudHistory([...round('a'), ...round('b'), ...round('c')]);
-  assert.deepEqual(kept.filter(e => e.role === 'user').map(e => e.text), ['a', 'b', 'c']);
+  const kept = P.fitCloudHistory([...round('a'), ...round('b'), ...round('c'), { role: 'user', text: 'd' }]);
+  assert.deepEqual(kept.filter(e => e.role === 'user').map(e => e.text), ['a', 'b', 'c', 'd']);
   for (const e of kept) if (Array.isArray(e.raw)) assert.deepEqual(e.raw.map(b => b.type), ['text']);
 });
 
