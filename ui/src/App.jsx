@@ -39,6 +39,7 @@ import {
 } from './utils/rosterBridge';
 import { HeaderControls, GlobalBuffsCard } from './components/HeaderControls';
 import { PartyRail } from './components/PartyRail';
+import { MainCharacterChip } from './components/MainCharacterChip';
 import { PlayerConfig } from './components/PlayerConfig';
 import { SimulationResults } from './components/SimulationResults';
 import { ImportExport } from './components/ImportExport';
@@ -69,7 +70,8 @@ import {
   createCharacter,
   emptyStore,
   loadCharacters,
-  makeCharacterId,
+  mainCharacter,
+  mainSlotRef,
   mergeImportedCharacter,
   resolveRef,
   saveCharacters,
@@ -190,6 +192,9 @@ function normalizeParty(saved) {
   return party;
 }
 
+/** A remembered main character: null, or { id, gameId }. */
+const isMainRef = (v) => v === null || (typeof v === 'object' && typeof v.id === 'string');
+
 const VERSION_NOTICE =
   'Saved data from an older version was set aside (csim_player_data.v1, ' +
   'csim_guild_trial.v1) and your old flat loadouts are untouched in csim_loadouts. ' +
@@ -253,9 +258,18 @@ function App() {
       : migrateLegacyLoadouts(store);
   }, [loadedCharacters]);
   const [characters, setCharacters] = useState(() => restored.store);
+  // The main character (header chip): a remembered { id, gameId }, resolved by mainCharacter.
+  const [mainRef, setMainRef] = usePersistentState('csim_ui_main_character', null, isMainRef);
+  const main = useMemo(() => mainCharacter(characters, mainRef), [characters, mainRef]);
   // Five slots, each a {characterId, loadoutName} REFERENCE — so two slots can
   // be the same character in different gear with no copy of anything.
-  const [party, setParty] = useState(() => normalizeParty(savedSession.party));
+  // With no stored session, P1 — the slot Triggers, Gear and Costs read by
+  // default — starts on the main character.
+  const [party, setParty] = useState(() => {
+    const restoredParty = normalizeParty(savedSession.party);
+    const seed = session.status !== 'ok' && mainSlotRef(restored.store, mainRef);
+    return seed ? { ...restoredParty, 1: seed } : restoredParty;
+  });
   const [navbarWidth, setNavbarWidth] = useState(loadNavbarWidth);
   // Below Mantine's `sm` the rail is hidden; the header burger brings it back
   // as an overlay, and picking a member closes it again to reveal the sheet.
@@ -401,7 +415,7 @@ function App() {
   // A button called "All Zones" that opens an empty grid is a riddle.
   const sweepInitialised = useRef(storedSweep?.selection != null);
 
-  const pricing = usePrices(gameData);
+  const pricing = usePrices(gameData, main);
 
   // MWIX in-game bridge: "Open in csim" lands here with a #mwiLabBridge=
   // payload. Runs after child effects (ImportExport's localStorage restore),
@@ -686,10 +700,12 @@ function App() {
 
   /**
    * A full character import: every combat loadout it owns, MERGED onto whatever
-   * is already stored rather than replacing it. The import id is deterministic
-   * (`makeCharacterId(name)`), so re-importing the same character always lands
-   * on the same key — and used to destroy every shrine level, every seal and
-   * every hand-made loadout on the way in. See `mergeImportedCharacter`.
+   * is already stored rather than replacing it. It lands on the stored character
+   * with the same game characterId — an in-game rename re-imports onto the old
+   * record and takes the new name — else on makeCharacterId(name), so
+   * re-importing the same character always lands on the same key; that used to
+   * destroy every shrine level, every seal and every hand-made loadout on the
+   * way in. See `mergeImportedCharacter`.
    *
    * The WRITE goes through a functional updater, and must stay that way.
    * `CharacterImport` awaits a network round trip before calling back, so the
@@ -701,13 +717,16 @@ function App() {
    * `mergeImportedCharacter` is idempotent on the same base.
    */
   const handleImportCharacter = useCallback((slotId, character, defaultLoadoutName) => {
-    const id = character.id || makeCharacterId(character.name);
-    setCharacters(prev => mergeImportedCharacter(prev, character).store);
+    // Where it lands depends on the base now (game-id match), so the pure preview
+    // names the record and the write is pinned to it: the slot binding holds even
+    // if the base moved during the fetch.
+    const preview = mergeImportedCharacter(characters, character);
+    const { id } = preview;
+    setCharacters(prev => mergeImportedCharacter(prev, { ...character, id }).store);
 
     // Which loadout to bind depends only on the INCOMING character, never on
     // the base: the merge is a union, so any loadout the import carries is in
-    // the result whatever was there before. That keeps the binding correct even
-    // when the snapshot below is stale.
+    // the result whatever was there before.
     const incoming = character.loadouts || {};
     const loadoutName = (defaultLoadoutName && incoming[defaultLoadoutName])
       ? defaultLoadoutName
@@ -718,9 +737,8 @@ function App() {
 
     // The notice is COSMETIC, so it may be computed against the snapshot: in
     // the rare in-flight race its counts can lag by an edit, which is a wrong
-    // sentence rather than wrong data. The merge is pure, so previewing it here
+    // sentence rather than wrong data. The merge is pure, so previewing it
     // changes nothing.
-    const preview = mergeImportedCharacter(characters, character);
     if (!preview.created) {
       setBridgeMessage(
         `Re-imported ${preview.store.characters[id]?.name || character.name} — ` +
@@ -1699,6 +1717,16 @@ function App() {
     setSheetOpen(true);
     closeNav();
   }, [sheetOpen, activeTab, setSheetOpen, closeNav]);
+  const handleMainChange = useCallback(
+    (c) => setMainRef({ id: c.id, gameId: c.game?.id ?? null }), [setMainRef]);
+  // The chip's "Import character" (nothing stored): the import lives in the member
+  // sheet, which Trial and Costs do not show, so land on Zone with P1's sheet open.
+  const handleOpenImport = useCallback(() => {
+    if (simMode === 'guildTrial' || simMode === 'itemCosts') setSimMode('zone');
+    setActiveTab(1);
+    setSheetOpen(true);
+    closeNav();
+  }, [simMode, setSheetOpen, closeNav]);
 
   // The header, progress bar and results pane read from whichever engine the
   // current mode uses. Both optimisers go through an API hook; every other mode
@@ -1781,6 +1809,14 @@ function App() {
           labConfig={labConfig}
           experimental={experimental}
           onExperimentalChange={handleExperimentalChange}
+          characterChip={
+            <MainCharacterChip
+              characters={characters}
+              main={main}
+              onChange={handleMainChange}
+              onImport={handleOpenImport}
+            />
+          }
         >
           <Group gap="xs" wrap="nowrap">
             <Burger opened={navOpened} onClick={handleToggleNav} hiddenFrom="sm" size="sm" aria-label="Toggle party rail" />

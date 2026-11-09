@@ -33,7 +33,9 @@ const {
   loadVersioned,
   emptyStore,
   resolveRef,
-  createCharacter
+  createCharacter,
+  mainCharacter,
+  mainSlotRef
 } = await import('../../ui/src/utils/characterStore.js');
 const {
   deleteLoadoutEverywhere,
@@ -230,8 +232,9 @@ test('ability levels are character-owned, triggers are loadout-owned', () => {
 });
 
 test('a resolved player produces a clean DTO', () => {
-  const dto = toPlayerDTO(resolvePlayer(character(), loadout()), { hrid: 'player3' });
+  const dto = toPlayerDTO(resolvePlayer(character({ game: { id: 7, name: 'c' } }), loadout()), { hrid: 'player3' });
   assert.equal(dto.hrid, 'player3');
+  assert.ok(!('game' in dto));
   assert.ok(!('abilityMemory' in dto));
   assert.ok(!('loadouts' in dto));
   assert.ok(!('name' in dto));
@@ -463,4 +466,42 @@ test('deleting a sole `default` loadout drops its references despite the blank r
   // The character itself survives, levels intact — a delete of one loadout is
   // not a delete of the character.
   assert.equal(next.characters.characters.hero.attackLevel, 90);
+});
+
+// =============================================================================
+// THE MAIN CHARACTER (header chip) — resolved from a remembered { id, gameId }.
+// =============================================================================
+
+function twoStore() {
+  let s = upsertCharacter(emptyStore(), { id: 'bob', name: 'bob', loadouts: { default: createLoadout() } });
+  s = upsertCharacter(s, { id: 'alicia', name: 'alicia', game: { id: 1, name: 'alicia' }, loadouts: { default: createLoadout() } });
+  return s;
+}
+
+test('mainCharacter: by game id first, then store id, else the only character', () => {
+  const s = twoStore();
+  assert.equal(mainCharacter(s, { id: 'bob' }).id, 'bob');
+  // alice was re-imported as alicia (same game id): the choice follows her.
+  assert.equal(mainCharacter(s, { id: 'alice', gameId: 1 }).id, 'alicia');
+  assert.equal(mainCharacter(s, { id: 'gone' }), null, 'stale ref with two characters: no guess');
+  assert.equal(mainCharacter(s, null), null);
+  assert.equal(mainCharacter(s, { id: '__proto__' }), null);
+  const onlyBob = upsertCharacter(emptyStore(), { id: 'bob', name: 'bob' });
+  assert.equal(mainCharacter(onlyBob, { id: 'gone' }).id, 'bob');
+  assert.equal(mainCharacter(emptyStore(), { id: 'bob' }), null);
+  assert.equal(mainCharacter(undefined, undefined), null);
+});
+
+test('mainSlotRef: main in its first loadout, else null', () => {
+  const s = upsertCharacter(emptyStore(), {
+    id: 'a', name: 'a', loadouts: { tank: createLoadout(), mage: createLoadout() }
+  });
+  assert.deepEqual(mainSlotRef(s, { id: 'a' }), { characterId: 'a', loadoutName: 'tank' });
+  assert.equal(mainSlotRef(emptyStore(), { id: 'a' }), null);
+});
+
+test('game identity is optional: absent stays absent, a non-object is dropped', () => {
+  assert.ok(!('game' in sanitizeCharacter(character())));
+  assert.ok(!('game' in sanitizeCharacter(character({ game: 42 }))));
+  assert.deepEqual(sanitizeCharacter(character({ game: { id: 7, name: 'c' } })).game, { id: 7, name: 'c' });
 });

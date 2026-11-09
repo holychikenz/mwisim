@@ -135,3 +135,34 @@ export function formatValue(v, unit) {
   if (a >= 1e3) return sign + (a / 1e3).toFixed(2) + 'K';
   return sign + Math.floor(a).toLocaleString();
 }
+
+const sameName = (a, b) =>
+  typeof a === 'string' && typeof b === 'string' && a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/** The cow webapp's name for `main`, or null. `webapp` = GET /api/characters
+ *  ({ characters: [name], details: [{ name, … }] }). By name — the one the import
+ *  used (game.name), then the character's own — ignoring case, returning the
+ *  webapp's spelling; failing that by game characterId, should a details entry
+ *  ever carry one (`characterId` or `id`; none does today). */
+export function matchWebappCharacter(main, webapp) {
+  const names = Array.isArray(webapp?.characters) ? webapp.characters : [];
+  for (const want of [main?.game?.name, main?.name]) {
+    const hit = names.find(n => sameName(n, want));
+    if (hit) return hit;
+  }
+  const gameId = main?.game?.id;
+  if (gameId == null || !Array.isArray(webapp?.details)) return null;
+  const entry = webapp.details.find(d => d && String(d.characterId ?? d.id) === String(gameId));
+  return typeof entry?.name === 'string' ? entry.name : null;
+}
+
+/** Following main with the iron source (hooks/usePrices.js): null when nothing
+ *  changed since `followed` (webapp name last acted on), else { name, needsFetch }
+ *  — name null when main is not a webapp character; needsFetch false when the
+ *  cached iron times are already theirs. */
+export function autoIronDecision({ main, webapp, cache, followed = null }) {
+  if (!webapp || !main) return null;
+  const name = matchWebappCharacter(main, webapp);
+  if (name === followed) return null;
+  return { name, needsFetch: name != null && !sameName(cache?.iron?.character, name) };
+}

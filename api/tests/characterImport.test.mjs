@@ -710,3 +710,76 @@ test('an import in flight does not overwrite an edit made while it was fetching'
   // StrictMode is harmless and the functional form is safe.
   assert.deepEqual(mergeImportedCharacter(applied, incoming).store, applied);
 });
+
+// =============================================================================
+// GAME IDENTITY — players rename in-game; the characterId never changes.
+// =============================================================================
+
+const asGame = (id, name) => ({ ...char, name, character: { id, name } });
+
+test('the import records the game characterId and the name it used', () => {
+  const c = characterToCharacter(asGame(4242, 'holychikenz'), null, 'holychikenz').character;
+  assert.deepEqual(c.game, { id: 4242, name: 'holychikenz' });
+  assert.ok(!('game' in characterToCharacter(char, null, 'holychikenz').character));
+  assert.ok(!('game' in toPlayerDTO(resolvePlayer(c, c.loadouts.tank), { hrid: 'player1' })));
+});
+
+test('an in-game rename re-imports onto the old record and takes the new name', () => {
+  let s = mergeImportedCharacter(
+    emptyStore(), characterToCharacter(asGame(4242, 'holychikenz'), null, 'holychikenz').character
+  ).store;
+  s = upsertCharacter(s, {
+    ...s.characters.holychikenz,
+    guildShrines: { '/buff_types/guild_force': 5 },
+    personalBuffs: ['/items/seal_of_pain']
+  });
+  s = setLoadout(s, 'holychikenz', 'pvp', sanitizeLoadout({}));
+
+  const incoming = characterToCharacter(asGame(4242, 'chikenz'), null, 'chikenz').character;
+  const merged = mergeImportedCharacter(s, incoming);
+  const stored = merged.store.characters.holychikenz;
+  assert.equal(merged.id, 'holychikenz');
+  assert.equal(merged.created, false);
+  assert.deepEqual(Object.keys(merged.store.characters), ['holychikenz']);
+  assert.equal(stored.name, 'chikenz');
+  assert.deepEqual(stored.game, { id: 4242, name: 'chikenz' });
+  assert.deepEqual(stored.guildShrines, { '/buff_types/guild_force': 5 });
+  assert.deepEqual(stored.personalBuffs, ['/items/seal_of_pain']);
+  assert.deepEqual(merged.kept, ['pvp']);
+  assert.deepEqual(mergeImportedCharacter(merged.store, incoming).store, merged.store);
+});
+
+test('a name chosen in csim survives an id-matched re-import', () => {
+  let s = mergeImportedCharacter(
+    emptyStore(), characterToCharacter(asGame(4242, 'holychikenz'), null, 'holychikenz').character
+  ).store;
+  s = upsertCharacter(s, { ...s.characters.holychikenz, name: 'main' });
+  const stored = mergeImportedCharacter(
+    s, characterToCharacter(asGame(4242, 'chikenz'), null, 'chikenz').character
+  ).store.characters.holychikenz;
+  assert.equal(stored.name, 'main');
+  assert.equal(stored.game.name, 'chikenz');
+});
+
+test("a different game character with a stored character's name gets its own record", () => {
+  const s = mergeImportedCharacter(
+    emptyStore(), characterToCharacter(asGame(1, 'alice'), null, 'alice').character
+  ).store;
+  const merged = mergeImportedCharacter(s, characterToCharacter(asGame(2, 'alice'), null, 'alice').character);
+  assert.equal(merged.created, true);
+  assert.notEqual(merged.id, 'alice');
+  assert.equal(merged.store.characters.alice.game.id, 1);
+  assert.equal(merged.store.characters[merged.id].game.id, 2);
+});
+
+test('a legacy record (no game) is re-imported in place, keeps its name, gains the id', () => {
+  let s = mergeImportedCharacter(emptyStore(), characterToCharacter(char, null, 'holychikenz').character).store;
+  s = upsertCharacter(s, { ...s.characters.holychikenz, name: 'Holy' });
+  const merged = mergeImportedCharacter(
+    s, characterToCharacter(asGame(4242, 'holychikenz'), null, 'holychikenz').character
+  );
+  assert.equal(merged.id, 'holychikenz');
+  assert.equal(merged.created, false);
+  assert.equal(merged.store.characters.holychikenz.name, 'Holy');
+  assert.deepEqual(merged.store.characters.holychikenz.game, { id: 4242, name: 'holychikenz' });
+});

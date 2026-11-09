@@ -30,6 +30,9 @@ export const CHARACTERS_KEY = 'csim_characters';
 export const CHARACTER_KEYS = Object.freeze([
   'id',
   'name',
+  // Optional { id, name } game identity (characterId + the name the last import
+  // used). Never in a DTO: resolvePlayer emits explicit keys only.
+  'game',
   'staminaLevel',
   'intelligenceLevel',
   'attackLevel',
@@ -72,6 +75,7 @@ const LEVEL_FIELDS = Object.freeze([
 
 const isObject = (v) => Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 const has = (o, k) => Object.prototype.hasOwnProperty.call(o || {}, k);
+const sameGameId = (a, b) => a != null && b != null && String(a) === String(b);
 
 /** Slug a display name into a stable character id. */
 export function makeCharacterId(name) {
@@ -151,8 +155,9 @@ export function sanitizeCharacter(raw) {
   const out = {};
   for (const key of CHARACTER_KEYS) {
     // The tri-state again: only copy `guildShrines` if the source actually has
-    // it, so "no opinion" survives a round trip through the store.
-    if (key === 'guildShrines') {
+    // it, so "no opinion" survives a round trip through the store. `game` is
+    // likewise optional and never defaulted.
+    if (key === 'guildShrines' || key === 'game') {
       if (has(raw, key) && isObject(raw[key])) out[key] = raw[key];
       continue;
     }
@@ -332,8 +337,24 @@ export function patchCharacter(store, characterId, partial) {
   return upsertCharacter(store, { ...existing, ...partial, id: existing.id, name: existing.name });
 }
 
+/** The stored character an import lands on: same game characterId (an in-game
+ *  rename re-imports onto its old record), else the name's slug — unless that
+ *  slug is a different game character's, which then gets a record of its own. */
+function importTargetId(store, incoming) {
+  const characters = store?.characters || {};
+  const gameId = incoming?.game?.id;
+  const same = Object.values(characters).find(c => sameGameId(c?.game?.id, gameId));
+  if (same) return same.id;
+  const slug = incoming?.id || makeCharacterId(incoming?.name);
+  return characters[slug]?.game?.id != null && gameId != null && !sameGameId(characters[slug].game.id, gameId)
+    ? makeCharacterId(`${slug} ${gameId}`) : slug;
+}
+
 /**
  * Merge an IMPORTED character onto whatever is already stored.
+ *
+ * EXISTING means the stored character with the same game characterId, else the
+ * one at the name's slug (see importTargetId).
  *
  *  - NEW character: stored as-is, plus the FIRST-IMPORT defaults for anything
  *    the import omitted. `{}` means "captured, owns none" and `[]` means "no
@@ -347,17 +368,18 @@ export function patchCharacter(store, characterId, partial) {
  *    every field it OMITS keeps the stored value — so shrines and seals the
  *    user has since entered survive a re-import, which is the whole point.
  *    Loadouts merge BY NAME: same-named incoming replaces, existing-without-
- *    incoming is PRESERVED, incoming-without-existing is ADDED.
+ *    incoming is PRESERVED, incoming-without-existing is ADDED. An in-game
+ *    rename is followed unless the character was renamed here.
  *
  * It operates on the RAW `incoming`, before `sanitizeCharacter` — which fills
  * `base[key]` for any absent non-`guildShrines` key and would manufacture the
  * very `personalBuffs: []` we are avoiding. `upsertCharacter` sanitizes at the
  * end, as always.
  *
- * @returns {{store, created: boolean, replaced: string[], added: string[], kept: string[]}}
+ * @returns {{store, id: string, created: boolean, replaced: string[], added: string[], kept: string[]}}
  */
 export function mergeImportedCharacter(store, incoming) {
-  const id = incoming?.id || makeCharacterId(incoming?.name);
+  const id = importTargetId(store, incoming);
   const existing = store?.characters?.[id];
   const incomingLoadouts = isObject(incoming?.loadouts) ? incoming.loadouts : {};
 
@@ -367,6 +389,7 @@ export function mergeImportedCharacter(store, incoming) {
     if (!has(incoming, 'personalBuffs')) character.personalBuffs = [];
     return {
       store: upsertCharacter(store, character),
+      id,
       created: true,
       replaced: [],
       added: Object.keys(incomingLoadouts),
@@ -375,13 +398,16 @@ export function mergeImportedCharacter(store, incoming) {
   }
 
   // Only the keys the import actually carries. `loadouts` is deliberately NOT
-  // in the partial: patchCharacter is a shallow spread and would clobber them.
+  // in the partial: the spread below is shallow and would clobber them.
   const partial = {};
   for (const key of CHARACTER_KEYS) {
     if (key === 'id' || key === 'name' || key === 'loadouts') continue;
     if (has(incoming, key)) partial[key] = incoming[key];
   }
-  let next = patchCharacter(store, id, partial);
+  // Follow an in-game rename only while the stored name is still the one the
+  // last import gave it: a name chosen here stands, as it always has.
+  const follows = incoming?.game && incoming.name && existing.game?.name != null && existing.name === existing.game.name;
+  let next = upsertCharacter(store, { ...existing, ...partial, id, name: follows ? incoming.name : existing.name });
 
   const replaced = [];
   const added = [];
@@ -390,7 +416,7 @@ export function mergeImportedCharacter(store, incoming) {
     next = setLoadout(next, id, name, loadout);
   }
   const kept = Object.keys(existing.loadouts || {}).filter(n => !has(incomingLoadouts, n));
-  return { store: next, created: false, replaced, added, kept };
+  return { store: next, id, created: false, replaced, added, kept };
 }
 
 export function setLoadout(store, characterId, loadoutName, loadout) {
@@ -441,6 +467,26 @@ export function deleteCharacter(store, characterId) {
   const characters = { ...(store?.characters || {}) };
   delete characters[characterId];
   return { ...store, schemaVersion: SCHEMA_VERSION, characters };
+}
+
+/** THE MAIN CHARACTER (header chip): `ref` = remembered { id, gameId }. Game id
+ *  first (survives a re-import onto another record), then store id. No match:
+ *  the ONLY character if exactly one, else null — never written back, so a stale
+ *  choice returns with its character; never a guess, because main drives an
+ *  automatic price fetch. */
+export function mainCharacter(store, ref) {
+  const characters = store?.characters || {};
+  const all = Object.values(characters);
+  return all.find(c => sameGameId(c?.game?.id, ref?.gameId))
+    || (ref?.id && has(characters, ref.id) ? characters[ref.id] : null)
+    || (all.length === 1 ? all[0] : null);
+}
+
+/** P1 for a session with nothing stored: main in its first loadout, else null. */
+export function mainSlotRef(store, ref) {
+  const main = mainCharacter(store, ref);
+  const loadoutName = main && Object.keys(main.loadouts || {})[0];
+  return loadoutName ? { characterId: main.id, loadoutName } : null;
 }
 
 // -- persistence --------------------------------------------------------------

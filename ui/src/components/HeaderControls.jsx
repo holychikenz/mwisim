@@ -117,7 +117,9 @@ export function HeaderControls({
   // target, Costs and the cog, then the tool tabs. 'strip' renders the run
   // strip (target, duration, All Zones, Run/Stop) above the results.
   part = 'strip',
-  children
+  children,
+  // Header only: the main-character chip, far right of row 1.
+  characterChip
 }) {
   // Planets and dungeons only. The 44 solo-monster combat actions ("Fly",
   // "Granite Golem") are spawns inside a planet rather than places to send a
@@ -226,35 +228,41 @@ export function HeaderControls({
     };
     return (
       <Stack gap={0} h="100%" justify="space-between">
-        {/* Where. Scrolls rather than overflowing when a phone squeezes it; the
-            far right is left free for a main-character chip. */}
-        <Group h={56} px="md" wrap="nowrap" style={{ overflowX: 'auto' }}>
+        {/* Where. The burger and brand (children) and the right-hand group stay
+            put; only the target scrolls sideways when a phone squeezes it. */}
+        <Group h={56} px="md" wrap="nowrap">
           {children}
-          <SegmentedControl
-            size="sm"
-            radius="xl"
-            value={route.target}
-            onChange={(target) => go(target, route.tool)}
-            data={TARGETS}
-            aria-label="Target"
-          />
-          <Group gap="xs" wrap="nowrap" ml="auto">
+          <Group wrap="nowrap" style={{ flex: 1, minWidth: 0, overflowX: 'auto' }}>
+            <SegmentedControl
+              size="sm"
+              radius="xl"
+              value={route.target}
+              onChange={(target) => go(target, route.tool)}
+              data={TARGETS}
+              aria-label="Target"
+            />
+          </Group>
+          <Group gap="xs" wrap="nowrap">
             <Tooltip label={route.costs ? 'Close item costs' : 'Item costs'} withArrow>
               <ActionIcon
                 variant={route.costs ? 'filled' : 'default'}
                 size="lg"
                 onClick={toggleCosts}
-                aria-label={route.costs ? 'Close item costs' : 'Item costs'}
+                aria-label="Item costs"
                 aria-pressed={route.costs}
               >
-                {/* No icon package in this UI — the glyph is the icon. */}
-                <span style={{ fontSize: 16, lineHeight: 1 }}>▤</span>
+                {/* A ledger, drawn inline: the UI has no icon package. */}
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <rect x="4" y="3" width="16" height="18" rx="2" />
+                  <path d="M8 3v18M11 8h6M11 12h6M11 16h4" />
+                </svg>
               </ActionIcon>
             </Tooltip>
             {/* The cog. Present in every mode, including Costs — an experiment
                 left on is a fact about the whole app, so hiding it anywhere would
                 be a way to forget it. */}
             <SettingsMenu settings={experimental} onChange={onExperimentalChange} />
+            {characterChip}
           </Group>
         </Group>
         {/* What to do there. A tool that cannot fight the target is disabled; in

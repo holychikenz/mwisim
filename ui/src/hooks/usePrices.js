@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
-import { buildMarketPrices, buildIronPrices } from '../utils/prices';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { buildMarketPrices, buildIronPrices, autoIronDecision } from '../utils/prices';
 
 // =============================================================================
 // usePrices — price-source state + fetchers, with a persistent per-source cache.
@@ -18,6 +18,15 @@ import { buildMarketPrices, buildIronPrices } from '../utils/prices';
 // production times are stable, the fetch depends on an external service that may
 // be offline, and silently refetching would make two optimiser runs an hour apart
 // incomparable for no reason the user asked for.
+//
+// ONE EXCEPTION: FOLLOWING THE MAIN CHARACTER. On load, and whenever the header's
+// main character changes, a main the cow webapp lists becomes the iron character
+// and their times are fetched — at most once per character per session, and
+// never when the cached iron times are already theirs, so a reload with main's
+// times cached fetches nothing. The fetch is quiet: an offline webapp sets no
+// error and the cached entry stands. The SOURCE is never switched ('iron' is the
+// default; anything else was picked by hand), and hand-entered overrides are
+// untouched.
 //
 // The cache is keyed BY SOURCE rather than being a single slot, so flipping to
 // vendor and back does not throw away fetched iron times.
@@ -133,7 +142,26 @@ function persist(state) {
   }
 }
 
-export function usePrices(gameData) {
+/** The iron (cow webapp) times for `character`; throws on an HTTP failure. */
+async function fetchIronEntry(character, items) {
+  const url = `${IRON_API_BASE}/api/value/market` +
+    (character ? `?character=${encodeURIComponent(character)}` : '');
+  const res = await fetch(url, { mode: 'cors' });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const payload = await res.json();
+  const name = payload.character || character || 'default';
+  return {
+    prices: pruneEmptyPrices(buildIronPrices(payload.values || {}, items)),
+    unit: 'seconds',
+    label: `iron · ${name}`,
+    character: name,
+    fetchedAt: Date.now()
+  };
+}
+
+const NO_CHARACTERS = [];
+
+export function usePrices(gameData, main = null) {
   const persisted = useMemo(loadPersisted, []);
 
   const [source, setSource] = useState(persisted.source);
@@ -143,7 +171,9 @@ export function usePrices(gameData) {
   const [revenueMode, setRevenueMode] = useState(persisted.revenueMode);
   const [expenseMode, setExpenseMode] = useState(persisted.expenseMode);
   const [ironCharacter, setIronCharacter] = useState(persisted.ironCharacter);
-  const [characters, setCharacters] = useState([]);
+  // GET /api/characters as the webapp sent it ({ characters, details, active }).
+  const [webapp, setWebapp] = useState(null);
+  const characters = webapp?.characters || NO_CHARACTERS;
   const [itemCostOverrides, setItemCostOverrides] = useState(persisted.itemCostOverrides);
 
   // Persist the choices, the cache and the overrides. Prices are only written by
@@ -152,8 +182,8 @@ export function usePrices(gameData) {
     persist({ source, ironCharacter, revenueMode, expenseMode, cache, itemCostOverrides });
   }, [source, ironCharacter, revenueMode, expenseMode, cache, itemCostOverrides]);
 
-  // Populate the iron character list (best effort — webapp may be down). Note
-  // this does NOT fetch prices; a cached set stays in force until asked.
+  // Populate the iron character list (best effort — webapp may be down). This
+  // does not fetch prices itself; following main (below) may.
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -163,7 +193,7 @@ export function usePrices(gameData) {
         const data = await res.json();
         if (!cancelled) {
           const names = data.characters || [];
-          setCharacters(names);
+          setWebapp(data);
           setIronCharacter((prev) => prev || names[0] || null);
         }
       } catch {
@@ -249,22 +279,8 @@ export function usePrices(gameData) {
           }
         }));
       } else if (source === 'iron') {
-        const url = `${IRON_API_BASE}/api/value/market` +
-          (ironCharacter ? `?character=${encodeURIComponent(ironCharacter)}` : '');
-        const res = await fetch(url, { mode: 'cors' });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const payload = await res.json();
-        const character = payload.character || ironCharacter || 'default';
-        setCache((prev) => ({
-          ...prev,
-          iron: {
-            prices: pruneEmptyPrices(buildIronPrices(payload.values || {}, gameData.items)),
-            unit: 'seconds',
-            label: `iron · ${character}`,
-            character,
-            fetchedAt: Date.now()
-          }
-        }));
+        const iron = await fetchIronEntry(ironCharacter, gameData.items);
+        setCache((prev) => ({ ...prev, iron }));
       }
     } catch (e) {
       // The cached entry is deliberately LEFT IN PLACE. A webapp that happens to be
@@ -280,6 +296,31 @@ export function usePrices(gameData) {
   useEffect(() => {
     setError(null);
   }, [source]);
+
+  // Following the main character — the one automatic fetch (see the header).
+  // `followed`: the webapp name last acted on this session (loop guard, and how a
+  // late reply for a former main is recognised).
+  const followed = useRef(null);
+  const followMain = useCallback(async (name, needsFetch) => {
+    setIronCharacter(name);
+    if (!needsFetch) return;
+    setFetching(true);
+    try {
+      const iron = await fetchIronEntry(name, gameData.items);
+      if (followed.current === name) setCache((prev) => ({ ...prev, iron }));
+    } catch {
+      // Quiet by design: an offline webapp is normal, and the cached times stand.
+    } finally {
+      setFetching(false);
+    }
+  }, [gameData]);
+  useEffect(() => {
+    if (!gameData?.items) return;
+    const next = autoIronDecision({ main, webapp, cache, followed: followed.current });
+    if (!next) return;
+    followed.current = next.name;
+    if (next.name) followMain(next.name, next.needsFetch);
+  }, [main, webapp, cache, gameData, followMain]);
 
   /**
    * Override one item's cost, in seconds per unit. Pass null (or anything not a
