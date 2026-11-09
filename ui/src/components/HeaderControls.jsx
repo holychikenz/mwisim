@@ -28,7 +28,7 @@ import {
 import { levelToTierIndex, tierIndexToLevel, MAX_TIER_INDEX } from '../utils/trialTiers';
 import { simulableZones, zoneTiers, findZone } from '../utils/zones';
 import { SettingsMenu } from './SettingsMenu';
-import { TARGETS, TOOLS, supports, toRoute, fromRoute } from '../utils/optimizerTarget';
+import { TARGETS, TOOLS, isTool, supports, toRoute, fromRoute } from '../utils/optimizerTarget';
 import { usePersistentState, isBool } from '../hooks/usePersistentState';
 import { MAX_DUNGEON_RUNS, MIN_RUN_HOURS, MAX_RUN_HOURS, MAX_ZONE_WORKERS, MIN_DURATION_HOURS, MAX_DURATION_HOURS, clampDuration, clampRunCount, clampRunHours, clampZoneWorkers } from '../../../shared/dungeonRuns.js';
 
@@ -179,9 +179,9 @@ export function HeaderControls({
     activeShrineCount +
     activeBuildingCount;
 
-  // Modes vs targets. Zone and Lab are both; Triggers and Gear are modes that
+  // Modes vs targets. Zone and Lab are both; the tools (TOOLS) are modes that
   // must be pointed at a target, and Trial and Costs have none at all.
-  const isOptimiser = simMode === 'triggerOpt' || simMode === 'equipOpt';
+  const isOptimiser = isTool(simMode);
   const targetKind =
     simMode === 'labyrinth' ? 'labyrinth' : isOptimiser ? optTarget : 'zone';
 
@@ -550,7 +550,7 @@ export function HeaderControls({
           suffix=" runs"
           aria-label="Trial iterations"
         />
-      ) : simMode === 'triggerOpt' || simMode === 'equipOpt' || simMode === 'itemCosts' ? null : dungeonRunMode ? (
+      ) : isTool(simMode) || simMode === 'itemCosts' ? null : dungeonRunMode ? (
         <>
           {/* Both run fields take what is typed as is and clamp when they
               lose focus (App clamps again on start): clamping per keystroke

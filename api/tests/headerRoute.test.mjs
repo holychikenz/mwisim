@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const { OPT_TARGETS, TARGETS, TOOLS, supports, toRoute, fromRoute } =
+const { OPT_TARGETS, TARGETS, TOOLS, isTool, supports, toRoute, fromRoute } =
   await import('../../ui/src/utils/optimizerTarget.js');
 
 const route = (target, tool, costs = false) => ({ target, tool, costs });
@@ -76,4 +76,30 @@ test('tabs: Trial offers Simulate only; Costs offers nothing; tools aim only whe
   assert.equal(supports('bogus', 'zone'), false);
   // A tool aimed at a trial would need optTarget (and toTargetPayload) to grow first.
   assert.ok(TOOLS.every(t => t.targets.every(x => OPT_TARGETS.includes(x))));
+});
+
+import { readFileSync } from 'fs';
+const { sealsApply } = await import('../../ui/src/utils/playerBuffs.js');
+
+test('a tool added to TOOLS is a tool everywhere the mode is read', (t) => {
+  TOOLS.push({ value: 'fakeOpt', label: 'Fake', targets: OPT_TARGETS });
+  t.after(() => TOOLS.splice(TOOLS.findIndex((x) => x.value === 'fakeOpt'), 1));
+  assert.equal(isTool('fakeOpt'), true);
+  assert.equal(supports('fakeOpt', 'labyrinth'), true);
+  assert.equal(supports('fakeOpt', 'guildTrial'), false);
+  assert.deepEqual(toRoute('fakeOpt', 'labyrinth'), route('labyrinth', 'fakeOpt'));
+  assert.deepEqual(fromRoute('zone', 'fakeOpt', 'labyrinth'), { simMode: 'fakeOpt', optTarget: 'zone' });
+  assert.equal(sealsApply({ simMode: 'fakeOpt', optTarget: 'labyrinth' }), false);
+  assert.equal(sealsApply({ simMode: 'fakeOpt', optTarget: 'zone' }), true);
+  for (const mode of ['zone', 'labyrinth', 'guildTrial', 'itemCosts', 'constructor', undefined]) assert.equal(isTool(mode), false, String(mode));
+});
+
+test('the mode sites ask isTool and never name a tool', () => {
+  const names = TOOLS.map((x) => x.value).join('|');
+  const comparison = new RegExp(`[!=]==\\s*['"](${names})['"]|['"](${names})['"]\\s*[!=]==`);
+  for (const file of ['ui/src/App.jsx', 'ui/src/components/HeaderControls.jsx', 'ui/src/utils/playerBuffs.js']) {
+    const source = readFileSync(new URL(`../../${file}`, import.meta.url), 'utf8');
+    assert.doesNotMatch(source, comparison, file);
+    assert.match(source, /\bisTool\b/, file);
+  }
 });

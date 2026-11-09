@@ -3,9 +3,9 @@
 // optimisers are pointed at
 //
 // App holds two pieces of state: `simMode` (zone | labyrinth | guildTrial |
-// triggerOpt | equipOpt | itemCosts) and `optTarget` (zone | labyrinth, read
-// only while an optimiser is the mode). The header shows them as a TARGET
-// (Zone · Lab · Trial) over a row of TOOLS (Simulate | Triggers · Gear);
+// a TOOLS value | itemCosts) and `optTarget` (zone | labyrinth, read only
+// while an optimiser is the mode). The header shows them as a TARGET
+// (Zone · Lab · Trial) over a row of tools (Simulate | the TOOLS);
 // toRoute and fromRoute translate between the two, so none of App's
 // `simMode === …` checks has to change.
 //
@@ -36,6 +36,9 @@ export const TOOLS = [
   { value: 'equipOpt', label: 'Gear', targets: OPT_TARGETS },
 ];
 
+/** Is this simMode one of the TOOLS? Mode-generic code asks this rather than naming tools. */
+export const isTool = (simMode) => TOOLS.some(t => t.value === simMode);
+
 const isTarget = (target) => TARGETS.some(t => t.value === target);
 
 /** Can this tool run against this target? Simulate runs every target. */
@@ -53,7 +56,7 @@ export function supports(tool, target) {
  */
 export function toRoute(simMode, optTarget) {
   if (simMode === 'itemCosts') return { target: null, tool: null, costs: true };
-  if (TOOLS.some(t => t.value === simMode)) {
+  if (isTool(simMode)) {
     return { target: OPT_TARGETS.includes(optTarget) ? optTarget : 'zone', tool: simMode, costs: false };
   }
   return { target: isTarget(simMode) ? simMode : 'zone', tool: 'simulate', costs: false };
