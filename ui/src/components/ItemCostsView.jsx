@@ -8,6 +8,7 @@ import {
   NumberInput,
   SegmentedControl,
   Stack,
+  Switch,
   Table,
   Text,
   TextInput,
@@ -15,7 +16,8 @@ import {
   Tooltip
 } from '@mantine/core';
 import { Select } from './SearchSelect';
-import { COST_ROLES, describeBuildCosts, searchItemCosts } from '../utils/itemCosts';
+import { COST_ROLES, describeBuildCosts, lastSegment, searchItemCosts } from '../utils/itemCosts';
+import { BEAR_ZONE_ZEROED, describeDropCredit } from '../utils/consumableCosts';
 import { formatAge, formatSeconds } from '../utils/triggerOptimizer';
 import { PROTECTION_PRICING } from '../../../shared/enhancementRoi.js';
 import { NumTd, Section } from './ResultParts';
@@ -158,7 +160,7 @@ function CostTable({ rows, disabled, onChange, empty }) {
   );
 }
 
-export function ItemCostsView({ playerDTOs, gameItems, pricing, protectionPricing }) {
+export function ItemCostsView({ playerDTOs, gameItems, pricing, protectionPricing, simResult, focusHrid }) {
   const [query, setQuery] = useState('');
 
   const buildRows = useMemo(
@@ -174,6 +176,28 @@ export function ItemCostsView({ playerDTOs, gameItems, pricing, protectionPricin
   const unpricedCount = buildRows.filter((row) => row.effective == null).length;
   const overrideCount = Object.keys(pricing?.itemCostOverrides || {}).length;
   const isSeconds = pricing?.unit === 'seconds';
+
+  // Drop credit's list: the last zone run (App's useSimulation results), for the
+  // P-tab member when they were in it, else the first member simulated.
+  const simulated = Object.keys(simResult?.dropRateMultiplier || {});
+  const dropper = simulated.includes(focusHrid) ? focusHrid : simulated[0];
+  const dropRows = useMemo(
+    () => (simResult?.zoneName ? describeDropCredit(simResult, pricing, dropper) : []).map((row) => ({
+      ...row,
+      usedBy: [`${row.perHour.toFixed(1)} dropped per hour · ${formatSeconds(row.creditPerHour)} of credit per hour`],
+    })),
+    [simResult, pricing, dropper]
+  );
+  // The preset keeps what it replaced (null: no override), so Revert restores exactly that.
+  const undo = pricing.dropCreditUndo;
+  const zeroBearPools = () => {
+    pricing.setDropCreditUndo(Object.fromEntries(BEAR_ZONE_ZEROED.map((hrid) => [hrid, pricing.itemCostOverrides?.[hrid] ?? null])));
+    pricing.setItemCostOverrides(Object.fromEntries(BEAR_ZONE_ZEROED.map((hrid) => [hrid, 0])));
+  };
+  const revertBearPools = () => {
+    pricing.setItemCostOverrides(undo);
+    pricing.setDropCreditUndo(null);
+  };
 
   return (
     <Stack gap="md">
@@ -301,6 +325,65 @@ export function ItemCostsView({ playerDTOs, gameItems, pricing, protectionPricin
           rows={buildRows}
           onChange={pricing.setItemCostOverride}
           empty="Nothing slotted or equipped yet — configure a party and these fill in."
+        />
+      </Section>
+
+      <Section
+        title="Drop credit"
+        right={
+          <Switch
+            size="xs"
+            label="Credit drops"
+            checked={!!pricing.dropCredit}
+            onChange={(event) => pricing.setDropCredit(event.currentTarget.checked)}
+          />
+        }
+      >
+        <Text size="xs" c="dimmed">
+          {isSeconds ? (
+            <>
+              What a run drops that you would otherwise cook or brew — food, drink and their
+              ingredients — is credited at its time below, each character&apos;s own drops against
+              their own eating, so an effective rate can beat the raw one. <b>0</b> gives an item no
+              credit (and makes eating it free).
+            </>
+          ) : (
+            <>
+              Off while the source reports {pricing.source === 'vendor' ? 'nothing' : 'coins'}: drops
+              are credited in seconds of production, and coins are not time.
+            </>
+          )}
+        </Text>
+        <Group gap="xs">
+          {undo ? (
+            <>
+              <Text size="xs">
+                Zeroed{' '}
+                {Object.entries(undo)
+                  .map(([hrid, was]) => `${gameItems?.[hrid]?.name || lastSegment(hrid)} (was ${was == null ? 'none' : formatSeconds(was)})`)
+                  .join(', ')}
+                .
+              </Text>
+              <Button variant="default" size="compact-xs" onClick={revertBearPools}>
+                Revert
+              </Button>
+            </>
+          ) : (
+            <Button variant="default" size="compact-xs" onClick={zeroBearPools}>
+              Bear zone: zero the infinite pools
+            </Button>
+          )}
+        </Group>
+        {simResult?.zoneName && (
+          <Text size="xs" c="dimmed">
+            Dropped in your last run — {lastSegment(simResult.zoneName)} T{simResult.difficultyTier},
+            for {String(dropper).replace('player', 'P')}.
+          </Text>
+        )}
+        <CostTable
+          rows={dropRows}
+          onChange={pricing.setItemCostOverride}
+          empty={simResult?.zoneName ? 'Nothing this run drops is a consumable.' : 'Run a zone simulation and what it drops is listed here.'}
         />
       </Section>
 

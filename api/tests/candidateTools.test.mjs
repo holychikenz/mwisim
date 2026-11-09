@@ -143,6 +143,22 @@ test('Loadout route end to end: preview, ranked rows on paired seeds, determinis
   assert.deepEqual(again.rows, result.rows);
 });
 
+test('drop credit rides the pool: rows carry the breakdown only when the table is posted beside a cost table', async (t) => {
+  const base = await serve(t);
+  // Rats drop sugar and wheat; the build's coffee is all that is priced, at a second each.
+  const body = { ...BASE_BODY, zone: { zoneHrid: '/actions/combat/rat', difficultyTier: 0 }, players: [melee], subjectIndex: 0,
+    candidates: [{ name: 'same', player: melee }], consumableCosts: { '/items/ultra_melee_coffee': 1 } };
+  const dropCreditCosts = { '/items/sugar': 1, '/items/wheat': 1 };
+  const on = assertRunShape(await frames(`${base}/optimize-loadout`, { ...body, dropCreditCosts })).baseline.metrics;
+  assert.ok(on.dropCreditSecondsPerHour > 0, JSON.stringify(on));
+  assert.ok(Math.abs(on.netConsumableSecondsPerHour - (on.consumableSecondsPerHour - on.dropCreditSecondsPerHour)) < 1e-6);
+  assert.ok(on.effectiveEncountersPerHour > on.encountersPerHour, 'the drops are worth more than the coffee');
+  const off = assertRunShape(await frames(`${base}/optimize-loadout`, body)).baseline.metrics;
+  assert.equal('dropCreditSecondsPerHour' in off, false);
+  const uncosted = assertRunShape(await frames(`${base}/optimize-loadout`, { ...body, consumableCosts: undefined, dropCreditCosts })).baseline.metrics;
+  assert.equal('dropCreditSecondsPerHour' in uncosted, false);
+});
+
 test('Abilities route end to end: one swap and one cast order, default triggers, deterministic', async (t) => {
   const base = await serve(t);
   const slot = (hrid) => ({ hrid, level: 10, triggers: abilityData[hrid].defaultCombatTriggers });

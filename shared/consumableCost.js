@@ -23,6 +23,8 @@
 // out again by hand is how the rule quietly stops being the rule.
 // =============================================================================
 
+import { calculateExpectedDrops } from './drops.js';
+
 /**
  * Is this a cost we can use?
  *
@@ -158,6 +160,111 @@ export function effectiveRatePerHour(ratePerHour, consumableSecondsPerHour) {
   const seconds = Number(consumableSecondsPerHour) || 0;
   if (!(seconds > 0)) return rate;
   return rate / (1 + seconds / 3600);
+}
+
+/**
+ * The smallest a player's real-clock divisor, 1 + net/3600, may be once drop
+ * credit can make the net negative.
+ *
+ * Below 1 the drops stand in for more production than the run eats, and the
+ * real-clock rate rises above the combat rate — intended. At 0 they would pay
+ * for the whole hour and the rate would be infinite; past it the divisor, and
+ * the rate, turn negative and a ranking inverts. A tenth caps the gain at
+ * tenfold: credit worth 54 minutes of production per hour of combat is not a
+ * trade anybody makes but an infinite pool (a gummy bear's 20-100 sugar) to
+ * zero on the Costs page, and when every candidate sits on the floor the
+ * objective is still raw throughput times ten — monotone, not an artefact.
+ */
+export const MIN_CLOCK_DIVISOR = 0.1;
+
+/**
+ * Every item drop credit may count: anything with a consumableDetail (food and
+ * drink) and every direct input of a cooking or brewing action (milk, fruit,
+ * sugar, tea leaves, essences), derived from the game data so a patch needs no
+ * list here. The upgrade inputs (the coffee a super coffee is made from) are
+ * consumables already.
+ *
+ * @param {Record<string, object>} itemDetailMap
+ * @param {Record<string, object>} actionDetailMap
+ * @returns {Set<string>} item hrids
+ */
+export function consumableClassHrids(itemDetailMap, actionDetailMap) {
+  const hrids = new Set(Object.keys(itemDetailMap || {}).filter((hrid) => itemDetailMap[hrid]?.consumableDetail));
+  for (const [hrid, action] of Object.entries(actionDetailMap || {})) {
+    if (!/^\/actions\/(cooking|brewing)\//.test(hrid)) continue;
+    for (const input of action?.inputItems || []) if (input?.itemHrid) hrids.add(input.itemHrid);
+  }
+  return hrids;
+}
+
+/**
+ * Production time each player's OWN expected drops stand in for, in seconds
+ * over the run: shared/drops.js's expectation for that player (their drop rate
+ * and rare find on the chance; the party split, level gap and quantity bonus on
+ * the quantity) times seconds each from `creditCosts`. An item with no usable
+ * cost counts nothing, as on the eating side.
+ *
+ * @param {object} simResult  deaths, the per-player drop multipliers, difficultyTier, numberOfPlayers
+ * @param {Record<string, object>} monsters  combatMonsterDetailMap
+ * @param {Record<string, number>} creditCosts  itemHrid → seconds each, over the consumable class
+ * @param {string[]} players
+ * @returns {Record<string, number>} playerHrid → seconds
+ */
+export function dropCreditSeconds(simResult, monsters, creditCosts, players) {
+  const credit = {};
+  for (const player of players || []) {
+    credit[player] = 0;
+    for (const drop of calculateExpectedDrops(simResult, monsters, null, player)) {
+      const secondsEach = creditCosts?.[drop.itemHrid];
+      if (isKnownCost(secondsEach)) credit[player] += Number(secondsEach) * drop.amount;
+    }
+  }
+  return credit;
+}
+
+/**
+ * partyConsumableSeconds net of drop credit, on the same per-player rule: each
+ * character's OWN drops offset their OWN bill, E / (1 + (s_i - c_i)/3600) with
+ * the divisor floored at MIN_CLOCK_DIVISOR, because a character banks what
+ * drops to them, not what drops to the party. The party figure is again the
+ * seconds whose rate is the members' mean (one player: their own net), and it
+ * is negative when the drops are worth more than the food.
+ *
+ * @param {Record<string, Record<string, number>>} consumablesUsed  per-player tally
+ * @param {Record<string, number>} costs  itemHrid → seconds each, for what was eaten
+ * @param {Record<string, number>} creditByPlayer  playerHrid → seconds (dropCreditSeconds)
+ * @param {{players?: string[], hours?: number}} [opts]
+ * @returns {{seconds: number}}
+ */
+export function partyNetConsumableSeconds(consumablesUsed, costs, creditByPlayer, { players, hours = 1 } = {}) {
+  const roster = players?.length ? players : Object.keys(consumablesUsed || {});
+  const span = hours > 0 ? hours : 1;
+  const lowest = (MIN_CLOCK_DIVISOR - 1) * 3600 * span; // the divisor's floor, as a floor on the net
+  let clockShare = 0;
+  let solo = 0; // a party of one returns its own net exactly, as partyConsumableSeconds does
+  for (const hrid of roster) {
+    const own = consumableSecondsUsed(consumablesUsed?.[hrid], costs).seconds;
+    solo = Math.max(lowest, own - (Number(creditByPlayer?.[hrid]) || 0));
+    clockShare += 1 / (1 + solo / span / 3600);
+  }
+  const mean = roster.length ? clockShare / roster.length : 1;
+  return { seconds: roster.length === 1 ? solo : 3600 * (1 / mean - 1) * span };
+}
+
+/**
+ * effectiveRatePerHour for a NET bill, which drop credit can make negative: a
+ * surplus restates the rate ABOVE the combat rate, as intended, and the divisor
+ * never falls below MIN_CLOCK_DIVISOR. Equal to effectiveRatePerHour on any
+ * bill of zero or more; that function stays as it is for the toggle-off path.
+ *
+ * @param {number} ratePerHour
+ * @param {number} netSecondsPerHour
+ * @returns {number}
+ */
+export function effectiveNetRatePerHour(ratePerHour, netSecondsPerHour) {
+  const rate = Number(ratePerHour) || 0;
+  const seconds = Number(netSecondsPerHour) || 0;
+  return rate / Math.max(MIN_CLOCK_DIVISOR, 1 + seconds / 3600);
 }
 
 /**

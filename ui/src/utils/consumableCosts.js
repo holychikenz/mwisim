@@ -20,11 +20,22 @@
 
 import {
   partyConsumableSeconds,
+  partyNetConsumableSeconds,
+  consumableClassHrids,
   consumableTimeShare,
+  dropCreditSeconds,
+  effectiveNetRatePerHour,
   effectiveRatePerHour,
   sumConsumablesUsed,
 } from '../../../shared/consumableCost.js';
+import { calculateExpectedDrops } from '../../../shared/drops.js';
 import { priceOf } from './prices';
+// The bundled snapshot useGameData reads too: what drop credit counts, and what drops it.
+import ITEMS from '../../../src/combatsimulator/data/itemDetailMap.json';
+import ACTIONS from '../../../src/combatsimulator/data/actionDetailMap.json';
+import MONSTERS from '../../../src/combatsimulator/data/combatMonsterDetailMap.json';
+
+const CONSUMABLE_CLASS = consumableClassHrids(ITEMS, ACTIONS);
 
 /**
  * The price map, but only when it is denominated in something we can use.
@@ -160,16 +171,24 @@ export function buildConsumableCosts(playerDTOs, pricing) {
  * exposed alongside so a caller can phrase the difference rather than print
  * "0 items priced" at someone who ate nothing.
  *
+ * DROP CREDIT. Given `drops` (the simResult, or a row carrying its deaths and
+ * per-player drop multipliers) and buildDropCreditCosts' table, each member's own
+ * consumable drops offset their own bill (partyNetConsumableSeconds), adding
+ * creditSecondsPerHour and netSecondsPerHour: consumed − credit = net, the net
+ * possibly negative. Without both the result is exactly as before.
+ *
  * @param {object} args
  * @param {Record<string, Record<string, number>>} args.consumablesUsed  simResult tally
  * @param {number} args.hours    simulated hours (of combat time)
  * @param {object} args.pricing
  * @param {string[]} [args.players]  the roster; see partyConsumableSeconds
+ * @param {object} [args.drops]  what drop credit reads; see above
  * @returns {{known: boolean, nothingConsumed: boolean, secondsPerHour: number,
  *           timeShare: number, unitsPerHour: number, priced: string[],
- *           unpriced: string[], overrides: string[]}}
+ *           unpriced: string[], overrides: string[],
+ *           creditSecondsPerHour?: number, netSecondsPerHour?: number}}
  */
-export function summariseConsumableCost({ consumablesUsed, hours, pricing, players }) {
+export function summariseConsumableCost({ consumablesUsed, hours, pricing, players, drops = null }) {
   const { byItem, total } = sumConsumablesUsed(consumablesUsed);
   const perHour = (value) => (hours > 0 ? value / hours : 0);
   const nothingConsumed = Object.keys(byItem).length === 0;
@@ -184,6 +203,10 @@ export function summariseConsumableCost({ consumablesUsed, hours, pricing, playe
 
   const { seconds, priced, unpriced } = partyConsumableSeconds(consumablesUsed, costs, { players, hours });
   const secondsPerHour = perHour(seconds);
+  const creditCosts = drops && buildDropCreditCosts(pricing);
+  const roster = players?.length ? players : Object.keys(consumablesUsed || {});
+  const netSecondsPerHour = creditCosts && perHour(partyNetConsumableSeconds(consumablesUsed, costs,
+    dropCreditSeconds(drops, MONSTERS, creditCosts, roster), { players: roster, hours }).seconds);
 
   return {
     known: nothingConsumed || priced.length > 0,
@@ -194,8 +217,65 @@ export function summariseConsumableCost({ consumablesUsed, hours, pricing, playe
     priced,
     unpriced,
     overrides,
+    ...(creditCosts && { creditSecondsPerHour: secondsPerHour - netSecondsPerHour, netSecondsPerHour }),
   };
 }
+
+/** A summariseConsumableCost result's rate on the real clock: net of drop credit when it has one, else its bill. */
+export function effectiveRateFor(ratePerHour, summary) {
+  return summary?.netSecondsPerHour == null
+    ? effectiveRatePerHour(ratePerHour, summary?.secondsPerHour)
+    : effectiveNetRatePerHour(ratePerHour, summary.netSecondsPerHour);
+}
+
+/**
+ * Seconds each for every consumable-class item the source can value, overrides
+ * included (so a 0 gives an item no credit): the drop-credit table posted with
+ * an optimiser run, and what the zone results credit. Null unless the credit is
+ * on (pricing.dropCredit) and the source is in seconds — coins are not time.
+ *
+ * @param {object} pricing
+ * @returns {Record<string, number>|null}
+ */
+export function buildDropCreditCosts(pricing) {
+  if (!pricing?.dropCredit || !secondsPrices(pricing)) return null;
+  const costs = {};
+  for (const hrid of CONSUMABLE_CLASS) {
+    const { effective } = resolveItemCost(hrid, pricing);
+    if (effective != null) costs[hrid] = effective;
+  }
+  return Object.keys(costs).length ? costs : null;
+}
+
+/**
+ * The Costs page's drop-credit rows for one character of a finished zone run:
+ * each consumable-class item they are expected to receive, priced like any cost
+ * row (overrides apply), with drops and credit per hour, most credit first.
+ *
+ * @param {object} simResult
+ * @param {object} pricing
+ * @param {string} playerHrid
+ * @returns {Array<object>} resolveItemCost rows plus name, roles, usedBy, perHour, creditPerHour
+ */
+export function describeDropCredit(simResult, pricing, playerHrid) {
+  const hours = (Number(simResult?.simulatedTime) || 0) / (3600 * 1e9);
+  if (!(hours > 0)) return [];
+  return calculateExpectedDrops(simResult, MONSTERS, ITEMS, playerHrid)
+    .filter((drop) => CONSUMABLE_CLASS.has(drop.itemHrid))
+    .map((drop) => {
+      const cost = resolveItemCost(drop.itemHrid, pricing);
+      const perHour = drop.amount / hours;
+      return { ...cost, name: drop.name, roles: [], usedBy: [], perHour, creditPerHour: perHour * (cost.effective ?? 0) };
+    })
+    .sort((a, b) => b.creditPerHour - a.creditPerHour);
+}
+
+/**
+ * The Costs page's bear-zone preset. Bear With It drops so much sugar (20-100
+ * from every gummy bear) and so many low gummies that they are an infinite pool,
+ * worth no time; plum, peach, dragon fruit and star fruit gummies keep theirs.
+ */
+export const BEAR_ZONE_ZEROED = ['/items/sugar', '/items/gummy', '/items/apple_gummy', '/items/orange_gummy'];
 
 // Re-exported so a consumer needs one import rather than two, and so the divisor
 // itself is never rewritten by hand at the call site.

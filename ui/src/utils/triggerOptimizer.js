@@ -41,6 +41,11 @@ export function formatSeconds(seconds) {
   return `${(value / 3600).toFixed(1)} h`;
 }
 
+/** Drop credit's breakdown per hour of combat: "20 min eaten − 45 min of drops = −25 min net". The net can be negative. */
+export function formatNetSeconds(consumed, credit, net) {
+  return `${formatSeconds(consumed)} eaten − ${formatSeconds(credit)} of drops = ${net < 0 ? '−' : ''}${formatSeconds(Math.abs(net))} net`;
+}
+
 /**
  * Stage hours mirror the backend's defaults (api/lib/triggerSearch/search.js),
  * which in turn mirror the peer fork's 6 / 12 / 24 / 72.

@@ -15,7 +15,7 @@
 
 import { Router } from 'express';
 import { buildExtraBuffs } from '../lib/simulator.js';
-import { poolSizeFor, sanitiseConsumableCosts, sanitiseFidelity, streamPoolRun, validateBody } from '../lib/optimizerRoute.js';
+import { poolSizeFor, sanitiseConsumableCosts, sanitiseDropCreditCosts, sanitiseFidelity, streamPoolRun, validateBody } from '../lib/optimizerRoute.js';
 import { markDungeon, normaliseTarget, targetExtraBuffs, targetPlayerDTOs } from '../lib/target.js';
 import { makePoolEvaluator } from '../lib/triggerSearch/pool.js';
 import { defaultObjective, reportedMetricsFor } from '../lib/triggerSearch/score.js';
@@ -97,6 +97,7 @@ function prepare(body) {
   // Nothing is eaten in a labyrinth, so there is no bill to count and the
   // time-denominated objective would only pretend to discriminate.
   const consumableCosts = labyrinth ? null : sanitiseConsumableCosts(body.consumableCosts);
+  const dropCreditCosts = sanitiseDropCreditCosts(body, consumableCosts);
 
   // Default to the time-denominated objective whenever the food can be priced.
   // Raw throughput cannot see the consumable bill, and an enhancement that lets
@@ -115,6 +116,7 @@ function prepare(body) {
     skipped,
     extraBuffs,
     consumableCosts,
+    dropCreditCosts,
     objective,
   };
 }
@@ -198,6 +200,7 @@ router.post('/optimize-equipment', async (req, res) => {
       labyrinthConfig: prepared.target.labyrinth,
       extraBuffs: prepared.extraBuffs,
       consumableCosts: prepared.consumableCosts,
+      dropCreditCosts: prepared.dropCreditCosts,
       signal,
       cancelMessage: 'Equipment scan cancelled',
     });

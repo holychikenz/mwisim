@@ -46,6 +46,16 @@ export function sanitiseConsumableCosts(input) {
 }
 
 /**
+ * The drop-credit table (body.dropCreditCosts: itemHrid → seconds over the
+ * consumable class) on the cost table's rules, and only BESIDE a cost table:
+ * credit refines the time-denominated objective and never makes one, so with no
+ * food bill priced — and in a labyrinth, which has none — nothing changes.
+ */
+export function sanitiseDropCreditCosts(body, consumableCosts) {
+  return consumableCosts ? sanitiseConsumableCosts(body?.dropCreditCosts) : null;
+}
+
+/**
  * A posted `objective` must be a higher-is-better metric that this target
  * reports; absent means the default.
  */
@@ -167,6 +177,7 @@ export function subjectRoutes({ path, prepare, run, cancelMessage, emptyError })
     const consumableCosts = labyrinth ? null : sanitiseConsumableCosts(body.consumableCosts);
     const base = {
       target, subjectIndex: k, scan: sanitiseFidelity(body.scan), consumableCosts,
+      dropCreditCosts: sanitiseDropCreditCosts(body, consumableCosts),
       // Same composition runSimulation uses, plus the lab-shop upgrades in a labyrinth.
       extraBuffs: buildExtraBuffs(body.extra || {}).concat(body.guildBuffs || []).concat(targetExtraBuffs(target)),
       // Food and drinks blanked in a labyrinth, as the game blanks them (target.js).
@@ -204,7 +215,8 @@ export function subjectRoutes({ path, prepare, run, cancelMessage, emptyError })
     await streamPoolRun(req, res, async ({ pool, poolSize, send, signal }) => {
       send({ type: 'start', poolSize, ...echo(prepared) });
       const evaluate = makePoolEvaluator({ pool, zoneConfig: prepared.target.zone, labyrinthConfig: prepared.target.labyrinth,
-        extraBuffs: prepared.extraBuffs, consumableCosts: prepared.consumableCosts, signal, cancelMessage });
+        extraBuffs: prepared.extraBuffs, consumableCosts: prepared.consumableCosts, dropCreditCosts: prepared.dropCreditCosts,
+        signal, cancelMessage });
       const result = await run(prepared, { evaluate, signal, cancelMessage,
         seedBase: Number(req.body.seedBase) || DEFAULT_SEED_BASE,
         onProgress: (progress) => send({ type: 'progress', ...progress }) });

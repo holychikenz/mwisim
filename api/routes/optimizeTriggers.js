@@ -22,7 +22,7 @@
 
 import { Router } from 'express';
 import { buildExtraBuffs } from '../lib/simulator.js';
-import { poolSizeFor, sanitiseConsumableCosts, streamPoolRun, validateBody } from '../lib/optimizerRoute.js';
+import { poolSizeFor, sanitiseConsumableCosts, sanitiseDropCreditCosts, streamPoolRun, validateBody } from '../lib/optimizerRoute.js';
 import { markDungeon, normaliseTarget, targetExtraBuffs, targetPlayerDTOs } from '../lib/target.js';
 import { deriveBounds } from '../lib/triggerSearch/bounds.js';
 import { collectSearchParams, enumerateTriggers } from '../lib/triggerSearch/params.js';
@@ -131,6 +131,7 @@ function prepare(body) {
   // never read.
   const { params, rejected } = collectSearchParams(simPlayers, selection, bounds, { labyrinth });
   const consumableCosts = labyrinth ? null : sanitiseConsumableCosts(body.consumableCosts);
+  const dropCreditCosts = sanitiseDropCreditCosts(body, consumableCosts);
 
   // Default to the time-denominated objective whenever we can actually price the
   // food, because raw throughput cannot see the bill and will happily recommend
@@ -150,6 +151,7 @@ function prepare(body) {
     rejected,
     extraBuffs,
     consumableCosts,
+    dropCreditCosts,
     objective,
   };
 }
@@ -240,6 +242,7 @@ router.post('/optimize-triggers', async (req, res) => {
       labyrinthConfig: prepared.target.labyrinth,
       extraBuffs: prepared.extraBuffs,
       consumableCosts: prepared.consumableCosts,
+      dropCreditCosts: prepared.dropCreditCosts,
       signal,
     });
 

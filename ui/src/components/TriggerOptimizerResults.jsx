@@ -1,5 +1,5 @@
 import { Alert, Badge, Group, SimpleGrid, Stack, Table, Text, Title, Tooltip } from '@mantine/core';
-import { formatBand, formatSeconds } from '../utils/triggerOptimizer';
+import { formatBand, formatNetSeconds, formatSeconds } from '../utils/triggerOptimizer';
 import { nameOf } from '../utils/names';
 import { ClearResultsButton, NumTd, Section, StatCard } from './ResultParts';
 
@@ -374,7 +374,9 @@ export function TriggerOptimizerResults({ results, items, abilities, onClear }) 
           <StatCard
             label="Time on cooking"
             value={`${(timeShare * 100).toFixed(1)}%`}
-            tip={`${formatSeconds(consumableSeconds)} of production owed per hour of combat, for ${formatNumber(leader?.metrics?.consumablesPerHour, 1)} consumables. This is real time you do not spend fighting.`}
+            tip={`${formatSeconds(consumableSeconds)} of production owed per hour of combat, for ${formatNumber(leader?.metrics?.consumablesPerHour, 1)} consumables. This is real time you do not spend fighting.` +
+              (leader?.metrics?.netConsumableSecondsPerHour == null ? '' : ` Drop credit sets the consumables the run drops against it: ${formatNetSeconds(
+                consumableSeconds, leader.metrics.dropCreditSecondsPerHour, leader.metrics.netConsumableSecondsPerHour)}.`)}
           />
         ) : (
           <StatCard

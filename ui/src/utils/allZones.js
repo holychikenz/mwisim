@@ -100,6 +100,13 @@ export function summariseZoneRun(simResult, combo = {}) {
     dungeonsFailed: simResult?.dungeonsFailed || 0,
     maxWaveReached: simResult?.maxWaveReached || 0,
     numberOfPlayers: simResult?.numberOfPlayers || 1,
+    // Drop credit's inputs (shared/drops.js reads them off a simResult): small,
+    // and priced later in the view, like consumablesUsed.
+    deaths: simResult?.deaths || {},
+    dropRateMultiplier: simResult?.dropRateMultiplier || {},
+    rareFindMultiplier: simResult?.rareFindMultiplier || {},
+    combatDropQuantity: simResult?.combatDropQuantity || {},
+    debuffOnLevelGap: simResult?.debuffOnLevelGap || {},
   };
 }
 

@@ -73,7 +73,13 @@ const DEFAULT_STATE = {
   // protection items that no production walker can resolve — a Chaotic Chain is
   // absent from the value map entirely, and the Python side prices an absence at
   // zero, which understated a Chaotic Flail's next level by a factor of 182.
-  itemCostOverrides: {}
+  itemCostOverrides: {},
+  // Drop credit (Costs page): a run's consumable drops offset its consumable bill
+  // in every effective rate. On by default; only a seconds source can credit.
+  dropCredit: true,
+  // What the Costs page's preset replaced, hrid → seconds or null (no override),
+  // so Revert restores exactly that. Null when there is nothing to revert.
+  dropCreditUndo: null
 };
 
 /** First of the candidates that is a usable object, else an empty map. */
@@ -121,7 +127,9 @@ function loadPersisted() {
       // the same map. Read it when the new key is absent so a user who spent time
       // hand-costing their food does not silently lose it. The old key is not
       // written back, so it drains away on the first save.
-      itemCostOverrides: pickOverrides(raw.itemCostOverrides, raw.consumableCostOverrides)
+      itemCostOverrides: pickOverrides(raw.itemCostOverrides, raw.consumableCostOverrides),
+      dropCredit: raw.dropCredit !== false,
+      dropCreditUndo: raw.dropCreditUndo && typeof raw.dropCreditUndo === 'object' ? raw.dropCreditUndo : null
     };
   } catch {
     return { ...DEFAULT_STATE };
@@ -178,12 +186,14 @@ export function usePrices(gameData, main = null) {
   const [webapp, setWebapp] = useState(null);
   const characters = webapp?.characters || NO_CHARACTERS;
   const [itemCostOverrides, setItemCostOverrides] = useState(persisted.itemCostOverrides);
+  const [dropCredit, setDropCredit] = useState(persisted.dropCredit);
+  const [dropCreditUndo, setDropCreditUndo] = useState(persisted.dropCreditUndo);
 
   // Persist the choices, the cache and the overrides. Prices are only written by
   // fetchPrices, so this effect does not itself cause any network activity.
   useEffect(() => {
-    persist({ source, ironCharacter, revenueMode, expenseMode, cache, itemCostOverrides });
-  }, [source, ironCharacter, revenueMode, expenseMode, cache, itemCostOverrides]);
+    persist({ source, ironCharacter, revenueMode, expenseMode, cache, itemCostOverrides, dropCredit, dropCreditUndo });
+  }, [source, ironCharacter, revenueMode, expenseMode, cache, itemCostOverrides, dropCredit, dropCreditUndo]);
 
   // Populate the iron character list (best effort — webapp may be down). This
   // does not fetch prices itself; following main (below) may.
@@ -388,6 +398,8 @@ export function usePrices(gameData, main = null) {
     itemCostOverrides,
     setItemCostOverride,
     setItemCostOverrides: setItemCostOverrides_,
-    clearItemCostOverrides
+    clearItemCostOverrides,
+    dropCredit, setDropCredit,
+    dropCreditUndo, setDropCreditUndo
   };
 }

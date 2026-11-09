@@ -108,7 +108,7 @@ import {
   renameLoadoutEverywhere
 } from './utils/refRepair';
 import { migrateLegacyLoadouts } from './utils/orphanMigration';
-import { buildConsumableCosts, describeConsumableCosts } from './utils/consumableCosts';
+import { buildConsumableCosts, buildDropCreditCosts, describeConsumableCosts } from './utils/consumableCosts';
 import {
   loadTriggerOptState,
   saveTriggerOptState,
@@ -1321,6 +1321,17 @@ function App() {
         // deliberate "free at the margin", not a missing value.
         itemCostOverrides: pricing.itemCostOverrides
       }),
+      // Drop credit: seconds each over the consumable class, only with the Costs
+      // page's toggle on and a seconds source (buildDropCreditCosts). The server
+      // uses it only beside consumableCosts, and never in a labyrinth.
+      dropCreditCosts: buildDropCreditCosts({
+        prices: pricing.prices,
+        fetchedPrices: pricing.fetchedPrices,
+        unit: pricing.unit,
+        expenseMode: pricing.expenseMode,
+        itemCostOverrides: pricing.itemCostOverrides,
+        dropCredit: pricing.dropCredit
+      }),
       // The API's buildExtraBuffs honours mooPass / comExp / comDrop, which is
       // now the whole of `extra` worth sending: seals moved onto the player DTOs
       // above, and the mwix lab keys are a browser-worker concern.
@@ -1353,7 +1364,8 @@ function App() {
     pricing.fetchedPrices,
     pricing.unit,
     pricing.expenseMode,
-    pricing.itemCostOverrides
+    pricing.itemCostOverrides,
+    pricing.dropCredit
   ]);
 
   // ---------------------------------------------------------------------------
@@ -2429,6 +2441,10 @@ function App() {
               gameItems={gameData?.items}
               pricing={pricing}
               protectionPricing={equipOptConfig.protectionPricing}
+              // The last zone run, for the Drop credit list: what it dropped,
+              // for the member open in the P-tab.
+              simResult={results}
+              focusHrid={`player${activeTab}`}
             />
           ) : showAllZones ? (
             <AllZonesResults

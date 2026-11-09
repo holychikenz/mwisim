@@ -427,6 +427,30 @@ imported by both `api/lib/triggerSearch/score.js` and
 into the MWIX Tampermonkey bundle, and what eating is *worth* is a question about
 the player's situation, not one the engine should hold an opinion on.
 
+### Drop credit
+
+What a run DROPS can stand in for production too: a gummy bear's sugar is sugar
+nobody has to make. With **Drop credit** on (the Costs page; on by default, iron
+source only), every consumable-class item a character is expected to receive is
+credited at its time — the class is anything with a `consumableDetail` plus every
+direct input of a cooking or brewing action, derived from the game data, and the
+expectation is `shared/drops.js`'s (their own drop rate and rare find, the party
+split on quantity). Each character's own drops offset their own eating, on the
+same per-player clock:
+
+```
+net_i = consumed_i − credit_i
+effective = E / max(MIN_CLOCK_DIVISOR, 1 + net_i / 3600)    (per player, then the mean rule)
+```
+
+A surplus puts the effective rate ABOVE the raw one, which is intended;
+`MIN_CLOCK_DIVISOR` (0.1, `shared/consumableCost.js`, reason beside it) keeps it
+finite. The optimisers take the table as `dropCreditCosts`, use it only beside
+`consumableCosts`, and add `dropCreditSecondsPerHour` and
+`netConsumableSecondsPerHour` to the metrics only when it was sent. An infinite
+pool — the bear zone's sugar and low gummies — should be zeroed; the Costs page
+has a one-click preset, and a 0 override removes any item's credit.
+
 ### What it found
 
 End-to-end on `jungle_planet`, same build, same seeds:
