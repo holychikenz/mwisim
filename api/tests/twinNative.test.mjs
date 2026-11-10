@@ -8,7 +8,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert';
 import { existsSync } from 'node:fs';
-import { spawn } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { createInterface } from 'node:readline';
 import { fileURLToPath } from 'node:url';
 
@@ -235,4 +235,23 @@ test('the native backend refuses to run when pow differs from Math.pow', { skip 
   } finally {
     b.close();
   }
+});
+
+// preferNative (api/cli.js, SCLIRoster via CSIM_PREFER_NATIVE=1), in a fresh process each time.
+function select(env, prelude = '') {
+  const url = new URL('../lib/twin/index.mjs', import.meta.url).href;
+  const src = `${prelude}; const b = await (await import(${JSON.stringify(url)})).selectTwinFromEnv(); console.log(b ? 'twin' : 'js', process.env.CSIM_ENGINE); b?.close?.();`;
+  const env2 = { ...process.env, CSIM_PREFER_NATIVE: '1', ...env };
+  for (const [k, v] of Object.entries(env2)) if (v === undefined) delete env2[k];
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', src], { env: env2, encoding: 'utf8' });
+  return { out: r.stdout.trim(), err: r.stderr.split('\n').filter((l) => l.startsWith('csim:')) };
+}
+
+test('preferNative picks native, falls back to JS on a pow refusal with one line, and CSIM_ENGINE wins', { skip }, () => {
+  assert.deepEqual(select({ CSIM_ENGINE: undefined }), { out: 'twin native', err: [] });
+  assert.deepEqual(select({ CSIM_ENGINE: 'js' }), { out: 'js js', err: [] });
+  const refused = select({ CSIM_ENGINE: undefined }, 'const pow = Math.pow; Math.pow = (x, y) => pow(x, y) * 2');
+  assert.equal(refused.out, 'js js');
+  assert.equal(refused.err.length, 1);
+  assert.match(refused.err[0], /native engine unavailable .*not bit-identical.*using JS/);
 });

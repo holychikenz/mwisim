@@ -112,6 +112,8 @@ export function nativeBackend({ stallMs = STALL_MS } = {}) {
   return {
     /** `onProgress(x)` gets the child's heartbeats: the progress fraction, or a batch's completed iterations. */
     run: async (json, onProgress) => { await checkPow(); return send(json, onProgress); },
+    /** Spawn the child and run the pow guard; rejects when either fails. */
+    check: checkPow,
     selftest: (json) => send(`{"selftest":${json}}`),
     close: () => { child?.stdin.end(); },
   };
