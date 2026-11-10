@@ -9,6 +9,10 @@ import CombatSimulator from '../src/combatsimulator/combatSimulator.js';
 import Player from '../src/combatsimulator/player.js';
 import GuildTrial from '../src/combatsimulator/guildTrial.js';
 import { extractTrialSummary } from '../src/combatsimulator/guildTrialStats.js';
+import { getTwinBackend, runTwin, twinTrialRequest } from './twinEngine.js';
+
+/** Iterations per twin request: bounds the full SimResults (~118 KB each) held at once. */
+export const TWIN_TRIAL_CHUNK = 32;
 
 /**
  * Run `iterations` full trials and return one summary per iteration.
@@ -36,6 +40,23 @@ export async function runTrialIterations({
   onIteration,
 }) {
   const summaries = [];
+  const twin = getTwinBackend();
+  if (twin) {
+    // Batch requests of at most TWIN_TRIAL_CHUNK iterations, so at most that many full
+    // SimResults are alive at once. runTwin threads the seeded stream from one request into
+    // the next, so the chunks draw exactly what one batch (and the JS loop) would. The twin's
+    // progress counts completed iterations, so onIteration fires as each finishes (and
+    // before a mid-chunk error).
+    let done = 0;
+    const fire = (n) => { for (; done < n; done++) onIteration?.(done + 1); }; // not `?.(++done)`: an absent callback skips its arguments
+    for (let start = 0; start < iterations; start += TWIN_TRIAL_CHUNK) {
+      const n = Math.min(TWIN_TRIAL_CHUNK, Math.ceil(iterations - start)); // ceil: the JS loop runs ceil(10.5) = 11; the twin takes only integers
+      const simResults = await runTwin(twin, twinTrialRequest({ players: playersData, partyBuffs, trialHrid, startTier, participantCount, trialOptions, iterations: n }), (k) => fire(start + k));
+      fire(start + simResults.length); // backends without progress
+      for (const r of simResults) summaries.push(extractTrialSummary(r));
+    }
+    return summaries;
+  }
   for (let it = 0; it < iterations; it++) {
     const players = playersData.map((dto) => {
       const p = Player.createFromDTO(structuredClone(dto));

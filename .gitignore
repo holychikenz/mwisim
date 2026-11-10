@@ -40,3 +40,7 @@ pnpm-debug.log*
 # tracked deliberately (that is what `npm run bench --baseline=` reads); a local
 # run should not dirty the tree.
 api/bench/records/*.local.json
+rust/target/
+rust/pkg/
+# Committed: the twin builds with --locked (a global *Cargo.lock ignore must not drop it).
+!rust/Cargo.lock

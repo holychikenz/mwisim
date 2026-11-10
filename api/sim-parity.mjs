@@ -34,7 +34,7 @@ import { fileURLToPath } from 'url';
 import { runSimulation, loadGameData } from './lib/simulator.js';
 // The seeded-replay kit lives in one place so this harness and api/eval/ cannot
 // drift apart on what "the same run" means.
-import { withSeed, canonical, digest, headline } from './lib/determinism.mjs';
+import { withSeed, canonical, digest, headline, firstDiffs } from './lib/determinism.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIX_DIR = join(__dirname, '..', 'fixtures', 'sim');
@@ -164,25 +164,6 @@ function listFixtures() {
   if (!existsSync(FIX_DIR)) return [];
   return readdirSync(FIX_DIR).filter((f) => f.endsWith('.json')).sort()
     .map((f) => join(FIX_DIR, f));
-}
-
-// Walk two canonical trees and report the first few leaf paths that differ.
-function firstDiffs(a, b, path = '', out = [], limit = 12) {
-  if (out.length >= limit) return out;
-  const sa = JSON.stringify(a);
-  const sb = JSON.stringify(b);
-  if (sa === sb) return out;
-  const isObj = (v) => v !== null && typeof v === 'object';
-  if (!isObj(a) || !isObj(b) || Array.isArray(a) !== Array.isArray(b)) {
-    out.push({ path: path || '(root)', expected: sa, got: sb });
-    return out;
-  }
-  const keys = [...new Set([...Object.keys(a), ...Object.keys(b)])].sort();
-  for (const k of keys) {
-    if (out.length >= limit) break;
-    firstDiffs(a?.[k], b?.[k], path ? `${path}.${k}` : k, out, limit);
-  }
-  return out;
 }
 
 async function cmdCheck() {

@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node --import ./register-loader.js server.js",
     "dev": "node --watch --import ./register-loader.js server.js",
-    "test": "node --import ./register-loader.js --test tests/*.test.mjs",
+    "test": "CSIM_ENGINE=js node --import ./register-loader.js --test tests/*.test.mjs",
     "lab:check": "node --import ./register-loader.js lab-parity.mjs check",
     "lab:record": "node --import ./register-loader.js lab-parity.mjs record",
     "sim:check": "node --import ./register-loader.js sim-parity.mjs check",
@@ -15,7 +15,10 @@
     "bench": "node --import ./register-loader.js bench/candle.mjs",
     "eval:check": "node --import ./register-loader.js eval/run.mjs check",
     "eval:record": "node --import ./register-loader.js eval/run.mjs record",
-    "eval:backrun": "node --import ./register-loader.js eval/backrun.mjs"
+    "eval:backrun": "node --import ./register-loader.js eval/backrun.mjs",
+    "twin:check": "node --import ./register-loader.js twin-parity.mjs",
+    "twin:trace": "node --import ./register-loader.js twin-parity.mjs trace",
+    "twin:bench": "CSIM_ENGINE=js npm run bench -- --json=bench/records/twin-js.local.json && CSIM_ENGINE=native npm run bench -- --baseline=bench/records/twin-js.local.json && CSIM_ENGINE=wasm npm run bench -- --baseline=bench/records/twin-js.local.json"
   },
   "dependencies": {
     "cors": "^2.8.5",

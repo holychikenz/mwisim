@@ -6,8 +6,21 @@ import { applySimSettingsFromExtra } from "./combatsimulator/simSettings";
 import { buildCommunityBuffs } from "../shared/communityBuffs.js";
 import { runTrialIterations } from "../shared/guildTrialRuns.js";
 import { buildLabUpgradeBuffs } from "../shared/labUpgrades.js";
+import { setTwinBackend, runTwin, wantsWasmTwin, twinRunRequest } from "../shared/twinEngine.js";
+import { loadWasmTwin } from "./twinWasm.js";
 
 onmessage = async function (event) {
+    // MWIX adaptation (Rust twin): extra.experimental.engine === "wasm" runs
+    // zone, labyrinth and trial jobs on the wasm build of rust/.
+    let twin = null;
+    try {
+        twin = wantsWasmTwin(event.data) ? await loadWasmTwin() : null;
+    } catch (e) {
+        console.log(e);
+        this.postMessage({ type: "simulation_error", error: e });
+        return;
+    }
+    setTwinBackend(twin);
     switch (event.data.type) {
         case "start_simulation": {
             // MWIX adaptation: experimental engine knobs (extra.experimental)
@@ -34,6 +47,24 @@ onmessage = async function (event) {
                 extraBuffs = extraBuffs.concat(buildLabUpgradeBuffs(event.data.extra.mwixLabUpgrades));
             }
             extraBuffs = extraBuffs.concat(event.data.guildBuffs || []);
+
+            if (twin) {
+                const { zone, labyrinth, simulationTimeLimit, maxRuns, maxRunDurationNs } = event.data;
+                try {
+                    const players = event.data.players;
+                    const simResult = await runTwin(
+                        twin,
+                        // runLimits on a labyrinth too: the twin then throws JS's RangeError at the same point.
+                        twinRunRequest({ players, partyBuffs: extraBuffs, zone, labyrinth, simulationTimeLimit, runLimits: maxRuns ? { maxRuns, maxRunDurationNs } : undefined }),
+                        (progress) => this.postMessage({ type: "simulation_progress", progress, zone: zone?.zoneHrid, difficultyTier: zone?.difficultyTier, roomLevel: labyrinth?.roomLevel }),
+                    );
+                    this.postMessage({ type: "simulation_result", simResult });
+                } catch (e) {
+                    console.log(e);
+                    this.postMessage({ type: "simulation_error", error: e });
+                }
+                break;
+            }
 
             let playersData = event.data.players;
             let players = [];

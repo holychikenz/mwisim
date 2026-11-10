@@ -9,6 +9,7 @@
  *   node cli.js --list-zones
  */
 
+import { selectTwinFromEnv } from './lib/twin/index.mjs';
 import { runSimulation, getZones } from './lib/simulator.js';
 
 const ONE_HOUR = 60 * 60 * 1e9;
@@ -115,6 +116,10 @@ async function main() {
     printHelp();
     process.exit(1);
   }
+
+  // A local runner: native when it is built and works, JS otherwise; CSIM_ENGINE overrides.
+  // Chosen only now, so --help, --list-zones and bad arguments never spawn it or warn.
+  await selectTwinFromEnv({ preferNative: true });
 
   console.log(`\nRunning simulation...`);
   console.log(`  Zone: ${options.zone}`);

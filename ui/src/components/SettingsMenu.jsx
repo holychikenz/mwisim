@@ -92,6 +92,26 @@ export function SettingsMenu({ settings, onChange }) {
             monster spawns into a fight already running.
           </Text>
 
+          <Divider my={4} />
+
+          <Text size="sm" fw={600}>Engine</Text>
+          <SegmentedControl
+            size="xs"
+            fullWidth
+            value={s.engine}
+            onChange={(v) => set({ engine: v })}
+            data={[
+              { value: 'js', label: 'JS' },
+              { value: 'wasm', label: 'Rust (wasm)' }
+            ]}
+          />
+          <Text size="xs" c="dimmed">
+            <b>Rust (wasm)</b> runs zone, dungeon, labyrinth and trial
+            simulations on the Rust port of this engine, which gives
+            bit-identical results. A build without the wasm engine reports
+            an error instead.
+          </Text>
+
           {activeCount > 0 && (
             <>
               <Divider my={4} />

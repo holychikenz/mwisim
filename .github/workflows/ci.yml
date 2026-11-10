@@ -1,10 +1,11 @@
 # =============================================================================
 # ci — the gates that used to exist only on somebody's laptop
 #
-# BUDGET: < 3 min wall. Measured locally, the simulation is ~15 s of it
-# (npm test ~3 s, sim:check ~2 s, eval:check ~12 s); the rest is checkout and
-# `npm ci`. That is why this is ONE job rather than a matrix: three jobs would
-# each pay the install cost to save nothing.
+# BUDGET: < 3 min wall. Measured locally, the simulation is ~30 s of it
+# (npm test ~10 s, sim:check ~2 s, eval:check ~12 s, twin-quick native ~4 s);
+# the rest is checkout, `npm ci` and the cargo build (cached by rust-cache).
+# That is why this is ONE job rather than a matrix: three jobs would each pay
+# the install cost to save nothing.
 #
 # If the eval corpus ever exceeds ~60 s, split it: keep `npm test` and
 # `sim:check` in a fast job that gates the PR, and move `eval:check` to a
@@ -63,6 +64,17 @@ jobs:
       - name: install
         run: npm ci
 
+      # The Rust twin (rust/), so the twin-quick step below enforces parity.
+      # The toolchain is pinned by the action ref; wasm-pack is not installed,
+      # so twin-quick checks native only.
+      - uses: dtolnay/rust-toolchain@1.92.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+      - name: rust — cargo build + test of the twin
+        working-directory: .
+        run: ./build.sh rust
+
       # Unit tests, including the five guards on the eval harness itself
       # (api/tests/evalHarness.test.mjs). The first of those asserts that
       # api/eval/engine.mjs still calls the engine exactly as
@@ -80,6 +92,14 @@ jobs:
       # The evaluation corpus: 29 cases × 16 seeds, both tiers.
       - name: eval:check — strict and statistical tiers
         run: npm run eval:check
+
+      # The fast twin subset ./build.sh check runs: selftest (rng, pow guard,
+      # number parsing; the native pow guard is verified on linux amd64 and
+      # aarch64, and this gate keeps it so) and every twin:check case at 2 seeds, bit for bit
+      # against JS. The full 16-seed run stays manual: ./build.sh rust twin.
+      - name: twin-quick — Rust twin vs JS
+        working-directory: .
+        run: ./build.sh twin-quick
 
       # Simulator-vs-game parity, ratcheted at the 20 known drifts (8: game
       # shows +2% damage over the sim; 12: shadow_archer's DTO gear is not the
