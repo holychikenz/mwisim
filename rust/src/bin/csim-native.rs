@@ -68,7 +68,7 @@ fn main() {
                 } else {
                     s = std::fs::read_to_string(&file).unwrap_or_default();
                 }
-                println!("{}", csim_twin::run(&data, &s));
+                println!("{}", csim_twin::run(&data, &s, None));
                 return;
             }
             let stdin = std::io::stdin();
@@ -82,7 +82,7 @@ fn main() {
                 let out = if body.starts_with("{\"selftest\"") {
                     csim_twin::selftest(&body[12..body.len() - 1])
                 } else {
-                    csim_twin::run(&data, body)
+                    csim_twin::run(&data, body, None)
                 };
                 let mut o = stdout.lock();
                 if writeln!(o, "{id} {out}").and_then(|_| o.flush()).is_err() {

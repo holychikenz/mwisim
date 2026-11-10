@@ -22,9 +22,11 @@
 #   check        api test + sim:check + eval:check (what CI runs)
 #   all          everything above
 #   rust         cargo build + test of the Rust twin (rust/); needs a Rust toolchain
+#   wasm         wasm-pack build of the twin -> rust/pkg/ (CSIM_ENGINE=wasm, UI engine toggle)
 #   twin         twin:check — the Rust twin against the JS engine, bit for bit
+#                (native, plus wasm when rust/pkg/ is built)
 #   clean        remove ui/dist/
-# rust and twin are deliberately NOT in the default or in `all`, so a machine
+# rust, wasm and twin are deliberately NOT in the default or in `all`, so a machine
 # without Rust keeps building.
 # =============================================================================
 set -euo pipefail
@@ -66,7 +68,13 @@ t_check() {
 }
 
 t_rust() { say "cargo (rust/)"; (cd rust && cargo build --release --locked && cargo test --release --locked); }
-t_twin() { say "api twin:check"; (cd api && npm run twin:check -- selftest && npm run twin:check -- check); }
+t_wasm() { say "wasm-pack (rust/ -> rust/pkg/)"; (cd rust && wasm-pack build --release --target web --out-dir pkg --out-name csim_twin); }
+t_twin() {
+  local engines=native
+  [ -f rust/pkg/csim_twin_bg.wasm ] && engines=native,wasm
+  say "api twin:check (${engines})"
+  (cd api && for e in ${engines//,/ }; do npm run twin:check -- selftest --engine="$e"; done && npm run twin:check -- check --engines="$engines")
+}
 
 t_clean() { say "clean"; rm -rf ui/dist; }
 
@@ -77,7 +85,7 @@ targets=("$@")
 
 for t in "${targets[@]}"; do
   case "$t" in
-    install|gen|ui|lint|test|check|rust|twin|clean|all) "t_${t}" ;;
+    install|gen|ui|lint|test|check|rust|wasm|twin|clean|all) "t_${t}" ;;
     *) echo "unknown target: $t" >&2; sed -n '/^# Usage:/,/^# ===/p' "$0" >&2; exit 2 ;;
   esac
 done

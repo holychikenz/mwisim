@@ -3,9 +3,9 @@
 // twin-parity — differential harness: the Rust twin (rust/) against the JS
 // engine, bit for bit, on the same seeded random stream.
 //
-//   npm run twin:check -- selftest
-//   npm run twin:check -- check [--only=a,b] [--seeds=N] [--engines=native]
-//   npm run twin:trace -- <caseId> [--seed=N] [--limit=300000]
+//   npm run twin:check -- selftest [--engine=native|wasm]
+//   npm run twin:check -- check [--only=a,b] [--seeds=N] [--engines=native,wasm]
+//   npm run twin:trace -- <caseId> [--seed=N] [--limit=300000] [--engine=native|wasm]
 //
 // `check` runs every case on both engines under withSeed and compares
 // digest(canonical(result)) AND the end Math.random.state(): equal digests
@@ -20,9 +20,10 @@
 // wrapping CombatSimulator.prototype.processEvent for the run; nothing is
 // installed otherwise, so this costs the engine nothing.
 //
-// Phase 1 builds the twin requests by hand from the same DTOs the JS side
-// uses. Phase 2 replaces that with the product entry points behind
-// CSIM_ENGINE (see the implementation plan).
+// Both sides call the SAME product entry points (runSimulation,
+// runGuildTrialSimulation, the eval engine's runZone/runTrial); the only
+// difference is the backend registered in shared/twinEngine.js, which is what
+// CSIM_ENGINE sets in production. So the seams themselves are under test.
 // =============================================================================
 
 import { readdirSync, readFileSync } from 'fs';
@@ -30,16 +31,15 @@ import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 
 import { withSeed, canonical, digest, firstDiffs, mulberry32 } from './lib/determinism.mjs';
-import { runSimulation, buildExtraBuffs, loadGameData } from './lib/simulator.js';
+import { runSimulation, runGuildTrialSimulation, loadGameData } from './lib/simulator.js';
 import { allEvalCases, seedsFor, EVAL_HOURS, buildNamesFor, BUILDS } from './eval/cases.mjs';
 import { loadEngine } from './eval/engine.mjs';
 import { toCsimPlayer } from './bench/builds.mjs';
-import { runTwin } from '../shared/twinEngine.js';
-import { runDungeonRunsSerial, addRunIdleTime } from '../shared/dungeonRuns.js';
+import { setTwinBackend } from '../shared/twinEngine.js';
 import { nativeBackend } from './lib/twin/native.mjs';
+import { wasmBackend } from './lib/twin/wasm.mjs';
 
 const CombatSimulator = (await import('../src/combatsimulator/combatSimulator.js')).default;
-const Player = (await import('../src/combatsimulator/player.js')).default;
 const GuildTrial = (await import('../src/combatsimulator/guildTrial.js')).default;
 const { extractTrialSummary, aggregateTrialResults } = await import('../src/combatsimulator/guildTrialStats.js');
 
@@ -54,56 +54,44 @@ const flag = (name, dflt = null) => {
   return hit ? hit.slice(name.length + 3) : dflt;
 };
 
-const BACKENDS = { native: nativeBackend };
+const BACKENDS = { native: nativeBackend, wasm: wasmBackend };
+const makeBackend = async (name) => {
+  const make = BACKENDS[name];
+  if (!make) {
+    console.error(`twin: unknown engine "${name}" (known: ${Object.keys(BACKENDS).join(', ')})`);
+    process.exit(2);
+  }
+  return make();
+};
+
+/** Run fn with backend b registered (null = the JS engine). */
+async function on(b, fn) {
+  setTwinBackend(b);
+  try {
+    return await fn();
+  } finally {
+    setTwinBackend(null);
+  }
+}
 
 // ---- cases ------------------------------------------------------------------
-// A case is { id, seeds, js(seed), twinReq(), trial? }. js() runs the JS engine
-// on the CURRENT (already seeded) stream; twinReq() is the hand-built request.
+// A case is { id, seeds, run(), agg?() }. run() is one product call on the
+// CURRENT (already seeded) stream; agg() is a 3-iteration trial aggregate.
 
 const engine = await loadEngine(ROOT);
 const { gameData } = engine;
-const dtosFor = (kase) =>
-  buildNamesFor(kase).map((name, i) =>
-    toCsimPlayer(BUILDS[name], { level: kase.level, index: i + 1, items: gameData.itemDetailMap, abilityData: gameData.abilityDetailMap })
-  );
+setTwinBackend(null); // CSIM_ENGINE may be set; this harness picks per side
 
-const zoneReq = ({ players, zone, simulationTimeLimit, extra = {}, guildBuffs = [], runLimits }) => ({
-  kind: 'zone',
-  players,
-  partyBuffs: buildExtraBuffs(extra).concat(guildBuffs),
-  zone,
-  simulationTimeLimit,
-  ...(runLimits ? { runLimits } : {}),
-});
-
-const trialReq = ({ players, partyBuffs = [], trialHrid, startTier, participantCount, trialOptions = {} }) => ({
-  kind: 'trial',
-  players,
-  partyBuffs,
-  guildTrial: { trialHrid, startTier, participantCount: participantCount ?? players.length, trialOptions },
-});
-
-/** One JS trial iteration with party buffs, mirroring shared/guildTrialRuns.js. */
-async function jsTrialOnce({ players, partyBuffs = [], trialHrid, startTier, participantCount, trialOptions = {} }) {
-  const units = players.map((dto) => {
-    const p = Player.createFromDTO(structuredClone(dto));
-    p.zoneBuffs = [];
-    p.extraBuffs = partyBuffs.concat(dto.extraBuffs || []);
-    return p;
-  });
-  const guildTrial = new GuildTrial(trialHrid, startTier, participantCount ?? units.length, trialOptions);
-  return new CombatSimulator(units, null, null, { guildTrial }).simulate(GuildTrial.TRIAL_DURATION_NS);
-}
+const trialAgg = (kase) => async () => {
+  const summaries = [];
+  for (let i = 0; i < 3; i++) summaries.push(extractTrialSummary(await engine.runTrial(kase)));
+  return aggregateTrialResults(summaries, { startTier: kase.startTier ?? GuildTrial.START_TIER });
+};
 
 function fixtureCases() {
   return readdirSync(FIX_DIR).filter((f) => f.endsWith('.json')).sort().map((f) => {
     const fx = JSON.parse(readFileSync(join(FIX_DIR, f), 'utf8'));
-    return {
-      id: basename(f, '.json'),
-      seeds: [fx.seed],
-      js: () => runSimulation(structuredClone(fx.request)),
-      twinReq: () => zoneReq(structuredClone(fx.request)),
-    };
+    return { id: basename(f, '.json'), seeds: [fx.seed], run: () => runSimulation(structuredClone(fx.request)) };
   });
 }
 
@@ -111,17 +99,8 @@ function evalCases(nSeeds) {
   return allEvalCases().map((kase) => {
     const seeds = seedsFor(kase.id, nSeeds);
     if (kase.kind === 'labyrinth') return { id: kase.id, seeds, skip: 'not ported' };
-    if (kase.kind === 'zone') {
-      return {
-        id: kase.id,
-        seeds,
-        js: () => engine.runZone(kase, EVAL_HOURS),
-        twinReq: () =>
-          zoneReq({ players: dtosFor(kase), zone: { zoneHrid: `/actions/combat/${kase.zone}`, difficultyTier: kase.tier }, simulationTimeLimit: EVAL_HOURS * 3600e9 }),
-      };
-    }
-    const spec = { players: dtosFor(kase), trialHrid: kase.trial, startTier: kase.startTier ?? GuildTrial.START_TIER, trialOptions: {} };
-    return { id: kase.id, seeds, trial: spec, js: () => engine.runTrial(kase), twinReq: () => trialReq(spec) };
+    if (kase.kind === 'zone') return { id: kase.id, seeds, run: () => engine.runZone(kase, EVAL_HOURS) };
+    return { id: kase.id, seeds, trialResult: true, run: () => engine.runTrial(kase), agg: trialAgg(kase) };
   });
 }
 
@@ -148,24 +127,16 @@ function extraCases(nSeeds) {
   const seeds = (id) => seedsFor(id, nSeeds);
   const housesReq = { players: [houses], zone: { zoneHrid: '/actions/combat/gobo_planet', difficultyTier: 0 }, simulationTimeLimit: 3600e9, extra: { mooPass: true, comExp: 10, comDrop: 5 } };
   const den = { players: party(5, 600), zone: { zoneHrid: '/actions/combat/chimerical_den', difficultyTier: 0 }, extra: {} };
-  const swarm = { players: party(5, 600), partyBuffs: guildBuffs, trialHrid: '/guild_combat/swarm', startTier: 100, trialOptions: {} };
+  // The trial extras go through runGuildTrialSimulation, so they compare its
+  // { aggregate, summaries }, not a raw SimResult.
+  const swarm = { players: party(5, 600), guildBuffs, trialHrid: '/guild_combat/swarm', startTier: 100, trialOptions: {} };
   const jelly = { players: party(5, 600), trialHrid: '/guild_combat/jellyfish', startTier: 100, trialOptions: { enemyScale: 0.8 } };
+  const trial = (spec, iterations) => () => runGuildTrialSimulation({ ...structuredClone(spec), iterations });
   return [
-    { id: 'twin-houses', seeds: seeds('twin-houses'), js: () => runSimulation(structuredClone(housesReq)), twinReq: () => zoneReq(structuredClone(housesReq)) },
-    {
-      id: 'twin-run-mode',
-      seeds: seeds('twin-run-mode'),
-      js: () => runSimulation({ ...structuredClone(den), maxRuns: 3 }),
-      // Same batching and merge as runSimulation's run mode, each batch on the twin.
-      twin: (b) =>
-        runDungeonRunsSerial({
-          totalRuns: 3,
-          maxRunDurationNs: 3 * 3600e9,
-          runBatch: (n) => runTwin(b, zoneReq({ ...structuredClone(den), runLimits: { maxRuns: n, maxRunDurationNs: 3 * 3600e9 } })),
-        }).then(addRunIdleTime),
-    },
-    { id: 'twin-trial-swarm', seeds: seeds('twin-trial-swarm'), trial: swarm, js: () => jsTrialOnce(structuredClone(swarm)), twinReq: () => trialReq(structuredClone(swarm)) },
-    { id: 'twin-trial-jellyfish', seeds: seeds('twin-trial-jellyfish'), trial: jelly, js: () => jsTrialOnce(structuredClone(jelly)), twinReq: () => trialReq(structuredClone(jelly)) },
+    { id: 'twin-houses', seeds: seeds('twin-houses'), run: () => runSimulation(structuredClone(housesReq)) },
+    { id: 'twin-run-mode', seeds: seeds('twin-run-mode'), run: () => runSimulation({ ...structuredClone(den), maxRuns: 3 }) },
+    { id: 'twin-trial-swarm', seeds: seeds('twin-trial-swarm'), run: trial(swarm, 1), agg: trial(swarm, 3) },
+    { id: 'twin-trial-jellyfish', seeds: seeds('twin-trial-jellyfish'), run: trial(jelly, 1), agg: trial(jelly, 3) },
   ];
 }
 
@@ -173,14 +144,14 @@ function allCases(nSeeds) {
   return [...fixtureCases(), ...evalCases(nSeeds), ...extraCases(nSeeds)];
 }
 
-const twinRun = (kase, b) => (kase.twin ? kase.twin(b) : runTwin(b, kase.twinReq()));
-
-/** Run fn on a fresh seeded stream; return its value and the end state. */
-async function seeded(seed, fn) {
-  return withSeed(seed, async () => {
-    const value = await fn();
-    return { value, state: Math.random.state() };
-  });
+/** Run fn on a fresh seeded stream with backend b; return its value and the end state. */
+async function seeded(b, seed, fn) {
+  return on(b, () =>
+    withSeed(seed, async () => {
+      const value = await fn();
+      return { value, state: Math.random.state() };
+    })
+  );
 }
 
 // ---- check ------------------------------------------------------------------
@@ -188,7 +159,7 @@ async function seeded(seed, fn) {
 async function cmdCheck() {
   const nSeeds = Number(flag('seeds', '4'));
   const only = flag('only');
-  const engines = (flag('engines', 'native')).split(',');
+  const engines = flag('engines', 'native').split(',');
   let cases = allCases(nSeeds);
   if (only) {
     const want = new Set(only.split(','));
@@ -204,12 +175,7 @@ async function cmdCheck() {
   let bad = 0;
   let skipped = 0;
   for (const engineName of engines) {
-    const make = BACKENDS[engineName];
-    if (!make) {
-      console.error(`twin: unknown engine "${engineName}" (known: ${Object.keys(BACKENDS).join(', ')})`);
-      process.exit(2);
-    }
-    const b = make();
+    const b = await makeBackend(engineName);
     for (const kase of cases) {
       if (kase.skip) {
         console.log(`  SKIP     ${engineName} ${kase.id} (${kase.skip})`);
@@ -221,8 +187,8 @@ async function cmdCheck() {
         let js;
         let tw;
         try {
-          js = await seeded(seed, kase.js);
-          tw = await seeded(seed, () => twinRun(kase, b));
+          js = await seeded(null, seed, kase.run);
+          tw = await seeded(b, seed, kase.run);
         } catch (err) {
           console.log(`  ERROR    ${engineName} ${kase.id} seed=${seed}: ${err?.message ?? err}`);
           bad++;
@@ -234,17 +200,14 @@ async function cmdCheck() {
         const dt = digest(ct);
         if (dj !== dt) problems.push(['result', cj, ct]);
         if (js.state !== tw.state) problems.push(['rng end state', js.state, tw.state]);
-        if (kase.trial && dj === dt) {
+        if (kase.trialResult && dj === dt) {
           const sj = digest(canonical(extractTrialSummary(js.value)));
           const st = digest(canonical(extractTrialSummary(tw.value)));
           if (sj !== st) problems.push(['trial summary', sj, st]);
-          const agg = async (one) => {
-            const summaries = [];
-            for (let i = 0; i < 3; i++) summaries.push(extractTrialSummary(await one()));
-            return aggregateTrialResults(summaries, { startTier: kase.trial.startTier });
-          };
-          const aj = await seeded(seed, () => agg(kase.js));
-          const at = await seeded(seed, () => agg(() => runTwin(b, kase.twinReq())));
+        }
+        if (kase.agg && dj === dt) {
+          const aj = await seeded(null, seed, kase.agg);
+          const at = await seeded(b, seed, kase.agg);
           if (digest(canonical(aj.value)) !== digest(canonical(at.value)) || aj.state !== at.state) {
             problems.push(['aggregate x3', canonical(aj.value), canonical(at.value)]);
           }
@@ -304,17 +267,26 @@ async function jsTrace(kase, seed, from, to, deep) {
     return real.call(this, event);
   };
   try {
-    await withSeed(seed, kase.js);
+    await on(null, () => withSeed(seed, kase.run));
   } finally {
     CombatSimulator.prototype.processEvent = real;
   }
   return out;
 }
 
+/** The product call on backend b, with the trace window injected into its one twin request. */
 async function twinTrace(b, kase, seed, from, to, deep) {
-  if (!kase.twinReq) throw new Error(`twin: ${kase.id} has no single-request form to trace`);
-  const res = await withSeed(seed, () => runTwin(b, { ...kase.twinReq(), trace: { from, to, deep } }));
-  return res.trace;
+  let trace = null;
+  const tracing = {
+    run: async (json, onProgress) => {
+      if (trace) throw new Error(`twin: ${kase.id} makes more than one twin request; trace a single-request case`);
+      const res = JSON.parse(await b.run(JSON.stringify({ ...JSON.parse(json), trace: { from, to, deep } }), onProgress));
+      trace = res.trace ?? [];
+      return JSON.stringify(res);
+    },
+  };
+  await on(tracing, () => withSeed(seed, kase.run));
+  return trace;
 }
 
 async function cmdTrace() {
@@ -326,7 +298,7 @@ async function cmdTrace() {
   }
   const seed = Number(flag('seed', String(kase.seeds[0])));
   const limit = Number(flag('limit', '300000'));
-  const b = BACKENDS[flag('engine', 'native')]();
+  const b = await makeBackend(flag('engine', 'native'));
   const sj = await jsTrace(kase, seed, 0, limit, false);
   const st = await twinTrace(b, kase, seed, 0, limit, false);
   const len = Math.min(sj.length, st.length);
@@ -382,7 +354,7 @@ function dataNumberLiterals() {
 }
 
 async function cmdSelftest() {
-  const b = BACKENDS[flag('engine', 'native')]();
+  const b = await makeBackend(flag('engine', 'native'));
   const r = mulberry32(12345);
   const draws = Array.from({ length: 1000 }, () => r());
   const jitter = mulberry32(99);
@@ -405,8 +377,8 @@ switch (cmd) {
   case 'trace': await cmdTrace(); break;
   default:
     console.log('Usage:');
-    console.log('  npm run twin:check -- selftest');
-    console.log('  npm run twin:check -- check [--only=a,b] [--seeds=N] [--engines=native]');
-    console.log('  npm run twin:trace -- <caseId> [--seed=N] [--limit=300000]');
+    console.log('  npm run twin:check -- selftest [--engine=native|wasm]');
+    console.log('  npm run twin:check -- check [--only=a,b] [--seeds=N] [--engines=native,wasm]');
+    console.log('  npm run twin:trace -- <caseId> [--seed=N] [--limit=300000] [--engine=native|wasm]');
     process.exit(cmd ? 2 : 0);
 }

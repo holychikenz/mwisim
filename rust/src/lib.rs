@@ -43,14 +43,15 @@ fn err_json(msg: &str, range: bool) -> String {
 }
 
 /// Run one request. Never panics on bad input: errors come back as `ok: false`.
-pub fn run(data: &GameData, request: &str) -> String {
-    match run_inner(data, request) {
+/// `progress` gets the JS "progress" event's fraction every 1000 ticks (wasm only uses it).
+pub fn run(data: &GameData, request: &str, progress: Option<&mut dyn FnMut(f64)>) -> String {
+    match run_inner(data, request, progress) {
         Ok(s) => s,
         Err((msg, range)) => err_json(&msg, range),
     }
 }
 
-fn run_inner(data: &GameData, request: &str) -> Result<String, (String, bool)> {
+fn run_inner(data: &GameData, request: &str, progress: Option<&mut dyn FnMut(f64)>) -> Result<String, (String, bool)> {
     let req: Request = serde_json::from_str(request).map_err(|e| (format!("twin request: {e}"), false))?;
     let e = |m: String| (m, false);
     let kind = req.kind.as_str();
@@ -99,7 +100,7 @@ fn run_inner(data: &GameData, request: &str) -> Result<String, (String, bool)> {
 
     let mut sim = Sim::new(data, players, zone, trial, Mulberry32::new(req.rng_state), random_start);
     sim.trace = req.trace.as_ref().map(|t| TraceCfg { from: t.from, to: t.to, deep: t.deep });
-    sim.simulate(limit, run_limits)?;
+    sim.simulate(limit, run_limits, progress)?;
 
     let mut out = String::with_capacity(4096);
     out.push_str("{\"ok\":true,\"rngState\":");

@@ -17,7 +17,8 @@
     "eval:record": "node --import ./register-loader.js eval/run.mjs record",
     "eval:backrun": "node --import ./register-loader.js eval/backrun.mjs",
     "twin:check": "node --import ./register-loader.js twin-parity.mjs",
-    "twin:trace": "node --import ./register-loader.js twin-parity.mjs trace"
+    "twin:trace": "node --import ./register-loader.js twin-parity.mjs trace",
+    "twin:bench": "CSIM_ENGINE=js npm run bench -- --json=bench/records/twin-js.local.json && CSIM_ENGINE=native npm run bench -- --baseline=bench/records/twin-js.local.json && CSIM_ENGINE=wasm npm run bench -- --baseline=bench/records/twin-js.local.json"
   },
   "dependencies": {
     "cors": "^2.8.5",

@@ -9,6 +9,7 @@ import CombatSimulator from '../src/combatsimulator/combatSimulator.js';
 import Player from '../src/combatsimulator/player.js';
 import GuildTrial from '../src/combatsimulator/guildTrial.js';
 import { extractTrialSummary } from '../src/combatsimulator/guildTrialStats.js';
+import { getTwinBackend, runTwin } from './twinEngine.js';
 
 /**
  * Run `iterations` full trials and return one summary per iteration.
@@ -36,7 +37,19 @@ export async function runTrialIterations({
   onIteration,
 }) {
   const summaries = [];
+  const twin = getTwinBackend();
   for (let it = 0; it < iterations; it++) {
+    if (twin) {
+      const simResult = await runTwin(twin, {
+        kind: 'trial',
+        players: playersData,
+        partyBuffs,
+        guildTrial: { trialHrid, startTier, participantCount: participantCount ?? playersData.length, trialOptions },
+      });
+      summaries.push(extractTrialSummary(simResult));
+      onIteration?.(it + 1);
+      continue;
+    }
     const players = playersData.map((dto) => {
       const p = Player.createFromDTO(structuredClone(dto));
       p.zoneBuffs = []; // no labyrinth crates in trials

@@ -49,7 +49,7 @@ let chain = Promise.resolve();
 
 /**
  * Run one request on backend `b` ({ run(json, onProgress) -> Promise<json> }).
- * Resolves to a SimResult, or to { simResult, trace } when `request.trace` is set.
+ * Resolves to a SimResult. `onProgress(fraction)` is the JS "progress" event (wasm only).
  */
 export function runTwin(b, request, onProgress) {
   const job = chain.then(async () => {
@@ -59,8 +59,7 @@ export function runTwin(b, request, onProgress) {
     const res = JSON.parse(await b.run(JSON.stringify({ ...request, settings, rngState }), onProgress));
     if (!res.ok) throw new (res.errorKind === 'RangeError' ? RangeError : Error)(res.error);
     if (seeded) Math.random.state(res.rngState);
-    const simResult = reviveTwinResult(res.simResult);
-    return request.trace ? { simResult, trace: res.trace } : simResult;
+    return reviveTwinResult(res.simResult);
   });
   chain = job.catch(() => {});
   return job;

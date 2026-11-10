@@ -17,6 +17,9 @@ const { aggregateTrialResults } = await import('../../src/combatsimulator/guildT
 const { runDungeonRunsSerial, addRunIdleTime, DEFAULT_MAX_RUN_HOURS, ONE_HOUR_NS } = await import('../../shared/dungeonRuns.js');
 const { buildCommunityBuffs } = await import('../../shared/communityBuffs.js');
 const { runTrialIterations } = await import('../../shared/guildTrialRuns.js');
+const { getTwinBackend, runTwin } = await import('../../shared/twinEngine.js');
+// CSIM_ENGINE=native|wasm routes the seams below to the Rust twin; unset is the JS engine.
+await (await import('./twin/index.mjs')).selectTwinFromEnv();
 
 /**
  * Build extra buffs based on options
@@ -71,6 +74,11 @@ async function simulateOnMainThread({ players: playersData, zone: zoneConfig, si
   // not just guild trials — mirrors the same concat in src/worker.js. Guild
   // BUILDING buffs are excluded here: those are trial-only.
   const extraBuffs = buildExtraBuffs(extra).concat(guildBuffs);
+
+  const twin = getTwinBackend();
+  if (twin) {
+    return runTwin(twin, { kind: 'zone', players: playersData, partyBuffs: extraBuffs, zone: zoneConfig, simulationTimeLimit, ...(runLimits ? { runLimits } : {}) });
+  }
 
   // Create Zone
   const zone = new Zone(zoneConfig.zoneHrid, zoneConfig.difficultyTier);

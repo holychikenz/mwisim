@@ -282,7 +282,8 @@ impl<'a> Sim<'a> {
     }
 
     /// Err((message, is_range_error)).
-    pub fn simulate(&mut self, limit: f64, run_limits: Option<(f64, f64)>) -> Result<(), (String, bool)> {
+    /// `progress` gets the JS "progress" event's fraction every 1000 ticks.
+    pub fn simulate(&mut self, limit: f64, run_limits: Option<(f64, f64)>, mut progress: Option<&mut dyn FnMut(f64)>) -> Result<(), (String, bool)> {
         self.temp_dungeon_count = 0.0;
         self.simulation_time = 0.0;
         self.clear_queue();
@@ -298,6 +299,7 @@ impl<'a> Sim<'a> {
             limit = if js::truthy(limit) { js::min(limit, cap) } else { cap };
         }
 
+        let mut ticks: u32 = 0;
         let mut total_ticks: u64 = 0;
         let mut stalled: u64 = 0;
         let mut last_time = self.simulation_time;
@@ -323,6 +325,17 @@ impl<'a> Sim<'a> {
                     ),
                     false,
                 ));
+            }
+            ticks += 1;
+            if ticks == 1000 {
+                ticks = 0;
+                if let Some(cb) = progress.as_mut() {
+                    let frac = match (self.run_limits, &self.zone) {
+                        (Some((max_runs, _)), Some(z)) => js::min((z.dungeons_completed + z.dungeons_failed) / max_runs, 1.0),
+                        _ => js::min(self.simulation_time / limit, 1.0),
+                    };
+                    cb(frac);
+                }
             }
         }
 

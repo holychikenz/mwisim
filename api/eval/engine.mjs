@@ -35,11 +35,15 @@
 // =============================================================================
 
 import { readFileSync } from 'fs';
-import { join } from 'path';
-import { pathToFileURL } from 'url';
+import { join, resolve, dirname } from 'path';
+import { fileURLToPath, pathToFileURL } from 'url';
 
 import { BUILDS, toCsimPlayer } from '../bench/builds.mjs';
 import { buildNamesFor } from './cases.mjs';
+import { selectTwinFromEnv } from '../lib/twin/index.mjs';
+import { getTwinBackend, runTwin } from '../../shared/twinEngine.js';
+
+const HERE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 /**
  * @param {string} root  a directory containing src/combatsimulator/
@@ -48,6 +52,12 @@ import { buildNamesFor } from './cases.mjs';
 export async function loadEngine(root) {
   const src = join(root, 'src', 'combatsimulator');
   const mod = (file) => import(pathToFileURL(join(src, file)).href);
+
+  // CSIM_ENGINE applies to this checkout only; a back-run root is always its own JS.
+  const here = resolve(root) === HERE_ROOT;
+  if (here) await selectTwinFromEnv();
+  const twin = () => (here ? getTwinBackend() : null);
+  let labWarned = false;
 
   const CombatSimulator = (await mod('combatSimulator.js')).default;
   const Player = (await mod('player.js')).default;
@@ -109,6 +119,11 @@ export async function loadEngine(root) {
 
     /** An open zone or a dungeon. Mirrors runSimulation()'s main-thread branch. */
     async runZone(kase, hours) {
+      const b = twin();
+      if (b) {
+        const zone = { zoneHrid: `/actions/combat/${kase.zone}`, difficultyTier: kase.tier };
+        return runTwin(b, { kind: 'zone', players: dtosFor(kase), partyBuffs: [], zone, simulationTimeLimit: hours * 3600e9 });
+      }
       const zone = new Zone(`/actions/combat/${kase.zone}`, kase.tier);
       const simulator = instantiate(dtosFor(kase), zone, null, {});
       return quietly(() => simulator.simulate(hours * 3600e9));
@@ -124,6 +139,10 @@ export async function loadEngine(root) {
      * api/lib/target.js for the reason in this file's header.
      */
     async runLab(kase, hours) {
+      if (twin() && !labWarned) {
+        labWarned = true;
+        console.error('eval: the Rust twin has no labyrinth yet (Phase 3); labyrinth cases run on the JS engine');
+      }
       const labyrinth = new Labyrinth(kase.monster, kase.roomLevel, kase.crates || []);
       const dtos = dtosFor(kase).map((dto) => ({ ...dto, food: [null, null, null], drinks: [null, null, null] }));
       const simulator = instantiate(dtos, null, labyrinth, {});
@@ -137,6 +156,11 @@ export async function loadEngine(root) {
      */
     async runTrial(kase) {
       const dtos = dtosFor(kase);
+      const b = twin();
+      if (b) {
+        const guildTrial = { trialHrid: kase.trial, startTier: kase.startTier ?? GuildTrial.START_TIER, participantCount: dtos.length, trialOptions: {} };
+        return runTwin(b, { kind: 'trial', players: dtos, partyBuffs: [], guildTrial });
+      }
       const guildTrial = new GuildTrial(kase.trial, kase.startTier ?? GuildTrial.START_TIER, dtos.length, {});
       const simulator = instantiate(dtos, null, null, { guildTrial });
       return quietly(() => simulator.simulate(GuildTrial.TRIAL_DURATION_NS));
