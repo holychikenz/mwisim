@@ -77,7 +77,8 @@ t_wasm() { say "wasm-pack (rust/ -> rust/pkg/)"; wasm_build; }
 t_twin() {
   local engines; engines="$(twin_engines)"
   say "api twin:check (${engines})"
-  (cd api && for e in ${engines//,/ }; do npm run twin:check -- selftest --engine="$e"; done && npm run twin:check -- check --engines="$engines")
+  # `|| exit 1`: a loop's status is its last iteration's, so a native failure would hide behind a passing wasm.
+  (cd api && for e in ${engines//,/ }; do npm run twin:check -- selftest --engine="$e" || exit 1; done && npm run twin:check -- check --engines="$engines")
 }
 
 # The engines twin-quick and twin run: native, plus wasm when rust/pkg/ is built.
@@ -92,12 +93,14 @@ t_twin_quick() {
   (cd rust && cargo build --release --locked --quiet)
   local engines=native
   if command -v wasm-pack >/dev/null; then
-    wasm_build --quiet && engines=native,wasm
+    # Explicit: on the left of && a failed build would skip set -e and leave a stale rust/pkg checked by `twin`.
+    if ! wasm_build --quiet; then echo "twin-quick: wasm build FAILED" >&2; return 1; fi
+    engines=native,wasm
   else
     echo "twin-quick: wasm skipped (wasm-pack not on PATH); checking native only"
   fi
   say "twin-quick (${engines})"
-  (cd api && for e in ${engines//,/ }; do npm run --silent twin:check -- selftest --engine="$e"; done \
+  (cd api && for e in ${engines//,/ }; do npm run --silent twin:check -- selftest --engine="$e" || exit 1; done \
     && npm run --silent twin:check -- check --engines="$engines" --seeds=2 | grep -v '^  MATCH ')
 }
 

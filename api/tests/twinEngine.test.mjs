@@ -131,6 +131,11 @@ test('a twin trial batch goes in chunks of TWIN_TRIAL_CHUNK, with progress offse
     assert.deepEqual(sizes, [TWIN_TRIAL_CHUNK, 5]);
     assert.equal(out.length, TWIN_TRIAL_CHUNK + 5);
     assert.deepEqual(seen, Array.from({ length: TWIN_TRIAL_CHUNK + 5 }, (_, i) => i + 1));
+    // Fractional iterations: the JS loop runs ceil(n); the twin must get whole chunks summing to that.
+    sizes.length = 0;
+    const frac = await withSeed(1, () => runTrialIterations({ players: [], partyBuffs: [], trialHrid: 'x', iterations: TWIN_TRIAL_CHUNK + 4.5 }));
+    assert.deepEqual(sizes, [TWIN_TRIAL_CHUNK, 5]);
+    assert.equal(frac.length, TWIN_TRIAL_CHUNK + 5);
   } finally {
     setTwinBackend(null);
   }

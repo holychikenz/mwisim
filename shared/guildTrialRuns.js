@@ -50,7 +50,7 @@ export async function runTrialIterations({
     let done = 0;
     const fire = (n) => { for (; done < n; done++) onIteration?.(done + 1); }; // not `?.(++done)`: an absent callback skips its arguments
     for (let start = 0; start < iterations; start += TWIN_TRIAL_CHUNK) {
-      const n = Math.min(TWIN_TRIAL_CHUNK, iterations - start);
+      const n = Math.min(TWIN_TRIAL_CHUNK, Math.ceil(iterations - start)); // ceil: the JS loop runs ceil(10.5) = 11; the twin takes only integers
       const simResults = await runTwin(twin, twinTrialRequest({ players: playersData, partyBuffs, trialHrid, startTier, participantCount, trialOptions, iterations: n }), (k) => fire(start + k));
       fire(start + simResults.length); // backends without progress
       for (const r of simResults) summaries.push(extractTrialSummary(r));
