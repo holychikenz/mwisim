@@ -44,7 +44,7 @@ export function loadoutCandidates(character, currentLoadoutName) {
     .map(([name, loadout]) => ({ name, player: toPlayerDTO(resolvePlayer(character, loadout)) }));
 }
 
-const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 2 }).format;
+export const compact = new Intl.NumberFormat('en', { notation: 'compact', maximumFractionDigits: 2 }).format;
 /**
  * Progress's cost columns for CandidateResults, as strings: what a level costs (XP, or ability books), the probe's gain
  * per unit of it, and per unit of book PRICE when the active price source has one (coins, or iron seconds).

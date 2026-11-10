@@ -25,6 +25,8 @@ import { useDisclosure, useMediaQuery } from '@mantine/hooks';
 import { useGameData } from './hooks/useGameData';
 import { useSimulation } from './hooks/useSimulation';
 import { useAllZones } from './hooks/useAllZones';
+import { useZoneFinder } from './hooks/useZoneFinder';
+import { finderVariants } from './utils/zoneProgress';
 import { useTriggerOptimizer } from './hooks/useTriggerOptimizer';
 import { useEquipmentOptimizer } from './hooks/useEquipmentOptimizer';
 import { useLoadoutOptimizer } from './hooks/useLoadoutOptimizer';
@@ -163,6 +165,7 @@ const AbilitySearchOptions = lazyNamed(() => import('./components/CandidateOptim
 const ProgressOptions = lazyNamed(() => import('./components/CandidateOptimizerPanel'), 'ProgressOptions');
 const SwapOptions = lazyNamed(() => import('./components/CandidateOptimizerPanel'), 'SwapOptions');
 const CandidateResults = lazyNamed(() => import('./components/CandidateResults'), 'CandidateResults');
+const ZoneFinderResults = lazyNamed(() => import('./components/ZoneFinderResults'), 'ZoneFinderResults');
 const ItemCostsView = lazyNamed(() => import('./components/ItemCostsView'), 'ItemCostsView');
 const TrialMonsterCards = lazyNamed(() => import('./components/TrialMonsterCards'), 'TrialMonsterCards');
 
@@ -435,6 +438,8 @@ function App() {
   // the single-zone Run would use. Only the hours are its own — see
   // DEFAULT_SWEEP_HOURS for why they are not the header's.
   const allZones = useAllZones();
+  // Progress's "Find top 10 zones": two sweeps on a pool of its own (hooks/useZoneFinder.js).
+  const zoneFinder = useZoneFinder();
   const [allZonesOpen, setAllZonesOpenState] = useState(false);
   // The picker's chunk loads on first open; it then stays mounted.
   const [allZonesMounted, setAllZonesMounted] = useState(false);
@@ -1490,7 +1495,34 @@ function App() {
   // -- All Zones sweep -------------------------------------------------------
   // Destructured for stable identities: the hook returns a fresh object literal
   // every render, which would otherwise churn every deps array mentioning it.
-  const { run: runAllZones, cancel: cancelAllZones } = allZones;
+  const { run: runAllZones } = allZones;
+
+  // Exactly the party, buffs and shrines a single Run would send — the sweep
+  // is the same simulation done many times, not a different one. That
+  // includes each player's own shrines and seals, which ride on the DTO.
+  // Shared by the All Zones sweep and Progress's zone finder.
+  const sweepBase = useCallback(() => {
+    const playerDTOs = selectedParty.map(playerId => ({
+      ...toPlayerDTO(resolvedParty[playerId], {
+        hrid: `player${playerId}`,
+        stripConsumables: mazeContext
+      }),
+      extraBuffs: resolvePlayerExtraBuffs(resolvedParty[playerId], { includeSeals: sealsApply({ mazeContext }) })
+    }));
+    return {
+      players: withLevelGapDebuff(playerDTOs),
+      workers: allZonesWorkers,
+      extra: {
+        ...extraOptions,
+        experimental,
+        mwixLabUpgrades: labConfig.upgrades,
+        mwixMaze: { enabled: mazeContext }
+      },
+      // Party-wide shrines are gone; each DTO carries its own. See the single
+      // Run below for the full account.
+      guildBuffs: []
+    };
+  }, [resolvedParty, selectedParty, mazeContext, extraOptions, experimental, labConfig, allZonesWorkers]);
 
   const handleRunAllZones = useCallback(() => {
     // Game order (sortIndex), then tier — the pool consumes the list in order,
@@ -1523,46 +1555,15 @@ function App() {
     if (combos.length === 0) return;
     if (selectedParty.length === 0) return;
 
-    // Exactly the party, buffs and shrines a single Run would send — the sweep
-    // is the same simulation done many times, not a different one. That
-    // includes each player's own shrines and seals, which ride on the DTO.
-    const playerDTOs = selectedParty.map(playerId => ({
-      ...toPlayerDTO(resolvedParty[playerId], {
-        hrid: `player${playerId}`,
-        stripConsumables: mazeContext
-      }),
-      extraBuffs: resolvePlayerExtraBuffs(resolvedParty[playerId], { includeSeals: sealsApply({ mazeContext }) })
-    }));
-
-    runAllZones({
-      players: withLevelGapDebuff(playerDTOs),
-      combos,
-      simulationTimeLimit: allZonesHours * ONE_HOUR,
-      hours: allZonesHours,
-      workers: allZonesWorkers,
-      extra: {
-        ...extraOptions,
-        experimental,
-        mwixLabUpgrades: labConfig.upgrades,
-        mwixMaze: { enabled: mazeContext }
-      },
-      // Party-wide shrines are gone; each DTO carries its own. See the single
-      // Run below for the full account.
-      guildBuffs: []
-    });
+    runAllZones({ ...sweepBase(), combos, simulationTimeLimit: allZonesHours * ONE_HOUR, hours: allZonesHours });
     setAllZonesOpen(false);
     setAllZonesView(true);
   }, [
     gameData,
     allZonesSelection,
     allZonesHours,
-    allZonesWorkers,
-    resolvedParty,
     selectedParty,
-    mazeContext,
-    extraOptions,
-    experimental,
-    labConfig,
+    sweepBase,
     runAllZones,
     setAllZonesOpen
   ]);
@@ -1658,6 +1659,22 @@ function App() {
   const { runOptimizer: runProgressOptimizer } = progressOpt;
   const handleStartProgressOpt = useCallback(
     () => startSubjectRun(runProgressOptimizer, progressOptPayload), [startSubjectRun, runProgressOptimizer, progressOptPayload]);
+
+  // Progress's "Find top 10 zones": the subject's charm / coffee variants over every simulable zone and tier.
+  const { start: startZoneFinder } = zoneFinder;
+  const handleFindZones = useCallback(() => {
+    const r = progressOpt.results;
+    const slot = r?.meta?.subject?.slot;
+    const index = selectedParty.indexOf(slot);
+    if (!r?.rows?.length || index < 0 || !gameData) return;
+    const base = sweepBase();
+    const variants = finderVariants(base.players[index], r.rows, gameData.items);
+    startZoneFinder({
+      base: { ...base, variants: Object.fromEntries(variants.map(v => [v.key, base.players.map((p, i) => (i === index ? v.player : p))])) },
+      combos: simulableZones(gameData.zones).flatMap(z => zoneTiers(z).flatMap(difficultyTier =>
+        variants.map(v => ({ zoneHrid: z.hrid, difficultyTier, variant: v.key })))),
+      progressRows: r.rows, subjectHrid: `player${slot}`, variants, monsters: gameData.monsters, items: gameData.items });
+  }, [progressOpt.results, selectedParty, gameData, sweepBase, startZoneFinder]);
   const { runOptimizer: runSwapOptimizer } = swapOpt;
   const handleStartSwapOpt = useCallback(
     () => startSubjectRun(runSwapOptimizer, swapOptPayload), [startSubjectRun, runSwapOptimizer, swapOptPayload]);
@@ -1819,9 +1836,20 @@ function App() {
           <ProgressOptions preview={progressOpt.preview} config={progressOptConfig} onConfigChange={setProgressOptConfig} loading={progressOpt.loading} />
         </CandidateOptimizerPanel>
       ),
-      results: (r, onClear) => (
-        <CandidateResults results={r} title="Progress" currentLabel="Current levels" extraColumns={progressColumns(pricing)} onClear={onClear} />
-      )
+      results: (r, onClear) => {
+        const s = r.meta?.subject;
+        // The finder needs the measured character still in the party as measured.
+        const moved = !s || !selectedParty.includes(s.slot) || party[s.slot]?.characterId !== s.characterId
+          || party[s.slot]?.loadoutName !== s.loadoutName;
+        return (
+          <Stack gap="md">
+            <CandidateResults results={r} title="Progress" currentLabel="Current levels" extraColumns={progressColumns(pricing)} onClear={onClear} />
+            <ZoneFinderResults finder={zoneFinder} current={zoneFinder.job?.progressRows === r.rows} onFind={handleFindZones}
+              disabled={activeLoading || progressOpt.stale || !!r.saturated || !r.rows?.length || moved}
+              zones={gameData?.zones} items={gameData?.items} />
+          </Stack>
+        );
+      }
     },
     swapOpt: {
       engine: swapOpt,
@@ -1996,13 +2024,14 @@ function App() {
   // it owns the machine's cores until it finishes, so a Run button that invited a
   // second engine to start beside it would be lying — and with Stop hidden, the
   // sweep could not be called off from the mode the user happened to be in.
-  const sweeping = allZones.running;
+  const activeSweep = zoneFinder.running ? zoneFinder : allZones.running ? allZones : null;
+  const sweeping = !!activeSweep;
   const activeLoading = (isApiOpt ? apiEngine.loading : simLoading) || sweeping;
   // The label and the number must describe the SAME engine. Gating the label on
   // `sweeping` while the number fell through to whichever engine ran last printed
   // "Sweeping zones — 12/78 done · 100.0%" from a single run finished minutes ago.
   const activeProgress = sweeping
-    ? allZones.progress
+    ? activeSweep.progress
     : isApiOpt
       ? apiEngine.progress
       : simProgress;
@@ -2010,7 +2039,7 @@ function App() {
   const activeError = isApiOpt ? apiEngine.error : simError;
   // The sweep wins: it is the only engine that can be running while the user is
   // looking at a different mode, so Stop must reach it from anywhere.
-  const handleStop = sweeping ? cancelAllZones : isApiOpt ? apiEngine.cancel : cancelRun;
+  const handleStop = sweeping ? activeSweep.cancel : isApiOpt ? apiEngine.cancel : cancelRun;
 
   const isTrial = simMode === 'guildTrial';
   const isCosts = simMode === 'itemCosts';
@@ -2386,18 +2415,20 @@ function App() {
             <ProgressBar
               progress={activeProgress}
               status={
-                isApiOpt
-                  ? // The stage label carries the real information here — a
-                    // percentage alone tells the user nothing about whether the
-                    // run is screening cheaply or verifying at 72 simulated hours.
-                    `${apiEngine.stage ? `${apiEngine.stage}: ` : ''}${apiEngine.label || 'Optimising…'} · ${activeProgress.toFixed(1)}%`
-                  : sweeping
-                    ? // Combinations finished, not percent alone: a sweep's bar
-                      // moves slowly and the count is what tells you where it is.
-                      // Reports the hours the RUN was started with, not the knob's
-                      // current value, which the user may have edited since.
-                      `Sweeping zones — ${allZones.meta?.completed ?? 0}/${allZones.meta?.total ?? 0} done ` +
-                      `(${allZones.meta?.hours ?? allZonesHours} h each) · ${activeProgress.toFixed(1)}%`
+                sweeping
+                  ? // Before isApiOpt: the zone finder runs from the Progress tool.
+                    // Combinations finished, not percent alone: a sweep's bar
+                    // moves slowly and the count is what tells you where it is.
+                    // Reports the hours the RUN was started with, not the knob's
+                    // current value, which the user may have edited since.
+                    `${zoneFinder.running ? `Finding zones, ${zoneFinder.stage === 'verify' ? 'finalists' : 'quick pass'}` : 'Sweeping zones'}` +
+                    ` — ${activeSweep.meta?.completed ?? 0}/${activeSweep.meta?.total ?? 0} done ` +
+                    `(${activeSweep.meta?.hours ?? allZonesHours} h each) · ${activeProgress.toFixed(1)}%`
+                  : isApiOpt
+                    ? // The stage label carries the real information here — a
+                      // percentage alone tells the user nothing about whether the
+                      // run is screening cheaply or verifying at 72 simulated hours.
+                      `${apiEngine.stage ? `${apiEngine.stage}: ` : ''}${apiEngine.label || 'Optimising…'} · ${activeProgress.toFixed(1)}%`
                     : simMode === 'guildTrial'
                       ? `Running ${trialConfig.iterations} trial iterations… ${activeProgress.toFixed(1)}%`
                       : dungeonRunMode
@@ -2543,7 +2574,7 @@ function App() {
             workers={allZonesWorkers}
             onWorkersChange={setAllZonesWorkers}
             onRun={handleRunAllZones}
-            running={allZones.running}
+            running={sweeping}
           />
         </Suspense>
         </ChunkBoundary>

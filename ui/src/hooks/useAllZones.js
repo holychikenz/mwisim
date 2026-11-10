@@ -10,7 +10,10 @@ import { useState, useCallback, useRef, useEffect } from 'react';
 // had already measured.
 //
 //   →  { type: 'start_all_zones', players, combos, simulationTimeLimit,
-//        extra, guildBuffs, workers }
+//        extra, guildBuffs, workers, variants }
+//
+// run(params) takes an optional params.onDone(rows), called with every row once
+// the pool reports done (not on cancel or error) — how useZoneFinder chains passes.
 //   ←  { type: 'all_zones_progress' | 'all_zones_row' | 'all_zones_done'
 //        | 'all_zones_error' }
 // =============================================================================
@@ -39,6 +42,7 @@ export function useAllZones() {
   const workerRef = useRef(null);
   const watchdogRef = useRef(null);
   const pendingRowsRef = useRef([]);
+  const allRowsRef = useRef([]);
   const flushTimerRef = useRef(null);
 
   const clearWatchdog = useCallback(() => {
@@ -101,6 +105,7 @@ export function useAllZones() {
     stopWorker();
     const combos = params?.combos || [];
     pendingRowsRef.current = [];
+    allRowsRef.current = [];
     setRunning(true);
     setProgress(0);
     setRows([]);
@@ -148,6 +153,7 @@ export function useAllZones() {
           break;
         case 'all_zones_row':
           pendingRowsRef.current.push(data.row);
+          allRowsRef.current.push(data.row);
           if (!flushTimerRef.current) {
             flushTimerRef.current = setTimeout(() => {
               flushTimerRef.current = null;
@@ -163,6 +169,8 @@ export function useAllZones() {
             prev ? { ...prev, completed: data.completed, failed: data.failed, finishedAt: Date.now() } : prev
           );
           stopWorker();
+          // After stopWorker: onDone may start the next pass, which that call would kill.
+          params.onDone?.(allRowsRef.current);
           break;
         case 'all_zones_error':
           failAndReset(String(data.error || 'Zone sweep failed'));
@@ -184,6 +192,7 @@ export function useAllZones() {
       extra: params.extra || {},
       guildBuffs: params.guildBuffs || [],
       workers: params.workers || null,
+      variants: params.variants,
     });
     armWatchdog();
   }, [stopWorker, armWatchdog, failAndReset, flushRows]);
