@@ -6,7 +6,7 @@ import { applySimSettingsFromExtra } from "./combatsimulator/simSettings";
 import { buildCommunityBuffs } from "../shared/communityBuffs.js";
 import { runTrialIterations } from "../shared/guildTrialRuns.js";
 import { buildLabUpgradeBuffs } from "../shared/labUpgrades.js";
-import { setTwinBackend, runTwin, wantsWasmTwin, twinZoneRequest, twinLabRequest } from "../shared/twinEngine.js";
+import { setTwinBackend, runTwin, wantsWasmTwin, twinRunRequest } from "../shared/twinEngine.js";
 import { loadWasmTwin } from "./twinWasm.js";
 
 onmessage = async function (event) {
@@ -54,9 +54,8 @@ onmessage = async function (event) {
                     const players = event.data.players;
                     const simResult = await runTwin(
                         twin,
-                        zone
-                            ? twinZoneRequest({ players, partyBuffs: extraBuffs, zone, simulationTimeLimit, runLimits: maxRuns ? { maxRuns, maxRunDurationNs } : undefined })
-                            : twinLabRequest({ players, partyBuffs: extraBuffs, labyrinth, simulationTimeLimit }),
+                        // runLimits on a labyrinth too: the twin then throws JS's RangeError at the same point.
+                        twinRunRequest({ players, partyBuffs: extraBuffs, zone, labyrinth, simulationTimeLimit, runLimits: maxRuns ? { maxRuns, maxRunDurationNs } : undefined }),
                         (progress) => this.postMessage({ type: "simulation_progress", progress, zone: zone?.zoneHrid, difficultyTier: zone?.difficultyTier, roomLevel: labyrinth?.roomLevel }),
                     );
                     this.postMessage({ type: "simulation_result", simResult });

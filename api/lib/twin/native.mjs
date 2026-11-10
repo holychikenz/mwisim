@@ -18,14 +18,34 @@ const DATA_DIR = join(ROOT, 'src', 'combatsimulator', 'data');
 // No output at all for this long while busy: the child is stalled (heartbeats come every second).
 const STALL_MS = 60 * 1000;
 
-// The one libm call the engine makes. Native powf equals V8 on macOS (measured); elsewhere, check.
+// The one libm call the engine makes. Native powf equals V8 on macOS and on linux amd64/aarch64
+// (measured: rust 1.92, node 26); other platforms are unverified, so check at startup anyway.
 const POW_SAMPLE = Array.from({ length: 4096 }, (_, i) => 10 + i * 12.2071 + (i % 97) * 1e-4); // 10 .. 50,000
+
+/**
+ * Calls `onLine(line)` for each "\n"-terminated line of the chunks fed to the returned function.
+ * Linear in total output: only each new chunk is scanned, and a partial line waits as pieces.
+ */
+export function lineSplitter(onLine) {
+  let parts = [];
+  return (chunk) => {
+    let from = 0;
+    let nl;
+    while ((nl = chunk.indexOf('\n', from)) >= 0) {
+      parts.push(chunk.slice(from, nl));
+      const line = parts.length === 1 ? parts[0] : parts.join('');
+      parts = [];
+      from = nl + 1;
+      onLine(line);
+    }
+    if (from < chunk.length) parts.push(chunk.slice(from));
+  };
+}
 
 /** @param {{stallMs?: number}} [opts]  stallMs: kill a busy child after this long with no output */
 export function nativeBackend({ stallMs = STALL_MS } = {}) {
   if (!existsSync(NATIVE_BIN)) throw new Error('csim native engine not built: run ./build.sh rust');
   let child = null;
-  let buf = '';
   let nextId = 1;
   const pending = new Map();
   let stallTimer = null;
@@ -52,7 +72,6 @@ export function nativeBackend({ stallMs = STALL_MS } = {}) {
     for (const p of pending.values()) p.reject(err);
     pending.clear();
     child = null;
-    buf = '';
     watch();
   };
 
@@ -60,24 +79,21 @@ export function nativeBackend({ stallMs = STALL_MS } = {}) {
     const c = spawn(NATIVE_BIN, ['serve', '--data', DATA_DIR], { stdio: ['pipe', 'pipe', 'inherit'] });
     child = c;
     c.stdout.setEncoding('utf8');
-    c.stdout.on('data', (chunk) => {
-      if (child !== c) return; // a killed child's late line must not land in the next child's buf
-      buf += chunk;
-      let nl;
-      while ((nl = buf.indexOf('\n')) >= 0) {
-        const line = buf.slice(0, nl);
-        buf = buf.slice(nl + 1);
-        const sp = line.indexOf(' ');
-        const id = Number(line.slice(0, sp));
-        const p = pending.get(id);
-        if (!p) continue;
-        if (line.startsWith('~progress ', sp + 1)) {
-          p.onProgress?.(Number(line.slice(sp + 11)));
-          continue;
-        }
-        pending.delete(id);
-        p.resolve(line.slice(sp + 1));
+    const split = lineSplitter((line) => {
+      const sp = line.indexOf(' ');
+      const id = Number(line.slice(0, sp));
+      const p = pending.get(id);
+      if (!p) return;
+      if (line.startsWith('~progress ', sp + 1)) {
+        p.onProgress?.(Number(line.slice(sp + 11)));
+        return;
       }
+      pending.delete(id);
+      p.resolve(line.slice(sp + 1));
+    });
+    c.stdout.on('data', (chunk) => {
+      if (child !== c) return; // a killed child's late line must not reach the next child's requests
+      split(chunk);
       idle();
       watch();
     });

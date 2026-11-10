@@ -75,23 +75,31 @@ pub struct PlayerDto {
 #[serde(rename_all = "camelCase")]
 pub struct ZoneReq {
     pub zone_hrid: String,
-    #[serde(deserialize_with = "strict_num")]
+    #[serde(deserialize_with = "strict_tier")]
     pub difficulty_tier: f64,
 }
 
-/// A JSON number or an error. Anything else makes the JS engine NaN, concatenate, or echo a non-number.
-fn strict_num<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+/// A JSON number or an error naming `field`. Anything else makes the JS engine NaN, concatenate, or echo a non-number.
+fn strict_num<'de, D: serde::Deserializer<'de>>(d: D, field: &str) -> Result<f64, D::Error> {
     match Value::deserialize(d)? {
         Value::Number(n) => Ok(n.as_f64().unwrap_or(f64::NAN)),
-        v => Err(serde::de::Error::custom(format!("zone.difficultyTier must be a number, got {v}"))),
+        v => Err(serde::de::Error::custom(format!("{field} must be a number, got {v}"))),
     }
+}
+
+fn strict_tier<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+    strict_num(d, "zone.difficultyTier")
+}
+
+fn strict_room_level<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+    strict_num(d, "labyrinth.roomLevel")
 }
 
 #[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct LabReq {
     pub labyrinth_hrid: String,
-    #[serde(deserialize_with = "strict_num")]
+    #[serde(deserialize_with = "strict_room_level")]
     pub room_level: f64,
     #[serde(default)]
     pub crates: Option<Vec<String>>,
@@ -173,4 +181,17 @@ pub struct Request {
     pub iterations: Option<u32>,
     #[serde(default)]
     pub trace: Option<TraceReq>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strict_num_names_its_field() {
+        let e = serde_json::from_str::<ZoneReq>(r#"{"zoneHrid":"z","difficultyTier":"1"}"#).unwrap_err().to_string();
+        assert!(e.starts_with("zone.difficultyTier must be a number"), "{e}");
+        let e = serde_json::from_str::<LabReq>(r#"{"labyrinthHrid":"m","roomLevel":"60"}"#).unwrap_err().to_string();
+        assert!(e.starts_with("labyrinth.roomLevel must be a number"), "{e}");
+    }
 }

@@ -1,8 +1,8 @@
 # =============================================================================
 # ci — the gates that used to exist only on somebody's laptop
 #
-# BUDGET: < 3 min wall. Measured locally, the simulation is ~20 s of it
-# (npm test ~3 s, sim:check ~2 s, eval:check ~12 s, twin-quick native ~4 s);
+# BUDGET: < 3 min wall. Measured locally, the simulation is ~30 s of it
+# (npm test ~10 s, sim:check ~2 s, eval:check ~12 s, twin-quick native ~4 s);
 # the rest is checkout, `npm ci` and the cargo build (cached by rust-cache).
 # That is why this is ONE job rather than a matrix: three jobs would each pay
 # the install cost to save nothing.
@@ -94,7 +94,8 @@ jobs:
         run: npm run eval:check
 
       # The fast twin subset ./build.sh check runs: selftest (rng, pow guard,
-      # number parsing) and every twin:check case at 2 seeds, bit for bit
+      # number parsing; the native pow guard is verified on linux amd64 and
+      # aarch64, and this gate keeps it so) and every twin:check case at 2 seeds, bit for bit
       # against JS. The full 16-seed run stays manual: ./build.sh rust twin.
       - name: twin-quick — Rust twin vs JS
         working-directory: .

@@ -35,7 +35,7 @@ import { runSimulation, runGuildTrialSimulation, loadGameData } from './lib/simu
 import { allEvalCases, seedsFor, EVAL_HOURS, buildNamesFor, BUILDS } from './eval/cases.mjs';
 import { loadEngine } from './eval/engine.mjs';
 import { toCsimPlayer } from './bench/builds.mjs';
-import { setTwinBackend, getTwinBackend, runTwin, twinLabRequest } from '../shared/twinEngine.js';
+import { setTwinBackend, getTwinBackend, runTwin, twinRunRequest } from '../shared/twinEngine.js';
 import { nativeBackend } from './lib/twin/native.mjs';
 import { wasmBackend } from './lib/twin/wasm.mjs';
 
@@ -137,7 +137,7 @@ function extraCases(nSeeds) {
   const labHouses = { players: [{ ...houses, food: [null, null, null], drinks: [null, null, null] }], labyrinth: { labyrinthHrid: '/monsters/cyclops', roomLevel: 60, crates: ['/items/expert_coffee_crate'] }, simulationTimeLimit: 1800e9 };
   const lab = (spec) => () => {
     const b = getTwinBackend();
-    if (b) return runTwin(b, twinLabRequest(structuredClone(spec)));
+    if (b) return runTwin(b, twinRunRequest(structuredClone(spec)));
     const { labyrinthHrid, roomLevel, crates } = spec.labyrinth;
     const labyrinth = new Labyrinth(labyrinthHrid, roomLevel, crates);
     const players = spec.players.map((dto) => {

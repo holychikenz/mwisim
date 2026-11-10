@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 
 import { mulberry32, withSeed } from '../lib/determinism.mjs';
-import { reviveTwinResult, runTwin, getTwinBackend, wantsWasmTwin, twinZoneRequest, twinLabRequest, twinTrialRequest } from '../../shared/twinEngine.js';
+import { reviveTwinResult, runTwin, getTwinBackend, wantsWasmTwin, twinZoneRequest, twinLabRequest, twinTrialRequest, twinRunRequest } from '../../shared/twinEngine.js';
 
 test('the JS engine is the default backend', () => {
   assert.equal(getTwinBackend(), null);
@@ -107,6 +107,33 @@ test('the request builders add only the defaults the seams applied', () => {
   const l = twinLabRequest({ players: [1], labyrinth: { labyrinthHrid: '/monsters/m', roomLevel: 60, crates: [] }, simulationTimeLimit: 5 });
   assert.equal(l.kind, 'labyrinth');
   assert.deepEqual(l.partyBuffs, []);
+  assert.ok(!('runLimits' in l));
+  const lab = { labyrinthHrid: '/monsters/m', roomLevel: 60 };
+  assert.deepEqual(twinRunRequest({ players: [], labyrinth: lab, simulationTimeLimit: 1, runLimits: { maxRuns: 2 } }), { kind: 'labyrinth', players: [], partyBuffs: [], labyrinth: lab, simulationTimeLimit: 1, runLimits: { maxRuns: 2 } });
+  assert.equal(twinRunRequest({ players: [], zone: { zoneHrid: 'z' }, labyrinth: lab, simulationTimeLimit: 1 }).kind, 'zone'); // zone wins, as in the JS seams
+  assert.ok(!('labyrinth' in twinRunRequest({ players: [], zone: { zoneHrid: 'z' }, simulationTimeLimit: 1 })));
+});
+
+test('a twin trial batch goes in chunks of TWIN_TRIAL_CHUNK, with progress offset per chunk', async () => {
+  const { runTrialIterations, TWIN_TRIAL_CHUNK } = await import('../../shared/guildTrialRuns.js');
+  const { setTwinBackend } = await import('../../shared/twinEngine.js');
+  const sizes = [];
+  const fake = { run: async (json, onProgress) => {
+    const n = JSON.parse(json).iterations;
+    sizes.push(n);
+    for (let k = 1; k <= n; k++) onProgress(k);
+    return JSON.stringify({ ok: true, rngState: 1, simResults: Array.from({ length: n }, () => ({})) });
+  } };
+  setTwinBackend(fake);
+  try {
+    const seen = [];
+    const out = await withSeed(1, () => runTrialIterations({ players: [], partyBuffs: [], trialHrid: 'x', iterations: TWIN_TRIAL_CHUNK + 5, onIteration: (d) => seen.push(d) }));
+    assert.deepEqual(sizes, [TWIN_TRIAL_CHUNK, 5]);
+    assert.equal(out.length, TWIN_TRIAL_CHUNK + 5);
+    assert.deepEqual(seen, Array.from({ length: TWIN_TRIAL_CHUNK + 5 }, (_, i) => i + 1));
+  } finally {
+    setTwinBackend(null);
+  }
 });
 
 test('a twin trial batch with progress but no onIteration returns (regression: `?.(++done)` never counted)', async () => {

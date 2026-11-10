@@ -24,7 +24,7 @@ const Zone = (await import('../../../src/combatsimulator/zone.js')).default;
 const Labyrinth = (await import('../../../src/combatsimulator/labyrinth.js')).default;
 const { installSeededRandom } = await import('./rng.js');
 const { scoreSimResult } = await import('./score.js');
-const { runTwin, twinZoneRequest, twinLabRequest } = await import('../../../shared/twinEngine.js');
+const { runTwin, twinRunRequest } = await import('../../../shared/twinEngine.js');
 // CSIM_ENGINE=native|wasm: each worker registers its own twin backend (env is inherited from the pool's process).
 const twin = await (await import('../twin/index.mjs')).selectTwinFromEnv();
 
@@ -68,10 +68,9 @@ function buildRun({ playersData, zoneConfig, labyrinthConfig, extraBuffs }) {
 
 /** The same run on the twin: the request builders apply zone/crate buffs and the per-player extraBuffs tail. */
 function twinRun({ playersData: players, zoneConfig: zone, labyrinthConfig, extraBuffs: partyBuffs, simulationTimeLimit }) {
-  const request = zone
-    ? twinZoneRequest({ players, partyBuffs, zone, simulationTimeLimit })
-    : twinLabRequest({ players, partyBuffs, labyrinth: { ...labyrinthConfig, crates: labyrinthConfig.crates || [] }, simulationTimeLimit });
-  return runTwin(twin, request);
+  // `crates || []` is buildRun's; absent or null crates are none on the twin as well, so it changes nothing.
+  const labyrinth = labyrinthConfig && { ...labyrinthConfig, crates: labyrinthConfig.crates || [] };
+  return runTwin(twin, twinRunRequest({ players, partyBuffs, zone, labyrinth, simulationTimeLimit }));
 }
 
 async function runOne(job) {

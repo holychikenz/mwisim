@@ -8,6 +8,7 @@ use crate::data::GameData;
 use crate::unit::{CombatDetails, Unit, LEVEL_NAMES, STAT_NAMES};
 
 /// A tiny JSON tree with the JS-only values spelled out.
+#[derive(Clone)]
 pub enum J {
     Undef,
     Null,
@@ -19,18 +20,6 @@ pub enum J {
 }
 
 impl J {
-    fn copy(&self) -> J {
-        match self {
-            J::Undef => J::Undef,
-            J::Null => J::Null,
-            J::Bool(b) => J::Bool(*b),
-            J::Num(x) => J::Num(*x),
-            J::Str(s) => J::Str(s.clone()),
-            J::Arr(a) => J::Arr(a.iter().map(J::copy).collect()),
-            J::Obj(o) => J::Obj(o.iter().map(|(k, v)| (k.clone(), v.copy())).collect()),
-        }
-    }
-
     pub fn write(&self, out: &mut String) {
         match self {
             J::Undef => out.push_str("\"@undefined\""),
@@ -555,7 +544,8 @@ impl SimResult {
         self.trial_final_tier_hp_removed_frac = 1.0;
     }
 
-    pub fn to_json(&self) -> String {
+    /// Moves the stat snapshot out rather than copying it, so call this once, at the end of the run.
+    pub fn to_json(&mut self) -> String {
         let n = |m: &OMap<f64>| m.to_j(|v| J::Num(*v));
         let nn = |m: &OMap<OMap<f64>>| m.to_j(|v| n(v));
         let mut o: Vec<(String, J)> = vec![
@@ -649,8 +639,8 @@ impl SimResult {
             ("trialFinalTierHpRemovedFrac".into(), J::Num(self.trial_final_tier_hp_removed_frac)),
             ("trialTierTimes".into(), n(&self.trial_tier_times)),
             ("trialPlayerDeaths".into(), self.trial_player_deaths.to_j(|v| J::Arr(v.iter().map(|x| J::Num(*x)).collect()))),
-            ("playerStats".into(), J::Arr(self.player_stats.iter().map(J::copy).collect())),
-            ("monsterStats".into(), J::Arr(self.monster_stats.iter().map(J::copy).collect())),
+            ("playerStats".into(), J::Arr(std::mem::take(&mut self.player_stats))),
+            ("monsterStats".into(), J::Arr(std::mem::take(&mut self.monster_stats))),
         ];
         if let Some(t) = self.simulated_time {
             o.push(("simulatedTime".into(), J::Num(t)));

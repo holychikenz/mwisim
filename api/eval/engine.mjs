@@ -41,7 +41,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { BUILDS, toCsimPlayer } from '../bench/builds.mjs';
 import { buildNamesFor } from './cases.mjs';
 import { selectTwinFromEnv } from '../lib/twin/index.mjs';
-import { getTwinBackend, runTwin, twinZoneRequest, twinLabRequest, twinTrialRequest } from '../../shared/twinEngine.js';
+import { getTwinBackend, runTwin, twinRunRequest, twinTrialRequest } from '../../shared/twinEngine.js';
 
 const HERE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -121,7 +121,7 @@ export async function loadEngine(root) {
       const b = twin();
       if (b) {
         const zone = { zoneHrid: `/actions/combat/${kase.zone}`, difficultyTier: kase.tier };
-        return runTwin(b, twinZoneRequest({ players: dtosFor(kase), zone, simulationTimeLimit: hours * 3600e9 }));
+        return runTwin(b, twinRunRequest({ players: dtosFor(kase), zone, simulationTimeLimit: hours * 3600e9 }));
       }
       const zone = new Zone(`/actions/combat/${kase.zone}`, kase.tier);
       const simulator = instantiate(dtosFor(kase), zone, null, {});
@@ -142,7 +142,7 @@ export async function loadEngine(root) {
       const b = twin();
       if (b) {
         const labyrinth = { labyrinthHrid: kase.monster, roomLevel: kase.roomLevel, crates: kase.crates || [] };
-        return runTwin(b, twinLabRequest({ players: dtos, labyrinth, simulationTimeLimit: hours * 3600e9 }));
+        return runTwin(b, twinRunRequest({ players: dtos, labyrinth, simulationTimeLimit: hours * 3600e9 }));
       }
       const labyrinth = new Labyrinth(kase.monster, kase.roomLevel, kase.crates || []);
       const simulator = instantiate(dtos, null, labyrinth, {});

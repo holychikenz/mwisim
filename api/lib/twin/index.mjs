@@ -5,11 +5,14 @@
 //   wasm         the Rust twin as wasm (./build.sh wasm)
 // Registers the backend in shared/twinEngine.js and returns it (null for JS).
 //
-// preferNative (local runners: api/cli.js; or CSIM_PREFER_NATIVE=1, which is
-// how SCLIRoster asks) makes an UNSET CSIM_ENGINE mean native when it works:
-// built, spawns, and passes the pow guard. Otherwise one stderr line and JS.
-// An explicit CSIM_ENGINE always wins. The outcome is written back to
-// CSIM_ENGINE, so worker threads and children started later inherit it.
+// preferNative (local runners: api/cli.js; or CSIM_PREFER_NATIVE=1) makes an
+// UNSET CSIM_ENGINE mean native when it works: built, spawns, and passes the
+// pow guard. Otherwise one stderr line and JS. An explicit CSIM_ENGINE always
+// wins. The outcome is written back to CSIM_ENGINE, so worker threads and
+// children started later inherit it. The decision is per realm: a caller with
+// worker threads should decide on its main thread and set CSIM_ENGINE before
+// creating any (SCLIRoster's optimizer/src/csim.js does), or each worker
+// spawns, checks and prints on its own.
 // =============================================================================
 
 import { setTwinBackend, getTwinBackend } from '../../../shared/twinEngine.js';
@@ -32,7 +35,9 @@ async function preferredNative() {
 }
 
 export async function selectTwinFromEnv({ preferNative = process.env.CSIM_PREFER_NATIVE === '1' } = {}) {
-  if (selected) return getTwinBackend();
+  // The implicit JS default (CSIM_ENGINE still unset) is not final: a later preferNative call
+  // may still pick native, so api/cli.js can decide after simulator.js's import-time call.
+  if (selected && !(preferNative && !process.env.CSIM_ENGINE)) return getTwinBackend();
   const name = process.env.CSIM_ENGINE || (preferNative ? 'prefer-native' : 'js');
   let b = null;
   if (name === 'prefer-native') b = await preferredNative();

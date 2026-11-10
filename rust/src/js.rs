@@ -15,7 +15,8 @@ pub fn s(v: &str) -> S {
 
 pub const MIN_SAFE_INTEGER: f64 = -9007199254740991.0;
 
-/// `Math.pow`. Native `powf` matches V8 on macOS (measured, ResearchPack A);
+/// `Math.pow`. Native `powf` matches V8 on macOS (ResearchPack A) and on linux
+/// amd64/aarch64 (rust 1.92, node 26); the native backend's pow guard re-checks;
 /// the wasm build imports the host `Math.pow` instead.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn pow(x: f64, y: f64) -> f64 {

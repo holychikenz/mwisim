@@ -26,6 +26,7 @@
 #   twin         twin:check — the Rust twin against the JS engine, bit for bit
 #                (native, plus wasm when rust/pkg/ is built)
 #   twin-quick   the fast twin subset in `check`: selftest + check --seeds=2;
+#                rebuilds native, and wasm when wasm-pack is on PATH (else native only);
 #                SKIPs (and passes) without cargo or a built csim-native
 #   clean        remove ui/dist/
 # rust, wasm and twin are deliberately NOT in the default or in `all`, so a machine
@@ -71,7 +72,8 @@ t_check() {
 }
 
 t_rust() { say "cargo (rust/)"; (cd rust && cargo build --release --locked && cargo test --release --locked); }
-t_wasm() { say "wasm-pack (rust/ -> rust/pkg/)"; (cd rust && wasm-pack build --release --target web --out-dir pkg --out-name csim_twin); }
+wasm_build() { (cd rust && wasm-pack "$@" build --release --target web --out-dir pkg --out-name csim_twin); }
+t_wasm() { say "wasm-pack (rust/ -> rust/pkg/)"; wasm_build; }
 t_twin() {
   local engines; engines="$(twin_engines)"
   say "api twin:check (${engines})"
@@ -86,9 +88,15 @@ t_twin_quick() {
     say "SKIP twin-quick: no cargo or no rust/target/release/csim-native (run ./build.sh rust)"
     return 0
   fi
-  local engines; engines="$(twin_engines)"
+  # Never test a stale build: rebuild native (a no-op when fresh), and wasm when wasm-pack can.
+  (cd rust && cargo build --release --locked --quiet)
+  local engines=native
+  if command -v wasm-pack >/dev/null; then
+    wasm_build --quiet && engines=native,wasm
+  else
+    echo "twin-quick: wasm skipped (wasm-pack not on PATH); checking native only"
+  fi
   say "twin-quick (${engines})"
-  (cd rust && cargo build --release --locked --quiet) # a no-op when fresh; never test a stale binary
   (cd api && for e in ${engines//,/ }; do npm run --silent twin:check -- selftest --engine="$e"; done \
     && npm run --silent twin:check -- check --engines="$engines" --seeds=2 | grep -v '^  MATCH ')
 }

@@ -15,10 +15,25 @@ import { fileURLToPath } from 'node:url';
 import { withSeed, canonical, digest } from '../lib/determinism.mjs';
 import { runSimulation, runGuildTrialSimulation, loadGameData } from '../lib/simulator.js';
 import { BUILDS, toCsimPlayer } from '../bench/builds.mjs';
-import { setTwinBackend, runTwin } from '../../shared/twinEngine.js';
-import { nativeBackend, NATIVE_BIN } from '../lib/twin/native.mjs';
+import { setTwinBackend, getTwinBackend, runTwin, twinRunRequest } from '../../shared/twinEngine.js';
+import { nativeBackend, NATIVE_BIN, lineSplitter } from '../lib/twin/native.mjs';
 
 const skip = !existsSync(NATIVE_BIN) && 'native engine not built';
+
+test('the native line reader is linear: an 8 MB line in 64-byte chunks splits fast and exactly', () => {
+  const big = `7 ${'x'.repeat(8 << 20)}`;
+  const stream = `1 ~progress 0.5\n${big}\n2 {}\n3 tail`;
+  const lines = [];
+  const split = lineSplitter((l) => lines.push(l));
+  const t0 = performance.now();
+  for (let i = 0; i < stream.length; i += 64) split(stream.slice(i, i + 64));
+  const ms = performance.now() - t0;
+  assert.deepEqual(lines.map((l) => l.length), [15, big.length, 4]); // "3 tail" has no newline yet
+  assert.equal(lines[1], big);
+  assert.ok(ms < 5000, `took ${ms} ms`); // the old rescan-the-buffer reader took hours here
+  split('\n');
+  assert.equal(lines.at(-1), '3 tail');
+});
 
 const basePlayer = () =>
   toCsimPlayer(BUILDS.melee, { level: 200, index: 1, items: loadGameData('itemDetailMap'), abilityData: loadGameData('abilityDetailMap') });
@@ -187,6 +202,29 @@ test('errors before the first draw keep their JS class and leave the stream unto
   }
 });
 
+test('run limits on a labyrinth job throw the JS RangeError at the same point on the twin (src/worker.js seam)', { skip }, async () => {
+  const CombatSimulator = (await import('../../src/combatsimulator/combatSimulator.js')).default;
+  const Labyrinth = (await import('../../src/combatsimulator/labyrinth.js')).default;
+  const Player = (await import('../../src/combatsimulator/player.js')).default;
+  const labyrinth = { labyrinthHrid: '/monsters/cyclops', roomLevel: 60 };
+  const runLimits = { maxRuns: 2, maxRunDurationNs: 600e9 };
+  const run = async () => {
+    const players = [basePlayer()];
+    const b = getTwinBackend();
+    if (b) return runTwin(b, twinRunRequest({ players, labyrinth, simulationTimeLimit: 3600e9, runLimits }));
+    const lab = new Labyrinth(labyrinth.labyrinthHrid, labyrinth.roomLevel, labyrinth.crates);
+    const ps = players.map((d) => Object.assign(Player.createFromDTO(structuredClone(d)), { zoneBuffs: lab.buffs, extraBuffs: [] }));
+    return new CombatSimulator(ps, null, lab).simulate(3600e9, runLimits);
+  };
+  const js = await throwThenDraw(false, run);
+  const tw = await throwThenDraw(true, run);
+  assert.equal(js.kind, RangeError);
+  assert.match(js.message, /run limits apply to dungeons only/);
+  assert.equal(tw.kind, RangeError);
+  assert.equal(tw.message, js.message);
+  assert.equal(tw.next, js.next);
+});
+
 test('a refusal only the twin makes kills the seeded stream for the twin', { skip }, async () => {
   const b = nativeBackend();
   setTwinBackend(b);
@@ -202,16 +240,17 @@ test('a refusal only the twin makes kills the seeded stream for the twin', { ski
   }
 });
 
-test('a batched trial fires onIteration once per iteration, in order, as the JS loop does', { skip }, async () => {
+test('a chunked trial batch fires onIteration once per iteration, in order, and matches the JS loop across a chunk boundary', { skip }, async () => {
   const players = [basePlayer()];
   const spec = { players, trialHrid: '/guild_combat/jellyfish', startTier: 100, trialOptions: { enemyScale: 0.2, durationSeconds: 120 } };
-  const { runTrialIterations } = await import('../../shared/guildTrialRuns.js');
+  const { runTrialIterations, TWIN_TRIAL_CHUNK } = await import('../../shared/guildTrialRuns.js');
+  const iterations = TWIN_TRIAL_CHUNK + 2;
   const go = async (twin) => {
     const b = twin ? nativeBackend() : null;
     setTwinBackend(b);
     try {
       const seen = [];
-      const summaries = await withSeed(3, () => runTrialIterations({ ...structuredClone(spec), partyBuffs: [], iterations: 4, onIteration: (d) => seen.push(d) }));
+      const summaries = await withSeed(3, () => runTrialIterations({ ...structuredClone(spec), partyBuffs: [], iterations, onIteration: (d) => seen.push(d) }));
       return { seen, d: digest(canonical(summaries)) };
     } finally {
       setTwinBackend(null);
@@ -220,7 +259,7 @@ test('a batched trial fires onIteration once per iteration, in order, as the JS 
   };
   const js = await go(false);
   const tw = await go(true);
-  assert.deepEqual(js.seen, [1, 2, 3, 4]);
+  assert.deepEqual(js.seen, Array.from({ length: iterations }, (_, i) => i + 1));
   assert.deepEqual(tw.seen, js.seen);
   assert.equal(tw.d, js.d);
 });

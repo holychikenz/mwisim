@@ -40,9 +40,14 @@ export const wantsWasmTwin = (job) => job.extra?.experimental?.engine === 'wasm'
 /** The twin's request shapes, written once; every seam builds its request here. */
 export const twinZoneRequest = ({ players, partyBuffs = [], zone, simulationTimeLimit, runLimits }) =>
   ({ kind: 'zone', players, partyBuffs, zone, simulationTimeLimit, ...(runLimits ? { runLimits } : {}) });
-/** `labyrinth` is { labyrinthHrid, roomLevel, crates }; the crates become the players' zone buffs, as `new Labyrinth` makes them. */
-export const twinLabRequest = ({ players, partyBuffs = [], labyrinth, simulationTimeLimit }) =>
-  ({ kind: 'labyrinth', players, partyBuffs, labyrinth, simulationTimeLimit });
+/**
+ * `labyrinth` is { labyrinthHrid, roomLevel, crates }; the crates become the players' zone buffs, as `new Labyrinth` makes them
+ * (absent or null crates are none, on both engines). `runLimits` is carried so the twin refuses it as JS simulate() does.
+ */
+export const twinLabRequest = ({ players, partyBuffs = [], labyrinth, simulationTimeLimit, runLimits }) =>
+  ({ kind: 'labyrinth', players, partyBuffs, labyrinth, simulationTimeLimit, ...(runLimits ? { runLimits } : {}) });
+/** One simulate() job: a zone when `zone` is set, else a labyrinth room, as every JS seam picks `zone ? new Zone : new Labyrinth`. */
+export const twinRunRequest = ({ zone, labyrinth, ...rest }) => (zone ? twinZoneRequest({ zone, ...rest }) : twinLabRequest({ labyrinth, ...rest }));
 /** With `iterations`, the twin runs that many trials on one stream and resolves to an array of SimResults. */
 export const twinTrialRequest = ({ players, partyBuffs = [], trialHrid, startTier, participantCount, trialOptions, iterations }) =>
   ({ kind: 'trial', players, partyBuffs, guildTrial: { trialHrid, startTier, participantCount: participantCount ?? players.length, trialOptions }, ...(iterations !== undefined ? { iterations } : {}) });
