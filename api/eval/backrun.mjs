@@ -191,6 +191,8 @@ console.log(
     `         copies), which isolates engine source and says nothing about the bb4d767 bump.`
 );
 console.log(`         scratch: ${scratch}\n`);
+// Every root here is an extraction, never this checkout, so engine.mjs keeps it on its own JS.
+if ((process.env.CSIM_ENGINE || 'js') !== 'js') console.error(`backrun: CSIM_ENGINE=${process.env.CSIM_ENGINE} ignored; an older engine is always run on its own JS`);
 
 const reports = [];
 
