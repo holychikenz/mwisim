@@ -34,12 +34,15 @@ export const TWIN_DATA_NAMES = [
   'labyrinthCrateDetailMap',
 ];
 
-/** Whether a worker job runs on the wasm twin: toggle on, and not a labyrinth (not ported). */
-export const wantsWasmTwin = (job) => job.extra?.experimental?.engine === 'wasm' && !job.labyrinth;
+/** Whether a worker job runs on the wasm twin: the toggle is on. */
+export const wantsWasmTwin = (job) => job.extra?.experimental?.engine === 'wasm';
 
 /** The twin's request shapes, written once; every seam builds its request here. */
 export const twinZoneRequest = ({ players, partyBuffs = [], zone, simulationTimeLimit, runLimits }) =>
   ({ kind: 'zone', players, partyBuffs, zone, simulationTimeLimit, ...(runLimits ? { runLimits } : {}) });
+/** `labyrinth` is { labyrinthHrid, roomLevel, crates }; the crates become the players' zone buffs, as `new Labyrinth` makes them. */
+export const twinLabRequest = ({ players, partyBuffs = [], labyrinth, simulationTimeLimit }) =>
+  ({ kind: 'labyrinth', players, partyBuffs, labyrinth, simulationTimeLimit });
 /** With `iterations`, the twin runs that many trials on one stream and resolves to an array of SimResults. */
 export const twinTrialRequest = ({ players, partyBuffs = [], trialHrid, startTier, participantCount, trialOptions, iterations }) =>
   ({ kind: 'trial', players, partyBuffs, guildTrial: { trialHrid, startTier, participantCount: participantCount ?? players.length, trialOptions }, ...(iterations !== undefined ? { iterations } : {}) });

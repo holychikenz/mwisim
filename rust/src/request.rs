@@ -87,6 +87,16 @@ fn strict_num<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
     }
 }
 
+#[derive(Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct LabReq {
+    pub labyrinth_hrid: String,
+    #[serde(deserialize_with = "strict_num")]
+    pub room_level: f64,
+    #[serde(default)]
+    pub crates: Option<Vec<String>>,
+}
+
 #[derive(Deserialize, Clone, Debug, Default)]
 #[serde(rename_all = "camelCase")]
 pub struct TrialOptions {
@@ -150,6 +160,8 @@ pub struct Request {
     pub zone: Option<ZoneReq>,
     #[serde(default)]
     pub guild_trial: Option<TrialReq>,
+    #[serde(default)]
+    pub labyrinth: Option<LabReq>,
     #[serde(default)]
     pub simulation_time_limit: Option<f64>,
     #[serde(default)]

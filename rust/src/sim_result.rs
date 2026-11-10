@@ -3,7 +3,9 @@
 //! `undefined` / NaN / ±Infinity are written as the canonical() sentinels.
 
 use crate::js::{num_key, truthy, S};
-use crate::unit::{Unit, LEVEL_NAMES};
+use crate::buff::Buff;
+use crate::data::GameData;
+use crate::unit::{CombatDetails, Unit, LEVEL_NAMES, STAT_NAMES};
 
 /// A tiny JSON tree with the JS-only values spelled out.
 pub enum J {
@@ -17,6 +19,18 @@ pub enum J {
 }
 
 impl J {
+    fn copy(&self) -> J {
+        match self {
+            J::Undef => J::Undef,
+            J::Null => J::Null,
+            J::Bool(b) => J::Bool(*b),
+            J::Num(x) => J::Num(*x),
+            J::Str(s) => J::Str(s.clone()),
+            J::Arr(a) => J::Arr(a.iter().map(J::copy).collect()),
+            J::Obj(o) => J::Obj(o.iter().map(|(k, v)| (k.clone(), v.copy())).collect()),
+        }
+    }
+
     pub fn write(&self, out: &mut String) {
         match self {
             J::Undef => out.push_str("\"@undefined\""),
@@ -255,6 +269,8 @@ pub struct SimResult {
     pub simulated_time: Option<f64>,
     pub dungeons_timed_out: Option<f64>,
     pub dungeon_run_gap_ns: Option<(f64, f64)>,
+    pub player_stats: Vec<J>,
+    pub monster_stats: Vec<J>,
 }
 
 impl SimResult {
@@ -311,6 +327,8 @@ impl SimResult {
             simulated_time: None,
             dungeons_timed_out: None,
             dungeon_run_gap_ns: None,
+            player_stats: Vec::new(),
+            monster_stats: Vec::new(),
         }
     }
 
@@ -456,6 +474,53 @@ impl SimResult {
         }
     }
 
+    /// captureStatSnapshot: the first labyrinth encounter's players and monsters, once.
+    pub fn capture_stat_snapshot(&mut self, data: &GameData, players: &[Unit], enemies: &[Unit]) {
+        if !self.player_stats.is_empty() {
+            return;
+        }
+        self.player_stats = players
+            .iter()
+            .map(|p| {
+                J::Obj(vec![
+                    ("hrid".into(), J::Str(p.hrid.to_string())),
+                    ("combatStyleHrid".into(), J::Str(p.cd.cs.combat_style_hrid.to_string())),
+                    ("combatDetails".into(), combat_details_j(&p.cd)),
+                    ("baseLevels".into(), J::Obj(LEVEL_NAMES.iter().zip(p.base.iter()).map(|(k, x)| (k.to_string(), J::Num(*x))).collect())),
+                    ("buffSources".into(), buff_sources_j(data, p)),
+                ])
+            })
+            .collect();
+        self.monster_stats = enemies
+            .iter()
+            .map(|m| {
+                let (tier, room) = m.monster().map(|mp| (mp.difficulty_tier, mp.room_level)).unwrap_or((f64::NAN, f64::NAN));
+                let abilities = m
+                    .abilities
+                    .iter()
+                    .flatten()
+                    .map(|a| {
+                        J::Obj(vec![
+                            ("hrid".into(), J::Str(a.hrid.to_string())),
+                            ("name".into(), data.abilities.get(&*a.hrid).and_then(|d| d.name.clone()).map(J::Str).unwrap_or(J::Undef)),
+                            ("level".into(), J::Num(a.level)),
+                            ("manaCost".into(), J::Num(a.mana_cost)),
+                            ("cooldownDuration".into(), J::Num(a.cooldown_duration)),
+                            ("castDuration".into(), J::Num(a.cast_duration)),
+                        ])
+                    })
+                    .collect();
+                J::Obj(vec![
+                    ("hrid".into(), J::Str(m.hrid.to_string())),
+                    ("difficultyTier".into(), J::Num(tier)),
+                    ("roomLevel".into(), J::Num(room)),
+                    ("combatDetails".into(), combat_details_j(&m.cd)),
+                    ("abilities".into(), J::Arr(abilities)),
+                ])
+            })
+            .collect();
+    }
+
     pub fn add_lab_room_outcome(&mut self, outcome: &'static str, pct: f64, time: f64, start: f64) {
         self.lab_room_outcomes.push(LabOutcome { outcome, monster_hp_pct: pct, time, start_time: start });
     }
@@ -584,8 +649,8 @@ impl SimResult {
             ("trialFinalTierHpRemovedFrac".into(), J::Num(self.trial_final_tier_hp_removed_frac)),
             ("trialTierTimes".into(), n(&self.trial_tier_times)),
             ("trialPlayerDeaths".into(), self.trial_player_deaths.to_j(|v| J::Arr(v.iter().map(|x| J::Num(*x)).collect()))),
-            ("playerStats".into(), J::Arr(Vec::new())),
-            ("monsterStats".into(), J::Arr(Vec::new())),
+            ("playerStats".into(), J::Arr(self.player_stats.iter().map(J::copy).collect())),
+            ("monsterStats".into(), J::Arr(self.monster_stats.iter().map(J::copy).collect())),
         ];
         if let Some(t) = self.simulated_time {
             o.push(("simulatedTime".into(), J::Num(t)));
@@ -606,4 +671,69 @@ impl Unit {
     pub fn debuff_gap(&self) -> Gap {
         self.debuff_on_level_gap
     }
+}
+
+const STYLE_NAMES: [&str; 5] = ["stab", "slash", "smash", "ranged", "magic"];
+
+/// `structuredClone(unit.combatDetails)` with the JS field names.
+fn combat_details_j(cd: &CombatDetails) -> J {
+    let mut o: Vec<(String, J)> = LEVEL_NAMES.iter().zip(cd.levels.iter()).map(|(k, x)| (format!("{k}Level"), J::Num(*x))).collect();
+    o.push(("maxHitpoints".into(), J::Num(cd.max_hitpoints)));
+    o.push(("currentHitpoints".into(), J::Num(cd.current_hitpoints)));
+    o.push(("maxManapoints".into(), J::Num(cd.max_manapoints)));
+    o.push(("currentManapoints".into(), J::Num(cd.current_manapoints)));
+    for (suffix, arr) in [("AccuracyRating", &cd.accuracy_rating), ("MaxDamage", &cd.max_damage), ("EvasionRating", &cd.evasion_rating)] {
+        for (st, x) in STYLE_NAMES.iter().zip(arr.iter()) {
+            o.push((format!("{st}{suffix}"), J::Num(*x)));
+        }
+    }
+    o.push(("defensiveMaxDamage".into(), J::Num(cd.defensive_max_damage)));
+    o.push(("totalArmor".into(), J::Num(cd.total_armor)));
+    o.push(("totalWaterResistance".into(), J::Num(cd.total_water_resistance)));
+    o.push(("totalNatureResistance".into(), J::Num(cd.total_nature_resistance)));
+    o.push(("totalFireResistance".into(), J::Num(cd.total_fire_resistance)));
+    o.push(("abilityHaste".into(), J::Num(cd.ability_haste)));
+    o.push(("tenacity".into(), J::Num(cd.tenacity)));
+    o.push(("totalThreat".into(), J::Num(cd.total_threat)));
+    let cs = &cd.cs;
+    let mut c: Vec<(String, J)> = vec![
+        ("combatStyleHrid".into(), J::Str(cs.combat_style_hrid.to_string())),
+        ("damageType".into(), J::Str(cs.damage_type.to_string())),
+    ];
+    c.extend(STAT_NAMES.iter().enumerate().map(|(i, k)| (k.to_string(), J::Num(cs.by_index(i)))));
+    c.push(("primaryTraining".into(), opt_str(&cs.primary_training)));
+    c.push(("focusTraining".into(), opt_str(&cs.focus_training)));
+    if let Some(v) = &cs.combat_style_hrids {
+        c.push(("combatStyleHrids".into(), J::Arr(v.iter().map(|h| J::Str(h.to_string())).collect())));
+    }
+    o.push(("combatStats".into(), J::Obj(c)));
+    J::Obj(o)
+}
+
+/// simResult.js `_collectBuffSources`.
+fn buff_sources_j(data: &GameData, u: &Unit) -> J {
+    let mut sources = Vec::new();
+    let mut add = |source: String, buffs: &mut dyn Iterator<Item = &Buff>| {
+        let or0 = |x: f64| if truthy(x) { x } else { 0.0 };
+        let cleaned: Vec<J> = buffs
+            .map(|b| (b, or0(b.flat_boost), or0(b.ratio_boost)))
+            .filter(|(_, f, r)| truthy(*f) || truthy(*r))
+            .map(|(b, f, r)| J::Obj(vec![("typeHrid".into(), J::Str(b.type_hrid.to_string())), ("flatBoost".into(), J::Num(f)), ("ratioBoost".into(), J::Num(r))]))
+            .collect();
+        if !cleaned.is_empty() {
+            sources.push(J::Obj(vec![("source".into(), J::Str(source)), ("buffs".into(), J::Arr(cleaned))]));
+        }
+    };
+    for (hrid, buffs) in &u.house_rooms {
+        let name = data.house_rooms.get(&**hrid).and_then(|r| r.name.clone()).filter(|n| !n.is_empty()).unwrap_or_else(|| hrid.to_string());
+        add(name, &mut buffs.iter());
+    }
+    if let Some(a) = &u.achievement_buffs {
+        add("Achievements".into(), &mut a.iter());
+    }
+    add("Labyrinth crates".into(), &mut u.zone_buffs.iter());
+    let is_guild = |b: &&Buff| b.unique_hrid.ends_with("_guild_buff") || b.unique_hrid.contains("guild_building_");
+    add("Community / pass / lab-shop".into(), &mut u.extra_buffs.iter().filter(|b| !is_guild(b)));
+    add("Guild shrines / buildings".into(), &mut u.extra_buffs.iter().filter(is_guild));
+    J::Arr(sources)
 }

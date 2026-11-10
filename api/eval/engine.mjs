@@ -41,7 +41,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { BUILDS, toCsimPlayer } from '../bench/builds.mjs';
 import { buildNamesFor } from './cases.mjs';
 import { selectTwinFromEnv } from '../lib/twin/index.mjs';
-import { getTwinBackend, runTwin, twinZoneRequest, twinTrialRequest } from '../../shared/twinEngine.js';
+import { getTwinBackend, runTwin, twinZoneRequest, twinLabRequest, twinTrialRequest } from '../../shared/twinEngine.js';
 
 const HERE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -57,7 +57,6 @@ export async function loadEngine(root) {
   const here = realpathSync(resolve(root)) === realpathSync(HERE_ROOT);
   if (here) await selectTwinFromEnv();
   const twin = () => (here ? getTwinBackend() : null);
-  let labWarned = false;
 
   const CombatSimulator = (await mod('combatSimulator.js')).default;
   const Player = (await mod('player.js')).default;
@@ -139,12 +138,13 @@ export async function loadEngine(root) {
      * api/lib/target.js for the reason in this file's header.
      */
     async runLab(kase, hours) {
-      if (twin() && !labWarned) {
-        labWarned = true;
-        console.error('eval: the Rust twin has no labyrinth yet (Phase 3); labyrinth cases run on the JS engine');
+      const dtos = dtosFor(kase).map((dto) => ({ ...dto, food: [null, null, null], drinks: [null, null, null] }));
+      const b = twin();
+      if (b) {
+        const labyrinth = { labyrinthHrid: kase.monster, roomLevel: kase.roomLevel, crates: kase.crates || [] };
+        return runTwin(b, twinLabRequest({ players: dtos, labyrinth, simulationTimeLimit: hours * 3600e9 }));
       }
       const labyrinth = new Labyrinth(kase.monster, kase.roomLevel, kase.crates || []);
-      const dtos = dtosFor(kase).map((dto) => ({ ...dto, food: [null, null, null], drinks: [null, null, null] }));
       const simulator = instantiate(dtos, null, labyrinth, {});
       return quietly(() => simulator.simulate(hours * 3600e9));
     },

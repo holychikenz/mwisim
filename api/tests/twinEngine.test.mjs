@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 
 import { mulberry32, withSeed } from '../lib/determinism.mjs';
-import { reviveTwinResult, runTwin, getTwinBackend, wantsWasmTwin, twinZoneRequest, twinTrialRequest } from '../../shared/twinEngine.js';
+import { reviveTwinResult, runTwin, getTwinBackend, wantsWasmTwin, twinZoneRequest, twinLabRequest, twinTrialRequest } from '../../shared/twinEngine.js';
 
 test('the JS engine is the default backend', () => {
   assert.equal(getTwinBackend(), null);
@@ -87,10 +87,10 @@ test('runTwin resolves a batch to its array of results', async () => {
   assert.equal(out[1].a, 2);
 });
 
-test('wantsWasmTwin: the toggle picks wasm, except for a labyrinth', () => {
+test('wantsWasmTwin: the toggle picks wasm, labyrinths included', () => {
   const job = { extra: { experimental: { engine: 'wasm' } } };
   assert.equal(wantsWasmTwin(job), true);
-  assert.equal(wantsWasmTwin({ ...job, labyrinth: {} }), false);
+  assert.equal(wantsWasmTwin({ ...job, labyrinth: {} }), true);
   assert.equal(wantsWasmTwin({}), false);
 });
 
@@ -104,6 +104,9 @@ test('the request builders add only the defaults the seams applied', () => {
   assert.equal(t.kind, 'trial');
   assert.ok(!('iterations' in t));
   assert.equal(twinTrialRequest({ players: [], trialHrid: 'x', iterations: 4 }).iterations, 4);
+  const l = twinLabRequest({ players: [1], labyrinth: { labyrinthHrid: '/monsters/m', roomLevel: 60, crates: [] }, simulationTimeLimit: 5 });
+  assert.equal(l.kind, 'labyrinth');
+  assert.deepEqual(l.partyBuffs, []);
 });
 
 test('a twin trial batch with progress but no onIteration returns (regression: `?.(++done)` never counted)', async () => {

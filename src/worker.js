@@ -6,12 +6,12 @@ import { applySimSettingsFromExtra } from "./combatsimulator/simSettings";
 import { buildCommunityBuffs } from "../shared/communityBuffs.js";
 import { runTrialIterations } from "../shared/guildTrialRuns.js";
 import { buildLabUpgradeBuffs } from "../shared/labUpgrades.js";
-import { setTwinBackend, runTwin, wantsWasmTwin, twinZoneRequest } from "../shared/twinEngine.js";
+import { setTwinBackend, runTwin, wantsWasmTwin, twinZoneRequest, twinLabRequest } from "../shared/twinEngine.js";
 import { loadWasmTwin } from "./twinWasm.js";
 
 onmessage = async function (event) {
     // MWIX adaptation (Rust twin): extra.experimental.engine === "wasm" runs
-    // zone and trial jobs on the wasm build of rust/; labyrinths stay on JS.
+    // zone, labyrinth and trial jobs on the wasm build of rust/.
     let twin = null;
     try {
         twin = wantsWasmTwin(event.data) ? await loadWasmTwin() : null;
@@ -49,12 +49,15 @@ onmessage = async function (event) {
             extraBuffs = extraBuffs.concat(event.data.guildBuffs || []);
 
             if (twin) {
-                const { zone, simulationTimeLimit, maxRuns, maxRunDurationNs } = event.data;
+                const { zone, labyrinth, simulationTimeLimit, maxRuns, maxRunDurationNs } = event.data;
                 try {
+                    const players = event.data.players;
                     const simResult = await runTwin(
                         twin,
-                        twinZoneRequest({ players: event.data.players, partyBuffs: extraBuffs, zone, simulationTimeLimit, runLimits: maxRuns ? { maxRuns, maxRunDurationNs } : undefined }),
-                        (progress) => this.postMessage({ type: "simulation_progress", progress, zone: zone.zoneHrid, difficultyTier: zone.difficultyTier }),
+                        zone
+                            ? twinZoneRequest({ players, partyBuffs: extraBuffs, zone, simulationTimeLimit, runLimits: maxRuns ? { maxRuns, maxRunDurationNs } : undefined })
+                            : twinLabRequest({ players, partyBuffs: extraBuffs, labyrinth, simulationTimeLimit }),
+                        (progress) => this.postMessage({ type: "simulation_progress", progress, zone: zone?.zoneHrid, difficultyTier: zone?.difficultyTier, roomLevel: labyrinth?.roomLevel }),
                     );
                     this.postMessage({ type: "simulation_result", simResult });
                 } catch (e) {

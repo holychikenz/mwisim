@@ -35,12 +35,14 @@ import { runSimulation, runGuildTrialSimulation, loadGameData } from './lib/simu
 import { allEvalCases, seedsFor, EVAL_HOURS, buildNamesFor, BUILDS } from './eval/cases.mjs';
 import { loadEngine } from './eval/engine.mjs';
 import { toCsimPlayer } from './bench/builds.mjs';
-import { setTwinBackend } from '../shared/twinEngine.js';
+import { setTwinBackend, getTwinBackend, runTwin, twinLabRequest } from '../shared/twinEngine.js';
 import { nativeBackend } from './lib/twin/native.mjs';
 import { wasmBackend } from './lib/twin/wasm.mjs';
 
 const CombatSimulator = (await import('../src/combatsimulator/combatSimulator.js')).default;
 const GuildTrial = (await import('../src/combatsimulator/guildTrial.js')).default;
+const Labyrinth = (await import('../src/combatsimulator/labyrinth.js')).default;
+const Player = (await import('../src/combatsimulator/player.js')).default;
 const { extractTrialSummary, aggregateTrialResults } = await import('../src/combatsimulator/guildTrialStats.js');
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -98,7 +100,7 @@ function fixtureCases() {
 function evalCases(nSeeds) {
   return allEvalCases().map((kase) => {
     const seeds = seedsFor(kase.id, nSeeds);
-    if (kase.kind === 'labyrinth') return { id: kase.id, seeds, skip: 'not ported' };
+    if (kase.kind === 'labyrinth') return { id: kase.id, seeds, run: () => engine.runLab(kase, EVAL_HOURS) };
     if (kase.kind === 'zone') return { id: kase.id, seeds, run: () => engine.runZone(kase, EVAL_HOURS) };
     return { id: kase.id, seeds, trialResult: true, run: () => engine.runTrial(kase), agg: trialAgg(kase) };
   });
@@ -131,9 +133,25 @@ function extraCases(nSeeds) {
   // { aggregate, summaries }, not a raw SimResult.
   const swarm = { players: party(5, 600), guildBuffs, trialHrid: '/guild_combat/swarm', startTier: 100, trialOptions: {} };
   const jelly = { players: party(5, 600), trialHrid: '/guild_combat/jellyfish', startTier: 100, trialOptions: { enemyScale: 0.8 } };
+  // A labyrinth with house rooms, achievements and a guild buff, so buffSources has every source.
+  const labHouses = { players: [{ ...houses, food: [null, null, null], drinks: [null, null, null] }], labyrinth: { labyrinthHrid: '/monsters/cyclops', roomLevel: 60, crates: ['/items/expert_coffee_crate'] }, simulationTimeLimit: 1800e9 };
+  const lab = (spec) => () => {
+    const b = getTwinBackend();
+    if (b) return runTwin(b, twinLabRequest(structuredClone(spec)));
+    const { labyrinthHrid, roomLevel, crates } = spec.labyrinth;
+    const labyrinth = new Labyrinth(labyrinthHrid, roomLevel, crates);
+    const players = spec.players.map((dto) => {
+      const p = Player.createFromDTO(structuredClone(dto));
+      p.zoneBuffs = labyrinth.buffs;
+      p.extraBuffs = dto.extraBuffs || [];
+      return p;
+    });
+    return new CombatSimulator(players, null, labyrinth).simulate(spec.simulationTimeLimit);
+  };
   const trial = (spec, iterations) => () => runGuildTrialSimulation({ ...structuredClone(spec), iterations });
   return [
     { id: 'twin-houses', seeds: seeds('twin-houses'), run: () => runSimulation(structuredClone(housesReq)) },
+    { id: 'twin-lab-houses', seeds: seeds('twin-lab-houses'), run: lab(labHouses) },
     { id: 'twin-run-mode', seeds: seeds('twin-run-mode'), run: () => runSimulation({ ...structuredClone(den), maxRuns: 3 }) },
     { id: 'twin-trial-swarm', seeds: seeds('twin-trial-swarm'), run: trial(swarm, 1), agg: trial(swarm, 3) },
     { id: 'twin-trial-jellyfish', seeds: seeds('twin-trial-jellyfish'), run: trial(jelly, 1), agg: trial(jelly, 3) },

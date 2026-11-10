@@ -71,9 +71,11 @@ fn run_inner(data: &GameData, request: &str, mut progress: Option<&mut dyn FnMut
     // Zone and GuildTrial constructors throw in JS too, and draw nothing first.
     let at_start = |(m, r): (String, bool)| (m, r, Some(req.rng_state));
     let kind = req.kind.as_str();
-    if kind == "labyrinth" {
-        return Err(twin_only("twin: labyrinth is not ported (Phase 3)".into()));
-    }
+    let lab = match (kind, &req.labyrinth) {
+        ("labyrinth", Some(l)) => Some(l),
+        ("labyrinth", None) => return Err(twin_only("twin: a labyrinth request needs `labyrinth`".into())),
+        _ => None,
+    };
 
     let zone = match (kind, &req.zone) {
         ("zone", Some(z)) => Some(Zone::new(data, &z.zone_hrid, z.difficulty_tier).map_err(|m| at_start((m, false)))?),
@@ -85,22 +87,38 @@ fn run_inner(data: &GameData, request: &str, mut progress: Option<&mut dyn FnMut
         ("trial", None) => return Err(twin_only("twin: a trial request needs `guildTrial`".into())),
         _ => None,
     };
-    if zone.is_none() && trial_req.is_none() {
+    if zone.is_none() && trial_req.is_none() && lab.is_none() {
         return Err(twin_only(format!("twin: unknown request kind {kind:?}")));
     }
     if trial_req.is_none() && req.iterations.is_some() {
         return Err(twin_only("twin: `iterations` batches trial requests only".into()));
     }
 
-    let zone_buffs: Vec<Buff> = match &zone {
-        Some(z) => z.buffs.map(|b| b.iter().map(Buff::raw).collect::<Result<_, _>>()).transpose().map_err(twin_only)?.unwrap_or_default(),
-        None => Vec::new(),
+    // `zone?.buffs || labyrinth?.buffs || []`; a Labyrinth's buffs are its crates' entries concatenated.
+    let zone_buffs: Vec<Buff> = match (&zone, lab) {
+        (Some(z), _) => z.buffs.map(|b| b.iter().map(Buff::raw).collect::<Result<_, _>>()).transpose().map_err(twin_only)?.unwrap_or_default(),
+        (None, Some(l)) => {
+            let mut v = Vec::new();
+            for c in l.crates.iter().flatten() {
+                let entry = data.labyrinth_crates.get(c).ok_or_else(|| twin_only(format!("twin: unknown labyrinth crate {c:?}")))?;
+                let raws: Vec<data::RawBuff> = match entry {
+                    serde_json::Value::Array(_) => serde_json::from_value(entry.clone()),
+                    _ => serde_json::from_value(entry.clone()).map(|b| vec![b]),
+                }
+                .map_err(|e| twin_only(format!("twin: labyrinth crate {c:?}: {e}")))?;
+                for b in &raws {
+                    v.push(Buff::raw(b).map_err(twin_only)?);
+                }
+            }
+            v
+        }
+        (None, None) => Vec::new(),
     };
     let party: Vec<Buff> = req.party_buffs.iter().map(Buff::raw).collect::<Result<_, _>>().map_err(twin_only)?;
     let random_start = match req.settings.monster_start_cooldown.as_str() {
         "half" => false,
         "random" => true,
-        _ => true, // "auto": zone, dungeon and trial context
+        _ => lab.is_none(), // "auto": half in the labyrinth context, random in zone, dungeon and trial
     };
     let limit = if trial_req.is_some() { TRIAL_DURATION_NS } else { req.simulation_time_limit.unwrap_or(f64::NAN) };
     let run_limits = match &req.run_limits {
@@ -130,7 +148,8 @@ fn run_inner(data: &GameData, request: &str, mut progress: Option<&mut dyn FnMut
             // DTO the twin cannot deserialize is a twin-only refusal; the two share this path.
             players.push(player::create_player(data, dto, (i + 1) as u32, zone_buffs.clone(), extra).map_err(twin_only)?);
         }
-        let mut sim = Sim::new(data, players, zone.take(), trial, Mulberry32::new(state), random_start);
+        let lab_state = lab.map(|l| simulator::Lab::new(&l.labyrinth_hrid, l.room_level));
+        let mut sim = Sim::new(data, players, zone.take(), trial, lab_state, Mulberry32::new(state), random_start);
         sim.trace = req.trace.as_ref().map(|t| TraceCfg { from: t.from, to: t.to, deep: t.deep });
         let has_progress = progress.is_some();
         let mut beat = |f: f64| {

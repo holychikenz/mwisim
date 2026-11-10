@@ -41,6 +41,24 @@ enum Side {
     Enemies,
 }
 
+/// labyrinth.js: one room, fought until the time limit; each attempt ends in a win,
+/// a wipe or the 120 s room timer.
+pub struct Lab {
+    pub monster_hrid: S,
+    pub room_level: f64,
+    pub attempt_count: f64,
+    /// `enconterStartTime`: undefined (None) until the first room starts.
+    pub encounter_start_time: Option<f64>,
+}
+
+impl Lab {
+    pub const ROOM_DURATION_NS: f64 = 120.0 * 1e9;
+
+    pub fn new(monster_hrid: &str, room_level: f64) -> Lab {
+        Lab { monster_hrid: js::s(monster_hrid), room_level, attempt_count: 0.0, encounter_start_time: None }
+    }
+}
+
 pub struct TraceCfg {
     pub from: u64,
     pub to: u64,
@@ -59,6 +77,7 @@ pub struct Sim<'a> {
     next_eid: u64,
     pub zone: Option<Zone<'a>>,
     pub trial: Option<GuildTrial>,
+    pub lab: Option<Lab>,
     pub sim_result: SimResult,
     pub simulation_time: f64,
     all_players_dead: bool,
@@ -85,12 +104,14 @@ impl<'a> Sim<'a> {
         players: Vec<Unit>,
         zone: Option<Zone<'a>>,
         trial: Option<GuildTrial>,
+        lab: Option<Lab>,
         rng: Mulberry32,
         random_start: bool,
     ) -> Sim<'a> {
         let n = players.len();
         let next_uid = players.iter().map(|p| p.uid).max().unwrap_or(0) + 1;
         let zr = zone.as_ref().map(|z| (z.hrid.clone(), z.difficulty_tier));
+        let lr = lab.as_ref().map(|l| (l.monster_hrid.clone(), l.room_level));
         Sim {
             data,
             rng,
@@ -100,9 +121,10 @@ impl<'a> Sim<'a> {
             next_uid,
             heap: MinHeap::default(),
             next_eid: 0,
-            sim_result: SimResult::new(zr, None, n),
+            sim_result: SimResult::new(zr, lr, n),
             zone,
             trial,
+            lab,
             simulation_time: 0.0,
             all_players_dead: false,
             trial_ended: false,
@@ -290,7 +312,8 @@ impl<'a> Sim<'a> {
         self.simulation_time = 0.0;
         self.clear_queue();
         let zr = self.zone.as_ref().map(|z| (z.hrid.clone(), z.difficulty_tier));
-        self.sim_result = SimResult::new(zr, None, self.n);
+        let lr = self.lab.as_ref().map(|l| (l.monster_hrid.clone(), l.room_level));
+        self.sim_result = SimResult::new(zr, lr, self.n);
         self.trial_ended = false;
         self.trial_tier_start_time = 0.0;
         self.counted_dead_players.clear();
@@ -409,6 +432,9 @@ impl<'a> Sim<'a> {
                 }
             }
         }
+        if let Some(l) = &self.lab {
+            self.sim_result.laby_attempt_count = l.attempt_count;
+        }
         Ok(())
     }
 
@@ -490,7 +516,7 @@ impl<'a> Sim<'a> {
             Kind::CombatStart => self.process_combat_start(ev.time)?,
             Kind::PlayerRespawn { hrid } => self.process_player_respawn(&hrid)?,
             Kind::EnemyRespawn => self.start_new_encounter()?,
-            Kind::LabyrinthTimeout { .. } => return Err("twin: labyrinth is not ported (Phase 3)".into()),
+            Kind::LabyrinthTimeout { start } => self.process_labyrinth_timeout(start),
             Kind::AutoAttack { src } => {
                 let i = self.must(src, "autoAttack")?;
                 self.process_auto_attack(i)?
@@ -554,7 +580,8 @@ impl<'a> Sim<'a> {
                 self.units[i].generate_permanent_buffs();
             }
             let rs = self.random_start;
-            self.units[i].reset(now, rs, &mut self.rng);
+            let t = if self.lab.is_some() { 0.0 } else { now };
+            self.units[i].reset(t, rs, &mut self.rng);
         }
         self.add(now + REGEN_TICK_INTERVAL, Kind::RegenTick);
         self.start_new_encounter()
@@ -569,6 +596,33 @@ impl<'a> Sim<'a> {
             self.start_attacks()
         } else {
             self.add_next_attack_event(i)
+        }
+    }
+
+    fn process_labyrinth_timeout(&mut self, start: f64) {
+        let Some(l) = &self.lab else { return };
+        if !self.enemies_on {
+            return;
+        }
+        if l.encounter_start_time != Some(start) {
+            return;
+        }
+        if self.units.len() > self.n {
+            let pct = self.mob_hp_pct();
+            self.sim_result.add_lab_room_outcome("timeout", js::max(0.0, pct), self.simulation_time, start);
+        }
+        self.enemies_on = false;
+        self.clear_queue();
+        self.add(self.simulation_time, Kind::CombatStart);
+    }
+
+    /// `enemies[0]`'s remaining HP in percent, as the labyrinth outcome log records it.
+    fn mob_hp_pct(&self) -> f64 {
+        let cd = &self.units[self.n].cd;
+        if cd.max_hitpoints > 0.0 {
+            (cd.current_hitpoints / cd.max_hitpoints) * 100.0
+        } else {
+            0.0
         }
     }
 
@@ -719,6 +773,19 @@ impl<'a> Sim<'a> {
             self.trial_tier_start_time = now;
         }
 
+        if let Some(l) = &mut self.lab {
+            l.attempt_count += 1.0;
+            l.encounter_start_time = Some(now);
+            let (hrid, room) = (l.monster_hrid.clone(), l.room_level);
+            self.units.truncate(self.n);
+            let uid = self.next_uid;
+            self.next_uid += 1;
+            let m = create_monster(self.data, &mut self.ability_cache, &hrid, 0.0, room, uid)?;
+            self.units.push(m);
+            self.enemies_on = true;
+            self.add(now + Lab::ROOM_DURATION_NS, Kind::LabyrinthTimeout { start: now });
+        }
+
         if !self.enemies_on {
             return Err("TypeError: Cannot read properties of null (reading 'forEach')".into());
         }
@@ -727,6 +794,10 @@ impl<'a> Sim<'a> {
             self.units[i].reset(now, rs, &mut self.rng);
             let h = self.hrid(i);
             self.sim_result.update_time_spent_alive(&h, true, now);
+        }
+        if self.lab.is_some() {
+            let (players, enemies) = self.units.split_at(self.n);
+            self.sim_result.capture_stat_snapshot(self.data, players, enemies);
         }
 
         self.clear_events_of_type(Ty::EnrageTick);
@@ -1059,6 +1130,10 @@ impl<'a> Sim<'a> {
                 }
             }
             self.sim_result.encounters += 1.0;
+            if let Some(l) = &self.lab {
+                let start = l.encounter_start_time.unwrap_or(f64::NAN);
+                self.sim_result.add_lab_room_outcome("win", 0.0, now, start);
+            }
             if let Some(t) = &mut self.trial {
                 let time_spent = now - self.trial_tier_start_time;
                 let cleared_cap = t.current_tier >= MAX_TIER;
@@ -1136,6 +1211,16 @@ impl<'a> Sim<'a> {
                 self.clear_queue();
                 return Ok(encounter_ended);
             }
+            if self.lab.is_some() && self.enemies_on && self.units.len() > self.n {
+                let pct = self.mob_hp_pct();
+                let start = self.lab.as_ref().and_then(|l| l.encounter_start_time).unwrap_or(f64::NAN);
+                self.sim_result.add_lab_room_outcome("death", js::max(0.0, pct), now, start);
+            }
+        }
+        if self.lab.is_some() && encounter_ended {
+            self.enemies_on = false;
+            self.clear_queue();
+            self.add(now, Kind::CombatStart);
         }
         Ok(encounter_ended)
     }

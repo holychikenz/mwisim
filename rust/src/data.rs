@@ -121,6 +121,9 @@ pub struct AbilityEffectData {
 #[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct AbilityData {
+    /// Read only by the labyrinth stat snapshot.
+    #[serde(default)]
+    pub name: Option<String>,
     #[serde(default = "nan")]
     pub mana_cost: f64,
     #[serde(default = "nan")]
@@ -282,6 +285,9 @@ pub struct GuildTrialData {
 #[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct HouseRoomData {
+    /// Read only by the labyrinth stat snapshot's buffSources.
+    #[serde(default)]
+    pub name: Option<String>,
     #[serde(default)]
     pub action_buffs: Option<Vec<RawBuff>>,
     #[serde(default)]

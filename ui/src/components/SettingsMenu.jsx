@@ -106,9 +106,9 @@ export function SettingsMenu({ settings, onChange }) {
             ]}
           />
           <Text size="xs" c="dimmed">
-            <b>Rust (wasm)</b> runs zone, dungeon and trial simulations on the
-            Rust port of this engine, which gives bit-identical results.
-            Labyrinths still run on JS. A build without the wasm engine reports
+            <b>Rust (wasm)</b> runs zone, dungeon, labyrinth and trial
+            simulations on the Rust port of this engine, which gives
+            bit-identical results. A build without the wasm engine reports
             an error instead.
           </Text>
 
