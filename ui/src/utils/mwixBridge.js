@@ -33,7 +33,7 @@
 
 import { exportFormatToPlayer } from './importSet.js';
 import { shrineLevelsFrom } from './characterToStore.js';
-import { makeCharacterId } from './characterStore.js';
+import { makeCharacterId, mergeImportedCharacter, splitPlayer } from './characterStore.js';
 
 const PARAM = 'mwiLabBridge';
 
@@ -106,6 +106,39 @@ export function mwixStoreId(gameCharacterId, fallbackName) {
   const id = Number(gameCharacterId);
   const numeric = gameCharacterId != null && gameCharacterId !== '' && Number.isInteger(id) && id > 0;
   return makeCharacterId(numeric ? `mwix ${id}` : `mwix ${fallbackName}`);
+}
+
+/**
+ * File a bridged loadout on the character it belongs to, patching only what the
+ * payload carries. The record with the same game characterId wins (a full
+ * character import, with its inventory and other loadouts), else an earlier
+ * bridge's `mwix …` record, else mergeImportedCharacter's own name match.
+ * MWIX never sends personal buffs, the level-gap setting or unslotted ability
+ * levels, so the stored ones stand rather than the import's blank defaults.
+ *
+ * @param {object} b { gameId, name, legacyName (mwixStoreId's old fallback), loadoutName, player, importSet }
+ * @returns mergeImportedCharacter's { store, id, … }
+ */
+export function mergeBridged(store, { gameId, name, legacyName, loadoutName, player, importSet }) {
+  const chars = store?.characters || {};
+  const { character, loadout } = splitPlayer(player);
+  // exportFormatToPlayer always says debuffOnLevelGap 0, so it is not the payload's to say.
+  const { personalBuffs, ...carried } = character;
+  delete carried.debuffOnLevelGap;
+  const legacy = mwixStoreId(gameId, legacyName);
+  const known = legacy !== mwixStoreId(null, legacyName); // the payload has a usable game id
+  const matched = known && Object.values(chars).find(c => c?.game?.id != null && String(c.game.id) === String(gameId));
+  // No game id: the old `mwix <name>` key, so two id-less imports never land on a real character by name.
+  const landing = matched ? matched.id : (chars[legacy] || !known ? legacy : undefined);
+  const incoming = {
+    ...carried,
+    name,
+    abilityLevels: { ...chars[landing]?.abilityLevels, ...carried.abilityLevels },
+    loadouts: { [loadoutName]: loadout }
+  };
+  if (importSet && Object.hasOwn(importSet, 'personalBuffs')) incoming.personalBuffs = personalBuffs;
+  if (known) incoming.game = { id: Number(gameId), name };
+  return mergeImportedCharacter(store, incoming, { id: landing });
 }
 
 /**
