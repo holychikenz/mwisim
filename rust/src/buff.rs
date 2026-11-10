@@ -12,6 +12,35 @@ pub fn buff_type_ord(type_hrid: &str) -> Result<u16, String> {
         .map_err(|_| format!("Unknown buff type: {type_hrid} — regenerate src/combatsimulator/generated/buffTypes.js with `node tools/genBuffTypes.mjs`"))
 }
 
+/// `buff_type_ord` at compile time, through `bt!`: an unknown name fails the build.
+pub const fn ord_const(type_hrid: &str) -> u16 {
+    let want = type_hrid.as_bytes();
+    let mut i = 0;
+    while i < BUFF_TYPE_NAMES.len() {
+        let have = BUFF_TYPE_NAMES[i].as_bytes();
+        if have.len() == want.len() {
+            let mut j = 0;
+            while j < want.len() && have[j] == want[j] {
+                j += 1;
+            }
+            if j == want.len() {
+                return i as u16;
+            }
+        }
+        i += 1;
+    }
+    panic!("engine buff type constant missing from BUFF_TYPE_NAMES")
+}
+
+/// The ordinal of a literal buff type, resolved at compile time.
+#[macro_export]
+macro_rules! bt {
+    ($t:literal) => {{
+        const O: u16 = $crate::buff::ord_const($t);
+        O
+    }};
+}
+
 pub fn ord_of(type_hrid: &str) -> u16 {
     buff_type_ord(type_hrid).expect("engine buff type constant missing from BUFF_TYPE_NAMES")
 }

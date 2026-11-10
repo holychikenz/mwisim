@@ -3,7 +3,9 @@
 //! the JS statement order (H15). Never rebuild them from scratch.
 
 use crate::ability::Ability;
-use crate::buff::{ord_of, Buff, BuffEntry, PermBuff};
+use crate::bt;
+use crate::generated::BUFF_TYPE_NAMES;
+use crate::buff::{Buff, BuffEntry, PermBuff};
 use crate::consumable::Consumable;
 use crate::data::MonsterStatic;
 use crate::equipment::Equipment;
@@ -287,8 +289,6 @@ pub struct Unit {
     pub kind: UnitKind,
 }
 
-const BT: fn(&str) -> u16 = ord_of;
-
 impl Unit {
     pub fn blank(uid: u32, is_player: bool, hrid: S, kind: UnitKind) -> Unit {
         Unit {
@@ -344,17 +344,16 @@ impl Unit {
 
     // ---- buff boost queries (the index/epoch cache in JS is memoisation only) ----
 
-    /// `_buffBoostFor`: sums over combatBuffs in order, from 0.
-    fn boost(&self, ord: u16) -> (f64, f64) {
-        let mut r = 0.0;
-        let mut f = 0.0;
+    /// `_buffBoostFor` for every type in one pass: each type still sums its
+    /// records in combatBuffs order, from 0, so entry `ord` is exactly JS's boost for it.
+    fn boost_table(&self) -> [(f64, f64); BUFF_TYPE_NAMES.len()] {
+        let mut t = [(0.0, 0.0); BUFF_TYPE_NAMES.len()];
         for (_, b) in &self.combat_buffs {
-            if b.type_ord == ord {
-                r += b.ratio_boost;
-                f += b.flat_boost;
-            }
+            let e = &mut t[b.type_ord as usize];
+            e.0 += b.ratio_boost;
+            e.1 += b.flat_boost;
         }
-        (r, f)
+        t
     }
 
     /// `_buffBoostsFor`: the (ratio, flat) records of one type, in order.
@@ -487,25 +486,28 @@ impl Unit {
             }
         }
 
-        const LEVEL_TYPES: [&str; 7] = [
-            "/buff_types/stamina_level",
-            "/buff_types/intelligence_level",
-            "/buff_types/attack_level",
-            "/buff_types/melee_level",
-            "/buff_types/defense_level",
-            "/buff_types/ranged_level",
-            "/buff_types/magic_level",
+        const LEVEL_TYPES: [u16; 7] = [
+            bt!("/buff_types/stamina_level"),
+            bt!("/buff_types/intelligence_level"),
+            bt!("/buff_types/attack_level"),
+            bt!("/buff_types/melee_level"),
+            bt!("/buff_types/defense_level"),
+            bt!("/buff_types/ranged_level"),
+            bt!("/buff_types/magic_level"),
         ];
         for i in 0..7 {
             self.cd.levels[i] = self.base[i];
-            for (r, f) in self.boosts(BT(LEVEL_TYPES[i])) {
-                self.cd.levels[i] += self.base[i] * r;
-                self.cd.levels[i] += f;
+            for (_, b) in self.combat_buffs.iter().filter(|(_, b)| b.type_ord == LEVEL_TYPES[i]) {
+                self.cd.levels[i] += self.base[i] * b.ratio_boost;
+                self.cd.levels[i] += b.flat_boost;
             }
         }
 
-        let max_hp_boost = self.boost(BT("/buff_types/max_hitpoints"));
-        let max_mp_boost = self.boost(BT("/buff_types/max_manapoints"));
+        // combat_buffs does not change inside base_update, so one table serves every query.
+        let table = self.boost_table();
+        let bst = |o: u16| table[o as usize];
+        let max_hp_boost = bst(bt!("/buff_types/max_hitpoints"));
+        let max_mp_boost = bst(bt!("/buff_types/max_manapoints"));
         let cd = &mut self.cd;
         cd.max_hitpoints = ((10.0 * (10.0 + cd.levels[STAMINA]) + cd.cs.max_hitpoints + max_hp_boost.1)
             * (1.0 + cd.cs.max_hitpoints_ratio + max_hp_boost.0))
@@ -514,12 +516,12 @@ impl Unit {
             * (1.0 + cd.cs.max_manapoints_ratio + max_mp_boost.0))
             .floor();
 
-        let accuracy_ratio_boost_from_fury = self.boost(BT("/buff_types/fury_accuracy")).0;
-        let damage_ratio_boost_from_fury = self.boost(BT("/buff_types/fury_damage")).0;
-        let accuracy_ratio_boost = self.boost(BT("/buff_types/accuracy")).0;
-        let damage_ratio_boost = self.boost(BT("/buff_types/damage")).0;
+        let accuracy_ratio_boost_from_fury = bst(bt!("/buff_types/fury_accuracy")).0;
+        let damage_ratio_boost_from_fury = bst(bt!("/buff_types/fury_damage")).0;
+        let accuracy_ratio_boost = bst(bt!("/buff_types/accuracy")).0;
+        let damage_ratio_boost = bst(bt!("/buff_types/damage")).0;
 
-        let evasion_boosts = self.boosts(BT("/buff_types/evasion"));
+        let evasion_boosts = self.boosts(bt!("/buff_types/evasion"));
         {
             let cd = &mut self.cd;
             let style_acc = [cd.cs.stab_accuracy, cd.cs.slash_accuracy, cd.cs.smash_accuracy];
@@ -574,7 +576,7 @@ impl Unit {
             cd.evasion_rating[RANGED_STYLE] += base_ranged_evasion * *r;
         }
 
-        let damage_taken = self.boost(BT("/buff_types/damage_taken")).1;
+        let damage_taken = bst(bt!("/buff_types/damage_taken")).1;
         let cd = &mut self.cd;
         cd.cs.damage_taken = damage_taken;
 
@@ -594,31 +596,31 @@ impl Unit {
             cd.evasion_rating[MAGIC_STYLE] += base_magic_evasion * *r;
         }
 
-        let pa = self.boost(BT("/buff_types/physical_amplify")).1;
-        let wa = self.boost(BT("/buff_types/water_amplify")).1;
-        let na = self.boost(BT("/buff_types/nature_amplify")).1;
-        let fa = self.boost(BT("/buff_types/fire_amplify")).1;
-        let ha = self.boost(BT("/buff_types/healing_amplify")).1;
-        let attack_speed_boosts = self.boosts(BT("/buff_types/attack_speed"));
-        let armor_boosts = self.boosts(BT("/buff_types/armor"));
-        let water_boosts = self.boosts(BT("/buff_types/water_resistance"));
-        let nature_boosts = self.boosts(BT("/buff_types/nature_resistance"));
-        let fire_boosts = self.boosts(BT("/buff_types/fire_resistance"));
-        let hp_regen = self.boost(BT("/buff_types/hp_regen"));
-        let mp_regen = self.boost(BT("/buff_types/mp_regen"));
-        let life_steal = self.boost(BT("/buff_types/life_steal")).1;
-        let physical_thorns = self.boost(BT("/buff_types/physical_thorns")).1;
-        let elemental_thorns = self.boost(BT("/buff_types/elemental_thorns")).1;
-        let wisdom = self.boost(BT("/buff_types/wisdom")).1;
-        let critical_rate = self.boost(BT("/buff_types/critical_rate")).1;
-        let critical_damage = self.boost(BT("/buff_types/critical_damage")).1;
-        let cast_speed = self.boost(BT("/buff_types/cast_speed")).1;
-        let drop_rate = self.boost(BT("/buff_types/combat_drop_rate"));
-        let rare_find = self.boost(BT("/buff_types/rare_find"));
-        let drop_qty = self.boost(BT("/buff_types/combat_drop_quantity"));
-        let threat = self.boost(BT("/buff_types/threat"));
-        let retaliation = self.boost(BT("/buff_types/retaliation")).1;
-        let tenacity = self.boost(BT("/buff_types/tenacity")).1;
+        let pa = bst(bt!("/buff_types/physical_amplify")).1;
+        let wa = bst(bt!("/buff_types/water_amplify")).1;
+        let na = bst(bt!("/buff_types/nature_amplify")).1;
+        let fa = bst(bt!("/buff_types/fire_amplify")).1;
+        let ha = bst(bt!("/buff_types/healing_amplify")).1;
+        let attack_speed_boosts = self.boosts(bt!("/buff_types/attack_speed"));
+        let armor_boosts = self.boosts(bt!("/buff_types/armor"));
+        let water_boosts = self.boosts(bt!("/buff_types/water_resistance"));
+        let nature_boosts = self.boosts(bt!("/buff_types/nature_resistance"));
+        let fire_boosts = self.boosts(bt!("/buff_types/fire_resistance"));
+        let hp_regen = bst(bt!("/buff_types/hp_regen"));
+        let mp_regen = bst(bt!("/buff_types/mp_regen"));
+        let life_steal = bst(bt!("/buff_types/life_steal")).1;
+        let physical_thorns = bst(bt!("/buff_types/physical_thorns")).1;
+        let elemental_thorns = bst(bt!("/buff_types/elemental_thorns")).1;
+        let wisdom = bst(bt!("/buff_types/wisdom")).1;
+        let critical_rate = bst(bt!("/buff_types/critical_rate")).1;
+        let critical_damage = bst(bt!("/buff_types/critical_damage")).1;
+        let cast_speed = bst(bt!("/buff_types/cast_speed")).1;
+        let drop_rate = bst(bt!("/buff_types/combat_drop_rate"));
+        let rare_find = bst(bt!("/buff_types/rare_find"));
+        let drop_qty = bst(bt!("/buff_types/combat_drop_quantity"));
+        let threat = bst(bt!("/buff_types/threat"));
+        let retaliation = bst(bt!("/buff_types/retaliation")).1;
+        let tenacity = bst(bt!("/buff_types/tenacity")).1;
 
         let cd = &mut self.cd;
         cd.cs.physical_amplify += pa;

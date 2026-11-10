@@ -9,7 +9,7 @@ use crate::events::{Event, Kind, Ty, UnitRef};
 use crate::guild_trial::{GuildTrial, MAX_TIER};
 use crate::heap::MinHeap;
 use crate::js::{self, S};
-use crate::monster::create_monster;
+use crate::monster::{create_monster, AbilityCache};
 use crate::rng::Mulberry32;
 use crate::sim_result::{Hit, SimResult};
 use crate::trigger::all_active;
@@ -76,6 +76,7 @@ pub struct Sim<'a> {
     pub trace: Option<TraceCfg>,
     pub trace_out: Vec<String>,
     events_processed: u64,
+    ability_cache: AbilityCache,
 }
 
 impl<'a> Sim<'a> {
@@ -118,6 +119,7 @@ impl<'a> Sim<'a> {
             trace: None,
             trace_out: Vec::new(),
             events_processed: 0,
+            ability_cache: AbilityCache::new(),
         }
     }
 
@@ -651,7 +653,7 @@ impl<'a> Sim<'a> {
         for (hrid, tier) in list {
             let uid = self.next_uid;
             self.next_uid += 1;
-            let m = create_monster(self.data, &hrid, tier, 0.0, uid)?;
+            let m = create_monster(self.data, &mut self.ability_cache, &hrid, tier, 0.0, uid)?;
             self.units.push(m);
         }
         self.enemies_on = true;
@@ -704,7 +706,7 @@ impl<'a> Sim<'a> {
             for h in hrids {
                 let uid = self.next_uid;
                 self.next_uid += 1;
-                let mut m = create_monster(self.data, &h, 0.0, room, uid)?;
+                let mut m = create_monster(self.data, &mut self.ability_cache, &h, 0.0, room, uid)?;
                 if let UnitKind::Monster(mp) = &mut m.kind {
                     mp.trial_hp_scale_factor = hp;
                     mp.trial_attack_speed_bonus = sp;
@@ -1853,7 +1855,7 @@ impl<'a> Sim<'a> {
         };
         let uid = self.next_uid;
         self.next_uid += 1;
-        let mut promoted = create_monster(self.data, PROMOTIONS[k], tier, room, uid)?;
+        let mut promoted = create_monster(self.data, &mut self.ability_cache, PROMOTIONS[k], tier, room, uid)?;
         let rs = self.random_start;
         promoted.reset(now, rs, &mut self.rng);
         if !(self.enemies_on && si >= self.n) {

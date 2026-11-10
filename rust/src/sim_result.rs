@@ -121,6 +121,40 @@ fn bump(m: &mut OMap<f64>, k: &str, amount: f64) {
     *v += amount;
 }
 
+/// One ability's hit-value tally (`attacks[src][tgt][ability]`). The map is what is
+/// emitted; `idx` finds a damage value's slot without building and scanning its key.
+#[derive(Clone, Debug, Default)]
+pub struct HitCounts {
+    pub m: OMap<f64>,
+    idx: std::collections::HashMap<u64, usize>,
+}
+
+impl HitCounts {
+    fn add(&mut self, hit: Hit) {
+        // num_key folds -0 into "0" and every NaN into "NaN"; fold the bit keys the same way.
+        let k = match hit {
+            Hit::Miss => u64::MAX - 1,
+            Hit::Dmg(x) if x.is_nan() => u64::MAX,
+            Hit::Dmg(x) if x == 0.0 => 0,
+            Hit::Dmg(x) => x.to_bits(),
+        };
+        let m = &mut self.m;
+        let i = *self.idx.entry(k).or_insert_with(|| {
+            let key = match hit {
+                Hit::Miss => "miss".to_string(),
+                Hit::Dmg(x) => num_key(x),
+            };
+            m.0.push((key, 0.0));
+            m.0.len() - 1
+        });
+        let v = &mut m.0[i].1;
+        if !truthy(*v) {
+            *v = 0.0;
+        }
+        *v += 1.0;
+    }
+}
+
 #[derive(Clone, Debug)]
 pub enum Hit {
     Miss,
@@ -177,7 +211,7 @@ pub struct SimResult {
     pub deaths: OMap<f64>,
     pub experience_gained: OMap<[f64; 7]>,
     pub encounters: f64,
-    pub attacks: OMap<OMap<OMap<OMap<f64>>>>,
+    pub attacks: OMap<OMap<OMap<HitCounts>>>,
     pub consumables_used: OMap<OMap<f64>>,
     pub hitpoints_gained: OMap<OMap<f64>>,
     pub healing_done: OMap<OMap<f64>>,
@@ -369,12 +403,7 @@ impl SimResult {
     }
 
     pub fn add_attack(&mut self, source: &str, target: &str, ability: &str, hit: Hit) {
-        let a = self.attacks.entry(source, OMap::default).entry(target, OMap::default).entry(ability, OMap::default);
-        let key = match hit {
-            Hit::Miss => "miss".to_string(),
-            Hit::Dmg(x) => num_key(x),
-        };
-        bump(a, &key, 1.0);
+        self.attacks.entry(source, OMap::default).entry(target, OMap::default).entry(ability, HitCounts::default).add(hit);
     }
 
     pub fn add_consumable_use(&mut self, unit: &str, consumable: &str) {
@@ -471,7 +500,7 @@ impl SimResult {
                 self.experience_gained.to_j(|v| J::Obj(LEVEL_NAMES.iter().zip(v.iter()).map(|(k, x)| (k.to_string(), J::Num(*x))).collect())),
             ),
             ("encounters".into(), J::Num(self.encounters)),
-            ("attacks".into(), self.attacks.to_j(|a| a.to_j(|b| b.to_j(|c| n(c))))),
+            ("attacks".into(), self.attacks.to_j(|a| a.to_j(|b| b.to_j(|c| n(&c.m))))),
             ("consumablesUsed".into(), nn(&self.consumables_used)),
             ("hitpointsGained".into(), nn(&self.hitpoints_gained)),
             ("healingDone".into(), nn(&self.healing_done)),
