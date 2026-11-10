@@ -34,7 +34,7 @@ import { useSwapOptimizer } from './hooks/useSwapOptimizer';
 import { usePrices } from './hooks/usePrices';
 import { usePersistentState, isBool } from './hooks/usePersistentState';
 import { exportFormatToPlayer } from './utils/importSet';
-import { readMwixBridgePayload, clearMwixBridgeHash, partyFromBridgePayload, mwixStoreId } from './utils/mwixBridge';
+import { readMwixBridgePayload, clearMwixBridgeHash, partyFromBridgePayload, mergeBridged } from './utils/mwixBridge';
 import {
   readRosterLinkValue,
   decodeRosterLinkValue,
@@ -472,26 +472,19 @@ function App() {
       // game characterId (its name if absent) beside its other loadouts here.
       const partyMembers = partyFromBridgePayload(payload);
       if (partyMembers) {
+        // Where each lands depends on the store, so the updater names it and party's, run after, reads it.
         const refs = {};
-        for (const m of partyMembers) {
-          refs[m.slot] = { characterId: mwixStoreId(m.characterId, m.name), loadoutName: m.loadoutName };
-        }
         setCharacters(prev => {
           let next = prev;
           for (const m of partyMembers) {
-            const { characterId } = refs[m.slot];
-            const split = splitPlayer(m.player);
-            const existing = next.characters?.[characterId];
-            next = upsertCharacter(next, {
-              ...split.character,
-              id: characterId,
-              name: m.name,
-              loadouts: { ...(existing?.loadouts || {}), [m.loadoutName]: split.loadout }
-            });
+            const merged = mergeBridged(next, { gameId: m.characterId, name: m.name, legacyName: m.name,
+              loadoutName: m.loadoutName, player: m.player, importSet: m.importSet });
+            refs[m.slot] = { characterId: merged.id, loadoutName: m.loadoutName };
+            next = merged.store;
           }
           return next;
         });
-        setParty({ ...createInitialParty(), ...refs });
+        setParty(() => ({ ...createInitialParty(), ...refs }));
         setSelectedPlayers(partyMembers.map(m => m.slot));
         setActiveTab(1);
         const first = payload.importSet || {};
@@ -554,18 +547,15 @@ function App() {
       // to carry and no reason to break tampermonkey/src/kernel/sim-launch.js:
       // it becomes a character with a single loadout named `bridge`.
       const characterName = payload.character?.name || payload.loadout?.name || 'MWIX import';
-      // By the game's characterId when the payload has one: two alts with a
-      // loadout called "Combat" used to collapse into one character.
-      const characterId = mwixStoreId(payload.characterId ?? payload.character?.id, payload.loadout?.name || 'MWIX import');
-      const split = splitPlayer(player);
-      // Merge, as the party path above does: the character's other loadouts stay.
-      setCharacters(prev => upsertCharacter(prev, {
-        ...split.character,
-        id: characterId,
-        name: characterName,
-        loadouts: { ...(prev.characters?.[characterId]?.loadouts || {}), bridge: split.loadout }
-      }));
-      setParty(prev => ({ ...prev, 1: { characterId, loadoutName: 'bridge' } }));
+      // Onto the stored character with the game's characterId, as the party path above.
+      let landed;
+      setCharacters(prev => {
+        const merged = mergeBridged(prev, { gameId: payload.characterId ?? payload.character?.id, name: characterName,
+          legacyName: payload.loadout?.name || 'MWIX import', loadoutName: 'bridge', player, importSet });
+        landed = merged.id;
+        return merged.store;
+      });
+      setParty(prev => ({ ...prev, 1: { characterId: landed, loadoutName: 'bridge' } }));
       setSelectedPlayers([1]);
       setActiveTab(1);
       if (importSet.zone) setZone(importSet.zone);
