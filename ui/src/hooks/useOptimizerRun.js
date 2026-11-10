@@ -35,6 +35,11 @@ const API_DOWN_MESSAGE =
   'Cannot reach the csim API. Start it with `npm start` in csim/api ' +
   '(it listens on port 3001), then try again.';
 
+/** A 404 from a reachable API means the running API predates this tool. */
+const httpError = (name, status, fallback) => (status === 404
+  ? `${name} is not on the running csim API: it is older than this page. Restart it (\`npm start\` in csim/api).`
+  : fallback);
+
 /**
  * @param {object} options
  * @param {string} options.endpoint  e.g. '/api/optimize-triggers'; the preview is `${endpoint}/preview`
@@ -105,9 +110,10 @@ export function useOptimizerRun({ endpoint, kind, name }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const body = await response.json();
-      if (!response.ok || !body.success) {
-        throw new Error(body?.error || `Preview failed (HTTP ${response.status})`);
+      // Not JSON: Express's HTML 404, from an API started before this tool's route existed.
+      const body = await response.json().catch(() => null);
+      if (!response.ok || !body?.success) {
+        throw new Error(body?.error || httpError(name, response.status, `Preview failed (HTTP ${response.status})`));
       }
       if (!isLatest()) return null;
       setPreview(body);
@@ -127,7 +133,7 @@ export function useOptimizerRun({ endpoint, kind, name }) {
     } finally {
       if (isLatest()) setPreviewing(false);
     }
-  }, [nextPreview, endpoint]);
+  }, [nextPreview, endpoint, name]);
 
   /**
    * Run the search, streaming progress.
@@ -159,7 +165,7 @@ export function useOptimizerRun({ endpoint, kind, name }) {
 
         // Validation failures answer with JSON before the stream opens.
         if (!response.ok) {
-          let message = `HTTP ${response.status}`;
+          let message = httpError(name, response.status, `HTTP ${response.status}`);
           try {
             const body = await response.json();
             if (body?.error) message = body.error;
