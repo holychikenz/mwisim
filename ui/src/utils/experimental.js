@@ -18,7 +18,11 @@ export const EXPERIMENTAL_DEFAULTS = Object.freeze({
   //            gets the model measured for it (see simSettings.js)
   // "random" = force upstream everywhere (U[0.5, 1.0)*CD, mean 0.75)
   // "half"   = force a flat 0.5*CD everywhere
-  monsterStartCooldown: 'auto'
+  monsterStartCooldown: 'auto',
+  // "js"   = the JS engine (default)
+  // "wasm" = the Rust twin (rust/, ./build.sh wasm), bit-identical by
+  //          twin:check; labyrinths still run on JS
+  engine: 'js'
 });
 
 export function loadExperimental() {

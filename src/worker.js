@@ -6,8 +6,21 @@ import { applySimSettingsFromExtra } from "./combatsimulator/simSettings";
 import { buildCommunityBuffs } from "../shared/communityBuffs.js";
 import { runTrialIterations } from "../shared/guildTrialRuns.js";
 import { buildLabUpgradeBuffs } from "../shared/labUpgrades.js";
+import { setTwinBackend, runTwin } from "../shared/twinEngine.js";
+import { loadWasmTwin } from "./twinWasm.js";
 
 onmessage = async function (event) {
+    // MWIX adaptation (Rust twin): extra.experimental.engine === "wasm" runs
+    // zone and trial jobs on the wasm build of rust/; labyrinths stay on JS.
+    let twin = null;
+    try {
+        twin = event.data.extra?.experimental?.engine === "wasm" ? await loadWasmTwin() : null;
+    } catch (e) {
+        console.log(e);
+        this.postMessage({ type: "simulation_error", error: e });
+        return;
+    }
+    setTwinBackend(twin);
     switch (event.data.type) {
         case "start_simulation": {
             // MWIX adaptation: experimental engine knobs (extra.experimental)
@@ -34,6 +47,22 @@ onmessage = async function (event) {
                 extraBuffs = extraBuffs.concat(buildLabUpgradeBuffs(event.data.extra.mwixLabUpgrades));
             }
             extraBuffs = extraBuffs.concat(event.data.guildBuffs || []);
+
+            if (twin && !event.data.labyrinth) {
+                const { zone, simulationTimeLimit, maxRuns, maxRunDurationNs } = event.data;
+                try {
+                    const simResult = await runTwin(
+                        twin,
+                        { kind: "zone", players: event.data.players, partyBuffs: extraBuffs, zone, simulationTimeLimit, ...(maxRuns ? { runLimits: { maxRuns, maxRunDurationNs } } : {}) },
+                        (progress) => this.postMessage({ type: "simulation_progress", progress, zone: zone.zoneHrid, difficultyTier: zone.difficultyTier }),
+                    );
+                    this.postMessage({ type: "simulation_result", simResult });
+                } catch (e) {
+                    console.log(e);
+                    this.postMessage({ type: "simulation_error", error: e });
+                }
+                break;
+            }
 
             let playersData = event.data.players;
             let players = [];
