@@ -21,7 +21,11 @@
 #   test         api unit tests
 #   check        api test + sim:check + eval:check (what CI runs)
 #   all          everything above
+#   rust         cargo build + test of the Rust twin (rust/); needs a Rust toolchain
+#   twin         twin:check — the Rust twin against the JS engine, bit for bit
 #   clean        remove ui/dist/
+# rust and twin are deliberately NOT in the default or in `all`, so a machine
+# without Rust keeps building.
 # =============================================================================
 set -euo pipefail
 
@@ -61,6 +65,9 @@ t_check() {
   say "api eval:check"; (cd api && npm run eval:check)
 }
 
+t_rust() { say "cargo (rust/)"; (cd rust && cargo build --release --locked && cargo test --release --locked); }
+t_twin() { say "api twin:check"; (cd api && npm run twin:check -- selftest && npm run twin:check -- check); }
+
 t_clean() { say "clean"; rm -rf ui/dist; }
 
 t_all() { t_install; t_gen; t_ui; t_lint; t_check; }
@@ -70,7 +77,7 @@ targets=("$@")
 
 for t in "${targets[@]}"; do
   case "$t" in
-    install|gen|ui|lint|test|check|clean|all) "t_${t}" ;;
+    install|gen|ui|lint|test|check|rust|twin|clean|all) "t_${t}" ;;
     *) echo "unknown target: $t" >&2; sed -n '/^# Usage:/,/^# ===/p' "$0" >&2; exit 2 ;;
   esac
 done

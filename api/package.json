@@ -15,7 +15,9 @@
     "bench": "node --import ./register-loader.js bench/candle.mjs",
     "eval:check": "node --import ./register-loader.js eval/run.mjs check",
     "eval:record": "node --import ./register-loader.js eval/run.mjs record",
-    "eval:backrun": "node --import ./register-loader.js eval/backrun.mjs"
+    "eval:backrun": "node --import ./register-loader.js eval/backrun.mjs",
+    "twin:check": "node --import ./register-loader.js twin-parity.mjs",
+    "twin:trace": "node --import ./register-loader.js twin-parity.mjs trace"
   },
   "dependencies": {
     "cors": "^2.8.5",
