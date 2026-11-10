@@ -1646,7 +1646,9 @@ function App() {
   const startSubjectRun = useCallback((run, payload) => {
     if (!payload) return;
     run({ ...payload, meta: { optTarget, zone, difficultyTier, labConfig,
-      subject: { slot: subjectSlot, ...party[subjectSlot], abilities: payload.players[payload.subjectIndex]?.abilities } } });
+      subject: { slot: subjectSlot, ...party[subjectSlot], abilities: payload.players[payload.subjectIndex]?.abilities },
+      // The party as measured: the zone finder refuses a build edited since (levels, gear, abilities, other members).
+      build: JSON.stringify(payload.players) } });
   }, [optTarget, zone, difficultyTier, labConfig, subjectSlot, party]);
 
   // Stable, as handleStartTriggerOpt / handleStartEquipOpt are, so handleStartSimulation's useCallback holds.
@@ -1661,20 +1663,24 @@ function App() {
     () => startSubjectRun(runProgressOptimizer, progressOptPayload), [startSubjectRun, runProgressOptimizer, progressOptPayload]);
 
   // Progress's "Find top 10 zones": the subject's charm / coffee variants over every simulable zone and tier.
+  // Built ahead of the click so the button can say how many runs it would start.
   const { start: startZoneFinder } = zoneFinder;
-  const handleFindZones = useCallback(() => {
+  const finderJob = useMemo(() => {
     const r = progressOpt.results;
     const slot = r?.meta?.subject?.slot;
     const index = selectedParty.indexOf(slot);
-    if (!r?.rows?.length || index < 0 || !gameData) return;
+    if (!r?.rows?.length || index < 0 || !gameData) return null;
     const base = sweepBase();
     const variants = finderVariants(base.players[index], r.rows, gameData.items);
-    startZoneFinder({
+    return {
       base: { ...base, variants: Object.fromEntries(variants.map(v => [v.key, base.players.map((p, i) => (i === index ? v.player : p))])) },
       combos: simulableZones(gameData.zones).flatMap(z => zoneTiers(z).flatMap(difficultyTier =>
         variants.map(v => ({ zoneHrid: z.hrid, difficultyTier, variant: v.key })))),
-      progressRows: r.rows, subjectHrid: `player${slot}`, variants, monsters: gameData.monsters, items: gameData.items });
-  }, [progressOpt.results, selectedParty, gameData, sweepBase, startZoneFinder]);
+      progressRows: r.rows, subjectHrid: `player${slot}`, variants, monsters: gameData.monsters, items: gameData.items };
+  }, [progressOpt.results, selectedParty, gameData, sweepBase]);
+  const handleFindZones = useCallback(() => finderJob && startZoneFinder(finderJob), [finderJob, startZoneFinder]);
+  // The party as Progress would send it now, to compare with the build it measured.
+  const progressBuild = useMemo(() => progressOptPayload && JSON.stringify(progressOptPayload.players), [progressOptPayload]);
   const { runOptimizer: runSwapOptimizer } = swapOpt;
   const handleStartSwapOpt = useCallback(
     () => startSubjectRun(runSwapOptimizer, swapOptPayload), [startSubjectRun, runSwapOptimizer, swapOptPayload]);
@@ -1840,13 +1846,13 @@ function App() {
         const s = r.meta?.subject;
         // The finder needs the measured character still in the party as measured.
         const moved = !s || !selectedParty.includes(s.slot) || party[s.slot]?.characterId !== s.characterId
-          || party[s.slot]?.loadoutName !== s.loadoutName;
+          || party[s.slot]?.loadoutName !== s.loadoutName || r.meta?.build !== progressBuild;
         return (
           <Stack gap="md">
             <CandidateResults results={r} title="Progress" currentLabel="Current levels" extraColumns={progressColumns(pricing)} onClear={onClear} />
             <ZoneFinderResults finder={zoneFinder} current={zoneFinder.job?.progressRows === r.rows} onFind={handleFindZones}
               disabled={activeLoading || progressOpt.stale || !!r.saturated || !r.rows?.length || moved}
-              zones={gameData?.zones} items={gameData?.items} />
+              planned={moved ? null : finderJob} workers={allZonesWorkers} zones={gameData?.zones} items={gameData?.items} />
           </Stack>
         );
       }

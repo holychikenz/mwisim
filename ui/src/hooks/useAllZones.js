@@ -42,7 +42,8 @@ export function useAllZones() {
   const workerRef = useRef(null);
   const watchdogRef = useRef(null);
   const pendingRowsRef = useRef([]);
-  const allRowsRef = useRef([]);
+  // Every row of the current sweep. `rows` state IS this array, so nothing is held twice.
+  const rowsRef = useRef([]);
   const flushTimerRef = useRef(null);
 
   const clearWatchdog = useCallback(() => {
@@ -63,7 +64,8 @@ export function useAllZones() {
     if (pendingRowsRef.current.length === 0) return;
     const batch = pendingRowsRef.current;
     pendingRowsRef.current = [];
-    setRows(prev => [...prev, ...batch]);
+    rowsRef.current = [...rowsRef.current, ...batch];
+    setRows(rowsRef.current);
   }, []);
 
   const stopWorker = useCallback(() => {
@@ -105,7 +107,7 @@ export function useAllZones() {
     stopWorker();
     const combos = params?.combos || [];
     pendingRowsRef.current = [];
-    allRowsRef.current = [];
+    rowsRef.current = [];
     setRunning(true);
     setProgress(0);
     setRows([]);
@@ -153,7 +155,6 @@ export function useAllZones() {
           break;
         case 'all_zones_row':
           pendingRowsRef.current.push(data.row);
-          if (params.onDone) allRowsRef.current.push(data.row); // only a chained pass needs every row
           if (!flushTimerRef.current) {
             flushTimerRef.current = setTimeout(() => {
               flushTimerRef.current = null;
@@ -170,7 +171,7 @@ export function useAllZones() {
           );
           stopWorker();
           // After stopWorker: onDone may start the next pass, which that call would kill.
-          params.onDone?.(allRowsRef.current);
+          params.onDone?.(rowsRef.current);
           break;
         case 'all_zones_error':
           failAndReset(String(data.error || 'Zone sweep failed'));
@@ -210,7 +211,7 @@ export function useAllZones() {
   const clear = useCallback(() => {
     stopWorker();
     pendingRowsRef.current = [];
-    allRowsRef.current = [];
+    rowsRef.current = [];
     setRunning(false);
     setProgress(0);
     setRows([]);

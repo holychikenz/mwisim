@@ -2,6 +2,9 @@ import { Button, Group, Stack, Table, Text } from '@mantine/core';
 import { formatSignedPct } from '../utils/equipmentOptimizer';
 import { compact } from '../utils/candidateOptimizer';
 import { nameOf } from '../utils/names';
+import { findZone } from '../utils/zones';
+import { estimateSweepSeconds } from '../utils/allZones';
+import { formatDuration } from '../utils/triggerOptimizer';
 import { FINALISTS, QUICK_HOURS, VERIFY_HOURS } from '../utils/zoneProgress';
 import { NumTd } from './ResultParts';
 
@@ -9,9 +12,9 @@ import { NumTd } from './ResultParts';
 // (or a pass stops early, ranked from the rows it had), the zones ranked by
 // progress per hour (hooks/useZoneFinder.js). Errors show in App, above the
 // results. `current` is false when a newer Progress result has replaced the one
-// the finder scored.
-export function ZoneFinderResults({ finder, current, onFind, disabled, zones, items }) {
-  const { job, top, stopped, runs } = finder;
+// the finder scored. `planned` is the job the button would start, for its estimate.
+export function ZoneFinderResults({ finder, current, onFind, disabled, planned, workers, zones, items }) {
+  const { job, top, stopped, runs, finalists } = finder;
   const done = finder.stage === 'done';
   const showTable = current && (done || stopped);
   const variantOf = (row) => job?.variants.find((x) => x.key === row.variant);
@@ -20,6 +23,13 @@ export function ZoneFinderResults({ finder, current, onFind, disabled, zones, it
     <Stack gap="xs">
       <Group>
         <Button onClick={onFind} disabled={disabled} loading={finder.running}>Find top 10 zones</Button>
+        {planned && !finder.running && (
+          <Text size="xs" c="dimmed">
+            {planned.combos.length} runs at {QUICK_HOURS} h, then up to {FINALISTS} at {VERIFY_HOURS} h · about{' '}
+            {formatDuration(estimateSweepSeconds(planned.combos.length, QUICK_HOURS, workers)
+              + estimateSweepSeconds(Math.min(FINALISTS, planned.combos.length), VERIFY_HOURS, workers))}
+          </Text>
+        )}
       </Group>
       {showTable && (top.length === 0 ? (
         <Text size="sm">{runs.failed > 0 ? 'No zone could be ranked: runs failed.'
@@ -44,7 +54,10 @@ export function ZoneFinderResults({ finder, current, onFind, disabled, zones, it
                 return (
                   <Table.Tr key={`${row.zoneHrid}#${row.difficultyTier}`}>
                     <Table.Td>{i + 1}</Table.Td>
-                    <Table.Td>{(zones || []).find((z) => z.hrid === row.zoneHrid)?.name ?? row.zoneHrid} T{row.difficultyTier}</Table.Td>
+                    <Table.Td>
+                      {findZone(zones, row.zoneHrid)?.name ?? row.zoneHrid} T{row.difficultyTier}
+                      {row.quickOnly && <Text span size="xs" c="dimmed"> ({QUICK_HOURS} h)</Text>}
+                    </Table.Td>
                     <Table.Td>{v?.charm ? nameOf(v.charm, { items }) : 'none'}</Table.Td>
                     {coffee && <Table.Td>{v?.coffee ? nameOf(v.coffee, { items }) : '—'}</Table.Td>}
                     <NumTd strong>{formatSignedPct(row.progressPerHour, 4)}</NumTd>
@@ -61,15 +74,19 @@ export function ZoneFinderResults({ finder, current, onFind, disabled, zones, it
         <Stack gap={2}>
           {stopped && (
             <Text size="xs" c="yellow">
-              Stopped early during the {finder.stage === 'quick' ? `${QUICK_HOURS} h quick pass` : `${VERIFY_HOURS} h finalists pass`}: ranked from the {finder.rows.length} of {finder.meta?.total ?? 0} runs that finished.
+              {finder.stage === 'quick'
+                ? `Stopped early during the ${QUICK_HOURS} h quick pass: ranked from the ${finder.rows.length} of ${finder.meta?.total ?? 0} runs that finished.`
+                : `Stopped during the ${VERIFY_HOURS} h finalists pass after ${finder.rows.length} of ${finder.meta?.total ?? 0} runs; the rest keep their ${QUICK_HOURS} h score.`}
             </Text>
           )}
           {runs.failed > 0 && (
-            <Text size="xs" c="yellow">{runs.failed} of {runs.runs} runs failed; their zones are left out.</Text>
+            <Text size="xs" c="yellow">
+              {runs.failed} of {runs.runs} runs failed and were left out; a finalist whose {VERIFY_HOURS} h run failed keeps its {QUICK_HOURS} h score.
+            </Text>
           )}
-          {done && (
+          {done && finalists > 0 && (
             <Text size="xs" c="dimmed">
-              Every zone and tier ran {QUICK_HOURS} h per variant; the best {FINALISTS} were rerun at {VERIFY_HOURS} h with their best variant.
+              Every zone and tier ran {QUICK_HOURS} h per variant; the best {finalists} were rerun at {VERIFY_HOURS} h with their best variant.
             </Text>
           )}
           <Text size="xs" c="dimmed">

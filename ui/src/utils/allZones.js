@@ -64,25 +64,17 @@ export function parseComboKey(key) {
  * its effective column when they do, not stay blank because the shard could not
  * price it.
  *
- * experienceBySkill keeps each player's per-skill split (the Progress zone
- * finder weighs skills differently); `variant` echoes combo.variant, if any.
+ * `variant` echoes combo.variant, if any.
  */
 export function summariseZoneRun(simResult, combo = {}) {
   const hours = (simResult?.simulatedTime || 0) / ONE_HOUR_NS;
 
-  // One total per player, summed over that player's SKILLS by iteration rather
-  // than by naming the seven known ones, so a skill added by a future patch
-  // counts itself. `experienceGained` is players-only (addExperienceGain returns
-  // early for monsters), so every key here is a party member.
-  const experienceByPlayer = {};
+  // Each player's experience by SKILL (the Progress zone finder weighs skills
+  // differently; the table sums them). `experienceGained` is players-only
+  // (addExperienceGain returns early for monsters), so every key is a party member.
   const experienceBySkill = {};
   for (const [hrid, bySkill] of Object.entries(simResult?.experienceGained || {})) {
     experienceBySkill[hrid] = { ...bySkill };
-    let total = 0;
-    for (const amount of Object.values(bySkill || {})) {
-      total += Number(amount) || 0;
-    }
-    experienceByPlayer[hrid] = total;
   }
 
   // `deaths` is keyed by unit hrid — players AND monsters. Only the party's own
@@ -97,7 +89,6 @@ export function summariseZoneRun(simResult, combo = {}) {
     difficultyTier: combo.difficultyTier ?? simResult?.difficultyTier ?? 0,
     hours,
     encounters: simResult?.encounters || 0,
-    experienceByPlayer,
     experienceBySkill,
     deathsByPlayer,
     consumablesUsed: simResult?.consumablesUsed || {},

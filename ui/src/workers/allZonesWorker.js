@@ -114,6 +114,7 @@ onmessage = async function (event) {
                     finish({
                         zoneHrid: task.zoneHrid,
                         difficultyTier: task.difficultyTier,
+                        variant: task.variant, // a failed run still says which variant failed
                         error: `No response for ${SHARD_SILENCE_MS / 1000}s — worker abandoned`,
                     });
                 }, SHARD_SILENCE_MS);
@@ -134,6 +135,7 @@ onmessage = async function (event) {
                         finish({
                             zoneHrid: task.zoneHrid,
                             difficultyTier: task.difficultyTier,
+                            variant: task.variant,
                             error: String(payload.error?.message || payload.error || 'Simulation failed'),
                         });
                         break;
@@ -146,6 +148,7 @@ onmessage = async function (event) {
                 finish({
                     zoneHrid: task.zoneHrid,
                     difficultyTier: task.difficultyTier,
+                    variant: task.variant,
                     error: err?.message || 'Simulation worker crashed',
                 });
             };

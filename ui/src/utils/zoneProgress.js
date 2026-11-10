@@ -67,6 +67,17 @@ export function topZones(scored, n) {
 export const rankZones = (rows, job, n) =>
   topZones(rows.map((r) => scoreZoneRow(r, job.progressRows, job.subjectHrid, job.monsters, job.items)), n);
 
+/** The quick pass's finalists re-ranked on their VERIFY_HOURS rows. A finalist whose long run failed or never
+ *  finished (stopped) keeps its QUICK_HOURS score, marked quickOnly, so a stopped second pass never loses the first's answer. */
+export function rankFinalists(quickTop, rows, job, n) {
+  const measured = new Map();
+  for (const r of rows) {
+    const s = scoreZoneRow(r, job.progressRows, job.subjectHrid, job.monsters, job.items);
+    if (s) measured.set(comboKey(s.zoneHrid, s.difficultyTier), s);
+  }
+  return topZones(quickTop.map((q) => measured.get(comboKey(q.zoneHrid, q.difficultyTier)) ?? { ...q, quickOnly: true }), n);
+}
+
 /** { runs, failed } over a pass's rows, added to an earlier pass's counts. */
 export const countRuns = (rows, before = { runs: 0, failed: 0 }) =>
   ({ runs: before.runs + rows.length, failed: before.failed + rows.filter((r) => r.error).length });

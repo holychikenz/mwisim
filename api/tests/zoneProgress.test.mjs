@@ -6,18 +6,17 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const { summariseZoneRun } = await import('../../ui/src/utils/allZones.js');
-const { finderVariants, scoreZoneRow, topZones, rankZones, countRuns, QUICK_HOURS, VERIFY_HOURS, FINALISTS, TOP_N } =
+const { finderVariants, scoreZoneRow, topZones, rankZones, rankFinalists, countRuns, QUICK_HOURS, VERIFY_HOURS, FINALISTS, TOP_N } =
   await import('../../ui/src/utils/zoneProgress.js');
 const { itemDetailMap: items } = await import('../../src/combatsimulator/dataProvider.js');
 
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg ?? ''} ${a} ≈ ${b}`);
 
-test('summariseZoneRun: per-skill experience, the total, and the combo variant', () => {
+test('summariseZoneRun: per-skill experience and the combo variant', () => {
   const experienceGained = { player1: { ranged: 300, attack: 700, stamina: 0 }, player2: { magic: 50 } };
   const row = summariseZoneRun({ simulatedTime: 2 * 3600e9, experienceGained },
     { zoneHrid: 'z', difficultyTier: 2, variant: 'a|b' });
   assert.deepEqual(row.experienceBySkill, experienceGained);
-  assert.deepEqual(row.experienceByPlayer, { player1: 1000, player2: 50 });
   assert.equal(row.variant, 'a|b');
   assert.equal(row.hours, 2);
   assert.equal(summariseZoneRun({ simulatedTime: 3600e9 }, { zoneHrid: 'z', difficultyTier: 0 }).variant, undefined);
@@ -72,6 +71,23 @@ test('rankZones / countRuns: a stopped pass ranks what it has; failed runs are c
   assert.deepEqual(countRuns(rows), { runs: 3, failed: 1 });
   assert.deepEqual(countRuns(rows, { runs: 10, failed: 2 }), { runs: 13, failed: 3 });
   assert.deepEqual(countRuns([]), { runs: 0, failed: 0 });
+});
+
+test('rankFinalists: long rows re-rank the finalists; one without a long row keeps its quick score', () => {
+  const job = { progressRows: progressRows(), subjectHrid: 'player1', monsters, items };
+  const quickTop = rankZones([zoneRow({ variant: 'v1' }), zoneRow({ zoneHrid: '/actions/combat/y', variant: 'v1',
+    experienceBySkill: { player1: { ranged: 300000 } } })], job, FINALISTS);
+  assert.equal(quickTop.length, 2);
+  // z's long run did better, y's failed: y keeps its quick score, marked.
+  const long = [zoneRow({ variant: 'v1', hours: 24, experienceBySkill: { player1: { ranged: 240e6 } } }),
+    zoneRow({ zoneHrid: '/actions/combat/y', variant: 'v1', error: 'boom' })];
+  const top = rankFinalists(quickTop, long, job, TOP_N);
+  assert.deepEqual(top.map((r) => [r.zoneHrid, r.hours, !!r.quickOnly]), [['/actions/combat/z', 24, false], ['/actions/combat/y', 2, true]]);
+  // Stopped before any long row landed: the quick ranking stands.
+  assert.deepEqual(rankFinalists(quickTop, [], job, TOP_N).map((r) => r.zoneHrid), quickTop.map((r) => r.zoneHrid));
+  // A long row that earns nothing drops the zone rather than falling back.
+  assert.equal(rankFinalists(quickTop, [zoneRow({ variant: 'v1', experienceBySkill: {}, deaths: {} })], job, TOP_N).length, 1);
+  assert.deepEqual(rankFinalists([], [], job, TOP_N), []);
 });
 
 // ---------------------------------------------------------------------------

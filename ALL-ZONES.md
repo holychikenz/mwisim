@@ -96,7 +96,7 @@ Upstream's file is left untouched, per the engine-boundary rule in
 runs **inside the shard**. A full `simResult` carries per-ability attack tallies,
 drop tables and optional HP/MP time series — tens of kilobytes each, 78 of them,
 structured-cloned to render a handful of numbers. Only that handful makes the
-crossing: the encounter and dungeon counts, `experienceByPlayer`,
+crossing: the encounter and dungeon counts, `experienceBySkill`,
 `deathsByPlayer`, and `consumablesUsed`, which is small, already per-player, and
 needed for the effective rates.
 
@@ -105,9 +105,8 @@ totals — five small numbers where there was one. That is a rounding error next
 to a `simResult`, and it is what lets the P-tab change whose figures the table
 shows without re-running anything.
 
-`experienceBySkill` carries each player's per-skill split beside that total
-(`experienceByPlayer` stays the sum), for the Progress zone finder, which weighs
-skills differently. A combo may name a `variant`: the pool then runs
+`experienceBySkill` is per player AND per skill: the table sums a player's
+skills, and the Progress zone finder weighs them differently. A combo may name a `variant`: the pool then runs
 `variants[variant]` (a whole party, sent once in the start message) instead of
 `players`, and the row echoes `variant` back.
 
@@ -218,11 +217,17 @@ and are applied to every zone's rates. Lucky coffee rides the end-of-sim
 modelled, so dungeons count XP only (no book drops are credited). The variant is
 chosen on the 3 h pass.
 
-**Stopped or failed runs.** A run that is stopped, stalls or errors ranks the rows
-its current pass had measured, under a caption naming the pass and how many runs
-finished. Failed runs are counted in a caption and their zones are left out; no
-replacement finalist is promoted. A finder error shows above the results in every
-mode.
+**Stopped or failed runs.** A quick pass that is stopped, stalls or errors ranks
+the rows it had measured. In the finalists pass, a finalist whose 24 h run failed
+or never finished keeps its 3 h score, marked "(3 h)", so stopping there never
+loses the quick ranking. With no finalist the 24 h pass is skipped. Failed runs
+are counted in a caption and leave the ranking; no replacement finalist is
+promoted. A finder error shows above the results in every mode.
+
+**Before and after.** The button states the run count and a rough time
+(`estimateSweepSeconds`) before it starts. It is disabled once the party differs
+from the one Progress measured: the run stores its players' DTOs as `meta.build`,
+so a level, gear or ability edit, or a change to another member, counts.
 
 ## Persistence
 
