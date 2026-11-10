@@ -7,7 +7,7 @@
   "scripts": {
     "start": "node --import ./register-loader.js server.js",
     "dev": "node --watch --import ./register-loader.js server.js",
-    "test": "node --import ./register-loader.js --test tests/*.test.mjs",
+    "test": "CSIM_ENGINE=js node --import ./register-loader.js --test tests/*.test.mjs",
     "lab:check": "node --import ./register-loader.js lab-parity.mjs check",
     "lab:record": "node --import ./register-loader.js lab-parity.mjs record",
     "sim:check": "node --import ./register-loader.js sim-parity.mjs check",

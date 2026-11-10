@@ -6,7 +6,8 @@ use crate::consumable::Consumable;
 use crate::data::GameData;
 use crate::equipment::Equipment;
 use crate::js::{s, truthy, S};
-use crate::request::PlayerDto;
+use crate::request::{AbilityDto, ConsumableDto, PlayerDto};
+use serde::Deserialize;
 use crate::sim_result::Gap;
 use crate::unit::{PlayerPart, Unit, UnitKind};
 use serde_json::Value;
@@ -129,28 +130,32 @@ pub fn create_player(data: &GameData, dto: &PlayerDto, uid: u32, zone_buffs: Vec
         dto.ranged_level,
         dto.magic_level,
     ];
-    let cons = |list: &[Option<crate::request::ConsumableDto>], slots: f64| -> Result<Vec<Option<Consumable>>, String> {
+    let cons = |list: &[Value], slots: f64, what: &str| -> Result<Vec<Option<Consumable>>, String> {
         list.iter()
             .enumerate()
-            .map(|(i, c)| match c {
-                Some(c) if (i as f64) < slots => Consumable::new(data, &c.hrid, Some(&c.triggers)).map(Some),
-                _ => Ok(None),
+            .map(|(i, v)| {
+                if !(value_truthy(v) && (i as f64) < slots) {
+                    return Ok(None);
+                }
+                let c = ConsumableDto::deserialize(v).map_err(|e| format!("{what}[{i}]: {e}"))?;
+                Consumable::new(data, &c.hrid, Some(&c.triggers)).map(Some)
             })
             .collect()
     };
-    u.food = cons(&dto.food, food_slots)?;
-    u.drinks = cons(&dto.drinks, drink_slots)?;
+    u.food = cons(&dto.food, food_slots, "food")?;
+    u.drinks = cons(&dto.drinks, drink_slots, "drinks")?;
     let slots = &data.ability_slots;
     let int_level = dto.intelligence_level;
     u.abilities = dto
         .abilities
         .iter()
         .enumerate()
-        .map(|(i, a)| match a {
-            Some(a) if slots.is_empty() || int_level >= slots.get(i + 1).copied().unwrap_or(f64::INFINITY) => {
-                Ability::new(data, &a.hrid, a.level.unwrap_or(1.0), Some(&a.triggers)).map(Some)
+        .map(|(i, v)| {
+            if !(value_truthy(v) && (slots.is_empty() || int_level >= slots.get(i + 1).copied().unwrap_or(f64::INFINITY))) {
+                return Ok(None);
             }
-            _ => Ok(None),
+            let a = AbilityDto::deserialize(v).map_err(|e| format!("abilities[{i}]: {e}"))?;
+            Ability::new(data, &a.hrid, a.level, Some(&a.triggers)).map(Some)
         })
         .collect::<Result<_, _>>()?;
     for (hrid, level) in dto.house_rooms.iter() {
@@ -167,7 +172,12 @@ pub fn create_player(data: &GameData, dto: &PlayerDto, uid: u32, zone_buffs: Vec
             u.house_rooms.push((s(hrid), buffs));
         }
     }
-    u.achievement_buffs = Some(achievement_buffs(data, &dto.achievements)?);
+    u.achievement_buffs = Some(match &dto.achievements {
+        Value::Object(m) => achievement_buffs(data, m)?,
+        Value::Null => return Err("TypeError: Cannot read properties of null (achievements)".into()),
+        // An array, string, number or boolean has no hrid keys in JS: nothing is held.
+        _ => achievement_buffs(data, &serde_json::Map::new())?,
+    });
     u.debuff_on_level_gap = match &dto.debuff_on_level_gap {
         None => Gap::Undef,
         Some(Value::Null) => Gap::Null,

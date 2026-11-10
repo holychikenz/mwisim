@@ -7,7 +7,7 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 
 import { mulberry32, withSeed } from '../lib/determinism.mjs';
-import { reviveTwinResult, runTwin, getTwinBackend } from '../../shared/twinEngine.js';
+import { reviveTwinResult, runTwin, getTwinBackend, wantsWasmTwin, twinZoneRequest, twinTrialRequest } from '../../shared/twinEngine.js';
 
 test('the JS engine is the default backend', () => {
   assert.equal(getTwinBackend(), null);
@@ -62,4 +62,21 @@ test('runTwin hands the seeded state over and writes the end state back', async 
 test('runTwin rethrows the twin error with its kind', async () => {
   const fake = { run: async () => JSON.stringify({ ok: false, error: 'bad', errorKind: 'RangeError' }) };
   await assert.rejects(runTwin(fake, { kind: 'zone' }), RangeError);
+});
+
+test('wantsWasmTwin: the toggle picks wasm, except for a labyrinth', () => {
+  const job = { extra: { experimental: { engine: 'wasm' } } };
+  assert.equal(wantsWasmTwin(job), true);
+  assert.equal(wantsWasmTwin({ ...job, labyrinth: {} }), false);
+  assert.equal(wantsWasmTwin({}), false);
+});
+
+test('the request builders add only the defaults the seams applied', () => {
+  const z = twinZoneRequest({ players: [1], zone: { zoneHrid: 'z', difficultyTier: 0 }, simulationTimeLimit: 5 });
+  assert.ok(!('runLimits' in z));
+  assert.deepEqual(z.partyBuffs, []);
+  assert.deepEqual(twinZoneRequest({ players: [], zone: {}, simulationTimeLimit: 1, runLimits: { maxRuns: 2 } }).runLimits, { maxRuns: 2 });
+  const t = twinTrialRequest({ players: [1, 2, 3], trialHrid: 'x', startTier: 100, trialOptions: {} });
+  assert.equal(t.guildTrial.participantCount, 3);
+  assert.equal(t.kind, 'trial');
 });

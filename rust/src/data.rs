@@ -21,20 +21,30 @@ pub struct RawBuff {
     pub unique_hrid: String,
     #[serde(default)]
     pub type_hrid: String,
-    #[serde(default = "nan")]
+    #[serde(default = "nan", deserialize_with = "buff_num")]
     pub ratio_boost: f64,
-    #[serde(default = "nan")]
+    #[serde(default = "nan", deserialize_with = "buff_num")]
     pub ratio_boost_level_bonus: f64,
-    #[serde(default = "nan")]
+    #[serde(default = "nan", deserialize_with = "buff_num")]
     pub flat_boost: f64,
-    #[serde(default = "nan")]
+    #[serde(default = "nan", deserialize_with = "buff_num")]
     pub flat_boost_level_bonus: f64,
-    #[serde(default = "nan")]
+    #[serde(default = "nan", deserialize_with = "buff_num")]
     pub duration: f64,
     #[serde(default)]
     pub multiplier_for_skill_hrid: Option<String>,
     #[serde(default)]
     pub multiplier_per_skill_level: Option<f64>,
+}
+
+/// A buff number. null is 0, as every JS use site makes it (arithmetic, `?? 0`, `|| 0`).
+/// A string or boolean is refused: JS would concatenate (`"0.1" + 0`), which the twin does not reproduce.
+fn buff_num<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+    match Value::deserialize(d)? {
+        Value::Null => Ok(0.0),
+        Value::Number(n) => Ok(n.as_f64().unwrap_or(f64::NAN)),
+        v => Err(serde::de::Error::custom(format!("buff number must be a JSON number or null, got {v}"))),
+    }
 }
 
 #[derive(Deserialize, Clone, Debug)]

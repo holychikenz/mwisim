@@ -6,7 +6,7 @@ import { applySimSettingsFromExtra } from "./combatsimulator/simSettings";
 import { buildCommunityBuffs } from "../shared/communityBuffs.js";
 import { runTrialIterations } from "../shared/guildTrialRuns.js";
 import { buildLabUpgradeBuffs } from "../shared/labUpgrades.js";
-import { setTwinBackend, runTwin } from "../shared/twinEngine.js";
+import { setTwinBackend, runTwin, wantsWasmTwin, twinZoneRequest } from "../shared/twinEngine.js";
 import { loadWasmTwin } from "./twinWasm.js";
 
 onmessage = async function (event) {
@@ -14,7 +14,7 @@ onmessage = async function (event) {
     // zone and trial jobs on the wasm build of rust/; labyrinths stay on JS.
     let twin = null;
     try {
-        twin = event.data.extra?.experimental?.engine === "wasm" ? await loadWasmTwin() : null;
+        twin = wantsWasmTwin(event.data) ? await loadWasmTwin() : null;
     } catch (e) {
         console.log(e);
         this.postMessage({ type: "simulation_error", error: e });
@@ -48,12 +48,12 @@ onmessage = async function (event) {
             }
             extraBuffs = extraBuffs.concat(event.data.guildBuffs || []);
 
-            if (twin && !event.data.labyrinth) {
+            if (twin) {
                 const { zone, simulationTimeLimit, maxRuns, maxRunDurationNs } = event.data;
                 try {
                     const simResult = await runTwin(
                         twin,
-                        { kind: "zone", players: event.data.players, partyBuffs: extraBuffs, zone, simulationTimeLimit, ...(maxRuns ? { runLimits: { maxRuns, maxRunDurationNs } } : {}) },
+                        twinZoneRequest({ players: event.data.players, partyBuffs: extraBuffs, zone, simulationTimeLimit, runLimits: maxRuns ? { maxRuns, maxRunDurationNs } : undefined }),
                         (progress) => this.postMessage({ type: "simulation_progress", progress, zone: zone.zoneHrid, difficultyTier: zone.difficultyTier }),
                     );
                     this.postMessage({ type: "simulation_result", simResult });

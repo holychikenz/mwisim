@@ -41,7 +41,7 @@ import { fileURLToPath, pathToFileURL } from 'url';
 import { BUILDS, toCsimPlayer } from '../bench/builds.mjs';
 import { buildNamesFor } from './cases.mjs';
 import { selectTwinFromEnv } from '../lib/twin/index.mjs';
-import { getTwinBackend, runTwin } from '../../shared/twinEngine.js';
+import { getTwinBackend, runTwin, twinZoneRequest, twinTrialRequest } from '../../shared/twinEngine.js';
 
 const HERE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
@@ -122,7 +122,7 @@ export async function loadEngine(root) {
       const b = twin();
       if (b) {
         const zone = { zoneHrid: `/actions/combat/${kase.zone}`, difficultyTier: kase.tier };
-        return runTwin(b, { kind: 'zone', players: dtosFor(kase), partyBuffs: [], zone, simulationTimeLimit: hours * 3600e9 });
+        return runTwin(b, twinZoneRequest({ players: dtosFor(kase), zone, simulationTimeLimit: hours * 3600e9 }));
       }
       const zone = new Zone(`/actions/combat/${kase.zone}`, kase.tier);
       const simulator = instantiate(dtosFor(kase), zone, null, {});
@@ -158,8 +158,7 @@ export async function loadEngine(root) {
       const dtos = dtosFor(kase);
       const b = twin();
       if (b) {
-        const guildTrial = { trialHrid: kase.trial, startTier: kase.startTier ?? GuildTrial.START_TIER, participantCount: dtos.length, trialOptions: {} };
-        return runTwin(b, { kind: 'trial', players: dtos, partyBuffs: [], guildTrial });
+        return runTwin(b, twinTrialRequest({ players: dtos, trialHrid: kase.trial, startTier: kase.startTier ?? GuildTrial.START_TIER, trialOptions: {} }));
       }
       const guildTrial = new GuildTrial(kase.trial, kase.startTier ?? GuildTrial.START_TIER, dtos.length, {});
       const simulator = instantiate(dtos, null, null, { guildTrial });

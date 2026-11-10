@@ -3,10 +3,14 @@
 use crate::data::{num_or_nan, RawBuff, TriggerDto};
 use crate::js::OrderedMap;
 use serde::Deserialize;
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 fn nan() -> f64 {
     f64::NAN
+}
+
+fn one() -> f64 {
+    1.0
 }
 
 fn opt_num_or_nan<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
@@ -32,9 +36,9 @@ pub struct ConsumableDto {
 #[serde(rename_all = "camelCase")]
 pub struct AbilityDto {
     pub hrid: String,
-    /// Absent -> the constructor's default of 1.
-    #[serde(default)]
-    pub level: Option<f64>,
+    /// Absent -> the constructor's default of 1; null stays null in JS, which is 0 in `(level - 1) * bonus`.
+    #[serde(default = "one", deserialize_with = "opt_num_or_nan")]
+    pub level: f64,
     pub triggers: Vec<TriggerDto>,
 }
 
@@ -57,11 +61,13 @@ pub struct PlayerDto {
     #[serde(default = "nan", deserialize_with = "opt_num_or_nan")]
     pub magic_level: f64,
     pub equipment: OrderedMap<Option<EquipmentDto>>,
-    pub food: Vec<Option<ConsumableDto>>,
-    pub drinks: Vec<Option<ConsumableDto>>,
-    pub abilities: Vec<Option<AbilityDto>>,
+    /// Raw: a slot DTO is parsed only when JS would read it (truthy, in a usable slot).
+    pub food: Vec<Value>,
+    pub drinks: Vec<Value>,
+    pub abilities: Vec<Value>,
     pub house_rooms: OrderedMap<Value>,
-    pub achievements: Map<String, Value>,
+    /// Raw: JS indexes it by hrid, so any non-null shape that is not an object holds nothing.
+    pub achievements: Value,
     /// Absent -> undefined; kept raw to tell undefined from null.
     #[serde(default)]
     pub debuff_on_level_gap: Option<Value>,
@@ -73,8 +79,16 @@ pub struct PlayerDto {
 #[serde(rename_all = "camelCase")]
 pub struct ZoneReq {
     pub zone_hrid: String,
-    #[serde(default, deserialize_with = "opt_num_or_nan")]
+    #[serde(deserialize_with = "strict_num")]
     pub difficulty_tier: f64,
+}
+
+/// A JSON number or an error. Anything else makes the JS engine NaN, concatenate, or echo a non-number.
+fn strict_num<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+    match Value::deserialize(d)? {
+        Value::Number(n) => Ok(n.as_f64().unwrap_or(f64::NAN)),
+        v => Err(serde::de::Error::custom(format!("zone.difficultyTier must be a number, got {v}"))),
+    }
 }
 
 #[derive(Deserialize, Clone, Debug, Default)]

@@ -22,6 +22,7 @@ import { fileURLToPath } from "node:url";
 import { collect as collectStats } from "./genStatSchema.mjs";
 import { collect as collectTriggerKinds } from "./genTriggerKinds.mjs";
 import { collect as collectBuffTypes } from "./genBuffTypes.mjs";
+import { TWIN_DATA_NAMES } from "../shared/twinEngine.js";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const OUT_PATH = path.join(ROOT, "rust/src/generated.rs");
@@ -36,10 +37,10 @@ const strList = (name, items) => [
 export function collect() {
     const stats = collectStats();
     const { conditions } = collectTriggerKinds();
-    return { ...stats, conditions, buffTypes: collectBuffTypes() };
+    return { ...stats, conditions, buffTypes: collectBuffTypes(), dataNames: TWIN_DATA_NAMES };
 }
 
-export function render({ equipment, monsterZeroed, monsterResidual, conditions, buffTypes }) {
+export function render({ equipment, monsterZeroed, monsterResidual, conditions, buffTypes, dataNames }) {
     const L = [
         "// GENERATED FILE — DO NOT EDIT BY HAND.",
         "// Produced by tools/genRustTables.mjs; api/tests/rustTables.test.mjs re-runs",
@@ -55,6 +56,7 @@ export function render({ equipment, monsterZeroed, monsterResidual, conditions, 
         "];",
         "",
         ...strList("BUFF_TYPE_NAMES", buffTypes),
+        ...strList("TWIN_DATA_NAMES", dataNames),
     ];
     return L.join("\n");
 }

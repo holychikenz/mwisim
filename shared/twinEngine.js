@@ -17,7 +17,7 @@ let backend = null; // null = the JS engine
 export const setTwinBackend = (b) => { backend = b; };
 export const getTwinBackend = () => backend;
 
-/** The data files the twin reads, keyed by base name (rust/src/bin/csim-native.rs DATA_NAMES). */
+/** The data files the twin reads, keyed by base name (reaches Rust as rust/src/generated.rs TWIN_DATA_NAMES, via tools/genRustTables.mjs). */
 export const TWIN_DATA_NAMES = [
   'abilityDetailMap',
   'abilitySlotsLevelRequirementList',
@@ -33,6 +33,15 @@ export const TWIN_DATA_NAMES = [
   'itemDetailMap',
   'labyrinthCrateDetailMap',
 ];
+
+/** Whether a worker job runs on the wasm twin: toggle on, and not a labyrinth (not ported). */
+export const wantsWasmTwin = (job) => job.extra?.experimental?.engine === 'wasm' && !job.labyrinth;
+
+/** The twin's request shapes, written once; every seam builds its request here. */
+export const twinZoneRequest = ({ players, partyBuffs = [], zone, simulationTimeLimit, runLimits }) =>
+  ({ kind: 'zone', players, partyBuffs, zone, simulationTimeLimit, ...(runLimits ? { runLimits } : {}) });
+export const twinTrialRequest = ({ players, partyBuffs = [], trialHrid, startTier, participantCount, trialOptions }) =>
+  ({ kind: 'trial', players, partyBuffs, guildTrial: { trialHrid, startTier, participantCount: participantCount ?? players.length, trialOptions } });
 
 // The values JSON cannot carry, spelled as canonical() spells them.
 const SENTINELS = new Map([['@undefined', undefined], ['@NaN', NaN], ['@Infinity', Infinity], ['@-Infinity', -Infinity]]);

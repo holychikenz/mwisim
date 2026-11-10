@@ -278,3 +278,19 @@ pub const BUFF_TYPE_NAMES: &[&str] = &[
     "/buff_types/wisdom",
     "/buff_types/woodcutting_level",
 ];
+
+pub const TWIN_DATA_NAMES: &[&str] = &[
+    "abilityDetailMap",
+    "abilitySlotsLevelRequirementList",
+    "achievementDetailMap",
+    "achievementTierDetailMap",
+    "actionDetailMap",
+    "combatMonsterDetailMap",
+    "combatStyleDetailMap",
+    "combatTriggerDependencyDetailMap",
+    "enhancementLevelTotalBonusMultiplierTable",
+    "guildTrialDetailMap",
+    "houseRoomDetailMap",
+    "itemDetailMap",
+    "labyrinthCrateDetailMap",
+];

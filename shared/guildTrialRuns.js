@@ -9,7 +9,7 @@ import CombatSimulator from '../src/combatsimulator/combatSimulator.js';
 import Player from '../src/combatsimulator/player.js';
 import GuildTrial from '../src/combatsimulator/guildTrial.js';
 import { extractTrialSummary } from '../src/combatsimulator/guildTrialStats.js';
-import { getTwinBackend, runTwin } from './twinEngine.js';
+import { getTwinBackend, runTwin, twinTrialRequest } from './twinEngine.js';
 
 /**
  * Run `iterations` full trials and return one summary per iteration.
@@ -40,12 +40,7 @@ export async function runTrialIterations({
   const twin = getTwinBackend();
   for (let it = 0; it < iterations; it++) {
     if (twin) {
-      const simResult = await runTwin(twin, {
-        kind: 'trial',
-        players: playersData,
-        partyBuffs,
-        guildTrial: { trialHrid, startTier, participantCount: participantCount ?? playersData.length, trialOptions },
-      });
+      const simResult = await runTwin(twin, twinTrialRequest({ players: playersData, partyBuffs, trialHrid, startTier, participantCount, trialOptions }));
       summaries.push(extractTrialSummary(simResult));
       onIteration?.(it + 1);
       continue;

@@ -6,26 +6,9 @@
 use csim_twin::data::GameData;
 use std::io::{BufRead, Read, Write};
 
-/// The data files the engine reads, keyed by base name (shared/twinEngine.js TWIN_DATA_NAMES).
-const DATA_NAMES: &[&str] = &[
-    "abilityDetailMap",
-    "abilitySlotsLevelRequirementList",
-    "achievementDetailMap",
-    "achievementTierDetailMap",
-    "actionDetailMap",
-    "combatMonsterDetailMap",
-    "combatStyleDetailMap",
-    "combatTriggerDependencyDetailMap",
-    "enhancementLevelTotalBonusMultiplierTable",
-    "guildTrialDetailMap",
-    "houseRoomDetailMap",
-    "itemDetailMap",
-    "labyrinthCrateDetailMap",
-];
-
 fn load(dir: &str) -> Result<GameData, String> {
     let mut text = String::from("{");
-    for (i, name) in DATA_NAMES.iter().enumerate() {
+    for (i, name) in csim_twin::generated::TWIN_DATA_NAMES.iter().enumerate() {
         let path = format!("{dir}/{name}.json");
         let body = std::fs::read_to_string(&path).map_err(|e| format!("{path}: {e}"))?;
         if i > 0 {
