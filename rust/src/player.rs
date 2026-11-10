@@ -25,29 +25,6 @@ const DEFAULT_SLOTS: [&str; 10] = [
     "/equipment_types/back",
 ];
 
-fn value_num(v: &Value) -> f64 {
-    match v {
-        Value::Number(n) => n.as_f64().unwrap_or(f64::NAN),
-        Value::Bool(b) => {
-            if *b {
-                1.0
-            } else {
-                0.0
-            }
-        }
-        Value::Null => 0.0,
-        Value::String(st) => {
-            let t = st.trim();
-            if t.is_empty() {
-                0.0
-            } else {
-                t.parse().unwrap_or(f64::NAN)
-            }
-        }
-        _ => f64::NAN,
-    }
-}
-
 /// JS truthiness of a DTO value.
 fn value_truthy(v: &Value) -> bool {
     match v {
@@ -63,7 +40,7 @@ fn value_truthy(v: &Value) -> bool {
 fn value_loose_false(v: &Value) -> bool {
     match v {
         Value::Bool(b) => !*b,
-        Value::Number(_) | Value::String(_) => value_num(v) == 0.0,
+        Value::Number(_) | Value::String(_) => crate::js::number(v) == 0.0,
         Value::Array(a) => a.is_empty(),
         _ => false,
     }
@@ -159,7 +136,7 @@ pub fn create_player(data: &GameData, dto: &PlayerDto, uid: u32, zone_buffs: Vec
         })
         .collect::<Result<_, _>>()?;
     for (hrid, level) in dto.house_rooms.iter() {
-        let level = value_num(level);
+        let level = crate::js::number(level);
         if level > 0.0 {
             let room = data.house_rooms.get(hrid).ok_or_else(|| format!("No house room found for hrid: {hrid}"))?;
             let mut buffs = Vec::new();
@@ -181,7 +158,7 @@ pub fn create_player(data: &GameData, dto: &PlayerDto, uid: u32, zone_buffs: Vec
     u.debuff_on_level_gap = match &dto.debuff_on_level_gap {
         None => Gap::Undef,
         Some(Value::Null) => Gap::Null,
-        Some(v) => Gap::Num(value_num(v)),
+        Some(v) => Gap::Num(crate::js::number(v)),
     };
     u.zone_buffs = zone_buffs;
     u.extra_buffs = extra_buffs;

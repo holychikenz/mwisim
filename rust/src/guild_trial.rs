@@ -25,29 +25,9 @@ pub struct GuildTrial {
     pub encounter_count: f64,
 }
 
-/// `Number(v)` for the option values the constructor coerces.
+/// `Number(v)` for the option values the constructor coerces; absent is undefined.
 fn number(v: Option<&Value>) -> f64 {
-    match v {
-        None => f64::NAN,
-        Some(Value::Null) => 0.0,
-        Some(Value::Bool(b)) => {
-            if *b {
-                1.0
-            } else {
-                0.0
-            }
-        }
-        Some(Value::Number(n)) => n.as_f64().unwrap_or(f64::NAN),
-        Some(Value::String(st)) => {
-            let t = st.trim();
-            if t.is_empty() {
-                0.0
-            } else {
-                t.parse().unwrap_or(f64::NAN)
-            }
-        }
-        _ => f64::NAN,
-    }
+    v.map_or(f64::NAN, js::number)
 }
 
 impl GuildTrial {

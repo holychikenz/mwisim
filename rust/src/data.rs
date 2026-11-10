@@ -60,29 +60,9 @@ pub struct TriggerDto {
     pub value: f64,
 }
 
-/// A trigger value is a number in every real DTO; anything else reads as NaN.
+/// `Number(v)` of a DTO number; a trigger value is a number in every real DTO.
 pub fn num_or_nan<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
-    let v = Value::deserialize(d)?;
-    Ok(match v {
-        Value::Number(n) => n.as_f64().unwrap_or(f64::NAN),
-        Value::Bool(b) => {
-            if b {
-                1.0
-            } else {
-                0.0
-            }
-        }
-        Value::Null => 0.0,
-        Value::String(st) => {
-            let t = st.trim();
-            if t.is_empty() {
-                0.0
-            } else {
-                t.parse().unwrap_or(f64::NAN)
-            }
-        }
-        _ => f64::NAN,
-    })
+    Ok(crate::js::number(&Value::deserialize(d)?))
 }
 
 #[derive(Deserialize, Clone, Debug)]

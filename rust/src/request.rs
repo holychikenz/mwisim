@@ -13,15 +13,11 @@ fn one() -> f64 {
     1.0
 }
 
-fn opt_num_or_nan<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
-    num_or_nan(d)
-}
-
 #[derive(Deserialize, Clone, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct EquipmentDto {
     pub hrid: String,
-    #[serde(default = "nan", deserialize_with = "opt_num_or_nan")]
+    #[serde(default = "nan", deserialize_with = "num_or_nan")]
     pub enhancement_level: f64,
 }
 
@@ -37,7 +33,7 @@ pub struct ConsumableDto {
 pub struct AbilityDto {
     pub hrid: String,
     /// Absent -> the constructor's default of 1; null stays null in JS, which is 0 in `(level - 1) * bonus`.
-    #[serde(default = "one", deserialize_with = "opt_num_or_nan")]
+    #[serde(default = "one", deserialize_with = "num_or_nan")]
     pub level: f64,
     pub triggers: Vec<TriggerDto>,
 }
@@ -46,19 +42,19 @@ pub struct AbilityDto {
 #[serde(rename_all = "camelCase")]
 pub struct PlayerDto {
     pub hrid: String,
-    #[serde(default = "nan", deserialize_with = "opt_num_or_nan")]
+    #[serde(default = "nan", deserialize_with = "num_or_nan")]
     pub stamina_level: f64,
-    #[serde(default = "nan", deserialize_with = "opt_num_or_nan")]
+    #[serde(default = "nan", deserialize_with = "num_or_nan")]
     pub intelligence_level: f64,
-    #[serde(default = "nan", deserialize_with = "opt_num_or_nan")]
+    #[serde(default = "nan", deserialize_with = "num_or_nan")]
     pub attack_level: f64,
-    #[serde(default = "nan", deserialize_with = "opt_num_or_nan")]
+    #[serde(default = "nan", deserialize_with = "num_or_nan")]
     pub melee_level: f64,
-    #[serde(default = "nan", deserialize_with = "opt_num_or_nan")]
+    #[serde(default = "nan", deserialize_with = "num_or_nan")]
     pub defense_level: f64,
-    #[serde(default = "nan", deserialize_with = "opt_num_or_nan")]
+    #[serde(default = "nan", deserialize_with = "num_or_nan")]
     pub ranged_level: f64,
-    #[serde(default = "nan", deserialize_with = "opt_num_or_nan")]
+    #[serde(default = "nan", deserialize_with = "num_or_nan")]
     pub magic_level: f64,
     pub equipment: OrderedMap<Option<EquipmentDto>>,
     /// Raw: a slot DTO is parsed only when JS would read it (truthy, in a usable slot).
@@ -118,7 +114,7 @@ pub struct TrialReq {
 #[serde(rename_all = "camelCase")]
 pub struct RunLimits {
     pub max_runs: Value,
-    #[serde(default = "nan", deserialize_with = "opt_num_or_nan")]
+    #[serde(default = "nan", deserialize_with = "num_or_nan")]
     pub max_run_duration_ns: f64,
 }
 
@@ -160,6 +156,9 @@ pub struct Request {
     pub run_limits: Option<RunLimits>,
     pub settings: Settings,
     pub rng_state: u32,
+    /// Trial requests only: run this many iterations on one stream and answer `simResults`.
+    #[serde(default)]
+    pub iterations: Option<u32>,
     #[serde(default)]
     pub trace: Option<TraceReq>,
 }

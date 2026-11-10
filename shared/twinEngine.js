@@ -40,8 +40,9 @@ export const wantsWasmTwin = (job) => job.extra?.experimental?.engine === 'wasm'
 /** The twin's request shapes, written once; every seam builds its request here. */
 export const twinZoneRequest = ({ players, partyBuffs = [], zone, simulationTimeLimit, runLimits }) =>
   ({ kind: 'zone', players, partyBuffs, zone, simulationTimeLimit, ...(runLimits ? { runLimits } : {}) });
-export const twinTrialRequest = ({ players, partyBuffs = [], trialHrid, startTier, participantCount, trialOptions }) =>
-  ({ kind: 'trial', players, partyBuffs, guildTrial: { trialHrid, startTier, participantCount: participantCount ?? players.length, trialOptions } });
+/** With `iterations`, the twin runs that many trials on one stream and resolves to an array of SimResults. */
+export const twinTrialRequest = ({ players, partyBuffs = [], trialHrid, startTier, participantCount, trialOptions, iterations }) =>
+  ({ kind: 'trial', players, partyBuffs, guildTrial: { trialHrid, startTier, participantCount: participantCount ?? players.length, trialOptions }, ...(iterations !== undefined ? { iterations } : {}) });
 
 // The values JSON cannot carry, spelled as canonical() spells them.
 const SENTINELS = new Map([['@undefined', undefined], ['@NaN', NaN], ['@Infinity', Infinity], ['@-Infinity', -Infinity]]);
@@ -53,12 +54,25 @@ export function reviveTwinResult(v) {
   return v;
 }
 
+const ERROR_KINDS = { Error, TypeError, RangeError };
+
+// An error with no `rngState` is a refusal only the twin makes (JS would have run on and
+// drawn): the seeded stream cannot be continued truthfully, so any further seeded twin
+// use throws rather than diverging. The JS engine can still draw from it.
+function poisonSeededStream(reason) {
+  Math.random.state = () => {
+    throw new Error(`seeded Math.random is unusable by the twin: an earlier twin-only error (${reason}) left its state unknown`);
+  };
+}
+
 // One twin run at a time, so two runs never take the same stream state.
 let chain = Promise.resolve();
 
 /**
  * Run one request on backend `b` ({ run(json, onProgress) -> Promise<json> }).
- * Resolves to a SimResult. `onProgress(fraction)` is the JS "progress" event (wasm only).
+ * Resolves to a SimResult (an array of them for a batch request). `onProgress(x)` is the
+ * JS "progress" event's fraction, or for a batch the number of iterations completed.
+ * On an error the stream is advanced as far as the JS engine's throw would advance it.
  */
 export function runTwin(b, request, onProgress) {
   const job = chain.then(async () => {
@@ -66,9 +80,12 @@ export function runTwin(b, request, onProgress) {
     const rngState = seeded ? Math.random.state() : (Math.random() * 4294967296) >>> 0;
     const settings = { monsterStartCooldown: applySimSettings().monsterStartCooldown };
     const res = JSON.parse(await b.run(JSON.stringify({ ...request, settings, rngState }), onProgress));
-    if (!res.ok) throw new (res.errorKind === 'RangeError' ? RangeError : Error)(res.error);
-    if (seeded) Math.random.state(res.rngState);
-    return reviveTwinResult(res.simResult);
+    if (seeded) {
+      if (res.rngState !== undefined) Math.random.state(res.rngState);
+      else poisonSeededStream(res.error);
+    }
+    if (!res.ok) throw new (ERROR_KINDS[res.errorKind] ?? Error)(res.error);
+    return reviveTwinResult(res.simResults ?? res.simResult);
   });
   chain = job.catch(() => {});
   return job;

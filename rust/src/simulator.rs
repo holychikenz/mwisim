@@ -308,7 +308,7 @@ impl<'a> Sim<'a> {
         self.add(0.0, Kind::CombatStart);
 
         while self.simulation_time < limit && !self.trial_ended {
-            let ev = self.pop().ok_or(("TypeError: Cannot read properties of undefined (reading 'time')".to_string(), false))?;
+            let ev = self.pop().ok_or_else(|| ("TypeError: Cannot read properties of undefined (reading 'time')".to_string(), false))?;
             self.process_event(ev).map_err(|e| (e, false))?;
             total_ticks += 1;
             if self.simulation_time != last_time {

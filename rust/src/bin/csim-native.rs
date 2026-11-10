@@ -1,10 +1,14 @@
 //! csim-native: the native twin.
-//!   csim-native serve --data <dir>            line-framed stdio server: "<id> <json>\n" in, "<id> <json>\n" out
+//!   csim-native serve --data <dir>            line-framed stdio server: "<id> <json>\n" in, "<id> <json>\n" out,
+//!                                             with "<id> ~progress <x>\n" heartbeats while a request runs
 //!   csim-native run --data <dir> <request>    one request from a file ("-" for stdin)
 //!   csim-native selftest                      one selftest request on stdin
 
 use csim_twin::data::GameData;
 use std::io::{BufRead, Read, Write};
+use std::time::{Duration, Instant};
+
+const HEARTBEAT: Duration = Duration::from_secs(1);
 
 fn load(dir: &str) -> Result<GameData, String> {
     let mut text = String::from("{");
@@ -63,9 +67,21 @@ fn main() {
                 }
                 let (id, body) = line.split_once(' ').unwrap_or((line.as_str(), ""));
                 let out = if body.starts_with("{\"selftest\"") {
-                    csim_twin::selftest(&body[12..body.len() - 1])
+                    // A malformed envelope reaches selftest() as "" and answers ok:false.
+                    csim_twin::selftest(body.strip_prefix("{\"selftest\":").and_then(|b| b.strip_suffix('}')).unwrap_or(""))
                 } else {
-                    csim_twin::run(&data, body, None)
+                    // Liveness for Node (api/lib/twin/native.mjs): "<id> ~progress <x>" at most once
+                    // a second, plus every new whole number (a batch's completed iterations).
+                    let (mut last_at, mut last_x) = (Instant::now(), f64::NEG_INFINITY);
+                    let mut beat = |x: f64| {
+                        if last_at.elapsed() >= HEARTBEAT || (x == x.trunc() && x > last_x) {
+                            last_at = Instant::now();
+                            last_x = x;
+                            let mut o = stdout.lock();
+                            let _ = writeln!(o, "{id} ~progress {x}").and_then(|_| o.flush());
+                        }
+                    };
+                    csim_twin::run(&data, body, Some(&mut beat))
                 };
                 let mut o = stdout.lock();
                 if writeln!(o, "{id} {out}").and_then(|_| o.flush()).is_err() {

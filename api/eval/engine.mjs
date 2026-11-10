@@ -34,7 +34,7 @@
 // withSeed). This module only runs the simulation.
 // =============================================================================
 
-import { readFileSync } from 'fs';
+import { readFileSync, realpathSync } from 'fs';
 import { join, resolve, dirname } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
 
@@ -54,7 +54,7 @@ export async function loadEngine(root) {
   const mod = (file) => import(pathToFileURL(join(src, file)).href);
 
   // CSIM_ENGINE applies to this checkout only; a back-run root is always its own JS.
-  const here = resolve(root) === HERE_ROOT;
+  const here = realpathSync(resolve(root)) === realpathSync(HERE_ROOT);
   if (here) await selectTwinFromEnv();
   const twin = () => (here ? getTwinBackend() : null);
   let labWarned = false;

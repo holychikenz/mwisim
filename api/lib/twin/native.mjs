@@ -2,6 +2,8 @@
 // The native twin backend: one persistent `csim-native serve` child per Node
 // realm, line-framed over stdio ("<id> <json>\n" each way). The child is
 // unref'd while idle so it never keeps Node alive, and exits on stdin EOF.
+// While a request runs the child writes "<id> ~progress <x>" heartbeats (at
+// least once a second), so a child silent for STALL_MS is stalled, not slow.
 // =============================================================================
 
 import { spawn } from 'node:child_process';
@@ -13,18 +15,32 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
 export const NATIVE_BIN = join(ROOT, 'rust', 'target', 'release', 'csim-native');
 const DATA_DIR = join(ROOT, 'src', 'combatsimulator', 'data');
 
-// A stalled child, not a slow run: 1000 sim-hours of a 5-player L600 dungeon take 14 s here.
-const REQUEST_TIMEOUT_MS = 10 * 60 * 1000;
+// No output at all for this long while busy: the child is stalled (heartbeats come every second).
+const STALL_MS = 60 * 1000;
 
 // The one libm call the engine makes. Native powf equals V8 on macOS (measured); elsewhere, check.
 const POW_SAMPLE = Array.from({ length: 4096 }, (_, i) => 10 + i * 12.2071 + (i % 97) * 1e-4); // 10 .. 50,000
 
-export function nativeBackend() {
+/** @param {{stallMs?: number}} [opts]  stallMs: kill a busy child after this long with no output */
+export function nativeBackend({ stallMs = STALL_MS } = {}) {
   if (!existsSync(NATIVE_BIN)) throw new Error('csim native engine not built: run ./build.sh rust');
   let child = null;
   let buf = '';
   let nextId = 1;
   const pending = new Map();
+  let stallTimer = null;
+
+  // Re-armed on every chunk of output and every send; only silence while busy fires it.
+  const watch = () => {
+    clearTimeout(stallTimer);
+    stallTimer = null;
+    if (!child || pending.size === 0) return;
+    const c = child;
+    stallTimer = setTimeout(() => {
+      if (child === c) fail(new Error(`csim-native: no output for ${stallMs / 1000} s while busy; child killed`));
+      c.kill('SIGKILL');
+    }, stallMs);
+  };
 
   const idle = () => {
     if (!child) return;
@@ -37,6 +53,7 @@ export function nativeBackend() {
     pending.clear();
     child = null;
     buf = '';
+    watch();
   };
 
   const start = () => {
@@ -51,13 +68,18 @@ export function nativeBackend() {
         const line = buf.slice(0, nl);
         buf = buf.slice(nl + 1);
         const sp = line.indexOf(' ');
-        const p = pending.get(Number(line.slice(0, sp)));
-        if (p) {
-          pending.delete(Number(line.slice(0, sp)));
-          p.resolve(line.slice(sp + 1));
+        const id = Number(line.slice(0, sp));
+        const p = pending.get(id);
+        if (!p) continue;
+        if (line.startsWith('~progress ', sp + 1)) {
+          p.onProgress?.(Number(line.slice(sp + 11)));
+          continue;
         }
+        pending.delete(id);
+        p.resolve(line.slice(sp + 1));
       }
       idle();
+      watch();
     });
     c.on('exit', (code, signal) => { if (child === c) fail(new Error(`csim-native exited (${code ?? signal})`)); });
     c.on('error', (err) => { if (child === c) fail(err); });
@@ -65,17 +87,13 @@ export function nativeBackend() {
     idle();
   };
 
-  const send = (body) => {
+  const send = (body, onProgress) => {
     if (!child) start();
     const id = nextId++;
-    const c = child;
     return new Promise((resolve, reject) => {
-      const timer = setTimeout(() => {
-        if (child === c) fail(new Error(`csim-native: no reply in ${REQUEST_TIMEOUT_MS / 1000} s; child killed`));
-        c.kill('SIGKILL');
-      }, REQUEST_TIMEOUT_MS);
-      pending.set(id, { resolve: (v) => { clearTimeout(timer); resolve(v); }, reject: (e) => { clearTimeout(timer); reject(e); } });
+      pending.set(id, { resolve, reject, onProgress });
       idle();
+      watch();
       child.stdin.write(`${id} ${body}\n`);
     });
   };
@@ -92,7 +110,8 @@ export function nativeBackend() {
   };
 
   return {
-    run: async (json) => { await checkPow(); return send(json); },
+    /** `onProgress(x)` gets the child's heartbeats: the progress fraction, or a batch's completed iterations. */
+    run: async (json, onProgress) => { await checkPow(); return send(json, onProgress); },
     selftest: (json) => send(`{"selftest":${json}}`),
     close: () => { child?.stdin.end(); },
   };

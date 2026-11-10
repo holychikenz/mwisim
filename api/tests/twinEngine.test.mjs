@@ -59,9 +59,32 @@ test('runTwin hands the seeded state over and writes the end state back', async 
   assert.equal(out.after, g());
 });
 
-test('runTwin rethrows the twin error with its kind', async () => {
-  const fake = { run: async () => JSON.stringify({ ok: false, error: 'bad', errorKind: 'RangeError' }) };
-  await assert.rejects(runTwin(fake, { kind: 'zone' }), RangeError);
+test('runTwin rethrows the twin error with its JS class', async () => {
+  for (const [errorKind, cls] of [['RangeError', RangeError], ['TypeError', TypeError], ['Error', Error]]) {
+    const fake = { run: async () => JSON.stringify({ ok: false, error: 'bad', errorKind, rngState: 5 }) };
+    const err = await runTwin(fake, { kind: 'zone' }).catch((e) => e);
+    assert.equal(err.constructor, cls);
+    assert.equal(err.message, 'bad');
+  }
+});
+
+test('runTwin writes an error\'s rngState back, and poisons the stream when there is none', async () => {
+  const at = (rngState) => ({ run: async () => JSON.stringify({ ok: false, error: 'boom', errorKind: 'Error', ...(rngState === undefined ? {} : { rngState }) }) });
+  await withSeed(7, async () => {
+    await assert.rejects(runTwin(at(42), { kind: 'zone' }), /boom/);
+    assert.equal(Math.random.state(), 42);
+    await assert.rejects(runTwin(at(undefined), { kind: 'zone' }), /boom/);
+    assert.throws(() => Math.random.state(), /unusable by the twin.*boom/);
+    assert.equal(typeof Math.random(), 'number'); // the JS engine can still draw
+    await assert.rejects(runTwin(at(1), { kind: 'zone' }), /unusable by the twin/);
+  });
+});
+
+test('runTwin resolves a batch to its array of results', async () => {
+  const fake = { run: async () => JSON.stringify({ ok: true, rngState: 1, simResults: [{ a: '@NaN' }, { a: 2 }] }) };
+  const out = await withSeed(1, () => runTwin(fake, { kind: 'trial', iterations: 2 }));
+  assert.ok(Number.isNaN(out[0].a));
+  assert.equal(out[1].a, 2);
 });
 
 test('wantsWasmTwin: the toggle picks wasm, except for a labyrinth', () => {
@@ -79,4 +102,22 @@ test('the request builders add only the defaults the seams applied', () => {
   const t = twinTrialRequest({ players: [1, 2, 3], trialHrid: 'x', startTier: 100, trialOptions: {} });
   assert.equal(t.guildTrial.participantCount, 3);
   assert.equal(t.kind, 'trial');
+  assert.ok(!('iterations' in t));
+  assert.equal(twinTrialRequest({ players: [], trialHrid: 'x', iterations: 4 }).iterations, 4);
+});
+
+test('a twin trial batch with progress but no onIteration returns (regression: `?.(++done)` never counted)', async () => {
+  const { runTrialIterations } = await import('../../shared/guildTrialRuns.js');
+  const { setTwinBackend } = await import('../../shared/twinEngine.js');
+  const fake = { run: async (json, onProgress) => { onProgress(1); onProgress(2); return JSON.stringify({ ok: true, rngState: 1, simResults: [{}, {}] }); } };
+  setTwinBackend(fake);
+  try {
+    const out = await withSeed(1, () => runTrialIterations({ players: [], partyBuffs: [], trialHrid: 'x', iterations: 2 }));
+    assert.equal(out.length, 2);
+    const seen = [];
+    await withSeed(1, () => runTrialIterations({ players: [], partyBuffs: [], trialHrid: 'x', iterations: 2, onIteration: (d) => seen.push(d) }));
+    assert.deepEqual(seen, [1, 2]);
+  } finally {
+    setTwinBackend(null);
+  }
 });

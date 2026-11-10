@@ -38,13 +38,17 @@ export async function runTrialIterations({
 }) {
   const summaries = [];
   const twin = getTwinBackend();
+  if (twin) {
+    // One batch request on one stream; the twin's progress counts completed iterations,
+    // so onIteration still fires as each finishes (and before a mid-batch error).
+    let done = 0;
+    const fire = (n) => { for (; done < n; done++) onIteration?.(done + 1); }; // not `?.(++done)`: an absent callback skips its arguments
+    const simResults = await runTwin(twin, twinTrialRequest({ players: playersData, partyBuffs, trialHrid, startTier, participantCount, trialOptions, iterations }), fire);
+    fire(simResults.length); // backends without progress
+    // shortcut: the batch holds every full SimResult until here; summarise in Rust if trial batches outgrow memory.
+    return simResults.map(extractTrialSummary);
+  }
   for (let it = 0; it < iterations; it++) {
-    if (twin) {
-      const simResult = await runTwin(twin, twinTrialRequest({ players: playersData, partyBuffs, trialHrid, startTier, participantCount, trialOptions }));
-      summaries.push(extractTrialSummary(simResult));
-      onIteration?.(it + 1);
-      continue;
-    }
     const players = playersData.map((dto) => {
       const p = Player.createFromDTO(structuredClone(dto));
       p.zoneBuffs = []; // no labyrinth crates in trials
