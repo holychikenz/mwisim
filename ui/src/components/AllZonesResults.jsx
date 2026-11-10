@@ -134,7 +134,10 @@ export function AllZonesResults({ rows, zones, pricing, meta, running, onOpenPic
       // Missing is zero, not unknown: the shard records a player only once they
       // gain experience or die, so an absent key means that member earned or
       // died nothing — which is a measurement, and a damning one.
-      const experience = activeHrid ? Number(row.experienceByPlayer?.[activeHrid]) || 0 : 0;
+      // Summed over skills by iteration, not by naming the seven known ones, so a
+      // skill added by a future patch counts itself.
+      const experience = activeHrid
+        ? Object.values(row.experienceBySkill?.[activeHrid] || {}).reduce((t, x) => t + (Number(x) || 0), 0) : 0;
       const deaths = activeHrid ? Number(row.deathsByPlayer?.[activeHrid]) || 0 : 0;
 
       // Encounters and dungeon clears are fought by the party as a unit — every

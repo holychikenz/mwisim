@@ -96,7 +96,7 @@ Upstream's file is left untouched, per the engine-boundary rule in
 runs **inside the shard**. A full `simResult` carries per-ability attack tallies,
 drop tables and optional HP/MP time series — tens of kilobytes each, 78 of them,
 structured-cloned to render a handful of numbers. Only that handful makes the
-crossing: the encounter and dungeon counts, `experienceByPlayer`,
+crossing: the encounter and dungeon counts, `experienceBySkill`,
 `deathsByPlayer`, and `consumablesUsed`, which is small, already per-player, and
 needed for the effective rates.
 
@@ -104,6 +104,11 @@ Experience and deaths cross as **maps keyed by player hrid**, not as party
 totals — five small numbers where there was one. That is a rounding error next
 to a `simResult`, and it is what lets the P-tab change whose figures the table
 shows without re-running anything.
+
+`experienceBySkill` is per player AND per skill: the table sums a player's
+skills, and the Progress zone finder weighs them differently. A combo may name a `variant`: the pool then runs
+`variants[variant]` (a whole party, sent once in the start message) instead of
+`players`, and the row echoes `variant` back.
 
 That module imports nothing, deliberately: pulling in `utils/prices.js` would
 drag `openableLootDropMap.json` into the worker bundle.
@@ -180,11 +185,49 @@ in without re-running anything.
 | `ui/src/utils/zones.js` | Zone taxonomy: what is simulable, tier ceilings, hrid coercion |
 | `ui/src/utils/allZones.js` | Combination keys, run summarisation, estimate, persistence (worker-safe) |
 | `ui/src/workers/allZonesWorker.js` | The pool: one `src/worker.js` shard per combination |
-| `ui/src/hooks/useAllZones.js` | Worker lifecycle, progress, buffered row streaming, watchdog, cancel, the swept party (`meta.playerHrids`) |
+| `ui/src/hooks/useAllZones.js` | Worker lifecycle, progress, buffered row streaming, watchdog, cancel, the swept party (`meta.playerHrids`); `run({ onDone })` gets every row when the pool finishes |
+| `ui/src/utils/zoneProgress.js` | The zone finder's variants, Progress-currency score and ranking (not worker-safe: imports `shared/drops.js`) |
+| `ui/src/hooks/useZoneFinder.js` | The zone finder's two passes, on a `useAllZones` pool of its own |
+| `ui/src/components/ZoneFinderResults.jsx` | "Find top 10 zones" and its table, under the Progress results |
 | `ui/src/components/AllZonesModal.jsx` | The zone × tier grid, hours, pool size, estimate |
 | `ui/src/components/AllZonesResults.jsx` | Sortable table, per-player figures, effective-rate derivation, CSV export |
 | `ui/src/hooks/useGameData.js` | Zone list enriched with category / maxSpawnCount / maxDifficulty |
 | `ui/src/components/HeaderControls.jsx` | Filtered zone select, data-driven tiers, the button |
+
+## Progress zone finder
+
+Under the Progress tool's results, **Find top 10 zones** asks where the measured
+character progresses fastest. It sweeps every simulable zone and tier for
+`QUICK_HOURS` (3) per variant, reruns the best `FINALISTS` (15) zone/tiers at
+`VERIFY_HOURS` (24) with their best variant, and lists the top `TOP_N` (10).
+
+**Metric.** Progress per hour = Σ over stats `xpPerHour × pctPerMillionXp / 1e6`
+\+ Σ over abilities `booksPerHour × pctPerBook`: the fraction of the baseline
+objective an hour there buys. A negative gain per level is scan noise and is
+clamped to 0.
+
+**Variants.** The worn charm, plus one charm per stat row Progress measured, at the worn charm's tier
+and enhancement, where its level requirement is met (no charm worn: the loadout
+as is). When exactly one of wisdom / lucky coffee is slotted, that slot is tried
+with each; a swapped-in coffee takes the item's default triggers.
+
+**Approximations.** The gains per level were measured at Progress's target zone
+and are applied to every zone's rates. Lucky coffee rides the end-of-sim
+`dropRateMultiplier` snapshot. Dungeon loot comes only from chests, which are not
+modelled, so dungeons count XP only (no book drops are credited). The variant is
+chosen on the 3 h pass.
+
+**Stopped or failed runs.** A quick pass that is stopped, stalls or errors ranks
+the rows it had measured. In the finalists pass, a finalist whose 24 h run failed
+or never finished keeps its 3 h score, marked "(3 h)", so stopping there never
+loses the quick ranking. With no finalist the 24 h pass is skipped. Failed runs
+are counted in a caption and leave the ranking; no replacement finalist is
+promoted. A finder error shows above the results in every mode.
+
+**Before and after.** The button states the run count and a rough time
+(`estimateSweepSeconds`) before it starts. It is disabled once the party differs
+from the one Progress measured: the run stores its players' DTOs as `meta.build`,
+so a level, gear or ability edit, or a change to another member, counts.
 
 ## Persistence
 

@@ -30,8 +30,9 @@ import { summariseZoneRun } from '../utils/allZones.js';
 // the workers it spawns, so the shards die with it.
 //
 // Protocol
-//   →  { type: 'start_all_zones', players, combos: [{zoneHrid, difficultyTier}],
-//        simulationTimeLimit, extra, guildBuffs, workers }
+//   →  { type: 'start_all_zones', players, combos: [{zoneHrid, difficultyTier, variant?}],
+//        simulationTimeLimit, extra, guildBuffs, workers, variants?: {key: players} }
+//        (a combo naming a variant runs variants[variant] instead of players)
 //   ←  { type: 'all_zones_progress', progress /* 0-1 */, completed, total }
 //   ←  { type: 'all_zones_row', row }        // one per combination, as it lands
 //   ←  { type: 'all_zones_done', completed, failed }
@@ -113,6 +114,7 @@ onmessage = async function (event) {
                     finish({
                         zoneHrid: task.zoneHrid,
                         difficultyTier: task.difficultyTier,
+                        variant: task.variant, // a failed run still says which variant failed
                         error: `No response for ${SHARD_SILENCE_MS / 1000}s — worker abandoned`,
                     });
                 }, SHARD_SILENCE_MS);
@@ -133,6 +135,7 @@ onmessage = async function (event) {
                         finish({
                             zoneHrid: task.zoneHrid,
                             difficultyTier: task.difficultyTier,
+                            variant: task.variant,
                             error: String(payload.error?.message || payload.error || 'Simulation failed'),
                         });
                         break;
@@ -145,6 +148,7 @@ onmessage = async function (event) {
                 finish({
                     zoneHrid: task.zoneHrid,
                     difficultyTier: task.difficultyTier,
+                    variant: task.variant,
                     error: err?.message || 'Simulation worker crashed',
                 });
             };
@@ -152,7 +156,7 @@ onmessage = async function (event) {
             armSilenceTimer();
             shard.postMessage({
                 type: 'start_simulation',
-                players: data.players,
+                players: data.variants?.[task.variant] ?? data.players,
                 zone: { zoneHrid: task.zoneHrid, difficultyTier: task.difficultyTier },
                 labyrinth: null,
                 simulationTimeLimit: data.simulationTimeLimit,
