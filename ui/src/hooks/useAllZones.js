@@ -153,7 +153,7 @@ export function useAllZones() {
           break;
         case 'all_zones_row':
           pendingRowsRef.current.push(data.row);
-          allRowsRef.current.push(data.row);
+          if (params.onDone) allRowsRef.current.push(data.row); // only a chained pass needs every row
           if (!flushTimerRef.current) {
             flushTimerRef.current = setTimeout(() => {
               flushTimerRef.current = null;
@@ -210,6 +210,7 @@ export function useAllZones() {
   const clear = useCallback(() => {
     stopWorker();
     pendingRowsRef.current = [];
+    allRowsRef.current = [];
     setRunning(false);
     setProgress(0);
     setRows([]);

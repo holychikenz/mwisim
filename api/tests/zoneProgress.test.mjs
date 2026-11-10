@@ -6,7 +6,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 const { summariseZoneRun } = await import('../../ui/src/utils/allZones.js');
-const { finderVariants, scoreZoneRow, topZones, QUICK_HOURS, VERIFY_HOURS, FINALISTS, TOP_N } =
+const { finderVariants, scoreZoneRow, topZones, rankZones, countRuns, QUICK_HOURS, VERIFY_HOURS, FINALISTS, TOP_N } =
   await import('../../ui/src/utils/zoneProgress.js');
 const { itemDetailMap: items } = await import('../../src/combatsimulator/dataProvider.js');
 
@@ -53,6 +53,25 @@ test('scoreZoneRow: XP and books per hour, in Progress currency', () => {
   assert.equal(scoreZoneRow(zoneRow({ error: 'boom' }), progressRows(), 'player1', monsters, items), null);
   assert.equal(scoreZoneRow(zoneRow({ hours: 0 }), progressRows(), 'player1', monsters, items), null);
   assert.equal(scoreZoneRow(null, progressRows(), 'player1', monsters, items), null);
+  const dungeon = scoreZoneRow(zoneRow({ isDungeon: true }), progressRows(), 'player1', monsters, items);
+  assert.equal(dungeon.booksPerHour, 0);
+  near(dungeon.progressPerHour, 0.0013, 'dungeon: XP only');
+  assert.equal(dungeon.xpPerHour, 1000499.5);
+  assert.equal(dungeon.parts.find((p) => p.id === 'ability:a').perHour, 0);
+});
+
+test('rankZones / countRuns: a stopped pass ranks what it has; failed runs are counted, not ranked', () => {
+  const job = { progressRows: progressRows(), subjectHrid: 'player1', monsters, items };
+  const rows = [zoneRow({ variant: 'v1' }),
+    zoneRow({ variant: 'v2', experienceBySkill: { player1: { ranged: 1200000 } } }),
+    zoneRow({ zoneHrid: '/actions/combat/y', variant: 'v1', error: 'boom' })];
+  const top = rankZones(rows, job, TOP_N);
+  assert.equal(top.length, 1);
+  assert.equal(top[0].variant, 'v1');
+  assert.deepEqual(rankZones([rows[2]], job, TOP_N), []);
+  assert.deepEqual(countRuns(rows), { runs: 3, failed: 1 });
+  assert.deepEqual(countRuns(rows, { runs: 10, failed: 2 }), { runs: 13, failed: 3 });
+  assert.deepEqual(countRuns([]), { runs: 0, failed: 0 });
 });
 
 // ---------------------------------------------------------------------------
@@ -107,6 +126,13 @@ test('finderVariants: a charm per measured stat whose requirement is met, times 
   assert.equal(lucky.player.drinks[0], s.drinks[0]);
   assert.equal(lucky.player.drinks[2], null);
   assert.deepEqual(s, before, 'the subject is not mutated');
+
+  const def = subject({ equipment: { ...s.equipment, [CHARM]: { hrid: '/items/master_defense_charm', enhancementLevel: 5 } } });
+  const worn = finderVariants(def, [stat('ranged'), stat('attack')], items);
+  assert.deepEqual([...new Set(worn.map((v) => v.charm))],
+    ['/items/master_defense_charm', '/items/master_ranged_charm', '/items/master_attack_charm'], 'the worn charm goes first');
+  assert.equal(worn.length, 6);
+  assert.equal(worn[0].player.equipment[CHARM].hrid, '/items/master_defense_charm');
 });
 
 test('finderVariants: unmeasured stats, no charm, no coffee, both coffees', () => {

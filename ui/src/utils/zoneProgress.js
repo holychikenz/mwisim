@@ -13,7 +13,7 @@ export const QUICK_HOURS = 3, VERIFY_HOURS = 24, FINALISTS = 15, TOP_N = 10;
 const CHARM = '/equipment_types/charm';
 const COFFEES = ['/items/wisdom_coffee', '/items/lucky_coffee'];
 
-/** [{ key, charm, coffee, player }]: one per charm skill Progress measured (worn tier and enhancement, level met)
+/** [{ key, charm, coffee, player }]: the worn charm, plus one per charm skill Progress measured (worn tier and enhancement, level met)
  *  times, when exactly one of wisdom / lucky is slotted, that slot holding either. */
 export function finderVariants(subject, progressRows, items) {
   const worn = subject.equipment?.[CHARM];
@@ -21,7 +21,7 @@ export function finderVariants(subject, progressRows, items) {
     .every((r) => Number(subject[`${r.skillHrid.split('/').pop()}Level`]) >= r.level);
   const swaps = worn ? (progressRows || []).filter((r) => r.kind === 'stat' && r.pctPerMillionXp != null)
     .map((r) => worn.hrid.replace(/[a-z]+(?=_charm$)/, r.skill)).filter((h) => items[h] && meets(h)) : [];
-  const charms = swaps.length ? [...new Set(swaps)] : [worn?.hrid ?? null];
+  const charms = worn ? [...new Set([worn.hrid, ...swaps])] : [null];
   const drinks = subject.drinks || [];
   const slot = drinks.findIndex((d) => COFFEES.includes(d?.hrid));
   const coffees = slot >= 0 && !COFFEES.every((h) => drinks.some((d) => d?.hrid === h)) ? COFFEES : [null];
@@ -37,7 +37,8 @@ export function finderVariants(subject, progressRows, items) {
 export function scoreZoneRow(row, progressRows, subjectHrid, monsters, items) {
   if (!row || row.error || !(row.hours > 0)) return null;
   const xp = row.experienceBySkill?.[subjectHrid] || {};
-  const drops = new Map(calculateExpectedDrops(row, monsters, items, subjectHrid).map((d) => [d.itemHrid, d.amount]));
+  // Dungeon loot comes only from chests, which are not modelled.
+  const drops = new Map(row.isDungeon ? [] : calculateExpectedDrops(row, monsters, items, subjectHrid).map((d) => [d.itemHrid, d.amount]));
   const parts = (progressRows || []).map((p) => {
     const stat = p.kind === 'stat';
     const perHour = (stat ? Number(xp[p.skill]) || 0 : drops.get(p.bookHrid) || 0) / row.hours;
@@ -61,3 +62,11 @@ export function topZones(scored, n) {
   }
   return [...best.values()].filter((r) => r.progressPerHour > 0).sort((a, b) => b.progressPerHour - a.progressPerHour).slice(0, n);
 }
+
+/** A pass's rows scored and ranked; job: { progressRows, subjectHrid, monsters, items }. */
+export const rankZones = (rows, job, n) =>
+  topZones(rows.map((r) => scoreZoneRow(r, job.progressRows, job.subjectHrid, job.monsters, job.items)), n);
+
+/** { runs, failed } over a pass's rows, added to an earlier pass's counts. */
+export const countRuns = (rows, before = { runs: 0, failed: 0 }) =>
+  ({ runs: before.runs + rows.length, failed: before.failed + rows.filter((r) => r.error).length });

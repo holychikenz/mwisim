@@ -207,15 +207,22 @@ character progresses fastest. It sweeps every simulable zone and tier for
 objective an hour there buys. A negative gain per level is scan noise and is
 clamped to 0.
 
-**Variants.** One charm per stat row Progress measured, at the worn charm's tier
+**Variants.** The worn charm, plus one charm per stat row Progress measured, at the worn charm's tier
 and enhancement, where its level requirement is met (no charm worn: the loadout
 as is). When exactly one of wisdom / lucky coffee is slotted, that slot is tried
 with each; a swapped-in coffee takes the item's default triggers.
 
 **Approximations.** The gains per level were measured at Progress's target zone
 and are applied to every zone's rates. Lucky coffee rides the end-of-sim
-`dropRateMultiplier` snapshot. Dungeon chests are not modelled, so dungeons count
-XP only. The variant is chosen on the 3 h pass.
+`dropRateMultiplier` snapshot. Dungeon loot comes only from chests, which are not
+modelled, so dungeons count XP only (no book drops are credited). The variant is
+chosen on the 3 h pass.
+
+**Stopped or failed runs.** A run that is stopped, stalls or errors ranks the rows
+its current pass had measured, under a caption naming the pass and how many runs
+finished. Failed runs are counted in a caption and their zones are left out; no
+replacement finalist is promoted. A finder error shows above the results in every
+mode.
 
 ## Persistence
 

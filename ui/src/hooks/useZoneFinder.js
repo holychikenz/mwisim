@@ -1,6 +1,7 @@
 import { useState, useCallback, useMemo } from 'react';
 import { useAllZones } from './useAllZones';
-import { FINALISTS, QUICK_HOURS, TOP_N, VERIFY_HOURS, scoreZoneRow, topZones } from '../utils/zoneProgress';
+import { ONE_HOUR_NS } from '../../../shared/dungeonRuns.js';
+import { FINALISTS, QUICK_HOURS, TOP_N, VERIFY_HOURS, countRuns, rankZones } from '../utils/zoneProgress';
 
 // =============================================================================
 // useZoneFinder — the Progress tool's "Find top 10 zones"
@@ -10,18 +11,16 @@ import { FINALISTS, QUICK_HOURS, TOP_N, VERIFY_HOURS, scoreZoneRow, topZones } f
 // FINALISTS (zone, tier)s, with its best variant, for VERIFY_HOURS. The second
 // pass is started from the first's onDone; `top` ranks the second's rows, which
 // useAllZones flushes before calling onDone, so they are complete at 'done'.
+// A pass that is stopped, stalls or errors leaves `stopped` set, and `top` then
+// ranks that pass's rows as they stand. `runs` counts both passes' runs and failures.
 // =============================================================================
-
-const ONE_HOUR_NS = 60 * 60 * 1e9;
-
-const rank = (rows, job, n) =>
-  topZones(rows.map((r) => scoreZoneRow(r, job.progressRows, job.subjectHrid, job.monsters, job.items)), n);
 
 export function useZoneFinder() {
   const sweep = useAllZones();
-  const { run, rows } = sweep;
+  const { run, rows, running } = sweep;
   const [job, setJob] = useState(null);
   const [stage, setStage] = useState(null); // 'quick' | 'verify' | 'done'
+  const [quickRuns, setQuickRuns] = useState(undefined);
 
   // job: { base: run params bar combos/hours, combos, progressRows, subjectHrid, variants, monsters, items }
   const start = useCallback((next) => {
@@ -29,14 +28,19 @@ export function useZoneFinder() {
       run({ ...next.base, combos, hours, simulationTimeLimit: hours * ONE_HOUR_NS, onDone });
     setJob(next);
     setStage('quick');
+    setQuickRuns(undefined);
     pass(next.combos, QUICK_HOURS, (quick) => {
       setStage('verify');
-      const finalists = rank(quick, next, FINALISTS)
+      setQuickRuns(countRuns(quick));
+      const finalists = rankZones(quick, next, FINALISTS)
         .map(({ zoneHrid, difficultyTier, variant }) => ({ zoneHrid, difficultyTier, variant }));
       pass(finalists, VERIFY_HOURS, () => setStage('done'));
     });
   }, [run]);
 
-  const top = useMemo(() => (stage === 'done' && job ? rank(rows, job, TOP_N) : []), [stage, job, rows]);
-  return { ...sweep, job, stage, top, start };
+  // Stop, stall or error mid-pass: the pass's own rows are still an answer.
+  const stopped = !running && !!job && stage !== 'done';
+  const top = useMemo(() => (job && (stage === 'done' || stopped) ? rankZones(rows, job, TOP_N) : []), [stage, stopped, job, rows]);
+  const runs = useMemo(() => countRuns(rows, quickRuns), [rows, quickRuns]);
+  return { ...sweep, job, stage, stopped, top, runs, start };
 }

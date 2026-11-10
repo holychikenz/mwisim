@@ -2448,10 +2448,15 @@ function App() {
 
           {/* Not gated on the sweep being the visible pane: a sweep that stalls
               while the user is reading the Lab tab would otherwise just stop,
-              silently, with nothing anywhere to say why. */}
+              silently, with nothing anywhere to say why. The zone finder's likewise. */}
           {allZones.error && (
             <Alert color="red" title="Zone sweep error" variant="light">
               {allZones.error.message}
+            </Alert>
+          )}
+          {zoneFinder.error && (
+            <Alert color="red" title="Zone finder error" variant="light">
+              {zoneFinder.error.message}
             </Alert>
           )}
 
