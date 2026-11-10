@@ -19,12 +19,14 @@
 #   ui           vite build      -> ui/dist/
 #   lint         eslint in ui/
 #   test         api unit tests
-#   check        api test + sim:check + eval:check (what CI runs)
+#   check        api test + sim:check + eval:check + twin-quick (what CI runs)
 #   all          everything above
 #   rust         cargo build + test of the Rust twin (rust/); needs a Rust toolchain
 #   wasm         wasm-pack build of the twin -> rust/pkg/ (CSIM_ENGINE=wasm, UI engine toggle)
 #   twin         twin:check — the Rust twin against the JS engine, bit for bit
 #                (native, plus wasm when rust/pkg/ is built)
+#   twin-quick   the fast twin subset in `check`: selftest + check --seeds=2;
+#                SKIPs (and passes) without cargo or a built csim-native
 #   clean        remove ui/dist/
 # rust, wasm and twin are deliberately NOT in the default or in `all`, so a machine
 # without Rust keeps building.
@@ -65,15 +67,30 @@ t_check() {
   t_test
   say "api sim:check";  (cd api && npm run sim:check)
   say "api eval:check"; (cd api && npm run eval:check)
+  t_twin_quick
 }
 
 t_rust() { say "cargo (rust/)"; (cd rust && cargo build --release --locked && cargo test --release --locked); }
 t_wasm() { say "wasm-pack (rust/ -> rust/pkg/)"; (cd rust && wasm-pack build --release --target web --out-dir pkg --out-name csim_twin); }
 t_twin() {
-  local engines=native
-  [ -f rust/pkg/csim_twin_bg.wasm ] && engines=native,wasm
+  local engines; engines="$(twin_engines)"
   say "api twin:check (${engines})"
   (cd api && for e in ${engines//,/ }; do npm run twin:check -- selftest --engine="$e"; done && npm run twin:check -- check --engines="$engines")
+}
+
+# The engines twin-quick and twin run: native, plus wasm when rust/pkg/ is built.
+twin_engines() { if [ -f rust/pkg/csim_twin_bg.wasm ]; then echo native,wasm; else echo native; fi; }
+
+t_twin_quick() {
+  if ! command -v cargo >/dev/null || [ ! -x rust/target/release/csim-native ]; then
+    say "SKIP twin-quick: no cargo or no rust/target/release/csim-native (run ./build.sh rust)"
+    return 0
+  fi
+  local engines; engines="$(twin_engines)"
+  say "twin-quick (${engines})"
+  (cd rust && cargo build --release --locked --quiet) # a no-op when fresh; never test a stale binary
+  (cd api && for e in ${engines//,/ }; do npm run --silent twin:check -- selftest --engine="$e"; done \
+    && npm run --silent twin:check -- check --engines="$engines" --seeds=2 | grep -v '^  MATCH ')
 }
 
 t_clean() { say "clean"; rm -rf ui/dist; }
@@ -86,6 +103,7 @@ targets=("$@")
 for t in "${targets[@]}"; do
   case "$t" in
     install|gen|ui|lint|test|check|rust|wasm|twin|clean|all) "t_${t}" ;;
+    twin-quick) t_twin_quick ;;
     *) echo "unknown target: $t" >&2; sed -n '/^# Usage:/,/^# ===/p' "$0" >&2; exit 2 ;;
   esac
 done
