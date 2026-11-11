@@ -405,7 +405,10 @@ impl std::hash::Hasher for Fx {
     }
     #[inline]
     fn finish(&self) -> u64 {
-        self.0
+        // A final fold: a bare Fx product keeps the key's trailing zeros, and an f64's
+        // bits (HitCounts' damage keys) have many, which piles them into a few buckets.
+        let h = self.0 ^ (self.0 >> 32);
+        h.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ (h >> 29)
     }
 }
 

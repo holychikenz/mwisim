@@ -96,6 +96,8 @@ pub struct Sim<'a> {
     pub trace_out: Vec<String>,
     events_processed: u64,
     ability_cache: AbilityCache,
+    /// check_triggers' alive snapshot, kept to avoid an allocation per event.
+    alive_scratch: Vec<(usize, bool)>,
 }
 
 impl<'a> Sim<'a> {
@@ -142,6 +144,7 @@ impl<'a> Sim<'a> {
             trace_out: Vec::new(),
             events_processed: 0,
             ability_cache: AbilityCache::default(),
+            alive_scratch: Vec::new(),
         }
     }
 
@@ -1421,20 +1424,19 @@ impl<'a> Sim<'a> {
     fn check_triggers(&mut self) -> R {
         loop {
             let mut triggered = false;
-            let alive: Vec<bool> = (0..self.n).map(|i| self.units[i].alive()).collect();
-            for i in 0..self.n {
-                if alive[i] && self.check_triggers_for_unit(i)? {
-                    triggered = true;
-                }
-            }
-            if let Some(r) = self.list(Side::Enemies) {
-                let alive: Vec<(usize, bool)> = r.map(|i| (i, self.units[i].alive())).collect();
-                for (i, a) in alive {
+            let mut alive = std::mem::take(&mut self.alive_scratch);
+            for side in [Side::Players, Side::Enemies] {
+                // Each side's range and snapshot are taken after the previous side's triggers ran, as before.
+                let Some(r) = self.list(side) else { continue };
+                alive.clear();
+                alive.extend(r.map(|i| (i, self.units[i].alive())));
+                for &(i, a) in &alive {
                     if a && self.check_triggers_for_unit(i)? {
                         triggered = true;
                     }
                 }
             }
+            self.alive_scratch = alive;
             if !triggered {
                 return Ok(());
             }
