@@ -871,6 +871,10 @@ impl Unit {
     }
 
     pub fn remove_expired_buffs(&mut self, now: f64) {
+        // Nothing expired (the common case): the loop below would only `continue`, so skip its allocations.
+        if !self.buff_instances.iter().any(|(_, arr)| arr.iter().any(|i| !Self::is_active(i, now))) {
+            return;
+        }
         let keys: Vec<S> = self.buff_instances.iter().map(|(k, _)| k.clone()).collect();
         let mut changed = false;
         for hrid in keys {

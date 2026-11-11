@@ -1566,19 +1566,20 @@ impl<'a> Sim<'a> {
             u.abilities[slot].as_mut().expect("slot").last_used = now;
         }
 
-        let mut todo: Vec<(S, Rc<Vec<AbilityEffect>>, bool)> = vec![(hrid, effects, is_special)];
+        // The cast, then Blaze and Bloom procs: at most three, so no heap Vec per cast.
+        let mut todo: [Option<(S, Rc<Vec<AbilityEffect>>, bool)>; 3] = [Some((hrid, effects, is_special)), None, None];
         // Blaze/Bloom: guarded by `> 0 &&`, so no draw when the stat is 0.
         if self.units[src0].cd.cs.blaze > 0.0 && self.rng.next_f64() < self.units[src0].cd.cs.blaze {
             let a = Ability::new(self.data, "blaze", 1.0, None)?;
-            todo.push((a.hrid, a.effects, a.is_special_ability));
+            todo[1] = Some((a.hrid, a.effects, a.is_special_ability));
         }
         if self.units[src0].cd.cs.bloom > 0.0 && self.rng.next_f64() < self.units[src0].cd.cs.bloom {
             let a = Ability::new(self.data, "bloom", 1.0, None)?;
-            todo.push((a.hrid, a.effects, a.is_special_ability));
+            todo[2] = Some((a.hrid, a.effects, a.is_special_ability));
         }
 
         let mut src = self.uref(src0);
-        for (ahrid, effects, special) in &todo {
+        for (ahrid, effects, special) in todo.iter().flatten() {
             for e in effects.iter() {
                 let si = self.must(src, "ability caster")?;
                 if self.units[si].cd.current_hitpoints <= 0.0 {
