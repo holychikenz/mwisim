@@ -3,11 +3,11 @@
 use crate::ability::Ability;
 use crate::data::GameData;
 use crate::unit::{MonsterPart, Unit, UnitKind};
-use std::collections::HashMap;
+use crate::js::FastMap;
 
 /// A monster's abilities are a pure function of (hrid, tier, room level); the
 /// simulator keeps them here instead of rebuilding them on every spawn.
-pub type AbilityCache = HashMap<(String, u64, u64), Vec<Option<Ability>>>;
+pub type AbilityCache = FastMap<(String, u64, u64), Vec<Option<Ability>>>;
 
 /// `new Monster(hrid, difficultyTier = 0, roomLevel = 0)`.
 pub fn create_monster(

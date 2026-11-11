@@ -129,7 +129,7 @@ fn bump(m: &mut OMap<f64>, k: &str, amount: f64) {
 #[derive(Clone, Debug, Default)]
 pub struct HitCounts {
     pub m: OMap<f64>,
-    idx: std::collections::HashMap<u64, usize>,
+    idx: crate::js::FastMap<u64, usize>,
 }
 
 impl HitCounts {

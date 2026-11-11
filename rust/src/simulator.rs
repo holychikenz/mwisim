@@ -141,7 +141,7 @@ impl<'a> Sim<'a> {
             trace: None,
             trace_out: Vec::new(),
             events_processed: 0,
-            ability_cache: AbilityCache::new(),
+            ability_cache: AbilityCache::default(),
         }
     }
 
