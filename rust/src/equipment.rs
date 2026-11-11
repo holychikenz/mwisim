@@ -2,14 +2,14 @@
 
 use crate::data::GameData;
 use crate::js::{s, truthy, S};
-use std::collections::HashMap;
+use crate::js::FastMap;
 
 #[derive(Clone, Debug)]
 pub struct Equipment {
     pub hrid: S,
     pub enhancement_level: f64,
-    stats: HashMap<String, f64>,
-    bonuses: HashMap<String, f64>,
+    stats: FastMap<String, f64>,
+    bonuses: FastMap<String, f64>,
     multiplier: f64,
     style0: Option<S>,
     damage_type: Option<S>,
@@ -25,7 +25,7 @@ impl Equipment {
             .as_ref()
             .ok_or_else(|| format!("Cannot read properties of undefined (reading 'combatStats'): {hrid} is not equipment"))?;
         let nums = |m: &serde_json::Map<String, serde_json::Value>| {
-            m.iter().filter_map(|(k, v)| v.as_f64().map(|f| (k.clone(), f))).collect::<HashMap<_, _>>()
+            m.iter().filter_map(|(k, v)| v.as_f64().map(|f| (k.clone(), f))).collect::<FastMap<_, _>>()
         };
         let str_of = |k: &str| det.combat_stats.get(k).and_then(|v| v.as_str()).map(s);
         let idx = if enhancement_level >= 0.0 && enhancement_level == enhancement_level.trunc() {

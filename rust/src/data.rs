@@ -7,7 +7,7 @@ use crate::js::{s, OrderedMap, S};
 use crate::unit::stat_index;
 use serde::Deserialize;
 use serde_json::{Map, Value};
-use std::collections::HashMap;
+use crate::js::FastMap;
 use std::rc::Rc;
 
 fn nan() -> f64 {
@@ -334,20 +334,20 @@ pub struct ItemData {
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RawGameData {
-    ability_detail_map: HashMap<String, AbilityData>,
+    ability_detail_map: FastMap<String, AbilityData>,
     ability_slots_level_requirement_list: Vec<f64>,
     achievement_detail_map: OrderedMap<AchievementData>,
     achievement_tier_detail_map: OrderedMap<AchievementTierData>,
-    action_detail_map: HashMap<String, ActionData>,
-    combat_monster_detail_map: HashMap<String, MonsterData>,
-    combat_style_detail_map: HashMap<String, CombatStyleData>,
-    combat_trigger_dependency_detail_map: HashMap<String, DependencyData>,
+    action_detail_map: FastMap<String, ActionData>,
+    combat_monster_detail_map: FastMap<String, MonsterData>,
+    combat_style_detail_map: FastMap<String, CombatStyleData>,
+    combat_trigger_dependency_detail_map: FastMap<String, DependencyData>,
     enhancement_level_total_bonus_multiplier_table: Vec<f64>,
-    guild_trial_detail_map: HashMap<String, GuildTrialData>,
-    house_room_detail_map: HashMap<String, HouseRoomData>,
-    item_detail_map: HashMap<String, ItemData>,
+    guild_trial_detail_map: FastMap<String, GuildTrialData>,
+    house_room_detail_map: FastMap<String, HouseRoomData>,
+    item_detail_map: FastMap<String, ItemData>,
     #[serde(default)]
-    labyrinth_crate_detail_map: HashMap<String, Value>,
+    labyrinth_crate_detail_map: FastMap<String, Value>,
 }
 
 /// generated/statSchema.js's per-block source, built once per monster (H15).
@@ -366,19 +366,19 @@ pub struct MonsterStatic {
 }
 
 pub struct GameData {
-    pub abilities: HashMap<String, AbilityData>,
+    pub abilities: FastMap<String, AbilityData>,
     pub ability_slots: Vec<f64>,
     pub achievements: OrderedMap<AchievementData>,
     pub achievement_tiers: OrderedMap<AchievementTierData>,
-    pub actions: HashMap<String, ActionData>,
-    pub monsters: HashMap<String, Rc<MonsterStatic>>,
-    pub combat_styles: HashMap<String, CombatStyleData>,
-    pub dependencies: HashMap<String, DependencyData>,
+    pub actions: FastMap<String, ActionData>,
+    pub monsters: FastMap<String, Rc<MonsterStatic>>,
+    pub combat_styles: FastMap<String, CombatStyleData>,
+    pub dependencies: FastMap<String, DependencyData>,
     pub enhancement_table: Vec<f64>,
-    pub guild_trials: HashMap<String, GuildTrialData>,
-    pub house_rooms: HashMap<String, HouseRoomData>,
-    pub items: HashMap<String, ItemData>,
-    pub labyrinth_crates: HashMap<String, Value>,
+    pub guild_trials: FastMap<String, GuildTrialData>,
+    pub house_rooms: FastMap<String, HouseRoomData>,
+    pub items: FastMap<String, ItemData>,
+    pub labyrinth_crates: FastMap<String, Value>,
 }
 
 /// `value != null` as a number: absent, null and non-numbers are None.
@@ -402,7 +402,7 @@ impl GameData {
                 return Err(format!("monster residual stat {r} is not handled by the twin"));
             }
         }
-        let mut monsters = HashMap::new();
+        let mut monsters = FastMap::default();
         for (hrid, m) in raw.combat_monster_detail_map {
             let cs = &m.combat_details.combat_stats;
             let zeroed = zeroed_idx.iter().map(|(i, n)| (*i, num(cs.get(*n)).unwrap_or(0.0))).collect();

@@ -43,6 +43,14 @@ enum TrigVal {
     Buff(bool),
 }
 
+// The hrids below resolved once at construction; the hot path matches on these, not strings.
+#[derive(Clone, Copy, Debug)]
+enum Cmp { Ge, Le, Active, Inactive, Unknown }
+#[derive(Clone, Copy, Debug)]
+enum Dep { Own, TargetedEnemy, AllAllies, AllEnemies, Unknown }
+#[derive(Clone, Copy, Debug)]
+enum Multi { ActiveUnits, DeadUnits, LowestHp, PerUnit }
+
 #[derive(Clone, Debug)]
 pub struct Trigger {
     pub dependency_hrid: S,
@@ -53,6 +61,9 @@ pub struct Trigger {
     is_single: Option<bool>,
     buff_unique: S,
     kind: CondKind,
+    cmp: Cmp,
+    dep: Dep,
+    multi: Multi,
 }
 
 impl Trigger {
@@ -70,6 +81,26 @@ impl Trigger {
             is_single: data.dependencies.get(&t.dependency_hrid).map(|d| d.is_single_target),
             buff_unique: s(&format!("/buff_uniques{tail}")),
             kind: cond_kind(c),
+            cmp: match &*t.comparator_hrid {
+                "/combat_trigger_comparators/greater_than_equal" => Cmp::Ge,
+                "/combat_trigger_comparators/less_than_equal" => Cmp::Le,
+                "/combat_trigger_comparators/is_active" => Cmp::Active,
+                "/combat_trigger_comparators/is_inactive" => Cmp::Inactive,
+                _ => Cmp::Unknown,
+            },
+            dep: match &*t.dependency_hrid {
+                "/combat_trigger_dependencies/self" => Dep::Own,
+                "/combat_trigger_dependencies/targeted_enemy" => Dep::TargetedEnemy,
+                "/combat_trigger_dependencies/all_allies" => Dep::AllAllies,
+                "/combat_trigger_dependencies/all_enemies" => Dep::AllEnemies,
+                _ => Dep::Unknown,
+            },
+            multi: match c.as_str() {
+                "/combat_trigger_conditions/number_of_active_units" => Multi::ActiveUnits,
+                "/combat_trigger_conditions/number_of_dead_units" => Multi::DeadUnits,
+                "/combat_trigger_conditions/lowest_hp_percentage" => Multi::LowestHp,
+                _ => Multi::PerUnit,
+            },
         }
     }
 
@@ -85,9 +116,9 @@ impl Trigger {
             .is_single
             .ok_or_else(|| format!("TypeError: Cannot read properties of undefined (reading 'isSingleTarget') for {}", self.dependency_hrid))?;
         if single {
-            let v = match &*self.dependency_hrid {
-                "/combat_trigger_dependencies/self" => self.dependency_value(source, now)?,
-                "/combat_trigger_dependencies/targeted_enemy" => match target {
+            let v = match self.dep {
+                Dep::Own => self.dependency_value(source, now)?,
+                Dep::TargetedEnemy => match target {
                     None => return Ok(false),
                     Some(t) => self.dependency_value(t, now)?,
                 },
@@ -95,18 +126,18 @@ impl Trigger {
             };
             self.compare(v)
         } else {
-            let dep = match &*self.dependency_hrid {
-                "/combat_trigger_dependencies/all_allies" => friendlies.unwrap_or(&[]),
-                "/combat_trigger_dependencies/all_enemies" => match enemies {
+            let dep = match self.dep {
+                Dep::AllAllies => friendlies.unwrap_or(&[]),
+                Dep::AllEnemies => match enemies {
                     None => return Ok(false),
                     Some(e) => e,
                 },
                 _ => return Err(format!("Unknown dependencyHrid in trigger: {}", self.dependency_hrid)),
             };
-            let v = match &*self.condition_hrid {
-                "/combat_trigger_conditions/number_of_active_units" => TrigVal::Num(dep.iter().filter(|u| u.alive()).count() as f64),
-                "/combat_trigger_conditions/number_of_dead_units" => TrigVal::Num(dep.iter().filter(|u| !u.alive()).count() as f64),
-                "/combat_trigger_conditions/lowest_hp_percentage" => {
+            let v = match self.multi {
+                Multi::ActiveUnits => TrigVal::Num(dep.iter().filter(|u| u.alive()).count() as f64),
+                Multi::DeadUnits => TrigVal::Num(dep.iter().filter(|u| !u.alive()).count() as f64),
+                Multi::LowestHp => {
                     let mut prev = 2.0;
                     for u in dep.iter().filter(|u| u.alive()) {
                         let p = u.cd.current_hitpoints / u.cd.max_hitpoints;
@@ -114,7 +145,7 @@ impl Trigger {
                     }
                     TrigVal::Num(prev * 100.0)
                 }
-                _ => {
+                Multi::PerUnit => {
                     // reduce((p, c) => p + c, 0) over the alive units' values
                     let mut num = 0.0;
                     let mut buff_seen = false;
@@ -173,12 +204,12 @@ impl Trigger {
             TrigVal::Num(x) => truthy(x),
             TrigVal::Bool(b) | TrigVal::Buff(b) => b,
         };
-        match &*self.comparator_hrid {
-            "/combat_trigger_comparators/greater_than_equal" => Ok(as_num(v) >= self.value),
-            "/combat_trigger_comparators/less_than_equal" => Ok(as_num(v) <= self.value),
-            "/combat_trigger_comparators/is_active" => Ok(truth(v)),
-            "/combat_trigger_comparators/is_inactive" => Ok(!truth(v)),
-            _ => Err(format!("Unknown comparatorHrid in trigger: {}", self.comparator_hrid)),
+        match self.cmp {
+            Cmp::Ge => Ok(as_num(v) >= self.value),
+            Cmp::Le => Ok(as_num(v) <= self.value),
+            Cmp::Active => Ok(truth(v)),
+            Cmp::Inactive => Ok(!truth(v)),
+            Cmp::Unknown => Err(format!("Unknown comparatorHrid in trigger: {}", self.comparator_hrid)),
         }
     }
 }

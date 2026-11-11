@@ -96,6 +96,8 @@ pub struct Sim<'a> {
     pub trace_out: Vec<String>,
     events_processed: u64,
     ability_cache: AbilityCache,
+    /// check_triggers' alive snapshot, kept to avoid an allocation per event.
+    alive_scratch: Vec<(usize, bool)>,
 }
 
 impl<'a> Sim<'a> {
@@ -141,7 +143,8 @@ impl<'a> Sim<'a> {
             trace: None,
             trace_out: Vec::new(),
             events_processed: 0,
-            ability_cache: AbilityCache::new(),
+            ability_cache: AbilityCache::default(),
+            alive_scratch: Vec::new(),
         }
     }
 
@@ -1421,20 +1424,19 @@ impl<'a> Sim<'a> {
     fn check_triggers(&mut self) -> R {
         loop {
             let mut triggered = false;
-            let alive: Vec<bool> = (0..self.n).map(|i| self.units[i].alive()).collect();
-            for i in 0..self.n {
-                if alive[i] && self.check_triggers_for_unit(i)? {
-                    triggered = true;
-                }
-            }
-            if let Some(r) = self.list(Side::Enemies) {
-                let alive: Vec<(usize, bool)> = r.map(|i| (i, self.units[i].alive())).collect();
-                for (i, a) in alive {
+            let mut alive = std::mem::take(&mut self.alive_scratch);
+            for side in [Side::Players, Side::Enemies] {
+                // Each side's range and snapshot are taken after the previous side's triggers ran, as before.
+                let Some(r) = self.list(side) else { continue };
+                alive.clear();
+                alive.extend(r.map(|i| (i, self.units[i].alive())));
+                for &(i, a) in &alive {
                     if a && self.check_triggers_for_unit(i)? {
                         triggered = true;
                     }
                 }
             }
+            self.alive_scratch = alive;
             if !triggered {
                 return Ok(());
             }
@@ -1564,19 +1566,20 @@ impl<'a> Sim<'a> {
             u.abilities[slot].as_mut().expect("slot").last_used = now;
         }
 
-        let mut todo: Vec<(S, Rc<Vec<AbilityEffect>>, bool)> = vec![(hrid, effects, is_special)];
+        // The cast, then Blaze and Bloom procs: at most three, so no heap Vec per cast.
+        let mut todo: [Option<(S, Rc<Vec<AbilityEffect>>, bool)>; 3] = [Some((hrid, effects, is_special)), None, None];
         // Blaze/Bloom: guarded by `> 0 &&`, so no draw when the stat is 0.
         if self.units[src0].cd.cs.blaze > 0.0 && self.rng.next_f64() < self.units[src0].cd.cs.blaze {
             let a = Ability::new(self.data, "blaze", 1.0, None)?;
-            todo.push((a.hrid, a.effects, a.is_special_ability));
+            todo[1] = Some((a.hrid, a.effects, a.is_special_ability));
         }
         if self.units[src0].cd.cs.bloom > 0.0 && self.rng.next_f64() < self.units[src0].cd.cs.bloom {
             let a = Ability::new(self.data, "bloom", 1.0, None)?;
-            todo.push((a.hrid, a.effects, a.is_special_ability));
+            todo[2] = Some((a.hrid, a.effects, a.is_special_ability));
         }
 
         let mut src = self.uref(src0);
-        for (ahrid, effects, special) in &todo {
+        for (ahrid, effects, special) in todo.iter().flatten() {
             for e in effects.iter() {
                 let si = self.must(src, "ability caster")?;
                 if self.units[si].cd.current_hitpoints <= 0.0 {

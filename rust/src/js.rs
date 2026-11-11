@@ -363,3 +363,53 @@ mod tests {
         assert_eq!(num_key(f64::NAN), "NaN");
     }
 }
+
+/// FxHash (rustc's hasher): far cheaper than the default SipHash, which matters most on
+/// wasm. No DoS resistance needed — every key is game data or an engine value.
+/// Iteration order differs from SipHash's; nothing emitted depends on map order.
+#[derive(Default, Clone, Copy)]
+pub struct Fx(u64);
+
+impl Fx {
+    #[inline]
+    fn mix(&mut self, w: u64) {
+        self.0 = (self.0.rotate_left(5) ^ w).wrapping_mul(0x517c_c1b7_2722_0a95);
+    }
+}
+
+impl std::hash::Hasher for Fx {
+    #[inline]
+    fn write(&mut self, bytes: &[u8]) {
+        let mut c = bytes.chunks_exact(8);
+        for w in &mut c {
+            self.mix(u64::from_le_bytes(w.try_into().unwrap()));
+        }
+        let r = c.remainder();
+        if !r.is_empty() {
+            let mut b = [0u8; 8];
+            b[..r.len()].copy_from_slice(r);
+            self.mix(u64::from_le_bytes(b));
+        }
+    }
+    #[inline]
+    fn write_u8(&mut self, i: u8) {
+        self.mix(i as u64);
+    }
+    #[inline]
+    fn write_u64(&mut self, i: u64) {
+        self.mix(i);
+    }
+    #[inline]
+    fn write_usize(&mut self, i: usize) {
+        self.mix(i as u64);
+    }
+    #[inline]
+    fn finish(&self) -> u64 {
+        // A final fold: a bare Fx product keeps the key's trailing zeros, and an f64's
+        // bits (HitCounts' damage keys) have many, which piles them into a few buckets.
+        let h = self.0 ^ (self.0 >> 32);
+        h.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ (h >> 29)
+    }
+}
+
+pub type FastMap<K, V> = std::collections::HashMap<K, V, std::hash::BuildHasherDefault<Fx>>;
