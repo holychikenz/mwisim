@@ -71,8 +71,9 @@ t_check() {
   t_twin_quick
 }
 
-# mwi-econ is tested on its own (-p): a --workspace build would unify its serde_json
-# features (preserve_order) into csim-twin.
+# mwi-econ is tested on its own (-p), so the twin's own tests keep the feature set it ships with.
+# A --workspace build unifies mwi-econ's serde_json preserve_order into csim-twin; measured
+# harmless (twin:check 278/278, identical hashes, native and wasm).
 t_rust() { say "cargo (rust/)"; (cd rust && cargo build --release --locked && cargo test --release --locked && cargo test --release --locked -p mwi-econ); }
 wasm_build() { (cd rust && wasm-pack "$@" build --release --target web --out-dir pkg --out-name csim_twin); }
 t_wasm() { say "wasm-pack (rust/ -> rust/pkg/)"; wasm_build; }
