@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const { saleValue, matchWebappCharacter, autoIronDecision } = await import('../../ui/src/utils/prices.js');
+const { saleValue, matchSnapshotId, autoIronDecision, initialIronCharacter, staleIronCharacter } = await import('../../ui/src/utils/prices.js');
 
 const PRICES = {
   '/items/rainbow_milk': { ask: 100, bid: 80, vendor: 5 },
@@ -36,52 +36,55 @@ test('audit-18: formatValue rounds the total before splitting it', async () => {
   assert.equal(formatValue(Infinity, 'coins'), '∞');
 });
 
-// Following the main character with the iron source (hooks/usePrices.js).
-const WEBAPP = { characters: ['alt', 'HolyChikenz'], details: [{ name: 'alt' }, { name: 'HolyChikenz' }] };
+// Following the main character with the iron source (hooks/usePrices.js): keyed on game characterId.
+const SNAPS = { 42: { character: { id: 42, name: 'HolyChikenz' } }, 7: { character: { id: 7, name: 'alt' } } };
 
-test('matchWebappCharacter: by game id, then in-game name, then (no game identity) the record name', () => {
-  assert.equal(matchWebappCharacter({ name: 'holychikenz' }, WEBAPP), 'HolyChikenz');
-  assert.equal(matchWebappCharacter({ name: 'Holy (main)', game: { id: 7, name: 'holychikenz' } }, WEBAPP), 'HolyChikenz');
-  assert.equal(matchWebappCharacter({ name: 'nobody' }, WEBAPP), null);
-  const byId = { characters: ['renamed'], details: [{ name: 'renamed', characterId: 7 }] };
-  assert.equal(matchWebappCharacter({ name: 'x', game: { id: 7 } }, byId), 'renamed');
-  assert.equal(matchWebappCharacter({ name: 'x', game: { id: '7' } }, { details: [{ name: 'r', id: 7 }] }), 'r');
-  for (const bad of [null, {}, { characters: 'x' }]) assert.equal(matchWebappCharacter({ name: 'x' }, bad), null);
-  assert.equal(matchWebappCharacter(null, WEBAPP), null);
-  const both = { characters: ['alt', 'main'], details: [{ name: 'alt' }, { name: 'main', characterId: 7 }] };
-  assert.equal(matchWebappCharacter({ name: 'alt', game: { id: 7, name: 'alt' } }, both), 'main', 'id beats a name');
-  assert.equal(matchWebappCharacter({ name: 'alt', game: { id: 9, name: 'gone' } }, WEBAPP), null, 'editable name unused when game is known');
+test('matchSnapshotId: by game id only when main has one; by name only without', () => {
+  // Renamed in game since the record was made: the id still finds it.
+  assert.equal(matchSnapshotId({ name: 'Old', game: { id: 42, name: 'Old' } }, SNAPS), '42');
+  assert.equal(matchSnapshotId({ name: 'x', game: { id: '7' } }, SNAPS), '7');
+  // A game id with no snapshot never falls back to a name — that could be another character.
+  assert.equal(matchSnapshotId({ name: 'alt', game: { id: 9, name: 'alt' } }, SNAPS), null);
+  // No game id: in-game name, then the record's own, ignoring case.
+  assert.equal(matchSnapshotId({ name: 'holychikenz' }, SNAPS), '42');
+  assert.equal(matchSnapshotId({ name: 'Holy (main)', game: { name: 'ALT' } }, SNAPS), '7');
+  assert.equal(matchSnapshotId({ name: 'nobody' }, SNAPS), null);
+  for (const bad of [null, undefined, 'x']) assert.equal(matchSnapshotId({ name: 'alt' }, bad), null);
+  assert.equal(matchSnapshotId(null, SNAPS), null);
 });
 
-test('autoIronDecision: fetch once, never over the cached times, follow back', () => {
-  const main = { name: 'holychikenz' };
-  assert.deepEqual(autoIronDecision({ main, webapp: WEBAPP, cache: {} }), { name: 'HolyChikenz', needsFetch: true });
-  assert.deepEqual(
-    autoIronDecision({ main, webapp: WEBAPP, cache: { iron: { character: 'holychikenz' } } }),
-    { name: 'HolyChikenz', needsFetch: false }
-  );
-  assert.deepEqual(
-    autoIronDecision({ main, webapp: WEBAPP, cache: { iron: { character: 'alt' } } }),
-    { name: 'HolyChikenz', needsFetch: true }
-  );
-  assert.equal(autoIronDecision({ main, webapp: WEBAPP, cache: {}, followed: 'HolyChikenz' }), null);
-  assert.equal(autoIronDecision({ main, webapp: null, cache: {} }), null);
-  assert.equal(autoIronDecision({ main: null, webapp: WEBAPP, cache: {} }), null);
-  // Main moved to someone the webapp does not know: name null, so moving back follows again.
-  assert.deepEqual(
-    autoIronDecision({ main: { name: 'nobody' }, webapp: WEBAPP, cache: {}, followed: 'HolyChikenz' }),
-    { name: null, needsFetch: false }
-  );
+test('autoIronDecision: fetch once, never over the cached times, follow back — by id', () => {
+  const main = { name: 'Holy', game: { id: 42 } };
+  assert.deepEqual(autoIronDecision({ main, snapshots: SNAPS, cache: {} }), { id: '42', needsFetch: true });
+  assert.deepEqual(autoIronDecision({ main, snapshots: SNAPS, cache: { iron: { characterId: '42' } } }), { id: '42', needsFetch: false });
+  // Same name, other id (or a name-keyed entry with no id): not theirs.
+  assert.deepEqual(autoIronDecision({ main, snapshots: SNAPS, cache: { iron: { characterId: '7', character: 'HolyChikenz' } } }), { id: '42', needsFetch: true });
+  assert.deepEqual(autoIronDecision({ main, snapshots: SNAPS, cache: { iron: { character: 'HolyChikenz' } } }), { id: '42', needsFetch: true });
+  assert.equal(autoIronDecision({ main, snapshots: SNAPS, cache: {}, followed: '42' }), null);
+  assert.equal(autoIronDecision({ main, snapshots: null, cache: {} }), null);
+  assert.equal(autoIronDecision({ main: null, snapshots: SNAPS, cache: {} }), null);
+  // Main moved to someone with no snapshot: id null, so moving back follows again.
+  assert.deepEqual(autoIronDecision({ main: { name: 'x', game: { id: 9 } }, snapshots: SNAPS, cache: {}, followed: '42' }), { id: null, needsFetch: false });
 });
 
-test('snapshot roster: main follows by game id to the snapshot name', async () => {
-  const { snapshotRoster, snapshotByName } = await import('../../ui/src/utils/characterSnapshots.js');
-  const snaps = { 42: { character: { id: 42, name: 'NewName' } }, 7: { character: { id: 7, name: 'Alt' } }, 9: {} };
-  const roster = snapshotRoster(snaps);
-  assert.deepEqual(roster.characters, ['Alt', 'NewName']);
-  // Renamed in game since the store record was made: the id still finds it.
-  const main = { name: 'OldName', game: { id: 42, name: 'OldName' } };
-  assert.deepEqual(autoIronDecision({ main, webapp: roster, cache: {} }), { name: 'NewName', needsFetch: true });
-  assert.equal(snapshotByName(snaps, 'NewName'), snaps[42]);
-  assert.equal(snapshotByName(snaps, 'Nobody'), null);
+test('initialIronCharacter: remembered id if it has a snapshot, else the first; names are dropped', () => {
+  assert.equal(initialIronCharacter('42', SNAPS), '42');
+  assert.equal(initialIronCharacter(42, SNAPS), '42');
+  assert.equal(initialIronCharacter('alt', SNAPS), '7');
+  assert.equal(initialIronCharacter(null, SNAPS), '7');
+  assert.equal(initialIronCharacter('42', {}), null);
+});
+
+test('staleIronCharacter: compares ids, reports the cached name', () => {
+  assert.equal(staleIronCharacter({ character: 'HolyChikenz', characterId: '42' }, '42'), null);
+  assert.equal(staleIronCharacter({ character: 'HolyChikenz', characterId: '42' }, '7'), 'HolyChikenz');
+  assert.equal(staleIronCharacter({ character: 'alt' }, '7'), 'alt', 'a name-keyed entry is unverified');
+  assert.equal(staleIronCharacter(null, '7'), null);
+  assert.equal(staleIronCharacter({ character: 'alt', characterId: '7' }, null), null);
+});
+
+test('snapshotOptions: id values, in-game name labels, nameless snapshots skipped', async () => {
+  const { snapshotOptions } = await import('../../ui/src/utils/characterSnapshots.js');
+  assert.deepEqual(snapshotOptions({ ...SNAPS, 9: {} }), [{ value: '7', label: 'alt' }, { value: '42', label: 'HolyChikenz' }]);
+  assert.deepEqual(snapshotOptions(null), []);
 });

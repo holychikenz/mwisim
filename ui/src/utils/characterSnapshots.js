@@ -23,15 +23,9 @@ export function loadSnapshots() {
   }
 }
 
-/** The roster shape prices.js matchWebappCharacter reads: { characters: [name], details: [{ name, characterId }] }. */
-export function snapshotRoster(snapshots) {
-  const details = Object.entries(snapshots || {})
-    .map(([characterId, data]) => ({ name: data?.character?.name, characterId }))
-    .filter((d) => typeof d.name === 'string');
-  return { characters: details.map((d) => d.name), details };
-}
-
-/** The snapshot whose in-game name is `name`, or null. */
-export function snapshotByName(snapshots, name) {
-  return Object.values(snapshots || {}).find((data) => data?.character?.name === name) || null;
+/** The iron-character Select options, [{ value: gameCharacterId, label: in-game name }], snapshots with a name only. */
+export function snapshotOptions(snapshots) {
+  return Object.entries(snapshots || {})
+    .filter(([, data]) => typeof data?.character?.name === 'string')
+    .map(([characterId, data]) => ({ value: characterId, label: data.character.name }));
 }

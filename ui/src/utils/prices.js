@@ -139,29 +139,44 @@ export function formatValue(v, unit) {
 const sameName = (a, b) =>
   typeof a === 'string' && typeof b === 'string' && a.trim().toLowerCase() === b.trim().toLowerCase();
 
-/** The roster's name for `main`, or null. `webapp` = a roster
- *  ({ characters: [name], details: [{ name, … }] }; utils/characterSnapshots.js
- *  snapshotRoster). Identity first: the game characterId, when a details entry
- *  carries one (`characterId` or `id`). Then by name, ignoring case, returning
- *  the roster's spelling: the in-game name (game.name); the record's own, locally editable name only
- *  for a record with no game identity — it could name another character. */
-export function matchWebappCharacter(main, webapp) {
-  const gameId = main?.game?.id;
-  const entry = gameId == null || !Array.isArray(webapp?.details) ? null
-    : webapp.details.find(d => d && String(d.characterId ?? d.id) === String(gameId));
-  if (typeof entry?.name === 'string') return entry.name;
-  const names = Array.isArray(webapp?.characters) ? webapp.characters : [];
-  const want = main?.game ? main.game.name : main?.name;
-  return names.find(n => sameName(n, want)) ?? null;
+/** The game characterId (a string) of `main`'s snapshot, or null. `snapshots` =
+ *  { [gameCharacterId]: characterData } (utils/characterSnapshots.js). Identity
+ *  only: a main with a game id is matched by that id and nothing else, so a
+ *  missing snapshot never values another character who shares the name. Only a
+ *  record with no game id falls back to a name (game.name, else the record's
+ *  own), ignoring case. */
+export function matchSnapshotId(main, snapshots) {
+  if (!main || !snapshots || typeof snapshots !== 'object') return null;
+  const gameId = main.game?.id;
+  if (gameId != null) return snapshots[gameId] ? String(gameId) : null;
+  const want = main.game ? main.game.name : main.name;
+  const hit = Object.entries(snapshots).find(([, data]) => sameName(data?.character?.name, want));
+  return hit ? hit[0] : null;
 }
 
 /** Following main with the iron source (hooks/usePrices.js): null when nothing
- *  changed since `followed` (roster name last acted on), else { name, needsFetch }
- *  — name null when main is not in the roster; needsFetch false when the
- *  cached iron times are already theirs. */
-export function autoIronDecision({ main, webapp, cache, followed = null }) {
-  if (!webapp || !main) return null;
-  const name = matchWebappCharacter(main, webapp);
-  if (name === followed) return null;
-  return { name, needsFetch: name != null && !sameName(cache?.iron?.character, name) };
+ *  changed since `followed` (the snapshot id last acted on), else { id, needsFetch }
+ *  — id null when main has no snapshot; needsFetch false when the cached iron
+ *  times are already that id's. */
+export function autoIronDecision({ main, snapshots, cache, followed = null }) {
+  if (!snapshots || !main) return null;
+  const id = matchSnapshotId(main, snapshots);
+  if (id === followed) return null;
+  return { id, needsFetch: id != null && cache?.iron?.characterId !== id };
+}
+
+/** The iron character (game id) to start with: the remembered one when it still
+ *  has a snapshot, else the first snapshot, else null. A remembered NAME (from a
+ *  build that keyed on names) is dropped rather than matched. */
+export function initialIronCharacter(remembered, snapshots) {
+  const ids = Object.keys(snapshots || {});
+  return remembered != null && ids.includes(String(remembered)) ? String(remembered) : ids[0] ?? null;
+}
+
+/** The cached iron entry's character name when it is not `ironCharacter`'s (by id), else null.
+ *  An entry with no characterId (cached by a name-keyed build) counts as stale. */
+export function staleIronCharacter(entry, ironCharacter) {
+  return entry?.character && ironCharacter != null && entry.characterId !== String(ironCharacter)
+    ? entry.character
+    : null;
 }

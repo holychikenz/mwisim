@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { buildMarketPrices, buildIronPrices, autoIronDecision } from '../utils/prices';
+import { buildMarketPrices, buildIronPrices, autoIronDecision, initialIronCharacter, staleIronCharacter } from '../utils/prices';
 import { createLatestGate } from '../utils/latestRequest';
-import { loadSnapshots, snapshotRoster, snapshotByName } from '../utils/characterSnapshots';
+import { loadSnapshots, snapshotOptions } from '../utils/characterSnapshots';
 
 // =============================================================================
 // usePrices — price-source state + fetchers, with a persistent per-source cache.
@@ -155,7 +155,7 @@ function itemValuesInWorker(characterData) {
     const worker = new Worker(new URL('../../../src/worker.js', import.meta.url), { type: 'module' });
     worker.onmessage = ({ data }) => {
       worker.terminate();
-      if (data.type !== 'item_values_result') return reject(data.error instanceof Error ? data.error : new Error(String(data.error)));
+      if (data.type !== 'item_values_result') return reject(new Error(String(data.error)));
       try {
         const payload = JSON.parse(data.json);
         if (payload.ok === false) throw new Error(payload.error);
@@ -172,19 +172,18 @@ function itemValuesInWorker(characterData) {
   });
 }
 
-/** The iron times for `character`, from their snapshot (by game id when known); throws when there is none or the valuation fails. */
-async function computeIronEntry(character, snapshots, items, gameId = null) {
-  const byId = gameId != null ? snapshots[gameId] : null;
-  const snapshot = byId?.character?.name === character ? byId : snapshotByName(snapshots, character);
-  if (!snapshot) throw new Error(`no game snapshot for ${character || 'any character'}`);
+/** The iron times for game character `id`, from their snapshot; throws when there is none or the valuation fails. */
+async function computeIronEntry(id, snapshots, items) {
+  const snapshot = id != null ? snapshots[id] ?? null : null;
+  if (!snapshot) throw new Error(`no game snapshot for character ${id}`);
   const payload = await itemValuesInWorker(snapshot);
-  // The roster name, so the cache always matches it (item_values says "Unknown" when the snapshot has none).
-  const name = character || payload.character;
+  const name = snapshot.character?.name ?? String(id);
   return {
     prices: pruneEmptyPrices(buildIronPrices(payload.values || {}, items)),
     unit: 'seconds',
     label: `iron · ${name}`,
     character: name,
+    characterId: String(id),
     fetchedAt: Date.now()
   };
 }
@@ -206,12 +205,11 @@ export function usePrices(gameData, main = null) {
   const [expenseMode, setExpenseMode] = useState(persisted.expenseMode);
   // Read once; the csim-import userscript (not yet built) will need to refresh it.
   const snapshots = useMemo(loadSnapshots, []);
-  const roster = useMemo(() => snapshotRoster(snapshots), [snapshots]);
-  // A remembered name with no snapshot (e.g. a cow webapp name) gives way to the first snapshot.
-  const [ironCharacter, setIronCharacter] = useState(() =>
-    (roster.characters.includes(persisted.ironCharacter) ? persisted.ironCharacter : roster.characters[0]) ||
-    persisted.ironCharacter || null);
-  const characters = roster.characters.length ? roster.characters : NO_CHARACTERS;
+  // The iron character is a game characterId (string), never a name: a rename keeps its times.
+  const [ironCharacter, setIronCharacter] = useState(() => initialIronCharacter(persisted.ironCharacter, snapshots));
+  const options = useMemo(() => snapshotOptions(snapshots), [snapshots]);
+  const characters = options.length ? options : NO_CHARACTERS;
+  const ironCharacterName = options.find((o) => o.value === ironCharacter)?.label ?? ironCharacter;
   const [itemCostOverrides, setItemCostOverrides] = useState(persisted.itemCostOverrides);
   const [dropCredit, setDropCredit] = useState(persisted.dropCredit);
   const [dropCreditUndo, setDropCreditUndo] = useState(persisted.dropCreditUndo);
@@ -262,10 +260,7 @@ export function usePrices(gameData, main = null) {
 
   // The cached iron times belong to one character; say so when the selection has
   // moved on, rather than quietly costing food at another character's rates.
-  const staleCharacter =
-    source === 'iron' && active?.character && ironCharacter && active.character !== ironCharacter
-      ? active.character
-      : null;
+  const staleCharacter = source === 'iron' ? staleIronCharacter(active, ironCharacter) : null;
 
   const fetchPrices = useCallback(async () => {
     if (source === 'vendor') {
@@ -323,16 +318,16 @@ export function usePrices(gameData, main = null) {
   }, [source, nextFetch]);
 
   // Following the main character — the one automatic fetch (see the header).
-  // `followed`: the snapshot name last acted on this session (loop guard).
+  // `followed`: the snapshot id last acted on this session (loop guard).
   const followed = useRef(null);
-  const followMain = useCallback(async (name, needsFetch, gameId) => {
+  const followMain = useCallback(async (id, needsFetch) => {
     // A turn is taken even without a fetch: following main to cached times must still void
     // an older iron reply in flight. No `fetching`: that is the manual fetch's spinner.
     const isLatest = nextIron();
-    setIronCharacter(name);
+    setIronCharacter(id);
     if (!needsFetch) return;
     try {
-      const iron = await computeIronEntry(name, snapshots, gameData.items, gameId);
+      const iron = await computeIronEntry(id, snapshots, gameData.items);
       if (isLatest()) setCache((prev) => ({ ...prev, iron }));
     } catch {
       // Quiet by design: e.g. a build without the wasm engine; the cached times stand.
@@ -340,11 +335,11 @@ export function usePrices(gameData, main = null) {
   }, [snapshots, gameData, nextIron]);
   useEffect(() => {
     if (!gameData?.items) return;
-    const next = autoIronDecision({ main, webapp: roster, cache, followed: followed.current });
+    const next = autoIronDecision({ main, snapshots, cache, followed: followed.current });
     if (!next) return;
-    followed.current = next.name;
-    if (next.name) followMain(next.name, next.needsFetch, main?.game?.id);
-  }, [main, roster, cache, gameData, followMain]);
+    followed.current = next.id;
+    if (next.id) followMain(next.id, next.needsFetch);
+  }, [main, snapshots, cache, gameData, followMain]);
 
   /**
    * Override one item's cost, in seconds per unit. Pass null (or anything not a
@@ -405,7 +400,8 @@ export function usePrices(gameData, main = null) {
     fetchedAt, staleCharacter, clearPrices,
     revenueMode, setRevenueMode,
     expenseMode, setExpenseMode,
-    ironCharacter, setIronCharacter, characters,
+    // ironCharacter is a game characterId; characters are Select options { value: id, label: name }.
+    ironCharacter, setIronCharacter, ironCharacterName, characters,
     itemCostOverrides,
     setItemCostOverride,
     setItemCostOverrides: setItemCostOverrides_,

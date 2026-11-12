@@ -278,11 +278,7 @@ export function ItemCostsView({ playerDTOs, gameItems, pricing, protectionPricin
                 size="xs"
                 w={160}
                 placeholder="Character"
-                data={[
-                  ...new Set(
-                    [...(pricing.characters || []), pricing.ironCharacter].filter(Boolean)
-                  ),
-                ].map((name) => ({ value: name, label: name }))}
+                data={pricing.characters}
                 value={pricing.ironCharacter}
                 onChange={pricing.setIronCharacter}
                 searchable

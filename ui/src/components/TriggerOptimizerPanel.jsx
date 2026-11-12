@@ -404,13 +404,7 @@ export function TriggerOptimizerPanel({
                   <Select
                     size="xs"
                     placeholder="Character"
-                    // Include the remembered character even when it is absent from the
-                    // snapshot list — its snapshot may be gone, and a Select that
-                    // renders blank makes it look as though the setting were lost when
-                    // it is merely unverified.
-                    data={[...new Set([...(pricing.characters || []), pricing.ironCharacter].filter(Boolean))].map(
-                      (name) => ({ value: name, label: name })
-                    )}
+                    data={pricing.characters}
                     value={pricing.ironCharacter}
                     onChange={pricing.setIronCharacter}
                     disabled={loading}
@@ -437,7 +431,7 @@ export function TriggerOptimizerPanel({
                   {pricing.staleCharacter && (
                     <Text size="xs" c="orange">
                       Cached times are for {pricing.staleCharacter}. Refetch to cost food at{' '}
-                      {pricing.ironCharacter}&apos;s rates.
+                      {pricing.ironCharacterName}&apos;s rates.
                     </Text>
                   )}
                   {!pricing.fetchedLabel && !pricing.error && (
