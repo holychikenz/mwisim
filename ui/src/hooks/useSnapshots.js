@@ -7,6 +7,7 @@ export function useSnapshots() {
   useEffect(() => {
     const reload = () => setSnapshots(loadSnapshots());
     window.addEventListener(SNAPSHOTS_EVENT, reload);
+    reload(); // a write between the first render and this effect fired no listener
     return () => window.removeEventListener(SNAPSHOTS_EVENT, reload);
   }, []);
   return snapshots;

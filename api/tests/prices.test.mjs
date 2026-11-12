@@ -55,16 +55,23 @@ test('matchSnapshotId: by game id only when main has one; by name only without',
 
 test('autoIronDecision: fetch once, never over the cached times, follow back — by id', () => {
   const main = { name: 'Holy', game: { id: 42 } };
-  assert.deepEqual(autoIronDecision({ main, snapshots: SNAPS, cache: {} }), { id: '42', needsFetch: true });
-  assert.deepEqual(autoIronDecision({ main, snapshots: SNAPS, cache: { iron: { characterId: '42' } } }), { id: '42', needsFetch: false });
+  const want = (needsFetch) => ({ id: '42', key: '42@null', needsFetch });
+  assert.deepEqual(autoIronDecision({ main, snapshots: SNAPS, cache: {} }), want(true));
+  assert.deepEqual(autoIronDecision({ main, snapshots: SNAPS, cache: { iron: { characterId: '42' } } }), want(false));
   // Same name, other id (or a name-keyed entry with no id): not theirs.
-  assert.deepEqual(autoIronDecision({ main, snapshots: SNAPS, cache: { iron: { characterId: '7', character: 'HolyChikenz' } } }), { id: '42', needsFetch: true });
-  assert.deepEqual(autoIronDecision({ main, snapshots: SNAPS, cache: { iron: { character: 'HolyChikenz' } } }), { id: '42', needsFetch: true });
-  assert.equal(autoIronDecision({ main, snapshots: SNAPS, cache: {}, followed: '42' }), null);
+  assert.deepEqual(autoIronDecision({ main, snapshots: SNAPS, cache: { iron: { characterId: '7', character: 'HolyChikenz' } } }), want(true));
+  assert.deepEqual(autoIronDecision({ main, snapshots: SNAPS, cache: { iron: { character: 'HolyChikenz' } } }), want(true));
+  assert.equal(autoIronDecision({ main, snapshots: SNAPS, cache: {}, followed: '42@null' }), null);
+  // A refreshed snapshot (new savedAt) follows again and recomputes over the old times.
+  const fresh = { ...SNAPS, 42: { ...SNAPS[42], savedAt: 5 } };
+  assert.deepEqual(autoIronDecision({ main, snapshots: fresh, cache: { iron: { characterId: '42', snapshotAt: 1 } }, followed: '42@1' }),
+    { id: '42', key: '42@5', needsFetch: true });
+  assert.deepEqual(autoIronDecision({ main, snapshots: fresh, cache: { iron: { characterId: '42', snapshotAt: 5 } } }),
+    { id: '42', key: '42@5', needsFetch: false });
   assert.equal(autoIronDecision({ main, snapshots: null, cache: {} }), null);
   assert.equal(autoIronDecision({ main: null, snapshots: SNAPS, cache: {} }), null);
   // Main moved to someone with no snapshot: id null, so moving back follows again.
-  assert.deepEqual(autoIronDecision({ main: { name: 'x', game: { id: 9 } }, snapshots: SNAPS, cache: {}, followed: '42' }), { id: null, needsFetch: false });
+  assert.deepEqual(autoIronDecision({ main: { name: 'x', game: { id: 9 } }, snapshots: SNAPS, cache: {}, followed: '42@null' }), { id: null, key: null, needsFetch: false });
 });
 
 test('initialIronCharacter: remembered id if it has a snapshot, else the first; names are dropped', () => {
@@ -73,6 +80,7 @@ test('initialIronCharacter: remembered id if it has a snapshot, else the first; 
   assert.equal(initialIronCharacter('alt', SNAPS), '7');
   assert.equal(initialIronCharacter(null, SNAPS), '7');
   assert.equal(initialIronCharacter('42', {}), null);
+  assert.equal(initialIronCharacter(null, { 1: {}, ...SNAPS }), '7', 'a nameless snapshot is not an option');
 });
 
 test('staleIronCharacter: compares ids, reports the cached name', () => {
@@ -81,6 +89,8 @@ test('staleIronCharacter: compares ids, reports the cached name', () => {
   assert.equal(staleIronCharacter({ character: 'alt' }, '7'), 'alt', 'a name-keyed entry is unverified');
   assert.equal(staleIronCharacter(null, '7'), null);
   assert.equal(staleIronCharacter({ character: 'alt', characterId: '7' }, null), null);
+  assert.equal(staleIronCharacter({ character: 'alt', characterId: '7', snapshotAt: 1 }, '7', 2), 'alt (an older snapshot)');
+  assert.equal(staleIronCharacter({ character: 'alt', characterId: '7', snapshotAt: 2 }, '7', 2), null);
 });
 
 test('snapshotOptions: id values, in-game name labels, nameless snapshots skipped', async () => {

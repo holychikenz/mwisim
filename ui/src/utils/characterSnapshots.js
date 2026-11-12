@@ -71,10 +71,24 @@ export function snapshotsFromMessage(data) {
   return out;
 }
 
-/** Merge `incoming` over the stored snapshots (by id) and tell the readers. False when storage refused it. */
+/**
+ * Merge `incoming` over the stored snapshots (by id) and tell the readers. A
+ * snapshot that changed is stamped `savedAt` (what marks cached iron times stale);
+ * an unchanged one keeps its stamp, and when nothing changed nothing is written.
+ * False when storage refused it.
+ */
 export function saveSnapshots(incoming) {
+  const stored = loadSnapshots();
+  let changed = false;
+  for (const [id, snap] of Object.entries(incoming)) {
+    const { savedAt: _SAVED_AT, ...prev } = stored[id] || {};
+    if (stored[id] && JSON.stringify(prev) === JSON.stringify(snap)) continue;
+    stored[id] = { ...snap, savedAt: Date.now() };
+    changed = true;
+  }
+  if (!changed) return true;
   try {
-    localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify({ ...loadSnapshots(), ...incoming }));
+    localStorage.setItem(SNAPSHOTS_KEY, JSON.stringify(stored));
   } catch {
     return false;
   }
@@ -87,7 +101,9 @@ export function installSnapshotBridge() {
   window.addEventListener('message', (e) => {
     if (e.source !== window || e.origin !== window.location.origin) return;
     const snapshots = snapshotsFromMessage(e.data);
-    if (snapshots && Object.keys(snapshots).length) saveSnapshots(snapshots);
+    if (snapshots && Object.keys(snapshots).length && !saveSnapshots(snapshots)) {
+      console.warn('[csim-import] game snapshots not saved: localStorage is full');
+    }
   });
   window.postMessage({ type: SNAPSHOT_READY }, window.location.origin);
 }

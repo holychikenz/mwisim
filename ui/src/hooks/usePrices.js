@@ -21,15 +21,16 @@ import { useSnapshots } from './useSnapshots';
 // indefinitely — nothing refetches on mount, on a source switch, or on reload.
 // Prices only change when the user asks, by pressing fetch. That is deliberate:
 // production times are stable, the market fetch depends on an external service
-// that may be offline, a character's iron times outlive its snapshot (none exist
-// until the csim-import userscript lands), and silently recomputing would make two
-// optimiser runs an hour apart incomparable for no reason the user asked for.
+// that may be offline, a character's iron times outlive its snapshot, and silently
+// recomputing would make two optimiser runs an hour apart incomparable for no
+// reason the user asked for. A refreshed snapshot (the csim-import userscript, after
+// a game reload) marks the cached times stale; only main's are recomputed (below).
 //
 // ONE EXCEPTION: FOLLOWING THE MAIN CHARACTER. On load, and whenever the header's
 // main character changes, a main with a snapshot becomes the iron character and
-// their times are computed — at most once per character per session, and never
-// when the cached iron times are already theirs, so a reload with main's times
-// cached computes nothing. The computation is quiet: a failure (e.g. a build
+// their times are computed — at most once per snapshot per session, and never
+// when the cached iron times are already that snapshot's, so a reload with main's
+// times cached computes nothing. The computation is quiet: a failure (e.g. a build
 // without the wasm engine) sets no error and the cached entry stands. The SOURCE
 // is never switched ('iron' is the default; anything else was picked by hand),
 // and hand-entered overrides are untouched.
@@ -185,6 +186,7 @@ async function computeIronEntry(id, snapshots, items) {
     label: `iron · ${name}`,
     character: name,
     characterId: String(id),
+    snapshotAt: snapshot.savedAt ?? null,
     fetchedAt: Date.now()
   };
 }
@@ -209,6 +211,8 @@ export function usePrices(gameData, main = null) {
   // The iron character is a game characterId (string), never a name: a rename keeps its times.
   const [ironCharacter, setIronCharacter] = useState(() => initialIronCharacter(persisted.ironCharacter, snapshots));
   const options = useMemo(() => snapshotOptions(snapshots), [snapshots]);
+  // Snapshots can arrive after mount (the userscript bridge): keep the selection a live option.
+  useEffect(() => setIronCharacter((cur) => initialIronCharacter(cur, snapshots)), [snapshots]);
   const characters = options.length ? options : NO_CHARACTERS;
   const ironCharacterName = options.find((o) => o.value === ironCharacter)?.label ?? ironCharacter;
   const [itemCostOverrides, setItemCostOverrides] = useState(persisted.itemCostOverrides);
@@ -261,7 +265,7 @@ export function usePrices(gameData, main = null) {
 
   // The cached iron times belong to one character; say so when the selection has
   // moved on, rather than quietly costing food at another character's rates.
-  const staleCharacter = source === 'iron' ? staleIronCharacter(active, ironCharacter) : null;
+  const staleCharacter = source === 'iron' ? staleIronCharacter(active, ironCharacter, snapshots[ironCharacter]?.savedAt ?? null) : null;
 
   const fetchPrices = useCallback(async () => {
     if (source === 'vendor') {
@@ -319,7 +323,7 @@ export function usePrices(gameData, main = null) {
   }, [source, nextFetch]);
 
   // Following the main character — the one automatic fetch (see the header).
-  // `followed`: the snapshot id last acted on this session (loop guard).
+  // `followed`: the snapshot key (id@savedAt) last acted on this session (loop guard).
   const followed = useRef(null);
   const followMain = useCallback(async (id, needsFetch) => {
     // A turn is taken even without a fetch: following main to cached times must still void
@@ -338,7 +342,7 @@ export function usePrices(gameData, main = null) {
     if (!gameData?.items) return;
     const next = autoIronDecision({ main, snapshots, cache, followed: followed.current });
     if (!next) return;
-    followed.current = next.id;
+    followed.current = next.key;
     if (next.id) followMain(next.id, next.needsFetch);
   }, [main, snapshots, cache, gameData, followMain]);
 

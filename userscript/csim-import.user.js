@@ -25,15 +25,15 @@
 // Steam/Kongregate ids and chat history — none of it is ever stored or sent.
 //
 // On the CSIM page: reads the stored snapshots and posts them to the page with
-// window.postMessage (ui/src/utils/snapshotBridge.js validates and stores them).
+// window.postMessage (ui/src/utils/characterSnapshots.js validates and stores them).
 //
 // STALE BUFFS: a snapshot is the character as of the last game load — active
 // teas, buffs and gear included. Reload the game tab to refresh it.
 // =============================================================================
 
 // What csim reads: mwi-econ character_stats.rs/item_value.rs (item times) and
-// ui/src/utils/characterToStore.js (combat import). csim's snapshotBridge.js
-// keeps the same list; api/tests/csimImportUserscript.test.mjs checks they agree.
+// ui/src/utils/characterToStore.js (combat import). csim's characterSnapshots.js
+// keeps the same list; api/tests/csimImport.test.mjs checks they agree.
 const SNAPSHOT_KEYS = [
     'character', // reduced to { id, name }
     'characterSkills', 'characterItems', 'characterLoadoutMap', 'characterHouseRoomMap',
@@ -87,7 +87,11 @@ function onGamePage() {
         }
         return message;
     };
-    Object.defineProperty(MessageEvent.prototype, 'data', descriptor);
+    try {
+        Object.defineProperty(MessageEvent.prototype, 'data', descriptor);
+    } catch (e) {
+        console.error('[csim-import] could not hook MessageEvent.prototype.data; nothing will be captured', e);
+    }
 }
 
 function onCsimPage() {

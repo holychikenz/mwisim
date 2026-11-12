@@ -155,28 +155,32 @@ export function matchSnapshotId(main, snapshots) {
 }
 
 /** Following main with the iron source (hooks/usePrices.js): null when nothing
- *  changed since `followed` (the snapshot id last acted on), else { id, needsFetch }
- *  — id null when main has no snapshot; needsFetch false when the cached iron
- *  times are already that id's. */
+ *  changed since `followed` (the `key` last acted on), else { id, key, needsFetch }
+ *  — id null when main has no snapshot; key is id + the snapshot's savedAt, so a
+ *  refreshed snapshot follows again; needsFetch false when the cached iron times
+ *  are already that snapshot's. */
 export function autoIronDecision({ main, snapshots, cache, followed = null }) {
   if (!snapshots || !main) return null;
   const id = matchSnapshotId(main, snapshots);
-  if (id === followed) return null;
-  return { id, needsFetch: id != null && cache?.iron?.characterId !== id };
+  const at = id != null ? snapshots[id].savedAt ?? null : null;
+  const key = id != null ? `${id}@${at}` : null;
+  if (key === followed) return null;
+  return { id, key, needsFetch: id != null && (cache?.iron?.characterId !== id || (cache.iron.snapshotAt ?? null) !== at) };
 }
 
-/** The iron character (game id) to start with: the remembered one when it still
- *  has a snapshot, else the first snapshot, else null. A remembered NAME (from a
- *  build that keyed on names) is dropped rather than matched. */
+/** The iron character (game id): the remembered one when it still has a named
+ *  snapshot (a Select option), else the first such, else null. A remembered NAME
+ *  (from a build that keyed on names) is dropped rather than matched. */
 export function initialIronCharacter(remembered, snapshots) {
-  const ids = Object.keys(snapshots || {});
+  const ids = Object.keys(snapshots || {}).filter((id) => typeof snapshots[id]?.character?.name === 'string');
   return remembered != null && ids.includes(String(remembered)) ? String(remembered) : ids[0] ?? null;
 }
 
 /** The cached iron entry's character name when it is not `ironCharacter`'s (by id), else null.
- *  An entry with no characterId (cached by a name-keyed build) counts as stale. */
-export function staleIronCharacter(entry, ironCharacter) {
-  return entry?.character && ironCharacter != null && entry.characterId !== String(ironCharacter)
-    ? entry.character
-    : null;
+ *  An entry with no characterId (cached by a name-keyed build) counts as stale, and so
+ *  does one computed from an older snapshot of the same character (`snapshotAt` = its savedAt). */
+export function staleIronCharacter(entry, ironCharacter, snapshotAt = null) {
+  if (!entry?.character || ironCharacter == null) return null;
+  if (entry.characterId !== String(ironCharacter)) return entry.character;
+  return (entry.snapshotAt ?? null) !== snapshotAt ? `${entry.character} (an older snapshot)` : null;
 }

@@ -65,8 +65,14 @@ test('saveSnapshots: merges by id into csim_character_snapshots and notifies', (
     assert.equal(snaps.saveSnapshots({ 42: { character: { id: 42, name: 'Holy' } } }), true);
     assert.deepEqual(Object.keys(snaps.loadSnapshots()).sort(), ['42', '7']);
     assert.deepEqual(events, [snaps.SNAPSHOTS_EVENT]);
+    const at = snaps.loadSnapshots()[42].savedAt;
+    assert.equal(typeof at, 'number');
+    // Unchanged: no write, no event, the stamp stands.
+    assert.equal(snaps.saveSnapshots({ 42: { character: { id: 42, name: 'Holy' } } }), true);
+    assert.equal(events.length, 1);
+    assert.equal(snaps.loadSnapshots()[42].savedAt, at);
     globalThis.localStorage.setItem = () => { throw new Error('quota'); };
-    assert.equal(snaps.saveSnapshots({ 1: {} }), false);
+    assert.equal(snaps.saveSnapshots({ 1: { character: { id: 1, name: 'n' } } }), false);
     assert.equal(events.length, 1);
   } finally {
     delete globalThis.localStorage;
