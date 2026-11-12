@@ -3,26 +3,26 @@ import { Button, Group, Text } from '@mantine/core';
 import { Select } from './SearchSelect';
 import { useGameData } from '../hooks/useGameData';
 import { characterToCharacter } from '../utils/characterToStore';
-import { loadSnapshots } from '../utils/characterSnapshots';
+import { snapshotOptions } from '../utils/characterSnapshots';
+import { useSnapshots } from '../hooks/useSnapshots';
 
 // =============================================================================
-// CharacterImport — "Load my character": one click from a stored character's
-// game snapshot (utils/characterSnapshots.js) to a fully-populated player
-// loadout, re-imported through the same merge as before.
+// CharacterImport — "Load my character": one click from a game snapshot
+// (utils/characterSnapshots.js) to a fully-populated player loadout, imported
+// through the same merge as before (a stored character with the same game id is
+// updated, otherwise one is created).
 //
-// Lists the stored characters (characterStore) that have a snapshot. Snapshots
-// come from the csim-import userscript, which is not built yet, so until then
-// the list is empty; stored characters keep working through LoadoutManager.
+// Lists every snapshot the csim-import userscript (userscript/csim-import.user.js)
+// has delivered; a snapshot is as of the last game load, so reload the game to refresh.
 // =============================================================================
 
-export function CharacterImport({ activeTab, onLoadCharacter, targetLabel, characters: store }) {
+export function CharacterImport({ activeTab, onLoadCharacter, targetLabel }) {
   const target = targetLabel || `P${activeTab}`;
   const { data: gameData } = useGameData();
-  const snapshots = useMemo(loadSnapshots, []);
-  // The stored characters with a snapshot (by game characterId), as Select options.
-  const characters = useMemo(() => Object.values(store?.characters || {})
-    .filter(c => c?.game?.id != null && snapshots[c.game.id])
-    .map(c => ({ value: c.id, label: c.name, data: snapshots[c.game.id] })), [store, snapshots]);
+  const snapshots = useSnapshots();
+  // Select options by game characterId, labelled with the in-game name.
+  const characters = useMemo(() => snapshotOptions(snapshots)
+    .map(o => ({ ...o, data: snapshots[o.value] })), [snapshots]);
   const [selected, setSelected] = useState(null);
   const current = characters.find(c => c.value === selected) || characters[0] || null;
   const [loading, setLoading] = useState(false);
@@ -55,7 +55,7 @@ export function CharacterImport({ activeTab, onLoadCharacter, targetLabel, chara
       const names = Object.keys(character.loadouts);
       showMessage(
         `Loaded ${name} — ${names.length} loadout${names.length === 1 ? '' : 's'} ` +
-        `(${names.join(', ')}) → ${target}${suffix}`
+        `(${names.join(', ')}) → ${target}${suffix}. As of the last game load: reload the game to refresh.`
       );
     } catch (e) {
       showMessage(`Failed to load character: ${e.message}`, true);
@@ -72,7 +72,7 @@ export function CharacterImport({ activeTab, onLoadCharacter, targetLabel, chara
           data={characters.map(({ value, label }) => ({ value, label }))}
           value={current?.value ?? null}
           onChange={setSelected}
-          placeholder={characters.length ? 'Character…' : 'No game snapshots yet'}
+          placeholder={characters.length ? 'Character…' : 'No game snapshots: install userscript/csim-import.user.js, load the game'}
           searchable
           size="xs"
           style={{ flex: 1 }}

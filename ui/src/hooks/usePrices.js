@@ -1,7 +1,8 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { buildMarketPrices, buildIronPrices, autoIronDecision, initialIronCharacter, staleIronCharacter } from '../utils/prices';
 import { createLatestGate } from '../utils/latestRequest';
-import { loadSnapshots, snapshotOptions } from '../utils/characterSnapshots';
+import { snapshotOptions } from '../utils/characterSnapshots';
+import { useSnapshots } from './useSnapshots';
 
 // =============================================================================
 // usePrices — price-source state + fetchers, with a persistent per-source cache.
@@ -203,8 +204,8 @@ export function usePrices(gameData, main = null) {
   const [error, setError] = useState(null);
   const [revenueMode, setRevenueMode] = useState(persisted.revenueMode);
   const [expenseMode, setExpenseMode] = useState(persisted.expenseMode);
-  // Read once; the csim-import userscript (not yet built) will need to refresh it.
-  const snapshots = useMemo(loadSnapshots, []);
+  // Re-read whenever the csim-import userscript delivers new snapshots.
+  const snapshots = useSnapshots();
   // The iron character is a game characterId (string), never a name: a rename keeps its times.
   const [ironCharacter, setIronCharacter] = useState(() => initialIronCharacter(persisted.ironCharacter, snapshots));
   const options = useMemo(() => snapshotOptions(snapshots), [snapshots]);

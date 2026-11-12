@@ -2308,7 +2308,6 @@ function App() {
 
                 <CharacterImport
                   activeTab={activeTab}
-                  characters={characters}
                   onLoadCharacter={(character, defaultLoadoutName) =>
                     handleImportCharacter(activeTab, character, defaultLoadoutName)}
                 />
