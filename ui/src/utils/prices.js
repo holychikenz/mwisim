@@ -162,6 +162,13 @@ export function ironTarget(pick, main, snapshots) {
   return matchSnapshotId(main, snapshots);
 }
 
+/** The iron Select's value: the target, else (nothing followed) the cached times'
+ *  character while still an option, else the first option, else null. */
+export function shownIronCharacter(target, cachedId, options) {
+  if (target != null) return target;
+  return options.some((o) => o.value === cachedId) ? cachedId : options[0]?.value ?? null;
+}
+
 /** The `id@stamp` whose iron times to compute automatically, or null: none without a
  *  target, when the cached times are already that snapshot's (`stamp` = its valuationStamp),
  *  or when this session already tried that key (`tried`, a Set) — so a failure is retried

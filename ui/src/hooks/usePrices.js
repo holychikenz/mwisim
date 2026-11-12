@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect, useMemo } from 'react';
-import { buildMarketPrices, buildIronPrices, ironTarget, ironComputeKey, staleIronCharacter, matchSnapshotId } from '../utils/prices';
+import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
+import { buildMarketPrices, buildIronPrices, ironTarget, ironComputeKey, shownIronCharacter, staleIronCharacter } from '../utils/prices';
 import { createLatestGate } from '../utils/latestRequest';
 import { snapshotOptions, valuationStamp } from '../utils/characterSnapshots';
 import { useSnapshots } from './useSnapshots';
@@ -121,13 +121,13 @@ function loadPersisted() {
   try {
     const raw = JSON.parse(localStorage.getItem(PRICES_KEY) || 'null');
     if (!raw || typeof raw !== 'object') return { ...DEFAULT_STATE };
-    // Older builds persisted the follow state; dropped so it can never be read back.
-    const { ironCharacter: _IRON, followedMain: _FOLLOWED, ironPicked: _PICKED, ...rest } = raw;
+    // Older builds' follow state (ironCharacter, followedMain, ironPicked) is never read,
+    // and persist() writes named fields only, so the first save drops it.
     return {
       // Merge over defaults so state written by an older build gains new keys
       // rather than arriving undefined.
       ...DEFAULT_STATE,
-      ...rest,
+      ...raw,
       cache: raw.cache && typeof raw.cache === 'object' ? raw.cache : {},
       // Migration: `consumableCostOverrides` is the pre-generalisation name for
       // the same map. Read it when the new key is absent so a user who spent time
@@ -221,15 +221,12 @@ export function usePrices(gameData, main = null) {
   // A pick no longer live (main changed, snapshot gone) is cleared, not merely ignored.
   useEffect(() => { if (pick && target !== pick.id) setPick(null); }, [pick, target]);
   // The iron character is a game characterId (string), never a name: a rename keeps its times.
-  // With no target, the cached times' character if still an option, else the first option.
-  const cachedIronId = cache.iron?.characterId;
-  const ironCharacter = target
-    ?? (options.some((o) => o.value === cachedIronId) ? cachedIronId : options[0]?.value ?? null);
+  const ironCharacter = shownIronCharacter(target, cache.iron?.characterId, options);
   // A Select can still emit null (clearing): ignored, or Fetch has no character.
   // Picking main by hand clears the pick, i.e. follows main again.
   const setIronCharacter = useCallback((id) => {
     if (id == null) return;
-    setPick(String(id) === matchSnapshotId(main, snapshots) ? null : { id: String(id), main: main?.id ?? null });
+    setPick(String(id) === ironTarget(null, main, snapshots) ? null : { id: String(id), main: main?.id ?? null });
   }, [main, snapshots]);
   const characters = options.length ? options : NO_CHARACTERS;
   const ironCharacterName = options.find((o) => o.value === ironCharacter)?.label ?? ironCharacter;
@@ -346,8 +343,9 @@ export function usePrices(gameData, main = null) {
   // reply in flight (auto or manual), so another character's times never land.
   // In-memory only: `tried` the id@stamp keys attempted this session, `target` the last one seen
   // (a field, not an effect of its own, so StrictMode's re-run does not void its own compute).
-  const [follow] = useState(() => ({ tried: new Set(), target: undefined }));
+  const followRef = useRef(null);
   useEffect(() => {
+    const follow = (followRef.current ??= { tried: new Set(), target: undefined });
     if (follow.target !== target) {
       follow.target = target;
       nextIron();
@@ -360,7 +358,7 @@ export function usePrices(gameData, main = null) {
     computeIronEntry(target, snapshots, gameData.items)
       .then((iron) => { if (isLatest()) setCache((prev) => ({ ...prev, iron })); })
       .catch(() => { /* quiet by design: e.g. a build without the wasm engine; the cached times stand */ });
-  }, [target, ironStamp, cache.iron, snapshots, gameData, nextIron, follow]);
+  }, [target, ironStamp, cache.iron, snapshots, gameData, nextIron]);
 
   /**
    * Override one item's cost, in seconds per unit. Pass null (or anything not a

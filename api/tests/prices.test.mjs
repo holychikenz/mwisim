@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const { saleValue, matchSnapshotId, ironTarget, ironComputeKey, staleIronCharacter } = await import('../../ui/src/utils/prices.js');
+const { saleValue, matchSnapshotId, ironTarget, ironComputeKey, shownIronCharacter, staleIronCharacter } = await import('../../ui/src/utils/prices.js');
 
 const PRICES = {
   '/items/rainbow_milk': { ask: 100, bid: 80, vendor: 5 },
@@ -92,6 +92,17 @@ test('ironComputeKey: unchanged stamp none, stamp change or missing cache recomp
   assert.equal(ironComputeKey('42', 'new', undefined, tried), '42@new');
   // No target: nothing.
   assert.equal(ironComputeKey(null, null, undefined, new Set()), null);
+});
+
+test('shownIronCharacter: the target, else the cached character while an option, else the first', async () => {
+  const { snapshotOptions } = await import('../../ui/src/utils/characterSnapshots.js');
+  const opts = snapshotOptions({ ...SNAPS, 1: {} }); // a nameless snapshot is not an option
+  assert.equal(shownIronCharacter('42', '7', opts), '42');
+  assert.equal(shownIronCharacter(null, '42', opts), '42');
+  assert.equal(shownIronCharacter(null, '9', opts), '7', 'a vanished cached character falls back');
+  assert.equal(shownIronCharacter(null, undefined, opts), '7', 'a name-keyed cache has no id');
+  assert.equal(shownIronCharacter(null, '1', opts), '7');
+  assert.equal(shownIronCharacter(null, '42', []), null);
 });
 
 test('valuationStamp: only what the valuation reads', () => {

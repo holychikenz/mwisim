@@ -70,6 +70,8 @@ export const SNAPSHOT_MESSAGE = 'csim-import:snapshots';
 export const SNAPSHOT_READY = 'csim-import:ready';
 /** Fired on window after a write, so the hooks reading snapshots re-read them. */
 export const SNAPSHOTS_EVENT = 'csim-snapshots';
+/** Fired on window on the userscript's first answer (useUserscriptStatus). */
+export const USERSCRIPT_EVENT = 'csim-userscript';
 // The same allowlist as userscript/csim-import.user.js (a test checks they agree).
 export const SNAPSHOT_KEYS = [
   'character',
@@ -171,7 +173,7 @@ export function installSnapshotBridge() {
     const snapshots = snapshotsFromMessage(e.data);
     if (snapshots && !userscriptAnswered) {
       userscriptAnswered = true;
-      window.dispatchEvent(new Event(SNAPSHOTS_EVENT));
+      window.dispatchEvent(new Event(USERSCRIPT_EVENT));
     }
     if (snapshots && Object.keys(snapshots).length && !saveSnapshots(snapshots)) {
       console.warn('[csim-import] game snapshots not saved: localStorage is full');

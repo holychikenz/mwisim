@@ -111,7 +111,7 @@ export function CharacterImport({ activeTab, onLoadCharacter, targetLabel }) {
         </Button>
       </Group>
       {scriptStatus === 'empty' && (
-        <Text size="xs" c="dimmed" mt={4}>Userscript installed: reload the game tab to capture your character.</Text>
+        <Text size="xs" c="dimmed" mt={4}>Userscript installed: reload the game tab to capture your character (still nothing? browser storage may be full).</Text>
       )}
       {scriptStatus === 'missing' && dismissed && (
         <Text size="xs" c="dimmed" mt={4}>

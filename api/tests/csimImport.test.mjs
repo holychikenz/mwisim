@@ -6,6 +6,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
+import { readFileSync } from 'node:fs';
 
 const require = createRequire(import.meta.url);
 const userscript = require('../../userscript/csim-import.user.js');
@@ -35,6 +36,9 @@ test('the userscript and csim agree on the allowlist and message type', () => {
   assert.deepEqual(userscript.SNAPSHOT_KEYS, snaps.SNAPSHOT_KEYS);
   assert.equal(userscript.MESSAGE_TYPE, snaps.SNAPSHOT_MESSAGE);
   assert.equal(userscript.READY_TYPE, snaps.SNAPSHOT_READY);
+  // The install button and the userscript's auto-update point at the same file.
+  const header = readFileSync(new URL('../../userscript/csim-import.user.js', import.meta.url), 'utf8');
+  for (const tag of ['@updateURL', '@downloadURL']) assert.match(header, new RegExp(`${tag}\\s+${snaps.USERSCRIPT_URL.replace(/\./g, '\\.')}\\n`));
 });
 
 test('snapshotsFromMessage: validates shape, re-filters, drops mismatched ids', () => {
@@ -161,7 +165,7 @@ test('userscriptStatus and the bridge: an empty answer means installed; silence 
     assert.equal(fresh.hasUserscriptAnswered(), false);
     listeners[0]({ origin: 'https://csim', data: { type: snaps.SNAPSHOT_MESSAGE, snapshots: {} } });
     assert.equal(fresh.hasUserscriptAnswered(), true);
-    assert.deepEqual(events, [snaps.SNAPSHOTS_EVENT], 'the hooks are told once');
+    assert.deepEqual(events, [snaps.USERSCRIPT_EVENT], 'the status hook is told once');
   } finally {
     delete globalThis.localStorage;
     delete globalThis.window;

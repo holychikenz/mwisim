@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { loadSnapshots, SNAPSHOTS_EVENT, hasUserscriptAnswered, userscriptStatus, USERSCRIPT_TIMEOUT_MS } from '../utils/characterSnapshots';
+import { loadSnapshots, SNAPSHOTS_EVENT, USERSCRIPT_EVENT, hasUserscriptAnswered, userscriptStatus, USERSCRIPT_TIMEOUT_MS } from '../utils/characterSnapshots';
 
 /** The stored game snapshots, re-read whenever the userscript bridge writes new ones. */
 export function useSnapshots() {
@@ -19,12 +19,12 @@ export function useUserscriptStatus(snapshotCount) {
   const [timedOut, setTimedOut] = useState(false);
   useEffect(() => {
     const check = () => setAnswered(hasUserscriptAnswered());
-    window.addEventListener(SNAPSHOTS_EVENT, check);
+    window.addEventListener(USERSCRIPT_EVENT, check);
     check();
     // shortcut: timed from mount, not from READY; both are at startup for CharacterImport.
     const timer = setTimeout(() => setTimedOut(true), USERSCRIPT_TIMEOUT_MS);
     return () => {
-      window.removeEventListener(SNAPSHOTS_EVENT, check);
+      window.removeEventListener(USERSCRIPT_EVENT, check);
       clearTimeout(timer);
     };
   }, []);
