@@ -146,9 +146,9 @@ function persist(state) {
   try {
     localStorage.setItem(PRICES_KEY, JSON.stringify(state));
   } catch {
-    // Almost certainly a quota failure on the price map. Keep the user's SOURCE
-    // and character choices, which are tiny and the more annoying thing to lose;
-    // the prices themselves stay in memory for this session.
+    // Almost certainly a quota failure on the price map. Keep the user's settings,
+    // which are tiny; the prices stay in memory for this session, so each reload
+    // finds no cached iron times and recomputes main.
     try {
       localStorage.setItem(PRICES_KEY, JSON.stringify({ ...state, cache: {} }));
     } catch {
@@ -219,7 +219,9 @@ export function usePrices(gameData, main = null) {
   const [pick, setPick] = useState(null);
   const target = useMemo(() => ironTarget(pick, main, snapshots), [pick, main, snapshots]);
   // A pick no longer live (main changed, snapshot gone) is cleared, not merely ignored.
-  useEffect(() => { if (pick && target !== pick.id) setPick(null); }, [pick, target]);
+  useEffect(() => {
+    if (pick && (target !== pick.id || pick.main !== (main?.id ?? null))) setPick(null);
+  }, [pick, target, main]);
   // The iron character is a game characterId (string), never a name: a rename keeps its times.
   const ironCharacter = shownIronCharacter(target, cache.iron?.characterId, options);
   // A Select can still emit null (clearing): ignored, or Fetch has no character.
@@ -355,9 +357,17 @@ export function usePrices(gameData, main = null) {
     if (!key) return;
     follow.tried.add(key);
     const isLatest = nextIron();
+    // `tried` holds only in-flight and failed keys: a success or a superseded run frees its
+    // key, so returning to a target (main → alt → main) recomputes it.
     computeIronEntry(target, snapshots, gameData.items)
-      .then((iron) => { if (isLatest()) setCache((prev) => ({ ...prev, iron })); })
-      .catch(() => { /* quiet by design: e.g. a build without the wasm engine; the cached times stand */ });
+      .then((iron) => {
+        follow.tried.delete(key);
+        if (isLatest()) setCache((prev) => ({ ...prev, iron }));
+      })
+      .catch(() => {
+        // quiet by design: e.g. a build without the wasm engine; the cached times stand
+        if (!isLatest()) follow.tried.delete(key);
+      });
   }, [target, ironStamp, cache.iron, snapshots, gameData, nextIron]);
 
   /**
