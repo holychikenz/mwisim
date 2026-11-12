@@ -3,7 +3,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-const { saleValue, matchSnapshotId, autoIronDecision, initialIronCharacter, staleIronCharacter } = await import('../../ui/src/utils/prices.js');
+const { saleValue, matchSnapshotId, ironTarget, ironComputeKey, staleIronCharacter } = await import('../../ui/src/utils/prices.js');
 
 const PRICES = {
   '/items/rainbow_milk': { ask: 100, bid: 80, vendor: 5 },
@@ -54,52 +54,44 @@ test('matchSnapshotId: by game id only when main has one; by name only without',
   assert.equal(matchSnapshotId(null, SNAPS), null);
 });
 
-test('autoIronDecision: fetch once, never over the cached times, follow back — by id', () => {
-  const main = { name: 'Holy', game: { id: 42 } };
-  const s0 = valuationStamp(SNAPS[42]);
-  const k0 = JSON.stringify(['id:42', '42', s0]);
-  const want = (needsFetch) => ({ id: '42', key: k0, needsFetch });
-  assert.deepEqual(autoIronDecision({ main, snapshots: SNAPS, cache: {} }), want(true));
-  assert.deepEqual(autoIronDecision({ main, snapshots: SNAPS, cache: { iron: { characterId: '42', snapshotStamp: s0 } } }), want(false));
-  // Same name, other id (or a name-keyed entry with no id): not theirs.
-  assert.deepEqual(autoIronDecision({ main, snapshots: SNAPS, cache: { iron: { characterId: '7', character: 'HolyChikenz' } } }), want(true));
-  assert.deepEqual(autoIronDecision({ main, snapshots: SNAPS, cache: { iron: { character: 'HolyChikenz' } } }), want(true));
-  assert.equal(autoIronDecision({ main, snapshots: SNAPS, cache: {}, followed: k0 }), null);
-  // A refreshed snapshot that the valuation reads differently follows again and recomputes.
-  const fresh = { ...SNAPS, 42: { ...SNAPS[42], characterSkills: [{ skillHrid: '/skills/cooking', level: 90 }] } };
-  const s1 = valuationStamp(fresh[42]);
-  const k1 = JSON.stringify(['id:42', '42', s1]);
-  assert.notEqual(s1, s0);
-  assert.deepEqual(autoIronDecision({ main, snapshots: fresh, cache: { iron: { characterId: '42', snapshotStamp: s0 } }, followed: k0 }),
-    { id: '42', key: k1, needsFetch: true });
-  assert.deepEqual(autoIronDecision({ main, snapshots: fresh, cache: { iron: { characterId: '42', snapshotStamp: s1 } } }),
-    { id: '42', key: k1, needsFetch: false });
-  assert.equal(autoIronDecision({ main, snapshots: null, cache: {} }), null);
-  assert.equal(autoIronDecision({ main: null, snapshots: SNAPS, cache: {} }), null);
-  // Main moved to someone with no snapshot: id null, so moving back follows again.
-  assert.deepEqual(autoIronDecision({ main: { name: 'x', game: { id: 9 } }, snapshots: SNAPS, cache: {}, followed: k0 }),
-    { id: null, key: JSON.stringify(['id:9', null, null]), needsFetch: false });
+test('ironTarget: the live hand pick, else main — one id comparison throughout', () => {
+  const main = { id: 'rec1', name: 'Holy', game: { id: 42 } };
+  assert.equal(ironTarget(null, main, SNAPS), '42');
+  // A pick made under this main overrides it.
+  assert.equal(ironTarget({ id: '7', main: 'rec1' }, main, SNAPS), '7');
+  // The header main changed since the pick: main again (usePrices then clears the pick).
+  assert.equal(ironTarget({ id: '7', main: 'rec1' }, { id: 'rec2', name: 'x', game: { id: 42 } }, SNAPS), '42');
+  // The picked snapshot vanished: main again.
+  const { 7: _gone, ...noAlt } = SNAPS;
+  assert.equal(ironTarget({ id: '7', main: 'rec1' }, main, noAlt), '42');
+  // A pick made before main had a snapshot survives main's first snapshot arriving.
+  const { 42: _none, ...noMain } = SNAPS;
+  assert.equal(ironTarget(null, main, noMain), null);
+  assert.equal(ironTarget({ id: '7', main: 'rec1' }, main, SNAPS), '7');
+  // No main at all: a pick still works; nothing to follow otherwise.
+  assert.equal(ironTarget({ id: '7', main: null }, null, SNAPS), '7');
+  assert.equal(ironTarget(null, null, SNAPS), null);
+  // A main without a game id matches by name ignoring case, as matchSnapshotId does.
+  assert.equal(ironTarget(null, { id: 'r', name: 'HOLYCHIKENZ' }, SNAPS), '42');
 });
 
-test('autoIronDecision: a hand pick survives main refreshes and main\'s first snapshot, not a main change', () => {
-  const main = { name: 'Holy', game: { id: 42 } };
-  const k0 = JSON.stringify(['id:42', '42', valuationStamp(SNAPS[42])]);
-  const fresh = { ...SNAPS, 42: { ...SNAPS[42], characterSkills: [{ skillHrid: '/skills/cooking', level: 90 }] } };
-  const k1 = JSON.stringify(['id:42', '42', valuationStamp(fresh[42])]);
-  // Picked by hand; main's snapshot refreshes: record the key, follow nothing, fetch nothing.
-  assert.deepEqual(autoIronDecision({ main, snapshots: fresh, cache: {}, followed: k0, picked: true }), { id: null, key: k1, needsFetch: false });
-  // Picked while main had no snapshot; main's first snapshot arrives: the pick still stands.
-  const { 42: _, ...noMain } = SNAPS;
-  const kNone = JSON.stringify(['id:42', null, null]);
-  assert.equal(autoIronDecision({ main, snapshots: noMain, cache: {}, followed: kNone, picked: true }), null);
-  assert.equal(autoIronDecision({ main, snapshots: SNAPS, cache: {}, followed: kNone, picked: true }).id, null);
-  // The header main changes: followed, pick or not.
-  assert.equal(autoIronDecision({ main: { name: 'alt', game: { id: 7 } }, snapshots: SNAPS, cache: {}, followed: k0, picked: true }).id, '7');
-  // Picking main by hand clears `picked` and `followed` (usePrices): main is followed and stale times recompute.
-  assert.deepEqual(autoIronDecision({ main, snapshots: fresh, cache: { iron: { characterId: '42', snapshotStamp: 'old' } }, followed: null }),
-    { id: '42', key: k1, needsFetch: true });
-  // A key written by an older build (not JSON) is no main at all.
-  assert.equal(autoIronDecision({ main, snapshots: SNAPS, cache: {}, followed: '42@x', picked: true }).id, '42');
+test('ironComputeKey: unchanged stamp none, stamp change or missing cache recompute, one try per session', () => {
+  const s0 = valuationStamp(SNAPS[42]);
+  const tried = new Set();
+  // Cached times are this snapshot's: nothing, ever.
+  assert.equal(ironComputeKey('42', s0, { characterId: '42', snapshotStamp: s0 }, tried), null);
+  // Cache missing (e.g. dropped by the quota fallback) or another character's: compute.
+  assert.equal(ironComputeKey('42', s0, undefined, tried), `42@${s0}`);
+  assert.equal(ironComputeKey('42', s0, { characterId: '7', snapshotStamp: s0 }, tried), `42@${s0}`);
+  assert.equal(ironComputeKey('42', s0, { character: 'HolyChikenz' }, tried), `42@${s0}`, 'a name-keyed entry is not theirs');
+  // Stamp changed (refreshed snapshot the valuation reads differently): compute.
+  assert.equal(ironComputeKey('42', 'new', { characterId: '42', snapshotStamp: s0 }, tried), '42@new');
+  // A failed attempt is not retried this session for the same id@stamp, but a new stamp tries again.
+  tried.add(`42@${s0}`);
+  assert.equal(ironComputeKey('42', s0, undefined, tried), null);
+  assert.equal(ironComputeKey('42', 'new', undefined, tried), '42@new');
+  // No target: nothing.
+  assert.equal(ironComputeKey(null, null, undefined, new Set()), null);
 });
 
 test('valuationStamp: only what the valuation reads', () => {
@@ -130,18 +122,6 @@ test('valuationStamp: only what the valuation reads', () => {
   diff({ noncombatStats: { gatheringQuantity: 0.2 } });
   diff({ houseActionTypeBuffsMap: { '/action_types/cooking': [{ typeHrid: '/buff_types/efficiency', flatBoost: 0.015 }] } });
   diff({ consumableActionTypeBuffsMap: {} });
-});
-
-test('initialIronCharacter: remembered id if it has a snapshot, else the first; names are dropped', () => {
-  assert.equal(initialIronCharacter('42', SNAPS), '42');
-  assert.equal(initialIronCharacter(42, SNAPS), '42');
-  assert.equal(initialIronCharacter('alt', SNAPS), '7');
-  assert.equal(initialIronCharacter(null, SNAPS), '7');
-  // No named snapshot at all (none yet, or unreadable): the remembered id stands.
-  assert.equal(initialIronCharacter('42', {}), '42');
-  assert.equal(initialIronCharacter(null, {}), null);
-  assert.equal(initialIronCharacter('alt', {}), null, 'a legacy name is dropped even then');
-  assert.equal(initialIronCharacter(null, { 1: {}, ...SNAPS }), '7', 'a nameless snapshot is not an option');
 });
 
 test('staleIronCharacter: compares ids, reports the cached name', () => {

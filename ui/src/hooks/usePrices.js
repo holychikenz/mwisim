@@ -1,5 +1,5 @@
 import { useState, useCallback, useEffect, useMemo } from 'react';
-import { buildMarketPrices, buildIronPrices, autoIronDecision, initialIronCharacter, staleIronCharacter, matchSnapshotId } from '../utils/prices';
+import { buildMarketPrices, buildIronPrices, ironTarget, ironComputeKey, staleIronCharacter, matchSnapshotId } from '../utils/prices';
 import { createLatestGate } from '../utils/latestRequest';
 import { snapshotOptions, valuationStamp } from '../utils/characterSnapshots';
 import { useSnapshots } from './useSnapshots';
@@ -26,16 +26,16 @@ import { useSnapshots } from './useSnapshots';
 // reason the user asked for. A refreshed snapshot (the csim-import userscript, after
 // a game reload) marks the cached times stale only when something the valuation
 // reads changed (valuationStamp: levels, gear, loadouts, buffs — not XP, item counts
-// or the action queue); only main's are then recomputed (below).
+// or the action queue); only the followed character's are then recomputed (below).
 //
-// ONE EXCEPTION: FOLLOWING THE MAIN CHARACTER. On load, and whenever the header's
-// main character changes, a main with a snapshot becomes the iron character and
-// their times are computed — at most once per snapshot stamp, and never when the
-// cached iron times are already that snapshot's, so a reload with main's times
-// cached computes nothing. A character picked by hand stands until the header's
-// main changes: main's refreshed snapshot then recomputes nothing (the followed
-// key and the pick are persisted, so a reload does not count as main changing).
-// Picking main by hand resumes following. The computation is quiet: a failure (e.g. a build
+// ONE EXCEPTION: FOLLOWING. The iron target is derived, never stored: this session's
+// hand pick, else the header main's snapshot (ironTarget). Its times are computed
+// whenever cache.iron is not that snapshot's (id + valuationStamp) — so a reload with
+// them cached computes nothing, and a dropped cache or a failed run simply recomputes
+// — at most once per id@stamp per session (ironComputeKey), so a failure cannot loop.
+// The pick is session-only: a reload, a header main change, picking main by hand, or
+// the pick's snapshot vanishing returns to following main. A new target supersedes a
+// computation in flight (nextIron). The computation is quiet: a failure (e.g. a build
 // without the wasm engine) sets no error and the cached entry stands. The SOURCE
 // is never switched ('iron' is the default; anything else was picked by hand),
 // and hand-entered overrides are untouched.
@@ -67,11 +67,6 @@ const MARKET_URLS = [
 
 const DEFAULT_STATE = {
   source: 'iron',
-  ironCharacter: null,
-  // The main-following key last acted on (autoIronDecision): survives a reload so it is not a main change.
-  followedMain: null,
-  // True while the iron character is a hand pick that main-following must leave alone.
-  ironPicked: false,
   revenueMode: 'bid',
   expenseMode: 'ask',
   cache: {},
@@ -126,11 +121,13 @@ function loadPersisted() {
   try {
     const raw = JSON.parse(localStorage.getItem(PRICES_KEY) || 'null');
     if (!raw || typeof raw !== 'object') return { ...DEFAULT_STATE };
+    // Older builds persisted the follow state; dropped so it can never be read back.
+    const { ironCharacter: _IRON, followedMain: _FOLLOWED, ironPicked: _PICKED, ...rest } = raw;
     return {
       // Merge over defaults so state written by an older build gains new keys
       // rather than arriving undefined.
       ...DEFAULT_STATE,
-      ...raw,
+      ...rest,
       cache: raw.cache && typeof raw.cache === 'object' ? raw.cache : {},
       // Migration: `consumableCostOverrides` is the pre-generalisation name for
       // the same map. Read it when the new key is absent so a user who spent time
@@ -217,24 +214,23 @@ export function usePrices(gameData, main = null) {
   const [expenseMode, setExpenseMode] = useState(persisted.expenseMode);
   // Re-read whenever the csim-import userscript delivers new snapshots.
   const snapshots = useSnapshots();
-  // The iron character is a game characterId (string), never a name: a rename keeps its times.
-  const [ironCharacter, setIronCharacterRaw] = useState(() => initialIronCharacter(persisted.ironCharacter, snapshots));
   const options = useMemo(() => snapshotOptions(snapshots), [snapshots]);
-  // Snapshots can arrive after mount (the userscript bridge): keep the selection a live option.
-  useEffect(() => setIronCharacterRaw((cur) => initialIronCharacter(cur, snapshots)), [snapshots]);
-  // `followed`: the main-following key last acted on; `picked`: the selection was made by hand.
-  const [followed, setFollowed] = useState(persisted.followedMain ?? null);
-  const [picked, setPicked] = useState(persisted.ironPicked === true);
-  const mainId = useMemo(() => matchSnapshotId(main, snapshots), [main, snapshots]);
-  // A hand pick. A Select can still emit null (clearing): never store it, or Fetch has no
-  // character. Picking main hands back to following (and so recomputes stale times).
+  // This session's hand pick, { id, main: header main's record id }; never persisted.
+  const [pick, setPick] = useState(null);
+  const target = useMemo(() => ironTarget(pick, main, snapshots), [pick, main, snapshots]);
+  // A pick no longer live (main changed, snapshot gone) is cleared, not merely ignored.
+  useEffect(() => { if (pick && target !== pick.id) setPick(null); }, [pick, target]);
+  // The iron character is a game characterId (string), never a name: a rename keeps its times.
+  // With no target, the cached times' character if still an option, else the first option.
+  const cachedIronId = cache.iron?.characterId;
+  const ironCharacter = target
+    ?? (options.some((o) => o.value === cachedIronId) ? cachedIronId : options[0]?.value ?? null);
+  // A Select can still emit null (clearing): ignored, or Fetch has no character.
+  // Picking main by hand clears the pick, i.e. follows main again.
   const setIronCharacter = useCallback((id) => {
     if (id == null) return;
-    setIronCharacterRaw(String(id));
-    const isMain = String(id) === mainId;
-    setPicked(!isMain);
-    if (isMain) setFollowed(null);
-  }, [mainId]);
+    setPick(String(id) === matchSnapshotId(main, snapshots) ? null : { id: String(id), main: main?.id ?? null });
+  }, [main, snapshots]);
   const characters = options.length ? options : NO_CHARACTERS;
   const ironCharacterName = options.find((o) => o.value === ironCharacter)?.label ?? ironCharacter;
   const [itemCostOverrides, setItemCostOverrides] = useState(persisted.itemCostOverrides);
@@ -244,8 +240,8 @@ export function usePrices(gameData, main = null) {
   // Persist the choices, the cache and the overrides. Prices are only written by
   // fetchPrices and main-following, so this effect computes and fetches nothing.
   useEffect(() => {
-    persist({ source, ironCharacter, followedMain: followed, ironPicked: picked, revenueMode, expenseMode, cache, itemCostOverrides, dropCredit, dropCreditUndo });
-  }, [source, ironCharacter, followed, picked, revenueMode, expenseMode, cache, itemCostOverrides, dropCredit, dropCreditUndo]);
+    persist({ source, revenueMode, expenseMode, cache, itemCostOverrides, dropCredit, dropCreditUndo });
+  }, [source, revenueMode, expenseMode, cache, itemCostOverrides, dropCredit, dropCreditUndo]);
 
   // The active entry is derived, so switching source is instant and lossless.
   const active = source === 'vendor' ? null : cache[source] || null;
@@ -346,28 +342,25 @@ export function usePrices(gameData, main = null) {
     setFetching(false);
   }, [source, nextFetch]);
 
-  // Following the main character — the one automatic fetch (see the header).
-  const followMain = useCallback(async (id, needsFetch) => {
-    // A turn is taken even without a fetch: following main to cached times must still void
-    // an older iron reply in flight. No `fetching`: that is the manual fetch's spinner.
-    const isLatest = nextIron();
-    setIronCharacterRaw(id);
-    setPicked(false);
-    if (!needsFetch) return;
-    try {
-      const iron = await computeIronEntry(id, snapshots, gameData.items);
-      if (isLatest()) setCache((prev) => ({ ...prev, iron }));
-    } catch {
-      // Quiet by design: e.g. a build without the wasm engine; the cached times stand.
-    }
-  }, [snapshots, gameData, nextIron]);
+  // Following — the one automatic fetch (see the header). A new target voids any iron
+  // reply in flight (auto or manual), so another character's times never land.
+  // In-memory only: `tried` the id@stamp keys attempted this session, `target` the last one seen
+  // (a field, not an effect of its own, so StrictMode's re-run does not void its own compute).
+  const [follow] = useState(() => ({ tried: new Set(), target: undefined }));
   useEffect(() => {
+    if (follow.target !== target) {
+      follow.target = target;
+      nextIron();
+    }
     if (!gameData?.items) return;
-    const next = autoIronDecision({ main, snapshots, cache, followed, picked });
-    if (!next) return;
-    setFollowed(next.key);
-    if (next.id) followMain(next.id, next.needsFetch);
-  }, [main, snapshots, cache, gameData, followMain, followed, picked]);
+    const key = ironComputeKey(target, ironStamp, cache.iron, follow.tried);
+    if (!key) return;
+    follow.tried.add(key);
+    const isLatest = nextIron();
+    computeIronEntry(target, snapshots, gameData.items)
+      .then((iron) => { if (isLatest()) setCache((prev) => ({ ...prev, iron })); })
+      .catch(() => { /* quiet by design: e.g. a build without the wasm engine; the cached times stand */ });
+  }, [target, ironStamp, cache.iron, snapshots, gameData, nextIron, follow]);
 
   /**
    * Override one item's cost, in seconds per unit. Pass null (or anything not a
