@@ -159,6 +159,7 @@ export function DropsEconomy({ results, monsters, items, pricing, focusHrid, pla
             <Select
               label="Character"
               data={characters}
+              allowDeselect={false}
               value={ironCharacter}
               onChange={setIronCharacter}
               placeholder={characters.length ? 'Character…' : 'no imported characters'}

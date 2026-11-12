@@ -94,17 +94,23 @@ function onGamePage() {
     }
 }
 
+/** csim's "listener up, send now" message: same origin and type. */
+function isReady(e, origin) {
+    return e.origin === origin && e.data?.type === READY_TYPE;
+}
+
 function onCsimPage() {
     const page = unsafeWindow;
     const send = () => page.postMessage({ type: MESSAGE_TYPE, snapshots: GM_getValue(STORE_KEY, {}) }, page.location.origin);
     // csim asks once its listener is up (it may load after this script); a capture in the game tab pushes live.
-    page.addEventListener('message', (e) => { if (e.source === page && e.data?.type === READY_TYPE) send(); });
+    // Origin, not `e.source === page`: in Firefox's sandbox the source is a wrapper, never === unsafeWindow.
+    page.addEventListener('message', (e) => { if (isReady(e, page.location.origin)) send(); });
     GM_addValueChangeListener(STORE_KEY, send);
     send();
 }
 
 if (typeof module !== 'undefined') {
-    module.exports = { SNAPSHOT_KEYS, MESSAGE_TYPE, READY_TYPE, filterCharacterData }; // node --test
+    module.exports = { SNAPSHOT_KEYS, MESSAGE_TYPE, READY_TYPE, filterCharacterData, isReady }; // node --test
 } else if (/milkywayidle(cn)?\.com$/.test(location.hostname)) {
     onGamePage();
 } else {

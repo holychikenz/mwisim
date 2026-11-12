@@ -405,6 +405,7 @@ export function TriggerOptimizerPanel({
                     size="xs"
                     placeholder="Character"
                     data={pricing.characters}
+                    allowDeselect={false}
                     value={pricing.ironCharacter}
                     onChange={pricing.setIronCharacter}
                     disabled={loading}

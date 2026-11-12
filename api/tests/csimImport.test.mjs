@@ -79,3 +79,33 @@ test('saveSnapshots: merges by id into csim_character_snapshots and notifies', (
     delete globalThis.window;
   }
 });
+
+test('bridge: any same-origin source is accepted (Firefox sandbox); other origins and READY replies are not', () => {
+  const store = new Map();
+  const listeners = [];
+  const posted = [];
+  globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v) };
+  globalThis.window = {
+    location: { origin: 'https://csim' },
+    addEventListener: (t, fn) => { if (t === 'message') listeners.push(fn); },
+    postMessage: (m, o) => posted.push([m.type, o]),
+    dispatchEvent: () => {}
+  };
+  try {
+    snaps.installSnapshotBridge();
+    assert.deepEqual(posted, [[snaps.SNAPSHOT_READY, 'https://csim']]);
+    const data = { type: snaps.SNAPSHOT_MESSAGE, snapshots: { 42: FRAME } };
+    listeners[0]({ origin: 'https://evil', source: globalThis.window, data });
+    assert.deepEqual(snaps.loadSnapshots(), {});
+    listeners[0]({ origin: 'https://csim', source: { wrapped: true }, data });
+    assert.deepEqual(Object.keys(snaps.loadSnapshots()), ['42']);
+    assert.equal(snaps.loadSnapshots()[42].email, undefined, 'still re-filtered');
+  } finally {
+    delete globalThis.localStorage;
+    delete globalThis.window;
+  }
+  // The userscript side: READY by origin and type, whatever the source.
+  assert.equal(userscript.isReady({ origin: 'https://csim', source: {}, data: { type: userscript.READY_TYPE } }, 'https://csim'), true);
+  assert.equal(userscript.isReady({ origin: 'https://evil', data: { type: userscript.READY_TYPE } }, 'https://csim'), false);
+  assert.equal(userscript.isReady({ origin: 'https://csim', data: { type: 'other' } }, 'https://csim'), false);
+});

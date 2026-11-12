@@ -279,6 +279,7 @@ export function ItemCostsView({ playerDTOs, gameItems, pricing, protectionPricin
                 w={160}
                 placeholder="Character"
                 data={pricing.characters}
+                allowDeselect={false}
                 value={pricing.ironCharacter}
                 onChange={pricing.setIronCharacter}
                 searchable

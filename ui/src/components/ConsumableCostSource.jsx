@@ -35,6 +35,7 @@ export function ConsumableCostSource({ pricing, loading, consumableCostRows = []
               size="xs"
               placeholder="Character"
               data={pricing.characters}
+              allowDeselect={false}
               value={pricing.ironCharacter}
               onChange={pricing.setIronCharacter}
               disabled={loading}
