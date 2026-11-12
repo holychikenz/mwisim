@@ -21,7 +21,7 @@
 #   test         api unit tests
 #   check        api test + sim:check + eval:check + twin-quick (what CI runs)
 #   all          everything above
-#   rust         cargo build + test of the Rust twin (rust/); needs a Rust toolchain
+#   rust         cargo build + test of the Rust twin (rust/) and test of rust/crates/mwi-econ; needs a Rust toolchain
 #   wasm         wasm-pack build of the twin -> rust/pkg/ (CSIM_ENGINE=wasm, UI engine toggle)
 #   twin         twin:check — the Rust twin against the JS engine, bit for bit
 #                (native, plus wasm when rust/pkg/ is built)
@@ -71,7 +71,9 @@ t_check() {
   t_twin_quick
 }
 
-t_rust() { say "cargo (rust/)"; (cd rust && cargo build --release --locked && cargo test --release --locked); }
+# mwi-econ is tested on its own (-p): a --workspace build would unify its serde_json
+# features (preserve_order) into csim-twin.
+t_rust() { say "cargo (rust/)"; (cd rust && cargo build --release --locked && cargo test --release --locked && cargo test --release --locked -p mwi-econ); }
 wasm_build() { (cd rust && wasm-pack "$@" build --release --target web --out-dir pkg --out-name csim_twin); }
 t_wasm() { say "wasm-pack (rust/ -> rust/pkg/)"; wasm_build; }
 t_twin() {

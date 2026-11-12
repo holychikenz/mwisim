@@ -1,0 +1,15 @@
+[package]
+name = "mwi-econ"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+publish = false
+description = "Item valuation shared by csim and cowstuff's webapp-rs server (moved from webapp-rs/server)."
+
+[dependencies]
+# One pin set with csim-twin and webapp-rs/server: a dependent workspace resolves a single serde/serde_json.
+serde = { version = "=1.0.228", features = ["derive"] }
+# preserve_order: get_gathering_action takes the first action in file order.
+# float_roundtrip: the same parse csim-twin uses, so the valuation is identical in both workspaces.
+serde_json = { version = "=1.0.149", features = ["preserve_order", "float_roundtrip"] }
+indexmap = "=2.14.2"
