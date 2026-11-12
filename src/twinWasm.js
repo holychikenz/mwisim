@@ -30,17 +30,21 @@ export function loadWasmTwin() {
         const data = {};
         for (const name of TWIN_DATA_NAMES) data[name] = dataProvider[EXPORT_NAME[name] ?? name];
         mod.load_data(JSON.stringify(data));
+        // The three maps the item valuation (rust/src/lib.rs item_values) reads.
+        const client = JSON.stringify({ actionDetailMap: data.actionDetailMap, itemDetailMap: data.itemDetailMap, enhancementLevelTotalBonusMultiplierTable: data.enhancementLevelTotalBonusMultiplierTable });
         const mine = loading;
+        const guard = (f) => {
+            try {
+                return f();
+            } catch (e) {
+                // A trap (Rust panic or abort) leaves this instance unsound: the next load re-instantiates.
+                if (e instanceof WebAssembly.RuntimeError && loading === mine) loading = null;
+                throw e;
+            }
+        };
         return {
-            run: async (json, onProgress) => {
-                try {
-                    return mod.run(json, onProgress ?? null);
-                } catch (e) {
-                    // A trap (Rust panic or abort) leaves this instance unsound: the next load re-instantiates.
-                    if (e instanceof WebAssembly.RuntimeError && loading === mine) loading = null;
-                    throw e;
-                }
-            },
+            run: async (json, onProgress) => guard(() => mod.run(json, onProgress ?? null)),
+            itemValues: (character, overrides = "") => guard(() => mod.item_values(client, character, overrides)),
         };
     })();
     loading.catch(() => { loading = null; });

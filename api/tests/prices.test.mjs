@@ -73,3 +73,15 @@ test('autoIronDecision: fetch once, never over the cached times, follow back', (
     { name: null, needsFetch: false }
   );
 });
+
+test('snapshot roster: main follows by game id to the snapshot name', async () => {
+  const { snapshotRoster, snapshotByName } = await import('../../ui/src/utils/characterSnapshots.js');
+  const snaps = { 42: { character: { id: 42, name: 'NewName' } }, 7: { character: { id: 7, name: 'Alt' } }, 9: {} };
+  const roster = snapshotRoster(snaps);
+  assert.deepEqual(roster.characters, ['Alt', 'NewName']);
+  // Renamed in game since the store record was made: the id still finds it.
+  const main = { name: 'OldName', game: { id: 42, name: 'OldName' } };
+  assert.deepEqual(autoIronDecision({ main, webapp: roster, cache: {} }), { name: 'NewName', needsFetch: true });
+  assert.equal(snapshotByName(snaps, 'NewName'), snaps[42]);
+  assert.equal(snapshotByName(snaps, 'Nobody'), null);
+});

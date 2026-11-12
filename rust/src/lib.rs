@@ -26,6 +26,10 @@ pub mod zone;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
 
+// A unit test, not tests/: an integration test rebuilds this cdylib with panic=unwind onto the same filename.
+#[cfg(test)]
+mod item_values_tests;
+
 use buff::Buff;
 use data::GameData;
 use guild_trial::{GuildTrial, TRIAL_DURATION_NS};
@@ -52,6 +56,30 @@ fn err_json(msg: &str, range: bool, rng_state: Option<u32>) -> String {
         serde_json::to_string(msg).unwrap_or_else(|_| "\"error\"".into()),
         rng_state.map(|s| format!(",\"rngState\":{s}")).unwrap_or_default()
     )
+}
+
+/// Every item's seconds-to-acquire for one character, as cowstuff's `/api/value/market`
+/// answers it: refined essence bootstraps, the full value pass, then coin 0.
+/// `client`: actionDetailMap, itemDetailMap, enhancementLevelTotalBonusMultiplierTable;
+/// `character`: the raw init_character_data; `overrides`: `{hrid: seconds}` essence overrides, or "".
+pub fn item_values(client: &str, character: &str, overrides: &str) -> String {
+    use mwi_econ::alchemy::{refined_essence_bootstraps, ALCHEMY_ESSENCE_BOOTSTRAP_SECONDS};
+    use mwi_econ::{item_value::ItemValueCalculator, util::parse_essence_overrides, Gdc};
+    use serde_json::{json, Map, Value};
+    let (data, character) = match (serde_json::from_str::<Value>(client), serde_json::from_str::<Value>(character)) {
+        (Ok(d), Ok(c)) => (d, c),
+        (Err(e), _) | (_, Err(e)) => return err_json(&format!("item_values: {e}"), false, None),
+    };
+    let gdc = Gdc::new(std::sync::Arc::new(data), std::sync::Arc::new(character));
+    let ov = parse_essence_overrides(Some(overrides));
+    let (bootstraps, _) = refined_essence_bootstraps(&gdc, "default", ALCHEMY_ESSENCE_BOOTSTRAP_SECONDS, &ov);
+    let mut values = Map::new();
+    for row in ItemValueCalculator::new(&gdc, Some(&bootstraps)).calculate_all_item_values() {
+        values.insert(row["hrid"].as_str().unwrap_or("").to_string(), row["value_seconds"].clone());
+    }
+    values.insert("/items/coin".into(), json!(0.0));
+    let name = gdc.character.get("character").and_then(|c| c.get("name")).cloned().unwrap_or_else(|| json!("Unknown"));
+    json!({"character": name, "unit": "seconds", "values": values}).to_string()
 }
 
 /// Run one request. Never panics on bad input: errors come back as `ok: false`.

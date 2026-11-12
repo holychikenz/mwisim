@@ -8,7 +8,7 @@
 //   market — https://www.milkywayidle.com/game_data/marketplace.json
 //            (CN mirror fallback). Unit: coins. vendor = itemDetailMap
 //            sellPrice fallback.
-//   iron   — cow/webapp /api/value/market?character=… time values.
+//   iron   — time values from the Rust valuation (hooks/usePrices.js).
 //            Unit: SECONDS-to-acquire. Vendor trades pay coins, which are
 //            worth no time in iron mode, so vendor = 0 and coin = 0.
 //
@@ -61,7 +61,7 @@ export function buildMarketPrices(marketData, items) {
   return prices;
 }
 
-/** Build a seconds price map from cow/webapp /api/value/market values. */
+/** Build a seconds price map from item_values' (cowstuff /api/value/market's) values. */
 export function buildIronPrices(values, items) {
   const prices = {};
   for (const item of Object.values(items)) {
@@ -139,11 +139,11 @@ export function formatValue(v, unit) {
 const sameName = (a, b) =>
   typeof a === 'string' && typeof b === 'string' && a.trim().toLowerCase() === b.trim().toLowerCase();
 
-/** The cow webapp's name for `main`, or null. `webapp` = GET /api/characters
- *  ({ characters: [name], details: [{ name, … }] }). Identity first: the game
- *  characterId, should a details entry carry one (`characterId` or `id`; none
- *  does today). Then by name, ignoring case, returning the webapp's spelling:
- *  the in-game name (game.name); the record's own, locally editable name only
+/** The roster's name for `main`, or null. `webapp` = a roster
+ *  ({ characters: [name], details: [{ name, … }] }; utils/characterSnapshots.js
+ *  snapshotRoster). Identity first: the game characterId, when a details entry
+ *  carries one (`characterId` or `id`). Then by name, ignoring case, returning
+ *  the roster's spelling: the in-game name (game.name); the record's own, locally editable name only
  *  for a record with no game identity — it could name another character. */
 export function matchWebappCharacter(main, webapp) {
   const gameId = main?.game?.id;
@@ -156,8 +156,8 @@ export function matchWebappCharacter(main, webapp) {
 }
 
 /** Following main with the iron source (hooks/usePrices.js): null when nothing
- *  changed since `followed` (webapp name last acted on), else { name, needsFetch }
- *  — name null when main is not a webapp character; needsFetch false when the
+ *  changed since `followed` (roster name last acted on), else { name, needsFetch }
+ *  — name null when main is not in the roster; needsFetch false when the
  *  cached iron times are already theirs. */
 export function autoIronDecision({ main, webapp, cache, followed = null }) {
   if (!webapp || !main) return null;

@@ -405,7 +405,7 @@ export function TriggerOptimizerPanel({
                     size="xs"
                     placeholder="Character"
                     // Include the remembered character even when it is absent from the
-                    // fetched list — the cow webapp may be offline, and a Select that
+                    // snapshot list — its snapshot may be gone, and a Select that
                     // renders blank makes it look as though the setting were lost when
                     // it is merely unverified.
                     data={[...new Set([...(pricing.characters || []), pricing.ironCharacter].filter(Boolean))].map(

@@ -46,3 +46,9 @@ pub fn run(request: &str, on_progress: Option<js_sys::Function>) -> String {
 pub fn selftest(input: &str) -> String {
     crate::selftest(input)
 }
+
+/// Item times (lib.rs `item_values`): stateless, so `load_data` is not needed.
+#[wasm_bindgen]
+pub fn item_values(client: &str, character: &str, overrides: &str) -> String {
+    crate::item_values(client, character, overrides)
+}

@@ -23,8 +23,10 @@ ui/src/utils/characterToPlayer.js ──▶ port of tampermonkey/src/kernel/csim
   (`src/workers/allZonesWorker.js`, one `src/worker.js` shard per
   combination) and ranks them by XP/h and effective encounters/hour. See
   [../ALL-ZONES.md](../ALL-ZONES.md).
-- **"Load my character"** talks to cow/webapp (port 12345) directly (its CORS
-  is open): `GET /api/characters` and `GET /api/character/raw?character=<name>`.
+- **"Load my character"** re-imports a stored character from its game snapshot
+  (`src/utils/characterSnapshots.js`, written by the csim-import userscript, not yet built).
+- **Iron item times** are computed locally: the snapshot goes through the Rust valuation
+  (`rust/crates/mwi-econ`, wasm `item_values`) in a `src/worker.js` job. Needs `./build.sh wasm`.
 
 ## Commands
 

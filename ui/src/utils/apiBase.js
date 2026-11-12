@@ -26,7 +26,7 @@
 //   3. dev server           — relative, so the Vite proxy handles it
 //   4. DEFAULT_API_BASE     — the absolute fallback
 //
-// Mirrors the IRON_API_BASE convention already established in usePrices.js.
+// Mirrors the ENHANCE_API_BASE convention in utils/enhancementCosts.js.
 // =============================================================================
 
 /** Where `npm start` in csim/api listens by default (api/server.js:11). */

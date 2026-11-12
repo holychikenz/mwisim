@@ -21,7 +21,6 @@
 //   POST /api/enhance/calculate  -> Markov solution over protection levels
 // =============================================================================
 
-import { IRON_API_BASE } from '../hooks/usePrices';
 import { resolveItemCost } from './consumableCosts';
 import { lastSegment } from './itemCosts';
 import {
@@ -33,8 +32,8 @@ import {
   pickProtectionRow,
 } from '../../../shared/enhancementRoi.js';
 
-/** Same host as the production-time source; its CORS is open. */
-export const ENHANCE_API_BASE = IRON_API_BASE;
+/** The cow webapp, addressed absolutely; its CORS is open. */
+export const ENHANCE_API_BASE = 'http://127.0.0.1:12345';
 
 /** The cap, matching the engine's multiplier table. */
 export const MAX_ENHANCEMENT_LEVEL = 20;

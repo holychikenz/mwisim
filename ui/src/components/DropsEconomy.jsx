@@ -161,7 +161,7 @@ export function DropsEconomy({ results, monsters, items, pricing, focusHrid, pla
               data={characters}
               value={ironCharacter}
               onChange={setIronCharacter}
-              placeholder={characters.length ? 'Character…' : 'webapp offline'}
+              placeholder={characters.length ? 'Character…' : 'no imported characters'}
               size="xs"
               w={150}
               searchable
@@ -211,7 +211,6 @@ export function DropsEconomy({ results, monsters, items, pricing, focusHrid, pla
       {error && (
         <Alert color="red" variant="light">
           Price fetch failed: {error.message}
-          {source === 'iron' ? ' — is the cow webapp running on port 12345?' : ''}
         </Alert>
       )}
 

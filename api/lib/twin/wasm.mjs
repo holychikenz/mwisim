@@ -57,5 +57,6 @@ export async function wasmBackend() {
   return {
     run: async (json, onProgress) => { const m = await load(); return guard(() => m.run(json, onProgress ?? null)); },
     selftest: async (json) => { const m = await load(); return guard(() => m.selftest(json)); },
+    itemValues: async (client, character, overrides = '') => { const m = await load(); return guard(() => m.item_values(client, character, overrides)); },
   };
 }

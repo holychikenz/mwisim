@@ -118,6 +118,18 @@ onmessage = async function (event) {
             }
             break;
         }
+        case "item_values": {
+            // MWIX adaptation: iron item times (rust mwi-econ, wasm) for ui/src/hooks/usePrices.js,
+            // here because the pass takes ~150 ms. `character` is init_character_data as JSON text.
+            try {
+                const wasm = await loadWasmTwin();
+                this.postMessage({ type: "item_values_result", json: wasm.itemValues(event.data.character) });
+            } catch (e) {
+                console.log(e);
+                this.postMessage({ type: "item_values_error", error: e });
+            }
+            break;
+        }
         case "start_guild_trial": {
             // Guild trial shard. Runs `iterations` full trial runs and returns a
             // lightweight per-iteration summary array (aggregated by multiWorker

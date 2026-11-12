@@ -1,50 +1,32 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useMemo, useCallback } from 'react';
 import { Button, Group, Text } from '@mantine/core';
 import { Select } from './SearchSelect';
 import { useGameData } from '../hooks/useGameData';
 import { characterToCharacter } from '../utils/characterToStore';
+import { loadSnapshots } from '../utils/characterSnapshots';
 
 // =============================================================================
-// CharacterImport — "Load my character": one click from the cow/webapp
-// character store to a fully-populated player loadout.
+// CharacterImport — "Load my character": one click from a stored character's
+// game snapshot (utils/characterSnapshots.js) to a fully-populated player
+// loadout, re-imported through the same merge as before.
 //
-// Talks to cow/webapp (Flask, port 12345) directly — its CORS is open, so
-// this works both under the Vite dev server and the static /sim/ mount on
-// start-server.py. Endpoints:
-//   GET /api/characters          → { characters: [name, ...] }
-//   GET /api/character/raw?character=<name> → { character, characterData }
-//
-// Degrades gracefully when the webapp is not running.
+// Lists the stored characters (characterStore) that have a snapshot. Snapshots
+// come from the csim-import userscript, which is not built yet, so until then
+// the list is empty; stored characters keep working through LoadoutManager.
 // =============================================================================
 
-import { IRON_API_BASE } from '../hooks/usePrices';
-
-const COW_BASE = IRON_API_BASE;
-
-export function CharacterImport({ activeTab, onLoadCharacter, targetLabel }) {
+export function CharacterImport({ activeTab, onLoadCharacter, targetLabel, characters: store }) {
   const target = targetLabel || `P${activeTab}`;
   const { data: gameData } = useGameData();
-  const [characters, setCharacters] = useState(null); // null = unknown/offline
+  const snapshots = useMemo(loadSnapshots, []);
+  // The stored characters with a snapshot (by game characterId), as Select options.
+  const characters = useMemo(() => Object.values(store?.characters || {})
+    .filter(c => c?.game?.id != null && snapshots[c.game.id])
+    .map(c => ({ value: c.id, label: c.name, data: snapshots[c.game.id] })), [store, snapshots]);
   const [selected, setSelected] = useState(null);
+  const current = characters.find(c => c.value === selected) || characters[0] || null;
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState(null);
-
-  const fetchCharacters = useCallback(async () => {
-    try {
-      const res = await fetch(`${COW_BASE}/api/characters`);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
-      const names = data.characters || [];
-      setCharacters(names);
-      setSelected(prev => prev || names[0] || null);
-    } catch {
-      setCharacters(null);
-    }
-  }, []);
-
-  useEffect(() => {
-    fetchCharacters();
-  }, [fetchCharacters]);
 
   const showMessage = useCallback((text, isError = false) => {
     setMessage({ text, isError });
@@ -52,21 +34,19 @@ export function CharacterImport({ activeTab, onLoadCharacter, targetLabel }) {
   }, []);
 
   const handleLoad = useCallback(async () => {
-    if (!selected) return;
+    if (!current) return;
+    const characterData = current.data;
+    // The in-game name, as the webapp import used: a rename then lands on the old record with the new name.
+    const name = characterData.character?.name || current.label;
     setLoading(true);
     try {
-      const res = await fetch(
-        `${COW_BASE}/api/character/raw?character=${encodeURIComponent(selected)}`
-      );
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const data = await res.json();
       // EVERY combat loadout the character owns comes across, not just the
       // active one — the two-level model has somewhere to put them all. The
       // slot is bound to whichever one the game is actually running.
       const { character, defaultLoadoutName, skipped } = characterToCharacter(
-        data.characterData,
+        characterData,
         gameData,
-        selected
+        name
       );
       onLoadCharacter(character, defaultLoadoutName);
 
@@ -74,7 +54,7 @@ export function CharacterImport({ activeTab, onLoadCharacter, targetLabel }) {
       const suffix = skippedCount > 0 ? ` (${skippedCount} unknown item(s) skipped)` : '';
       const names = Object.keys(character.loadouts);
       showMessage(
-        `Loaded ${selected} — ${names.length} loadout${names.length === 1 ? '' : 's'} ` +
+        `Loaded ${name} — ${names.length} loadout${names.length === 1 ? '' : 's'} ` +
         `(${names.join(', ')}) → ${target}${suffix}`
       );
     } catch (e) {
@@ -82,29 +62,17 @@ export function CharacterImport({ activeTab, onLoadCharacter, targetLabel }) {
     } finally {
       setLoading(false);
     }
-  }, [selected, gameData, onLoadCharacter, showMessage, target]);
-
-  if (characters === null) {
-    // cow/webapp unreachable — stay quiet but offer a retry.
-    return (
-      <Group gap={6}>
-        <Text size="xs" c="dimmed">cow webapp offline</Text>
-        <Button variant="subtle" size="compact-xs" onClick={fetchCharacters}>
-          retry
-        </Button>
-      </Group>
-    );
-  }
+  }, [current, gameData, onLoadCharacter, showMessage, target]);
 
   return (
     <div>
       <Group gap={6} wrap="nowrap" align="flex-end">
         <Select
           label="Load my character"
-          data={characters}
-          value={selected}
+          data={characters.map(({ value, label }) => ({ value, label }))}
+          value={current?.value ?? null}
           onChange={setSelected}
-          placeholder={characters.length ? 'Character…' : 'No characters saved'}
+          placeholder={characters.length ? 'Character…' : 'No game snapshots yet'}
           searchable
           size="xs"
           style={{ flex: 1 }}
@@ -115,7 +83,7 @@ export function CharacterImport({ activeTab, onLoadCharacter, targetLabel }) {
           variant="light"
           onClick={handleLoad}
           loading={loading}
-          disabled={!selected}
+          disabled={!current}
         >
           Load → {target}
         </Button>

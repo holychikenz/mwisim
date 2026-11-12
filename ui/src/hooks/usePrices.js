@@ -1,6 +1,7 @@
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
 import { buildMarketPrices, buildIronPrices, autoIronDecision } from '../utils/prices';
 import { createLatestGate } from '../utils/latestRequest';
+import { loadSnapshots, snapshotRoster, snapshotByName } from '../utils/characterSnapshots';
 
 // =============================================================================
 // usePrices — price-source state + fetchers, with a persistent per-source cache.
@@ -8,7 +9,9 @@ import { createLatestGate } from '../utils/latestRequest';
 //   source = 'vendor' — no fetch; DropsTable falls back to itemDetailMap
 //                       sellPrice (the pre-pricing behaviour).
 //   source = 'market' — live marketplace.json (coins).
-//   source = 'iron'   — cow/webapp time values (seconds), per character.
+//   source = 'iron'   — time values (seconds), per character, computed here
+//                       from the character's raw snapshot (utils/characterSnapshots.js)
+//                       by the Rust valuation in wasm (src/worker.js "item_values").
 //                       THE DEFAULT: this is an ironcow tool, and seconds are the
 //                       only unit commensurable with combat time, which the
 //                       trigger optimiser needs to cost food and drink honestly.
@@ -16,18 +19,19 @@ import { createLatestGate } from '../utils/latestRequest';
 // CACHING. Fetched values are kept per source in localStorage and reused
 // indefinitely — nothing refetches on mount, on a source switch, or on reload.
 // Prices only change when the user asks, by pressing fetch. That is deliberate:
-// production times are stable, the fetch depends on an external service that may
-// be offline, and silently refetching would make two optimiser runs an hour apart
-// incomparable for no reason the user asked for.
+// production times are stable, the market fetch depends on an external service
+// that may be offline, a character's iron times outlive its snapshot (none exist
+// until the csim-import userscript lands), and silently recomputing would make two
+// optimiser runs an hour apart incomparable for no reason the user asked for.
 //
 // ONE EXCEPTION: FOLLOWING THE MAIN CHARACTER. On load, and whenever the header's
-// main character changes, a main the cow webapp lists becomes the iron character
-// and their times are fetched — at most once per character per session, and
-// never when the cached iron times are already theirs, so a reload with main's
-// times cached fetches nothing. The fetch is quiet: an offline webapp sets no
-// error and the cached entry stands. The SOURCE is never switched ('iron' is the
-// default; anything else was picked by hand), and hand-entered overrides are
-// untouched.
+// main character changes, a main with a snapshot becomes the iron character and
+// their times are computed — at most once per character per session, and never
+// when the cached iron times are already theirs, so a reload with main's times
+// cached computes nothing. The computation is quiet: a failure (e.g. a build
+// without the wasm engine) sets no error and the cached entry stands. The SOURCE
+// is never switched ('iron' is the default; anything else was picked by hand),
+// and hand-entered overrides are untouched.
 //
 // The cache is keyed BY SOURCE rather than being a single slot, so flipping to
 // vendor and back does not throw away fetched iron times.
@@ -44,13 +48,7 @@ import { createLatestGate } from '../utils/latestRequest';
 // A zero override is DATA, not a missing value: it is kept in the map so the
 // objective still counts as priced, which is why the API and score.js accept 0
 // while still rejecting the -1 that buildIronPrices uses for "unknown".
-//
-// The cow webapp is addressed absolutely (CORS is open on its side) so this
-// works both under the Vite dev server and the static /sim/ mount on
-// start-server.py.
 // =============================================================================
-
-export const IRON_API_BASE = 'http://127.0.0.1:12345';
 
 /** localStorage key, following the UI's `csim_*` convention. */
 export const PRICES_KEY = 'csim_prices';
@@ -151,14 +149,35 @@ function persist(state) {
   }
 }
 
-/** The iron (cow webapp) times for `character`; throws on an HTTP failure. */
-async function fetchIronEntry(character, items) {
-  const url = `${IRON_API_BASE}/api/value/market` +
-    (character ? `?character=${encodeURIComponent(character)}` : '');
-  const res = await fetch(url, { mode: 'cors' });
-  if (!res.ok) throw new Error(`HTTP ${res.status}`);
-  const payload = await res.json();
-  const name = payload.character || character || 'default';
+/** cowstuff's /api/value/market payload for one raw character, from a fresh sim worker (~150 ms of wasm). */
+function itemValuesInWorker(characterData) {
+  return new Promise((resolve, reject) => {
+    const worker = new Worker(new URL('../../../src/worker.js', import.meta.url), { type: 'module' });
+    worker.onmessage = ({ data }) => {
+      worker.terminate();
+      if (data.type !== 'item_values_result') return reject(data.error instanceof Error ? data.error : new Error(String(data.error)));
+      try {
+        const payload = JSON.parse(data.json);
+        if (payload.ok === false) throw new Error(payload.error);
+        resolve(payload);
+      } catch (e) {
+        reject(e);
+      }
+    };
+    worker.onerror = (e) => {
+      worker.terminate();
+      reject(new Error(e.message || 'item-values worker failed'));
+    };
+    worker.postMessage({ type: 'item_values', character: JSON.stringify(characterData) });
+  });
+}
+
+/** The iron times for `character`, from their snapshot; throws when there is none or the valuation fails. */
+async function computeIronEntry(character, snapshots, items) {
+  const snapshot = snapshotByName(snapshots, character);
+  if (!snapshot) throw new Error(`no game snapshot for ${character || 'any character'}`);
+  const payload = await itemValuesInWorker(snapshot);
+  const name = payload.character || character;
   return {
     prices: pruneEmptyPrices(buildIronPrices(payload.values || {}, items)),
     unit: 'seconds',
@@ -183,40 +202,20 @@ export function usePrices(gameData, main = null) {
   const [error, setError] = useState(null);
   const [revenueMode, setRevenueMode] = useState(persisted.revenueMode);
   const [expenseMode, setExpenseMode] = useState(persisted.expenseMode);
-  const [ironCharacter, setIronCharacter] = useState(persisted.ironCharacter);
-  // GET /api/characters as the webapp sent it ({ characters, details, active }).
-  const [webapp, setWebapp] = useState(null);
-  const characters = webapp?.characters || NO_CHARACTERS;
+  // Read once; the csim-import userscript (not yet built) will need to refresh it.
+  const snapshots = useMemo(loadSnapshots, []);
+  const roster = useMemo(() => snapshotRoster(snapshots), [snapshots]);
+  const [ironCharacter, setIronCharacter] = useState(() => persisted.ironCharacter || roster.characters[0] || null);
+  const characters = roster.characters.length ? roster.characters : NO_CHARACTERS;
   const [itemCostOverrides, setItemCostOverrides] = useState(persisted.itemCostOverrides);
   const [dropCredit, setDropCredit] = useState(persisted.dropCredit);
   const [dropCreditUndo, setDropCreditUndo] = useState(persisted.dropCreditUndo);
 
   // Persist the choices, the cache and the overrides. Prices are only written by
-  // fetchPrices, so this effect does not itself cause any network activity.
+  // fetchPrices and main-following, so this effect computes and fetches nothing.
   useEffect(() => {
     persist({ source, ironCharacter, revenueMode, expenseMode, cache, itemCostOverrides, dropCredit, dropCreditUndo });
   }, [source, ironCharacter, revenueMode, expenseMode, cache, itemCostOverrides, dropCredit, dropCreditUndo]);
-
-  // Populate the iron character list (best effort — webapp may be down). This
-  // does not fetch prices itself; following main (below) may.
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const res = await fetch(`${IRON_API_BASE}/api/characters`, { mode: 'cors' });
-        if (!res.ok) return;
-        const data = await res.json();
-        if (!cancelled) {
-          const names = data.characters || [];
-          setWebapp(data);
-          setIronCharacter((prev) => prev || names[0] || null);
-        }
-      } catch {
-        /* webapp offline — iron source will report on fetch */
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
 
   // The active entry is derived, so switching source is instant and lossless.
   const active = source === 'vendor' ? null : cache[source] || null;
@@ -296,18 +295,18 @@ export function usePrices(gameData, main = null) {
         }));
       } else if (source === 'iron') {
         const isLatest = nextIron();
-        const iron = await fetchIronEntry(ironCharacter, gameData.items);
+        const iron = await computeIronEntry(ironCharacter, snapshots, gameData.items);
         if (isLatest()) setCache((prev) => ({ ...prev, iron }));
       }
     } catch (e) {
-      // The cached entry is deliberately LEFT IN PLACE. A webapp that happens to be
-      // down should not silently strip the production times an optimiser run is
-      // about to depend on; the error is surfaced and the old values stand.
+      // The cached entry is deliberately LEFT IN PLACE. A failed fetch or valuation
+      // should not silently strip the production times an optimiser run is about
+      // to depend on; the error is surfaced and the old values stand.
       if (isCurrent()) setError(e);
     } finally {
       if (isCurrent()) setFetching(false);
     }
-  }, [source, ironCharacter, gameData, nextIron, nextFetch]);
+  }, [source, ironCharacter, snapshots, gameData, nextIron, nextFetch]);
 
   // Switching source clears the error and ends the old source's manual fetch: its late
   // error or finish no longer reaches this one (its reply still fills its own cache).
@@ -319,7 +318,7 @@ export function usePrices(gameData, main = null) {
   }, [source, nextFetch]);
 
   // Following the main character — the one automatic fetch (see the header).
-  // `followed`: the webapp name last acted on this session (loop guard).
+  // `followed`: the snapshot name last acted on this session (loop guard).
   const followed = useRef(null);
   const followMain = useCallback(async (name, needsFetch) => {
     // A turn is taken even without a fetch: following main to cached times must still void
@@ -328,19 +327,19 @@ export function usePrices(gameData, main = null) {
     setIronCharacter(name);
     if (!needsFetch) return;
     try {
-      const iron = await fetchIronEntry(name, gameData.items);
+      const iron = await computeIronEntry(name, snapshots, gameData.items);
       if (isLatest()) setCache((prev) => ({ ...prev, iron }));
     } catch {
-      // Quiet by design: an offline webapp is normal, and the cached times stand.
+      // Quiet by design: e.g. a build without the wasm engine; the cached times stand.
     }
-  }, [gameData, nextIron]);
+  }, [snapshots, gameData, nextIron]);
   useEffect(() => {
     if (!gameData?.items) return;
-    const next = autoIronDecision({ main, webapp, cache, followed: followed.current });
+    const next = autoIronDecision({ main, webapp: roster, cache, followed: followed.current });
     if (!next) return;
     followed.current = next.name;
     if (next.name) followMain(next.name, next.needsFetch);
-  }, [main, webapp, cache, gameData, followMain]);
+  }, [main, roster, cache, gameData, followMain]);
 
   /**
    * Override one item's cost, in seconds per unit. Pass null (or anything not a
@@ -394,7 +393,7 @@ export function usePrices(gameData, main = null) {
 
   return {
     source, setSource,
-    // `prices` carries the overrides; `fetchedPrices` is what the server said.
+    // `prices` carries the overrides; `fetchedPrices` is what the source said.
     // Only the cost editor should ever want the latter.
     prices, fetchedPrices,
     unit, fetching, error, fetchedLabel, fetchPrices,

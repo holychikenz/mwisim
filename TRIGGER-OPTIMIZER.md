@@ -352,8 +352,8 @@ everything burned. Derivation: over H hours with E encounters and T seconds owed
 E / ((3600H + T)/3600), which reduces to the divisor above.
 
 Per-item seconds come from the UI's existing `iron` price source —
-`usePrices` → `buildIronPrices` → the cow webapp `/api/value/market`, which already
-reports values in seconds (`unit: 'seconds'`). `buildConsumableCosts` in
+`usePrices` → `buildIronPrices` → the wasm `item_values` (cowstuff's `/api/value/market`,
+computed locally), which already reports values in seconds (`unit: 'seconds'`). `buildConsumableCosts` in
 `ui/src/utils/consumableCosts.js` extracts just the items the party has slotted.
 Vendor and market sources report **coins**, which are not commensurable with combat
 time, so those are treated as "no cost data" and the UI says so.

@@ -745,7 +745,7 @@ function App() {
    * way in. See `mergeImportedCharacter`.
    *
    * The WRITE goes through a functional updater, and must stay that way.
-   * `CharacterImport` awaits a network round trip before calling back, so the
+   * An import may call back after other edits (it used to await a network round trip), so the
    * `characters` captured in this closure is a PRE-FETCH snapshot: anything the
    * user changed while the import was in flight — a level, a shrine, a gear
    * swap, a deletion, a second import — would be overwritten by a wholesale
@@ -2308,6 +2308,7 @@ function App() {
 
                 <CharacterImport
                   activeTab={activeTab}
+                  characters={characters}
                   onLoadCharacter={(character, defaultLoadoutName) =>
                     handleImportCharacter(activeTab, character, defaultLoadoutName)}
                 />
