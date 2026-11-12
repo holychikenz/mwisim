@@ -132,6 +132,35 @@ export function saveSnapshots(incoming) {
   return true;
 }
 
+/** Where Tampermonkey / Violentmonkey install (and auto-update) the userscript from. */
+export const USERSCRIPT_URL = 'https://raw.githubusercontent.com/holychikenz/mwisim/main/userscript/csim-import.user.js';
+/** No answer to READY within this long: the userscript is not installed. */
+export const USERSCRIPT_TIMEOUT_MS = 2000;
+const PROMPT_DISMISSED_KEY = 'csim_userscript_prompt_dismissed';
+
+// Set by the bridge on the userscript's first answer (it answers even with nothing captured).
+let userscriptAnswered = false;
+export const hasUserscriptAnswered = () => userscriptAnswered;
+
+/** 'ready' (snapshots stored), 'empty' (installed, nothing captured yet),
+ *  'missing' (no answer within USERSCRIPT_TIMEOUT_MS) or 'checking'. */
+export function userscriptStatus({ answered, timedOut, snapshotCount }) {
+  if (snapshotCount > 0) return 'ready';
+  if (answered) return 'empty';
+  return timedOut ? 'missing' : 'checking';
+}
+
+export function loadPromptDismissed() {
+  try { return localStorage.getItem(PROMPT_DISMISSED_KEY) === '1'; } catch { return false; }
+}
+
+export function savePromptDismissed(dismissed) {
+  try {
+    if (dismissed) localStorage.setItem(PROMPT_DISMISSED_KEY, '1');
+    else localStorage.removeItem(PROMPT_DISMISSED_KEY);
+  } catch { /* storage unavailable: dismissed for this session only */ }
+}
+
 /** Listen for the userscript (same origin only), then ask it to send. Once, at startup. */
 export function installSnapshotBridge() {
   window.addEventListener('message', (e) => {
@@ -140,6 +169,10 @@ export function installSnapshotBridge() {
     // (a same-origin frame gains nothing here: it can write localStorage directly).
     if (e.origin !== window.location.origin) return;
     const snapshots = snapshotsFromMessage(e.data);
+    if (snapshots && !userscriptAnswered) {
+      userscriptAnswered = true;
+      window.dispatchEvent(new Event(SNAPSHOTS_EVENT));
+    }
     if (snapshots && Object.keys(snapshots).length && !saveSnapshots(snapshots)) {
       console.warn('[csim-import] game snapshots not saved: localStorage is full');
     }

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { loadSnapshots, SNAPSHOTS_EVENT } from '../utils/characterSnapshots';
+import { loadSnapshots, SNAPSHOTS_EVENT, hasUserscriptAnswered, userscriptStatus, USERSCRIPT_TIMEOUT_MS } from '../utils/characterSnapshots';
 
 /** The stored game snapshots, re-read whenever the userscript bridge writes new ones. */
 export function useSnapshots() {
@@ -11,4 +11,22 @@ export function useSnapshots() {
     return () => window.removeEventListener(SNAPSHOTS_EVENT, reload);
   }, []);
   return snapshots;
+}
+
+/** Whether the csim-import userscript is installed (userscriptStatus), given the snapshot count. */
+export function useUserscriptStatus(snapshotCount) {
+  const [answered, setAnswered] = useState(hasUserscriptAnswered);
+  const [timedOut, setTimedOut] = useState(false);
+  useEffect(() => {
+    const check = () => setAnswered(hasUserscriptAnswered());
+    window.addEventListener(SNAPSHOTS_EVENT, check);
+    check();
+    // shortcut: timed from mount, not from READY; both are at startup for CharacterImport.
+    const timer = setTimeout(() => setTimedOut(true), USERSCRIPT_TIMEOUT_MS);
+    return () => {
+      window.removeEventListener(SNAPSHOTS_EVENT, check);
+      clearTimeout(timer);
+    };
+  }, []);
+  return userscriptStatus({ answered, timedOut, snapshotCount });
 }

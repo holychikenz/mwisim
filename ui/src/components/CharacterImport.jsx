@@ -1,10 +1,10 @@
 import { useState, useMemo, useCallback } from 'react';
-import { Button, Group, Text } from '@mantine/core';
+import { Alert, Anchor, Button, Group, Text } from '@mantine/core';
 import { Select } from './SearchSelect';
 import { useGameData } from '../hooks/useGameData';
 import { characterToCharacter } from '../utils/characterToStore';
-import { snapshotOptions } from '../utils/characterSnapshots';
-import { useSnapshots } from '../hooks/useSnapshots';
+import { snapshotOptions, USERSCRIPT_URL, loadPromptDismissed, savePromptDismissed } from '../utils/characterSnapshots';
+import { useSnapshots, useUserscriptStatus } from '../hooks/useSnapshots';
 
 // =============================================================================
 // CharacterImport — "Load my character": one click from a game snapshot
@@ -23,6 +23,12 @@ export function CharacterImport({ activeTab, onLoadCharacter, targetLabel }) {
   // Select options by game characterId, labelled with the in-game name.
   const characters = useMemo(() => snapshotOptions(snapshots)
     .map(o => ({ ...o, data: snapshots[o.value] })), [snapshots]);
+  const scriptStatus = useUserscriptStatus(characters.length);
+  const [dismissed, setDismissed] = useState(loadPromptDismissed);
+  const setPromptDismissed = useCallback((value) => {
+    savePromptDismissed(value);
+    setDismissed(value);
+  }, []);
   const [selected, setSelected] = useState(null);
   const current = characters.find(c => c.value === selected) || characters[0] || null;
   const [loading, setLoading] = useState(false);
@@ -66,13 +72,29 @@ export function CharacterImport({ activeTab, onLoadCharacter, targetLabel }) {
 
   return (
     <div>
+      {scriptStatus === 'missing' && !dismissed && (
+        <Alert role="status" color="orange" variant="light" mb={6} p="xs" title={<Text fw={700} size="sm">Userscript not installed</Text>}>
+          <Text size="xs" mb={6}>
+            The csim import userscript imports your characters and computes item times from the game.
+            Needs Tampermonkey or Violentmonkey; after installing, reload the game tab, then this page.
+          </Text>
+          <Group gap={6}>
+            <Button component="a" href={USERSCRIPT_URL} target="_blank" rel="noopener noreferrer" size="xs" color="orange">
+              Install userscript
+            </Button>
+            <Button size="xs" variant="subtle" color="gray" onClick={() => setPromptDismissed(true)}>
+              Dismiss
+            </Button>
+          </Group>
+        </Alert>
+      )}
       <Group gap={6} wrap="nowrap" align="flex-end">
         <Select
           label="Load my character"
           data={characters.map(({ value, label }) => ({ value, label }))}
           value={current?.value ?? null}
           onChange={setSelected}
-          placeholder={characters.length ? 'Character…' : 'No game snapshots: install userscript/csim-import.user.js, load the game'}
+          placeholder={characters.length ? 'Character…' : 'No game snapshots yet'}
           searchable
           size="xs"
           style={{ flex: 1 }}
@@ -88,6 +110,16 @@ export function CharacterImport({ activeTab, onLoadCharacter, targetLabel }) {
           Load → {target}
         </Button>
       </Group>
+      {scriptStatus === 'empty' && (
+        <Text size="xs" c="dimmed" mt={4}>Userscript installed: reload the game tab to capture your character.</Text>
+      )}
+      {scriptStatus === 'missing' && dismissed && (
+        <Text size="xs" c="dimmed" mt={4}>
+          No game snapshots:{' '}
+          <Anchor href={USERSCRIPT_URL} target="_blank" rel="noopener noreferrer" size="xs">install the csim import userscript</Anchor>{' '}
+          (<Anchor component="button" type="button" size="xs" onClick={() => setPromptDismissed(false)}>show the tip</Anchor>).
+        </Text>
+      )}
       {message && (
         <Text size="xs" c={message.isError ? 'red' : 'teal'} mt={4}>
           {message.text}

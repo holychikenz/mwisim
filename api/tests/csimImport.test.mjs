@@ -109,3 +109,78 @@ test('bridge: any same-origin source is accepted (Firefox sandbox); other origin
   assert.equal(userscript.isReady({ origin: 'https://evil', data: { type: userscript.READY_TYPE } }, 'https://csim'), false);
   assert.equal(userscript.isReady({ origin: 'https://csim', data: { type: 'other' } }, 'https://csim'), false);
 });
+
+test('userscript answers READY with an empty map when nothing is captured yet', () => {
+  const listeners = [];
+  const posted = [];
+  globalThis.unsafeWindow = {
+    location: { origin: 'https://csim' },
+    addEventListener: (t, fn) => { if (t === 'message') listeners.push(fn); },
+    postMessage: (m, o) => posted.push([m, o])
+  };
+  globalThis.GM_getValue = (_key, fallback) => fallback;
+  globalThis.GM_addValueChangeListener = () => {};
+  try {
+    userscript.onCsimPage();
+    listeners[0]({ origin: 'https://csim', data: { type: userscript.READY_TYPE } });
+    assert.equal(posted.length, 2, 'once on load, once for READY');
+    for (const [m, o] of posted) {
+      assert.deepEqual(m, { type: userscript.MESSAGE_TYPE, snapshots: {} });
+      assert.equal(o, 'https://csim');
+    }
+    // csim reads that empty answer as "installed".
+    assert.deepEqual(snaps.snapshotsFromMessage(posted[0][0]), {});
+  } finally {
+    delete globalThis.unsafeWindow;
+    delete globalThis.GM_getValue;
+    delete globalThis.GM_addValueChangeListener;
+  }
+});
+
+test('userscriptStatus and the bridge: an empty answer means installed; silence past the timeout means missing', async () => {
+  const { userscriptStatus } = snaps;
+  assert.equal(userscriptStatus({ answered: false, timedOut: false, snapshotCount: 0 }), 'checking');
+  assert.equal(userscriptStatus({ answered: false, timedOut: true, snapshotCount: 0 }), 'missing');
+  assert.equal(userscriptStatus({ answered: true, timedOut: true, snapshotCount: 0 }), 'empty');
+  assert.equal(userscriptStatus({ answered: false, timedOut: true, snapshotCount: 2 }), 'ready');
+  const listeners = [];
+  const events = [];
+  globalThis.localStorage = { getItem: () => null, setItem: () => {} };
+  globalThis.window = {
+    location: { origin: 'https://csim' },
+    addEventListener: (t, fn) => { if (t === 'message') listeners.push(fn); },
+    postMessage: () => {},
+    dispatchEvent: (e) => events.push(e.type)
+  };
+  try {
+    // A fresh module instance: the earlier bridge test already flipped the shared one.
+    const fresh = await import('../../ui/src/utils/characterSnapshots.js?answered');
+    fresh.installSnapshotBridge();
+    assert.equal(fresh.hasUserscriptAnswered(), false);
+    listeners[0]({ origin: 'https://evil', data: { type: snaps.SNAPSHOT_MESSAGE, snapshots: {} } });
+    assert.equal(fresh.hasUserscriptAnswered(), false);
+    listeners[0]({ origin: 'https://csim', data: { type: snaps.SNAPSHOT_MESSAGE, snapshots: {} } });
+    assert.equal(fresh.hasUserscriptAnswered(), true);
+    assert.deepEqual(events, [snaps.SNAPSHOTS_EVENT], 'the hooks are told once');
+  } finally {
+    delete globalThis.localStorage;
+    delete globalThis.window;
+  }
+});
+
+test('prompt dismissal: persisted when it can be, never throws', () => {
+  const store = new Map();
+  globalThis.localStorage = { getItem: (k) => store.get(k) ?? null, setItem: (k, v) => store.set(k, v), removeItem: (k) => store.delete(k) };
+  try {
+    assert.equal(snaps.loadPromptDismissed(), false);
+    snaps.savePromptDismissed(true);
+    assert.equal(snaps.loadPromptDismissed(), true);
+    snaps.savePromptDismissed(false);
+    assert.equal(snaps.loadPromptDismissed(), false);
+    globalThis.localStorage = { getItem: () => { throw new Error('denied'); }, setItem: () => { throw new Error('denied'); } };
+    assert.equal(snaps.loadPromptDismissed(), false);
+    snaps.savePromptDismissed(true);
+  } finally {
+    delete globalThis.localStorage;
+  }
+});

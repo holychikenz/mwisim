@@ -1,9 +1,11 @@
 // ==UserScript==
 // @name         csim import — game character → csim
 // @namespace    local.holychikenz.csim
-// @version      0.1.0
+// @version      0.2.0
 // @description  Captures your character from Milky Way Idle (allowlisted fields only) and hands it to csim. Reload the game to refresh it.
 // @author       holychikenz
+// @updateURL    https://raw.githubusercontent.com/holychikenz/mwisim/main/userscript/csim-import.user.js
+// @downloadURL  https://raw.githubusercontent.com/holychikenz/mwisim/main/userscript/csim-import.user.js
 // @match        https://www.milkywayidle.com/*
 // @match        https://test.milkywayidle.com/*
 // @match        https://www.milkywayidlecn.com/*
@@ -101,6 +103,7 @@ function isReady(e, origin) {
 
 function onCsimPage() {
     const page = unsafeWindow;
+    // Always answers, with {} when nothing is captured yet: csim reads any answer as "installed".
     const send = () => page.postMessage({ type: MESSAGE_TYPE, snapshots: GM_getValue(STORE_KEY, {}) }, page.location.origin);
     // csim asks once its listener is up (it may load after this script); a capture in the game tab pushes live.
     // Origin, not `e.source === page`: in Firefox's sandbox the source is a wrapper, never === unsafeWindow.
@@ -110,7 +113,7 @@ function onCsimPage() {
 }
 
 if (typeof module !== 'undefined') {
-    module.exports = { SNAPSHOT_KEYS, MESSAGE_TYPE, READY_TYPE, filterCharacterData, isReady }; // node --test
+    module.exports = { SNAPSHOT_KEYS, MESSAGE_TYPE, READY_TYPE, filterCharacterData, isReady, onCsimPage }; // node --test
 } else if (/milkywayidle(cn)?\.com$/.test(location.hostname)) {
     onGamePage();
 } else {
