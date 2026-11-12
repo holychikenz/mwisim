@@ -156,11 +156,15 @@ export function loadPromptDismissed() {
   try { return localStorage.getItem(PROMPT_DISMISSED_KEY) === '1'; } catch { return false; }
 }
 
+// Fired on every dismiss / restore so the header badge and CharacterImport agree.
+export const PROMPT_DISMISSED_EVENT = 'csim-userscript-prompt';
+
 export function savePromptDismissed(dismissed) {
   try {
     if (dismissed) localStorage.setItem(PROMPT_DISMISSED_KEY, '1');
     else localStorage.removeItem(PROMPT_DISMISSED_KEY);
   } catch { /* storage unavailable: dismissed for this session only */ }
+  globalThis.window?.dispatchEvent(new CustomEvent(PROMPT_DISMISSED_EVENT, { detail: dismissed }));
 }
 
 /** Listen for the userscript (same origin only), then ask it to send. Once, at startup. */

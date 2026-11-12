@@ -28,6 +28,7 @@ import {
 import { levelToTierIndex, tierIndexToLevel, MAX_TIER_INDEX } from '../utils/trialTiers';
 import { simulableZones, zoneTiers, findZone } from '../utils/zones';
 import { SettingsMenu } from './SettingsMenu';
+import { UserscriptBadge } from './UserscriptBadge';
 import { TARGETS, TOOLS, isTool, supports, toRoute, fromRoute } from '../utils/optimizerTarget';
 import { usePersistentState, isBool } from '../hooks/usePersistentState';
 import { MAX_DUNGEON_RUNS, MIN_RUN_HOURS, MAX_RUN_HOURS, MAX_ZONE_WORKERS, MIN_DURATION_HOURS, MAX_DURATION_HOURS, clampDuration, clampRunCount, clampRunHours, clampZoneWorkers } from '../../../shared/dungeonRuns.js';
@@ -243,6 +244,7 @@ export function HeaderControls({
             />
           </Group>
           <Group gap="xs" wrap="nowrap">
+            <UserscriptBadge />
             <Tooltip label={route.costs ? 'Close item costs' : 'Item costs'} withArrow>
               <ActionIcon
                 variant={route.costs ? 'filled' : 'default'}

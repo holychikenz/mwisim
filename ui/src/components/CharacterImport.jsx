@@ -3,8 +3,8 @@ import { Alert, Anchor, Button, Group, Text } from '@mantine/core';
 import { Select } from './SearchSelect';
 import { useGameData } from '../hooks/useGameData';
 import { characterToCharacter } from '../utils/characterToStore';
-import { snapshotOptions, USERSCRIPT_URL, loadPromptDismissed, savePromptDismissed } from '../utils/characterSnapshots';
-import { useSnapshots, useUserscriptStatus } from '../hooks/useSnapshots';
+import { snapshotOptions, USERSCRIPT_URL } from '../utils/characterSnapshots';
+import { useSnapshots, useUserscriptStatus, usePromptDismissed } from '../hooks/useSnapshots';
 
 // =============================================================================
 // CharacterImport — "Load my character": one click from a game snapshot
@@ -24,11 +24,7 @@ export function CharacterImport({ activeTab, onLoadCharacter, targetLabel }) {
   const characters = useMemo(() => snapshotOptions(snapshots)
     .map(o => ({ ...o, data: snapshots[o.value] })), [snapshots]);
   const scriptStatus = useUserscriptStatus(characters.length);
-  const [dismissed, setDismissed] = useState(loadPromptDismissed);
-  const setPromptDismissed = useCallback((value) => {
-    savePromptDismissed(value);
-    setDismissed(value);
-  }, []);
+  const [dismissed, setPromptDismissed] = usePromptDismissed();
   const [selected, setSelected] = useState(null);
   const current = characters.find(c => c.value === selected) || characters[0] || null;
   const [loading, setLoading] = useState(false);

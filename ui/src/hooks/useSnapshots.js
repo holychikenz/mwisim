@@ -1,5 +1,19 @@
 import { useEffect, useState } from 'react';
-import { loadSnapshots, SNAPSHOTS_EVENT, USERSCRIPT_EVENT, hasUserscriptAnswered, userscriptStatus, USERSCRIPT_TIMEOUT_MS } from '../utils/characterSnapshots';
+import {
+  loadSnapshots, SNAPSHOTS_EVENT, USERSCRIPT_EVENT, hasUserscriptAnswered, userscriptStatus, USERSCRIPT_TIMEOUT_MS,
+  loadPromptDismissed, savePromptDismissed, PROMPT_DISMISSED_EVENT
+} from '../utils/characterSnapshots';
+
+/** [dismissed, setDismissed] for the install prompt, shared by every component showing it. */
+export function usePromptDismissed() {
+  const [dismissed, setDismissed] = useState(loadPromptDismissed);
+  useEffect(() => {
+    const sync = (e) => setDismissed(Boolean(e.detail));
+    window.addEventListener(PROMPT_DISMISSED_EVENT, sync);
+    return () => window.removeEventListener(PROMPT_DISMISSED_EVENT, sync);
+  }, []);
+  return [dismissed, savePromptDismissed];
+}
 
 /** The stored game snapshots, re-read whenever the userscript bridge writes new ones. */
 export function useSnapshots() {
