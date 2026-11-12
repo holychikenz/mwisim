@@ -1,5 +1,5 @@
-import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
-import { buildMarketPrices, buildIronPrices, autoIronDecision, initialIronCharacter, staleIronCharacter } from '../utils/prices';
+import { useState, useCallback, useEffect, useMemo } from 'react';
+import { buildMarketPrices, buildIronPrices, autoIronDecision, initialIronCharacter, staleIronCharacter, matchSnapshotId } from '../utils/prices';
 import { createLatestGate } from '../utils/latestRequest';
 import { snapshotOptions, valuationStamp } from '../utils/characterSnapshots';
 import { useSnapshots } from './useSnapshots';
@@ -34,7 +34,8 @@ import { useSnapshots } from './useSnapshots';
 // cached iron times are already that snapshot's, so a reload with main's times
 // cached computes nothing. A character picked by hand stands until the header's
 // main changes: main's refreshed snapshot then recomputes nothing (the followed
-// key is persisted, so a reload does not count as main changing). The computation is quiet: a failure (e.g. a build
+// key and the pick are persisted, so a reload does not count as main changing).
+// Picking main by hand resumes following. The computation is quiet: a failure (e.g. a build
 // without the wasm engine) sets no error and the cached entry stands. The SOURCE
 // is never switched ('iron' is the default; anything else was picked by hand),
 // and hand-entered overrides are untouched.
@@ -69,6 +70,8 @@ const DEFAULT_STATE = {
   ironCharacter: null,
   // The main-following key last acted on (autoIronDecision): survives a reload so it is not a main change.
   followedMain: null,
+  // True while the iron character is a hand pick that main-following must leave alone.
+  ironPicked: false,
   revenueMode: 'bid',
   expenseMode: 'ask',
   cache: {},
@@ -219,8 +222,19 @@ export function usePrices(gameData, main = null) {
   const options = useMemo(() => snapshotOptions(snapshots), [snapshots]);
   // Snapshots can arrive after mount (the userscript bridge): keep the selection a live option.
   useEffect(() => setIronCharacterRaw((cur) => initialIronCharacter(cur, snapshots)), [snapshots]);
-  // A Select can still emit null (clearing): never store it, or Fetch has no character.
-  const setIronCharacter = useCallback((id) => { if (id != null) setIronCharacterRaw(String(id)); }, []);
+  // `followed`: the main-following key last acted on; `picked`: the selection was made by hand.
+  const [followed, setFollowed] = useState(persisted.followedMain ?? null);
+  const [picked, setPicked] = useState(persisted.ironPicked === true);
+  const mainId = useMemo(() => matchSnapshotId(main, snapshots), [main, snapshots]);
+  // A hand pick. A Select can still emit null (clearing): never store it, or Fetch has no
+  // character. Picking main hands back to following (and so recomputes stale times).
+  const setIronCharacter = useCallback((id) => {
+    if (id == null) return;
+    setIronCharacterRaw(String(id));
+    const isMain = String(id) === mainId;
+    setPicked(!isMain);
+    if (isMain) setFollowed(null);
+  }, [mainId]);
   const characters = options.length ? options : NO_CHARACTERS;
   const ironCharacterName = options.find((o) => o.value === ironCharacter)?.label ?? ironCharacter;
   const [itemCostOverrides, setItemCostOverrides] = useState(persisted.itemCostOverrides);
@@ -229,11 +243,9 @@ export function usePrices(gameData, main = null) {
 
   // Persist the choices, the cache and the overrides. Prices are only written by
   // fetchPrices and main-following, so this effect computes and fetches nothing.
-  // `followed`: the main-following key last acted on (see below); a ref, persisted alongside.
-  const followed = useRef(persisted.followedMain ?? null);
   useEffect(() => {
-    persist({ source, ironCharacter, followedMain: followed.current, revenueMode, expenseMode, cache, itemCostOverrides, dropCredit, dropCreditUndo });
-  }, [source, ironCharacter, revenueMode, expenseMode, cache, itemCostOverrides, dropCredit, dropCreditUndo]);
+    persist({ source, ironCharacter, followedMain: followed, ironPicked: picked, revenueMode, expenseMode, cache, itemCostOverrides, dropCredit, dropCreditUndo });
+  }, [source, ironCharacter, followed, picked, revenueMode, expenseMode, cache, itemCostOverrides, dropCredit, dropCreditUndo]);
 
   // The active entry is derived, so switching source is instant and lossless.
   const active = source === 'vendor' ? null : cache[source] || null;
@@ -275,7 +287,8 @@ export function usePrices(gameData, main = null) {
 
   // The cached iron times belong to one character; say so when the selection has
   // moved on, rather than quietly costing food at another character's rates.
-  const staleCharacter = source === 'iron' ? staleIronCharacter(active, ironCharacter, valuationStamp(snapshots[ironCharacter])) : null;
+  const ironStamp = useMemo(() => valuationStamp(snapshots[ironCharacter]), [snapshots, ironCharacter]);
+  const staleCharacter = source === 'iron' ? staleIronCharacter(active, ironCharacter, ironStamp) : null;
 
   const fetchPrices = useCallback(async () => {
     if (source === 'vendor') {
@@ -339,6 +352,7 @@ export function usePrices(gameData, main = null) {
     // an older iron reply in flight. No `fetching`: that is the manual fetch's spinner.
     const isLatest = nextIron();
     setIronCharacterRaw(id);
+    setPicked(false);
     if (!needsFetch) return;
     try {
       const iron = await computeIronEntry(id, snapshots, gameData.items);
@@ -349,11 +363,11 @@ export function usePrices(gameData, main = null) {
   }, [snapshots, gameData, nextIron]);
   useEffect(() => {
     if (!gameData?.items) return;
-    const next = autoIronDecision({ main, snapshots, cache, followed: followed.current, ironCharacter });
+    const next = autoIronDecision({ main, snapshots, cache, followed, picked });
     if (!next) return;
-    followed.current = next.key;
+    setFollowed(next.key);
     if (next.id) followMain(next.id, next.needsFetch);
-  }, [main, snapshots, cache, gameData, followMain, ironCharacter]);
+  }, [main, snapshots, cache, gameData, followMain, followed, picked]);
 
   /**
    * Override one item's cost, in seconds per unit. Pass null (or anything not a

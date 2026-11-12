@@ -57,40 +57,49 @@ test('matchSnapshotId: by game id only when main has one; by name only without',
 test('autoIronDecision: fetch once, never over the cached times, follow back — by id', () => {
   const main = { name: 'Holy', game: { id: 42 } };
   const s0 = valuationStamp(SNAPS[42]);
-  const want = (needsFetch) => ({ id: '42', key: `42@${s0}`, needsFetch });
+  const k0 = JSON.stringify(['id:42', '42', s0]);
+  const want = (needsFetch) => ({ id: '42', key: k0, needsFetch });
   assert.deepEqual(autoIronDecision({ main, snapshots: SNAPS, cache: {} }), want(true));
   assert.deepEqual(autoIronDecision({ main, snapshots: SNAPS, cache: { iron: { characterId: '42', snapshotStamp: s0 } } }), want(false));
   // Same name, other id (or a name-keyed entry with no id): not theirs.
   assert.deepEqual(autoIronDecision({ main, snapshots: SNAPS, cache: { iron: { characterId: '7', character: 'HolyChikenz' } } }), want(true));
   assert.deepEqual(autoIronDecision({ main, snapshots: SNAPS, cache: { iron: { character: 'HolyChikenz' } } }), want(true));
-  assert.equal(autoIronDecision({ main, snapshots: SNAPS, cache: {}, followed: `42@${s0}` }), null);
+  assert.equal(autoIronDecision({ main, snapshots: SNAPS, cache: {}, followed: k0 }), null);
   // A refreshed snapshot that the valuation reads differently follows again and recomputes.
   const fresh = { ...SNAPS, 42: { ...SNAPS[42], characterSkills: [{ skillHrid: '/skills/cooking', level: 90 }] } };
   const s1 = valuationStamp(fresh[42]);
+  const k1 = JSON.stringify(['id:42', '42', s1]);
   assert.notEqual(s1, s0);
-  assert.deepEqual(autoIronDecision({ main, snapshots: fresh, cache: { iron: { characterId: '42', snapshotStamp: s0 } }, followed: `42@${s0}`, ironCharacter: '42' }),
-    { id: '42', key: `42@${s1}`, needsFetch: true });
+  assert.deepEqual(autoIronDecision({ main, snapshots: fresh, cache: { iron: { characterId: '42', snapshotStamp: s0 } }, followed: k0 }),
+    { id: '42', key: k1, needsFetch: true });
   assert.deepEqual(autoIronDecision({ main, snapshots: fresh, cache: { iron: { characterId: '42', snapshotStamp: s1 } } }),
-    { id: '42', key: `42@${s1}`, needsFetch: false });
+    { id: '42', key: k1, needsFetch: false });
   assert.equal(autoIronDecision({ main, snapshots: null, cache: {} }), null);
   assert.equal(autoIronDecision({ main: null, snapshots: SNAPS, cache: {} }), null);
   // Main moved to someone with no snapshot: id null, so moving back follows again.
-  assert.deepEqual(autoIronDecision({ main: { name: 'x', game: { id: 9 } }, snapshots: SNAPS, cache: {}, followed: `42@${s0}` }), { id: null, key: null, needsFetch: false });
+  assert.deepEqual(autoIronDecision({ main: { name: 'x', game: { id: 9 } }, snapshots: SNAPS, cache: {}, followed: k0 }),
+    { id: null, key: JSON.stringify(['id:9', null, null]), needsFetch: false });
 });
 
-test('autoIronDecision: a hand-picked iron character survives main refreshes, not a main change', () => {
+test('autoIronDecision: a hand pick survives main refreshes and main\'s first snapshot, not a main change', () => {
   const main = { name: 'Holy', game: { id: 42 } };
-  const s0 = valuationStamp(SNAPS[42]);
+  const k0 = JSON.stringify(['id:42', '42', valuationStamp(SNAPS[42])]);
   const fresh = { ...SNAPS, 42: { ...SNAPS[42], characterSkills: [{ skillHrid: '/skills/cooking', level: 90 }] } };
-  const s1 = valuationStamp(fresh[42]);
-  // Picked '7' by hand; main's snapshot refreshes: record the key, follow nothing, fetch nothing.
-  assert.deepEqual(autoIronDecision({ main, snapshots: fresh, cache: {}, followed: `42@${s0}`, ironCharacter: '7' }),
-    { id: null, key: `42@${s1}`, needsFetch: false });
-  // The header main changes (here: to '7' from someone else): it is followed.
-  assert.deepEqual(autoIronDecision({ main: { name: 'alt', game: { id: 7 } }, snapshots: SNAPS, cache: {}, followed: `42@${s0}`, ironCharacter: '42' }),
-    { id: '7', key: `7@${valuationStamp(SNAPS[7])}`, needsFetch: true });
-  // An id prefix is not the same main ('4' vs '42').
-  assert.equal(autoIronDecision({ main, snapshots: SNAPS, cache: {}, followed: '4@x', ironCharacter: '7' }).id, '42');
+  const k1 = JSON.stringify(['id:42', '42', valuationStamp(fresh[42])]);
+  // Picked by hand; main's snapshot refreshes: record the key, follow nothing, fetch nothing.
+  assert.deepEqual(autoIronDecision({ main, snapshots: fresh, cache: {}, followed: k0, picked: true }), { id: null, key: k1, needsFetch: false });
+  // Picked while main had no snapshot; main's first snapshot arrives: the pick still stands.
+  const { 42: _, ...noMain } = SNAPS;
+  const kNone = JSON.stringify(['id:42', null, null]);
+  assert.equal(autoIronDecision({ main, snapshots: noMain, cache: {}, followed: kNone, picked: true }), null);
+  assert.equal(autoIronDecision({ main, snapshots: SNAPS, cache: {}, followed: kNone, picked: true }).id, null);
+  // The header main changes: followed, pick or not.
+  assert.equal(autoIronDecision({ main: { name: 'alt', game: { id: 7 } }, snapshots: SNAPS, cache: {}, followed: k0, picked: true }).id, '7');
+  // Picking main by hand clears `picked` and `followed` (usePrices): main is followed and stale times recompute.
+  assert.deepEqual(autoIronDecision({ main, snapshots: fresh, cache: { iron: { characterId: '42', snapshotStamp: 'old' } }, followed: null }),
+    { id: '42', key: k1, needsFetch: true });
+  // A key written by an older build (not JSON) is no main at all.
+  assert.equal(autoIronDecision({ main, snapshots: SNAPS, cache: {}, followed: '42@x', picked: true }).id, '42');
 });
 
 test('valuationStamp: only what the valuation reads', () => {
@@ -131,6 +140,7 @@ test('initialIronCharacter: remembered id if it has a snapshot, else the first; 
   // No named snapshot at all (none yet, or unreadable): the remembered id stands.
   assert.equal(initialIronCharacter('42', {}), '42');
   assert.equal(initialIronCharacter(null, {}), null);
+  assert.equal(initialIronCharacter('alt', {}), null, 'a legacy name is dropped even then');
   assert.equal(initialIronCharacter(null, { 1: {}, ...SNAPS }), '7', 'a nameless snapshot is not an option');
 });
 

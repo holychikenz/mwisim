@@ -108,7 +108,8 @@ export function snapshotsFromMessage(data) {
 
 /**
  * Merge `incoming` over the stored snapshots (by id) and tell the readers. A
- * snapshot that changed is stamped `savedAt` (what marks cached iron times stale);
+ * snapshot that changed is stamped `savedAt` (when it last changed; informational —
+ * cached iron times go stale by valuationStamp, not by this);
  * an unchanged one keeps its stamp, and when nothing changed nothing is written.
  * False when storage refused it.
  */
@@ -135,7 +136,8 @@ export function saveSnapshots(incoming) {
 export function installSnapshotBridge() {
   window.addEventListener('message', (e) => {
     // No `e.source === window`: Tampermonkey's Firefox sandbox posts with another source. The
-    // origin check, the message type and snapshotsFromMessage's validation are the boundary.
+    // origin check, the message type and snapshotsFromMessage's validation are the boundary
+    // (a same-origin frame gains nothing here: it can write localStorage directly).
     if (e.origin !== window.location.origin) return;
     const snapshots = snapshotsFromMessage(e.data);
     if (snapshots && Object.keys(snapshots).length && !saveSnapshots(snapshots)) {

@@ -155,20 +155,25 @@ export function matchSnapshotId(main, snapshots) {
   return hit ? hit[0] : null;
 }
 
+/** The header main's identity in a following key: game id, else the name matched on. */
+const mainRef = (main) => (main.game?.id != null ? `id:${main.game.id}` : `name:${main.game ? main.game.name : main.name}`);
+const keyMain = (key) => {
+  try { return JSON.parse(key)[0]; } catch { return null; }
+};
+
 /** Following main with the iron source (hooks/usePrices.js): null when nothing
  *  changed since `followed` (the `key` last acted on), else { id, key, needsFetch }
- *  — id null when main has no snapshot; key is id + the snapshot's valuationStamp.
- *  A new stamp for the same main recomputes only while main is still the iron
- *  character: a hand-picked `ironCharacter` stands (id null) until main changes.
+ *  — id null when main has no snapshot; key is [main, id, valuationStamp], so a
+ *  snapshot that the valuation reads differently follows again. While the same main
+ *  stays in the header, a hand-picked iron character (`picked`) stands: id null.
  *  needsFetch false when the cached iron times are already that snapshot's. */
-export function autoIronDecision({ main, snapshots, cache, followed = null, ironCharacter = null }) {
+export function autoIronDecision({ main, snapshots, cache, followed = null, picked = false }) {
   if (!snapshots || !main) return null;
   const id = matchSnapshotId(main, snapshots);
   const stamp = id != null ? valuationStamp(snapshots[id]) : null;
-  const key = id != null ? `${id}@${stamp}` : null;
+  const key = JSON.stringify([mainRef(main), id, stamp]);
   if (key === followed) return null;
-  const sameMain = id != null && typeof followed === 'string' && followed.startsWith(`${id}@`);
-  if (sameMain && ironCharacter != null && String(ironCharacter) !== id) return { id: null, key, needsFetch: false };
+  if (picked && keyMain(followed) === mainRef(main)) return { id: null, key, needsFetch: false };
   return { id, key, needsFetch: id != null && (cache?.iron?.characterId !== id || (cache.iron.snapshotStamp ?? null) !== stamp) };
 }
 
@@ -178,7 +183,7 @@ export function autoIronDecision({ main, snapshots, cache, followed = null, iron
  *  named snapshot at all (none yet, or unreadable) the remembered one is kept as is. */
 export function initialIronCharacter(remembered, snapshots) {
   const ids = Object.keys(snapshots || {}).filter((id) => typeof snapshots[id]?.character?.name === 'string');
-  if (!ids.length) return remembered ?? null;
+  if (!ids.length) return /^\d+$/.test(String(remembered)) ? String(remembered) : null;
   return remembered != null && ids.includes(String(remembered)) ? String(remembered) : ids[0];
 }
 
