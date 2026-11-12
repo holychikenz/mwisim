@@ -126,7 +126,8 @@ onmessage = async function (event) {
                 this.postMessage({ type: "item_values_result", json: wasm.itemValues(event.data.character) });
             } catch (e) {
                 console.log(e);
-                this.postMessage({ type: "item_values_error", error: e });
+                // A string: an uncloneable error would make postMessage throw and leave the caller waiting.
+                this.postMessage({ type: "item_values_error", error: String(e?.message || e) });
             }
             break;
         }

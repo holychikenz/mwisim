@@ -172,12 +172,14 @@ function itemValuesInWorker(characterData) {
   });
 }
 
-/** The iron times for `character`, from their snapshot; throws when there is none or the valuation fails. */
-async function computeIronEntry(character, snapshots, items) {
-  const snapshot = snapshotByName(snapshots, character);
+/** The iron times for `character`, from their snapshot (by game id when known); throws when there is none or the valuation fails. */
+async function computeIronEntry(character, snapshots, items, gameId = null) {
+  const byId = gameId != null ? snapshots[gameId] : null;
+  const snapshot = byId?.character?.name === character ? byId : snapshotByName(snapshots, character);
   if (!snapshot) throw new Error(`no game snapshot for ${character || 'any character'}`);
   const payload = await itemValuesInWorker(snapshot);
-  const name = payload.character || character;
+  // The roster name, so the cache always matches it (item_values says "Unknown" when the snapshot has none).
+  const name = character || payload.character;
   return {
     prices: pruneEmptyPrices(buildIronPrices(payload.values || {}, items)),
     unit: 'seconds',
@@ -205,7 +207,10 @@ export function usePrices(gameData, main = null) {
   // Read once; the csim-import userscript (not yet built) will need to refresh it.
   const snapshots = useMemo(loadSnapshots, []);
   const roster = useMemo(() => snapshotRoster(snapshots), [snapshots]);
-  const [ironCharacter, setIronCharacter] = useState(() => persisted.ironCharacter || roster.characters[0] || null);
+  // A remembered name with no snapshot (e.g. a cow webapp name) gives way to the first snapshot.
+  const [ironCharacter, setIronCharacter] = useState(() =>
+    (roster.characters.includes(persisted.ironCharacter) ? persisted.ironCharacter : roster.characters[0]) ||
+    persisted.ironCharacter || null);
   const characters = roster.characters.length ? roster.characters : NO_CHARACTERS;
   const [itemCostOverrides, setItemCostOverrides] = useState(persisted.itemCostOverrides);
   const [dropCredit, setDropCredit] = useState(persisted.dropCredit);
@@ -320,14 +325,14 @@ export function usePrices(gameData, main = null) {
   // Following the main character — the one automatic fetch (see the header).
   // `followed`: the snapshot name last acted on this session (loop guard).
   const followed = useRef(null);
-  const followMain = useCallback(async (name, needsFetch) => {
+  const followMain = useCallback(async (name, needsFetch, gameId) => {
     // A turn is taken even without a fetch: following main to cached times must still void
     // an older iron reply in flight. No `fetching`: that is the manual fetch's spinner.
     const isLatest = nextIron();
     setIronCharacter(name);
     if (!needsFetch) return;
     try {
-      const iron = await computeIronEntry(name, snapshots, gameData.items);
+      const iron = await computeIronEntry(name, snapshots, gameData.items, gameId);
       if (isLatest()) setCache((prev) => ({ ...prev, iron }));
     } catch {
       // Quiet by design: e.g. a build without the wasm engine; the cached times stand.
@@ -338,7 +343,7 @@ export function usePrices(gameData, main = null) {
     const next = autoIronDecision({ main, webapp: roster, cache, followed: followed.current });
     if (!next) return;
     followed.current = next.name;
-    if (next.name) followMain(next.name, next.needsFetch);
+    if (next.name) followMain(next.name, next.needsFetch, main?.game?.id);
   }, [main, roster, cache, gameData, followMain]);
 
   /**
