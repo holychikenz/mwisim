@@ -2,6 +2,7 @@ import { Suspense, useCallback, useRef, useState } from 'react';
 import { ActionIcon } from '@mantine/core';
 import { ChunkBoundary } from '../components/ChunkBoundary';
 import { retryableLazy } from '../utils/retryableLazy';
+import { useAssistantBridge } from './bridge';
 import avatarUrl from './roboburble.svg';
 
 // The only eager part of the assistant: a round launcher at the bottom right of
@@ -14,7 +15,9 @@ const Panel = retryableLazy(() => import('./Panel').then(m => ({ default: m.Pane
 const SPOT = { position: 'fixed', zIndex: 99, bottom: 16, right: 'calc(var(--app-shell-aside-offset, 0px) + 16px)' };
 const PANEL_SPOT = { position: 'fixed', zIndex: 150, bottom: 84, right: 'calc(var(--app-shell-aside-offset, 0px) + 16px)', width: 'min(380px, calc(100vw - 32px))' };
 
-export function Roboburble({ bridge }) {
+// state, setters and run come from App each render; the bridge lives here so a hidden assistant costs App nothing.
+export function Roboburble({ state, setters, run }) {
+  const bridge = useAssistantBridge(state, setters, run);
   const launcher = useRef(null);
   const [mounted, setMounted] = useState(false);
   const [open, setOpen] = useState(false);

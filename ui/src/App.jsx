@@ -54,8 +54,6 @@ import { LoadoutManager } from './components/LoadoutManager';
 import { CharacterImport } from './components/CharacterImport';
 import { ChunkBoundary } from './components/ChunkBoundary';
 import { retryableLazy } from './utils/retryableLazy';
-import { Roboburble } from './assistant/Roboburble';
-import { useAssistantBridge } from './assistant/bridge';
 import { ROBOBURBLE_ENABLED } from './assistant/enabled';
 import { TextInput } from '@mantine/core';
 import { toPlayerDTO } from './utils/playerDTO';
@@ -159,6 +157,8 @@ const GuildTrialResults = lazyNamed(() => import('./components/GuildTrialResults
 const GuildTrialPanel = lazyNamed(() => import('./components/GuildTrialPanel'), 'GuildTrialPanel');
 const TriggerOptimizerPanel = lazyNamed(() => import('./components/TriggerOptimizerPanel'), 'TriggerOptimizerPanel');
 const TriggerOptimizerResults = lazyNamed(() => import('./components/TriggerOptimizerResults'), 'TriggerOptimizerResults');
+// Lazy so that, with the flag off, none of the assistant ships in the main chunk.
+const Roboburble = lazyNamed(() => import('./assistant/Roboburble'), 'Roboburble');
 const EquipmentOptimizerPanel = lazyNamed(() => import('./components/EquipmentOptimizerPanel'), 'EquipmentOptimizerPanel');
 const EquipmentOptimizerResults = lazyNamed(() => import('./components/EquipmentOptimizerResults'), 'EquipmentOptimizerResults');
 const CandidateOptimizerPanel = lazyNamed(() => import('./components/CandidateOptimizerPanel'), 'CandidateOptimizerPanel');
@@ -2068,16 +2068,6 @@ function App() {
     ? undefined
     : (isApiOpt ? apiEngine.clearResults : clearSimResults);
 
-  // Roboburble (src/assistant): reads this render's state, writes only through these setters.
-  const assistant = useAssistantBridge(
-    { gameData, characters, party, activeTab, selectedPlayers, roster, selectedEntryId, simMode, optTarget,
-      zone, difficultyTier, duration, labConfig, trialConfig, results: activeResults, loading: activeLoading,
-      progress: activeProgress, error: activeError, runDisabled: !!tool?.runDisabled },
-    { characters: setCharacters, zone: handleZoneChange, difficultyTier: setDifficultyTier, duration: setDuration,
-      labConfig: setLabConfig, trialConfig: setTrialConfig, simMode: setSimMode, optTarget: setOptTarget },
-    handleStartSimulation
-  );
-
   return (
     <AppShell
       // Two rows: brand, target, Costs and the cog (56) over the tool tabs (40).
@@ -2591,7 +2581,21 @@ function App() {
         </Suspense>
         </ChunkBoundary>
       )}
-      {ROBOBURBLE_ENABLED && <Roboburble bridge={assistant} />}
+      {/* Roboburble (src/assistant): reads this render's state, writes only through these setters. */}
+      {ROBOBURBLE_ENABLED && (
+        <ChunkBoundary>
+        <Suspense fallback={null}>
+        <Roboburble
+          state={{ gameData, characters, party, activeTab, selectedPlayers, roster, selectedEntryId, simMode, optTarget,
+            zone, difficultyTier, duration, labConfig, trialConfig, results: activeResults, loading: activeLoading,
+            progress: activeProgress, error: activeError, runDisabled: !!tool?.runDisabled }}
+          setters={{ characters: setCharacters, zone: handleZoneChange, difficultyTier: setDifficultyTier, duration: setDuration,
+            labConfig: setLabConfig, trialConfig: setTrialConfig, simMode: setSimMode, optTarget: setOptTarget }}
+          run={handleStartSimulation}
+        />
+        </Suspense>
+        </ChunkBoundary>
+      )}
     </AppShell>
   );
 }
