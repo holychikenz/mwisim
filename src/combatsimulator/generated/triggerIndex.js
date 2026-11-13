@@ -19,6 +19,7 @@ export const BUFF_UNIQUE_BY_CONDITION = Object.freeze(Object.assign(Object.creat
     "/combat_trigger_conditions/attack_coffee": "/buff_uniques/attack_coffee",
     "/combat_trigger_conditions/berserk": "/buff_uniques/berserk",
     "/combat_trigger_conditions/blind_status": "/buff_uniques/blind_status",
+    "/combat_trigger_conditions/boss_status": "/buff_uniques/boss_status",
     "/combat_trigger_conditions/channeling_coffee": "/buff_uniques/channeling_coffee",
     "/combat_trigger_conditions/crippling_slash": "/buff_uniques/crippling_slash",
     "/combat_trigger_conditions/critical_aura": "/buff_uniques/critical_aura",
@@ -76,4 +77,4 @@ export const BUFF_UNIQUE_BY_CONDITION = Object.freeze(Object.assign(Object.creat
     "/combat_trigger_conditions/wisdom_coffee": "/buff_uniques/wisdom_coffee",
 }));
 
-export const TRIGGER_CONDITION_COUNT = 58;
+export const TRIGGER_CONDITION_COUNT = 59;
