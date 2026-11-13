@@ -59,7 +59,8 @@ Decisions for the React UI redesign (agreed 2026-10-09). Theme tokens live in
   of the main pane. It sits beside the pinned sheet (`--app-shell-aside-offset`)
   and never in the header, which is full. It opens a non-modal panel above
   itself; Escape closes it and returns focus to the launcher. Tools write
-  through App's own setters, and every edit gets an Undo chip.
+  through App's own setters, and every edit gets an Undo chip. Hidden for now:
+  it renders only when the build sets `VITE_ROBOBURBLE=true` (`src/assistant/enabled.js`).
 
 ## Gear (G2)
 Paper doll: slots as a 3-column grid of tiles (slot, item, +N). Clicking a tile

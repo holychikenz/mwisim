@@ -56,6 +56,7 @@ import { ChunkBoundary } from './components/ChunkBoundary';
 import { retryableLazy } from './utils/retryableLazy';
 import { Roboburble } from './assistant/Roboburble';
 import { useAssistantBridge } from './assistant/bridge';
+import { ROBOBURBLE_ENABLED } from './assistant/enabled';
 import { TextInput } from '@mantine/core';
 import { toPlayerDTO } from './utils/playerDTO';
 import { withLevelGapDebuff } from './utils/combatLevel';
@@ -2590,7 +2591,7 @@ function App() {
         </Suspense>
         </ChunkBoundary>
       )}
-      <Roboburble bridge={assistant} />
+      {ROBOBURBLE_ENABLED && <Roboburble bridge={assistant} />}
     </AppShell>
   );
 }
