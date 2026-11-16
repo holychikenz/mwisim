@@ -11,8 +11,8 @@
 //   node tools/refreshData.mjs                    # write
 //   node tools/refreshData.mjs path/to/dump.json  # a dump elsewhere
 //
-// The dump path is always explicit-or-default and never discovered, so test
-// server data reaches csim only when someone names it aloud.
+// The dump path is always explicit-or-default and never discovered. On the
+// `test` branch the default IS the test dump (see TEST-BRANCH.md).
 //
 // Two rules keep the diffs honest:
 //   - A file is rewritten only when its PARSED content differs. Equal content
