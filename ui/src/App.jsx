@@ -23,6 +23,7 @@ import {
 import { Select } from './components/SearchSelect';
 import { useDisclosure, useMediaQuery } from '@mantine/hooks';
 import { useGameData } from './hooks/useGameData';
+import { TEST_BUILD, DATA_VERSION } from './utils/server.js';
 import { useSimulation } from './hooks/useSimulation';
 import { useAllZones } from './hooks/useAllZones';
 import { useZoneFinder } from './hooks/useZoneFinder';
@@ -2105,6 +2106,11 @@ function App() {
             <Badge variant="light" color="teal" size="sm" visibleFrom="sm">
               in-browser
             </Badge>
+            {TEST_BUILD && (
+              <Badge variant="filled" color="red" size="sm" title="Built from the test server's game data">
+                TEST DATA · {DATA_VERSION}
+              </Badge>
+            )}
             {(mazeContext || simMode === 'labyrinth' || (isApiOpt && optTarget === 'labyrinth')) && (
               <Badge variant="light" color="grape" size="sm" title="Labyrinth context active">
                 maze

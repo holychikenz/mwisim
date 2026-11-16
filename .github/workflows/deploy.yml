@@ -1,11 +1,13 @@
 name: Deploy UI to GitHub Pages
 
-# Builds the wasm twin (rust/) and the Vite React UI in ui/ (which bundles the
-# engine sources from src/ and the wasm from rust/pkg/), and publishes the static build to GitHub Pages.
+# Pages holds ONE artifact, so every run builds both sites from the branch HEADS (by name, not the
+# triggering SHA): main -> /, test -> /test/. Each branch is built as-is, wasm included (rust/pkg is
+# gitignored, and rust/src/generated.rs follows each branch's data). A push to either rebuilds both;
+# no test branch means no /test/. VITE_SERVER=test only labels the test build and namespaces its storage.
 
 on:
   push:
-    branches: [main]
+    branches: [main, test]
   workflow_dispatch:
 
 # Permissions required by actions/deploy-pages.
@@ -14,7 +16,8 @@ permissions:
   pages: write
   id-token: write
 
-# Allow one concurrent deployment; don't cancel an in-progress run.
+# One deployment at a time; a queued run replaces an older queued one, and since each run reads both
+# heads at run time, the survivor is always current.
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -22,53 +25,88 @@ concurrency:
 jobs:
   build:
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ui
     steps:
-      - name: Checkout
+      - name: Checkout main
         uses: actions/checkout@v4
+        with: { ref: main, path: live }
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
+      - name: Is there a test branch?
+        id: test
+        run: |
+          if git -C live ls-remote --exit-code --heads origin test >/dev/null; then
+            echo exists=true >> "$GITHUB_OUTPUT"
+          else
+            echo "::notice::no test branch; deploying / only"
+            echo exists=false >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Checkout test
+        if: steps.test.outputs.exists == 'true'
+        uses: actions/checkout@v4
+        with: { ref: test, path: test }
+
+      # A push to test runs test's copy of this file; refuse to deploy live from a diverged copy.
+      - name: Workflow must match main's
+        if: github.ref_name == 'test'
+        run: diff -u live/.github/workflows/deploy.yml test/.github/workflows/deploy.yml
+
+      - uses: actions/setup-node@v4
         with:
           node-version: 20
           cache: npm
-          cache-dependency-path: ui/package-lock.json
+          cache-dependency-path: '*/ui/package-lock.json'
 
       # The wasm twin (rust/pkg is gitignored): the in-browser enhancement costing and the
       # experimental wasm engine need it, and the UI build silently omits it when absent.
       - uses: dtolnay/rust-toolchain@1.92.0
-        with:
-          targets: wasm32-unknown-unknown
+        with: { targets: wasm32-unknown-unknown }
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: rust
+          workspaces: |
+            live/rust
+            test/rust
 
       - uses: taiki-e/install-action@v2
-        with:
-          tool: wasm-pack@0.15.0
-
-      - name: Build wasm twin
-        working-directory: .
-        run: ./build.sh wasm
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build
-        run: npm run build
+        with: { tool: wasm-pack@0.15.0 }
 
       # The .wasm must be emitted AND referenced by a bundled chunk (the glue's new URL(...)).
-      - name: The wasm engine must be in the build
-        run: ls dist/assets/csim_twin_bg-*.wasm && grep -q 'csim_twin_bg-' dist/assets/*.js
+      - name: Build / (main)
+        working-directory: live
+        run: |
+          ./build.sh wasm
+          cd ui && npm ci && npm run build
+          ls dist/assets/csim_twin_bg-*.wasm && grep -q 'csim_twin_bg-' dist/assets/*.js
+
+      # A broken test branch must not block a live deploy: from main it only warns (and / ships
+      # without /test/); from test it fails the run.
+      - name: Build /test/ (test)
+        id: build_test
+        if: steps.test.outputs.exists == 'true'
+        continue-on-error: ${{ github.ref_name != 'test' }}
+        working-directory: test
+        env: { VITE_SERVER: test }
+        run: |
+          ./build.sh wasm
+          cd ui && npm ci && npm run build
+          ls dist/assets/csim_twin_bg-*.wasm && grep -q 'csim_twin_bg-' dist/assets/*.js
+
+      - name: Assemble one site
+        env:
+          TEST_EXISTS: ${{ steps.test.outputs.exists }}
+          TEST_OK: ${{ steps.build_test.outcome == 'success' }}
+        run: |
+          mkdir site && cp -R live/ui/dist/. site/
+          if [ "$TEST_OK" = true ]; then
+            [ ! -e site/test ] || { echo "::error::live build already has a test/ path"; exit 1; }
+            cp -R test/ui/dist site/test
+          elif [ "$TEST_EXISTS" = true ]; then
+            echo "::warning::test build failed; this deploy REMOVES /test/ until it is fixed"
+          fi
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
-        with:
-          # Path is relative to the repository root, not working-directory.
-          path: ui/dist
+        with: { path: site }
 
   deploy:
     needs: build
