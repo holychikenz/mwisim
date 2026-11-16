@@ -127,52 +127,48 @@ export function describeEnhancementInputs(
  * choose where to start protecting will choose well, or the row matching a forced
  * `protectAt` when the player has told us their policy instead.
  *
- * Returns null when the simulator cannot answer — notably at `target = 1`, where its
- * protection loop (`range(2, target + 1)`) is empty and no rows come back.
+ * Returns null when no rows come back; an engine error (a missing wasm build, a
+ * trap, an item csim's data lacks) rejects, so the caller can say which.
  *
  * @returns {Promise<{seconds: number, protectAt: number, protects: number|null,
  *                   basePrice: number}|null>}
  */
 export async function fetchTargetCost({ itemHrid, target, config, inputs, protectAt, engine }) {
-  try {
-    const body = { iron_cow: true, config, item_hrid: itemHrid, target };
+  const body = { iron_cow: true, config, item_hrid: itemHrid, target };
 
-    if (inputs) {
-      // Positional, zipped against the non-coin enhancementCosts. An unpriced
-      // material posts 0 — the same value the simulator would have derived — but the
-      // caller is told about it so the UI can say the figure is a floor.
-      body.material_unit_costs = inputs.materials.map((row) => row.effective ?? 0);
-      if (inputs.protection) {
-        // Posted even when unpriced, as 0 — the same treatment the materials get,
-        // and the caller is told so it can flag the figure as a floor. Leaving it
-        // out instead would hand the choice back to the simulator's own cheapest-of
-        // search, which is exactly what the mirror modes promise not to do. In
-        // `free` mode the zero is the point rather than a fallback, and
-        // `assumedFree` is how the caller tells the two apart.
-        body.protect_price = inputs.protection.effective ?? 0;
-        body.protect_hrid = inputs.protection.hrid;
-      }
+  if (inputs) {
+    // Positional, zipped against the non-coin enhancementCosts. An unpriced
+    // material posts 0 — the same value the simulator would have derived — but the
+    // caller is told about it so the UI can say the figure is a floor.
+    body.material_unit_costs = inputs.materials.map((row) => row.effective ?? 0);
+    if (inputs.protection) {
+      // Posted even when unpriced, as 0 — the same treatment the materials get,
+      // and the caller is told so it can flag the figure as a floor. Leaving it
+      // out instead would hand the choice back to the simulator's own cheapest-of
+      // search, which is exactly what the mirror modes promise not to do. In
+      // `free` mode the zero is the point rather than a fallback, and
+      // `assumedFree` is how the caller tells the two apart.
+      body.protect_price = inputs.protection.effective ?? 0;
+      body.protect_hrid = inputs.protection.hrid;
     }
-
-    // Always zero, deliberately. `total_cost` is base_price + materials +
-    // attempts, and the base price is the seconds to ACQUIRE the item — which is
-    // sunk for a piece already worn. Zeroing it makes the marginal cost of the
-    // first level simply cost(1), with no subtraction to get wrong, and leaves
-    // every other level's difference exactly as it was.
-    body.base_price = 0;
-
-    const payload = await engine.calculate(body);
-    const chosen = pickProtectionRow(payload?.rows, { protectAt });
-    if (!chosen) return null;
-    return {
-      seconds: chosen.totalCost,
-      protectAt: chosen.protectAt,
-      protects: chosen.protects,
-      basePrice: Number(payload.base_price) || 0,
-    };
-  } catch {
-    return null;
   }
+
+  // Always zero, deliberately. `total_cost` is base_price + materials +
+  // attempts, and the base price is the seconds to ACQUIRE the item — which is
+  // sunk for a piece already worn. Zeroing it makes the marginal cost of the
+  // first level simply cost(1), with no subtraction to get wrong, and leaves
+  // every other level's difference exactly as it was.
+  body.base_price = 0;
+
+  const payload = await engine.calculate(body);
+  const chosen = pickProtectionRow(payload?.rows, { protectAt });
+  if (!chosen) return null;
+  return {
+    seconds: chosen.totalCost,
+    protectAt: chosen.protectAt,
+    protects: chosen.protects,
+    basePrice: Number(payload.base_price) || 0,
+  };
 }
 
 /**
@@ -183,13 +179,8 @@ export async function fetchTargetCost({ itemHrid, target, config, inputs, protec
  *
  * For an item at +0 the lower side would be `target = 0`, which costs nothing
  * because you already hold the item, so the marginal cost is the cost of reaching
- * +1 less the base price. That needs `target = 1`, which the simulator's protection
- * loop cannot produce: `for prot in range(2, target + 1)` is empty there. Rather
- * than reimplement the success-rate table on this side — game data that lives in
- * the cow repo and would silently rot here — the case is reported as unknown with
- * a reason the panel can show. A one-line change on the simulator
- * (`range(min(2, target), target + 1)`) fixes it, and this function picks that up
- * automatically the moment it lands.
+ * +1 less the base price. That needs `target = 1`, whose single row the simulator
+ * protects at 1 (its loop runs `min(2, target)..=target`).
  *
  * Each result also carries `protects`: the expected number of protection items
  * the level consumes, by the same difference-of-programmes argument as the cost.
@@ -216,25 +207,20 @@ export async function fetchMarginalCost({
     return { seconds: null, reason: `already at +${MAX_ENHANCEMENT_LEVEL}`, unpriced, protection };
   }
 
-  const target = await fetchTargetCost({
-    itemHrid,
-    target: level + 1,
-    config,
-    inputs,
-    protectAt,
-    engine,
+  // An engine error becomes this row's reason rather than failing the whole scan.
+  const cost = (args) =>
+    fetchTargetCost({ itemHrid, config, inputs, engine, ...args }).catch((e) => ({ error: String(e?.message || e) }));
+  const noCosting = (result) => ({
+    seconds: null,
+    reason: result?.error
+      ? `the enhancement simulator failed: ${result.error}`
+      : 'the enhancement simulator returned no costing for this item',
+    unpriced,
+    protection,
   });
-  if (!target) {
-    return {
-      seconds: null,
-      reason:
-        level === 0
-          ? 'the enhancement simulator cannot cost the very first level (its protection loop starts at 2)'
-          : 'the enhancement simulator returned no costing for this item',
-      unpriced,
-      protection,
-    };
-  }
+
+  const target = await cost({ target: level + 1, protectAt });
+  if (!target || target.error) return noCosting(target);
 
   // base_price is posted as 0, so cost(1) IS the marginal cost of the first level.
   if (level === 0) {
@@ -249,24 +235,10 @@ export async function fetchMarginalCost({
       : { seconds: null, reason: 'no usable production time for this item', unpriced, protection };
   }
 
-  const current = await fetchTargetCost({
-    itemHrid,
-    target: level,
-    config,
-    inputs,
-    // The level-up's own protection plan, so both totals follow one plan; the
-    // solver's cheapest plan for +N alone may differ and would mix the two.
-    protectAt: target.protectAt,
-    engine,
-  });
-  if (!current) {
-    return {
-      seconds: null,
-      reason: 'the enhancement simulator returned no costing for this item',
-      unpriced,
-      protection,
-    };
-  }
+  // The level-up's own protection plan, so both totals follow one plan; the
+  // solver's cheapest plan for +N alone may differ and would mix the two.
+  const current = await cost({ target: level, protectAt: target.protectAt });
+  if (!current || current.error) return noCosting(current);
 
   const seconds = marginalCostFromTargets(target.seconds, current.seconds);
   return seconds == null

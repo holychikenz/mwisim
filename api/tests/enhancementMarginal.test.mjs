@@ -38,3 +38,12 @@ test('audit3-h: a scan stopped mid-request reports no progress afterwards', asyn
   });
   assert.deepEqual(progress, []);
 });
+
+test('an engine error is the row\'s reason, including at +0', async () => {
+  const failing = { calculate: async () => { throw new Error('unknown item_hrid'); } };
+  for (const currentLevel of [0, 3]) {
+    const result = await fetchMarginalCost({ itemHrid: '/items/x', currentLevel, config: {}, engine: failing });
+    assert.equal(result.seconds, null);
+    assert.match(result.reason, /unknown item_hrid/);
+  }
+});

@@ -18,29 +18,57 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { costScanRows } from '../utils/enhancementCosts';
 import { useSnapshots } from './useSnapshots';
 
-/** The enhancement simulator for one raw character, in a fresh sim worker; callers await one call at a time. */
-function enhanceWorker(character) {
+/** A guard against a wedged worker, not a budget: one costing takes well under a second. */
+const CALL_TIMEOUT_MS = 20_000;
+
+/**
+ * The enhancement simulator for one raw character, in a fresh sim worker; callers
+ * await one call at a time. Aborting `signal` (Stop, unmount, a new scan) or a
+ * call timing out kills the worker, rejects the call in flight, and fails every later one.
+ */
+function enhanceWorker(character, signal) {
   const worker = new Worker(new URL('../../../src/worker.js', import.meta.url), { type: 'module' });
   const text = JSON.stringify(character);
+  let fail = null; // rejects the call in flight
+  let dead = null; // why the worker was killed; every later call fails with it at once
+  const kill = (error) => {
+    dead = error;
+    worker.terminate();
+    fail?.(error);
+  };
+  const onAbort = () => kill(new DOMException('Aborted', 'AbortError'));
+  signal.addEventListener('abort', onAbort, { once: true });
   const call = (message) =>
     new Promise((resolve, reject) => {
+      if (signal.aborted) dead ??= new DOMException('Aborted', 'AbortError');
+      if (dead) return reject(dead);
+      const timer = setTimeout(() => kill(new Error('the enhancement worker timed out')), CALL_TIMEOUT_MS);
+      const settle = (f, v) => {
+        clearTimeout(timer);
+        fail = null;
+        f(v);
+      };
+      fail = (e) => settle(reject, e);
       worker.onmessage = ({ data }) => {
-        if (data.type !== 'enhance_result') return reject(new Error(String(data.error)));
+        if (data.type !== 'enhance_result') return settle(reject, new Error(String(data.error)));
         try {
           const payload = JSON.parse(data.json);
           if (payload?.ok === false) throw new Error(payload.error);
-          resolve(payload);
+          settle(resolve, payload);
         } catch (e) {
-          reject(e);
+          settle(reject, e);
         }
       };
-      worker.onerror = (e) => reject(new Error(e.message || 'enhancement worker failed'));
+      worker.onerror = (e) => settle(reject, new Error(e.message || 'enhancement worker failed'));
       worker.postMessage({ ...message, character: text });
     });
   return {
     config: () => call({ type: 'enhance_config' }),
     calculate: (body) => call({ type: 'enhance_calculate', body: JSON.stringify(body) }),
-    terminate: () => worker.terminate(),
+    terminate: () => {
+      signal.removeEventListener('abort', onAbort);
+      worker.terminate();
+    },
   };
 }
 
@@ -90,7 +118,7 @@ export function useEnhancementCosts() {
             'No game snapshot for the iron character: import one with the csim-import userscript, then try again.'
           );
         }
-        engine = enhanceWorker(character);
+        engine = enhanceWorker(character, controller.signal);
         const resolved = await engine.config();
         setConfig(resolved);
 
