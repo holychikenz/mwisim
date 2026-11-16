@@ -16,7 +16,7 @@
 #   (no target)  same as: install gen ui
 #   install      npm ci/install in ui/ and api/
 #   gen          regenerate src/combatsimulator/generated/*
-#   ui           vite build      -> ui/dist/
+#   ui           vite build      -> ui/dist/ (rebuilds rust/pkg first when wasm-pack is on PATH, else warns)
 #   lint         eslint in ui/
 #   test         api unit tests
 #   check        api test + sim:check + eval:check + twin-quick (what CI runs)
@@ -60,7 +60,17 @@ t_gen() {
   done
 }
 
-t_ui()   { say "vite -> ui/dist/";     (cd ui && npm run build); }
+t_ui() {
+  # Never bundle a stale rust/pkg (the glue's exports must match the JS); without wasm-pack, build without the engine.
+  if command -v wasm-pack >/dev/null; then
+    say "wasm-pack (rust/ -> rust/pkg/)"
+    # Explicit: on the left of && (as in `ui && …` callers) a failed build would skip set -e.
+    if ! wasm_build --quiet; then echo "ui: wasm build FAILED" >&2; return 1; fi
+  else
+    say "WARN: wasm-pack not on PATH; ui/dist bundles rust/pkg as it is (no wasm engine if never built)"
+  fi
+  say "vite -> ui/dist/"; (cd ui && npm run build)
+}
 t_lint() { say "eslint (ui)";          (cd ui && npm run lint); }
 t_test() { say "api tests";            (cd api && npm test); }
 
