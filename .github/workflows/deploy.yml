@@ -42,6 +42,10 @@ jobs:
         with:
           targets: wasm32-unknown-unknown
 
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
       - uses: taiki-e/install-action@v2
         with:
           tool: wasm-pack@0.15.0
@@ -56,8 +60,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      # The .wasm must be emitted AND referenced by a bundled chunk (the glue's new URL(...)).
       - name: The wasm engine must be in the build
-        run: ls dist/assets/csim_twin_bg-*.wasm
+        run: ls dist/assets/csim_twin_bg-*.wasm && grep -q 'csim_twin_bg-' dist/assets/*.js
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

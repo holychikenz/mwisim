@@ -5,6 +5,8 @@
 # Two build products live here and each has its own toolchain:
 #   1. tools/gen*.mjs -> src/combatsimulator/generated/*.js  (code generation)
 #   2. vite (ui/)     -> ui/dist/                            (React UI)
+#      `ui` first rebuilds the wasm twin (rust/pkg/) when wasm-pack is on PATH,
+#      and fails if that build fails; without wasm-pack it warns and bundles rust/pkg as is.
 # plus api/, which has no build step but does own the tests and parity gates.
 #
 # NOTE ON api/: the api npm scripts run with api/ as the working directory,
@@ -30,7 +32,7 @@
 #                SKIPs (and passes) without cargo or a built csim-native
 #   clean        remove ui/dist/
 # rust, wasm and twin are deliberately NOT in the default or in `all`, so a machine
-# without Rust keeps building.
+# without Rust keeps building (`ui` only rebuilds wasm when wasm-pack is present).
 # =============================================================================
 set -euo pipefail
 
@@ -65,7 +67,7 @@ t_ui() {
   if command -v wasm-pack >/dev/null; then
     say "wasm-pack (rust/ -> rust/pkg/)"
     # Explicit: on the left of && (as in `ui && …` callers) a failed build would skip set -e.
-    if ! wasm_build --quiet; then echo "ui: wasm build FAILED" >&2; return 1; fi
+    if ! wasm_fresh; then echo "ui: wasm build FAILED" >&2; return 1; fi
   else
     say "WARN: wasm-pack not on PATH; ui/dist bundles rust/pkg as it is (no wasm engine if never built)"
   fi
@@ -85,6 +87,8 @@ t_check() {
 # on in the twin; measured harmless (twin:check 278/278, identical hashes, native and wasm).
 t_rust() { say "cargo (rust/)"; (cd rust && cargo build --release --locked && cargo test --release --locked && cargo test --release --locked -p mwi-econ); }
 wasm_build() { (cd rust && wasm-pack "$@" build --release --target web --out-dir pkg --out-name csim_twin); }
+# One quiet wasm rebuild per run: `all`/`ui check` would otherwise pay wasm-bindgen + wasm-opt twice.
+wasm_fresh() { [ -n "${WASM_FRESH:-}" ] || { wasm_build --quiet && WASM_FRESH=1; }; }
 t_wasm() { say "wasm-pack (rust/ -> rust/pkg/)"; wasm_build; }
 t_twin() {
   local engines; engines="$(twin_engines)"
@@ -106,7 +110,7 @@ t_twin_quick() {
   local engines=native
   if command -v wasm-pack >/dev/null; then
     # Explicit: on the left of && a failed build would skip set -e and leave a stale rust/pkg checked by `twin`.
-    if ! wasm_build --quiet; then echo "twin-quick: wasm build FAILED" >&2; return 1; fi
+    if ! wasm_fresh; then echo "twin-quick: wasm build FAILED" >&2; return 1; fi
     engines=native,wasm
   else
     echo "twin-quick: wasm skipped (wasm-pack not on PATH); checking native only"
