@@ -39,6 +39,8 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
+wasm_done=  # script-private: set once rust/pkg is rebuilt in this run, never read from the environment
+
 say() { printf '\n\033[1;34m==>\033[0m %s\n' "$*"; }
 
 # npm ci when a lockfile is present and honoured, npm install otherwise.
@@ -66,7 +68,7 @@ t_ui() {
   # Never bundle a stale rust/pkg (the glue's exports must match the JS); without wasm-pack, build without the engine.
   if command -v wasm-pack >/dev/null; then
     say "wasm-pack (rust/ -> rust/pkg/)"
-    # Explicit: on the left of && (as in `ui && …` callers) a failed build would skip set -e.
+    # Explicit `if !`: set -e does not fire inside a function called from a condition.
     if ! wasm_fresh; then echo "ui: wasm build FAILED" >&2; return 1; fi
   else
     say "WARN: wasm-pack not on PATH; ui/dist bundles rust/pkg as it is (no wasm engine if never built)"
@@ -86,10 +88,10 @@ t_check() {
 # csim-twin depends on mwi-econ (wasm item_values), so mwi-econ's serde_json preserve_order is always
 # on in the twin; measured harmless (twin:check 278/278, identical hashes, native and wasm).
 t_rust() { say "cargo (rust/)"; (cd rust && cargo build --release --locked && cargo test --release --locked && cargo test --release --locked -p mwi-econ); }
-wasm_build() { (cd rust && wasm-pack "$@" build --release --target web --out-dir pkg --out-name csim_twin); }
+wasm_build() { (cd rust && wasm-pack "$@" build --release --target web --out-dir pkg --out-name csim_twin -- --locked); }
 # One quiet wasm rebuild per run: `all`/`ui check` would otherwise pay wasm-bindgen + wasm-opt twice.
-wasm_fresh() { [ -n "${WASM_FRESH:-}" ] || { wasm_build --quiet && WASM_FRESH=1; }; }
-t_wasm() { say "wasm-pack (rust/ -> rust/pkg/)"; wasm_build; }
+wasm_fresh() { [ -n "$wasm_done" ] || { wasm_build --quiet && wasm_done=1; }; }
+t_wasm() { say "wasm-pack (rust/ -> rust/pkg/)"; wasm_build && wasm_done=1; }
 t_twin() {
   local engines; engines="$(twin_engines)"
   say "api twin:check (${engines})"
