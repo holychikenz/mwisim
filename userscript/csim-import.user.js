@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         csim import — game character → csim
 // @namespace    local.holychikenz.csim
-// @version      0.2.0
+// @version      0.3.0
 // @description  Captures your character from Milky Way Idle (allowlisted fields only) and hands it to csim. Reload the game to refresh it.
 // @author       holychikenz
 // @updateURL    https://raw.githubusercontent.com/holychikenz/mwisim/main/userscript/csim-import.user.js
@@ -49,7 +49,17 @@ const SNAPSHOT_KEYS = [
 ];
 const MESSAGE_TYPE = 'csim-import:snapshots';
 const READY_TYPE = 'csim-import:ready';
-const STORE_KEY = 'snapshots';
+// One store per server. A test-server character goes only to csim's /test/ build
+// (https://holychikenz.github.io/mwisim/test/), a live one only to the rest. Both keys are
+// new: the old 'snapshots' value may already mix servers, so it is left behind unread.
+const STORE_KEYS = { live: 'snapshots:live', test: 'snapshots:test' };
+/** The store this page writes (game page, by host) or reads (csim page, by /test/ path). */
+function storeKeyFor(loc) {
+    const test = /milkywayidle(cn)?\.com$/.test(loc.hostname)
+        ? loc.hostname === 'test.milkywayidle.com'
+        : /\/test(\/|$)/.test(loc.pathname);
+    return test ? STORE_KEYS.test : STORE_KEYS.live;
+}
 
 /** The allowlisted copy of an init_character_data frame, or null when it has no character id. */
 function filterCharacterData(frame) {
@@ -63,6 +73,7 @@ function filterCharacterData(frame) {
 }
 
 function onGamePage() {
+    const key = storeKeyFor(location);
     const descriptor = Object.getOwnPropertyDescriptor(MessageEvent.prototype, 'data');
     if (!descriptor?.get) return;
     const oriGet = descriptor.get;
@@ -79,9 +90,9 @@ function onGamePage() {
                 const frame = JSON.parse(message);
                 const snapshot = frame?.type === 'init_character_data' ? filterCharacterData(frame) : null;
                 if (snapshot) {
-                    const all = GM_getValue(STORE_KEY, {});
+                    const all = GM_getValue(key, {});
                     all[String(snapshot.character.id)] = snapshot;
-                    GM_setValue(STORE_KEY, all);
+                    GM_setValue(key, all);
                 }
             }
         } catch (e) {
@@ -103,17 +114,18 @@ function isReady(e, origin) {
 
 function onCsimPage() {
     const page = unsafeWindow;
+    const key = storeKeyFor(page.location);
     // Always answers, with {} when nothing is captured yet: csim reads any answer as "installed".
-    const send = () => page.postMessage({ type: MESSAGE_TYPE, snapshots: GM_getValue(STORE_KEY, {}) }, page.location.origin);
+    const send = () => page.postMessage({ type: MESSAGE_TYPE, snapshots: GM_getValue(key, {}) }, page.location.origin);
     // csim asks once its listener is up (it may load after this script); a capture in the game tab pushes live.
     // Origin, not `e.source === page`: in Firefox's sandbox the source is a wrapper, never === unsafeWindow.
     page.addEventListener('message', (e) => { if (isReady(e, page.location.origin)) send(); });
-    GM_addValueChangeListener(STORE_KEY, send);
+    GM_addValueChangeListener(key, send);
     send();
 }
 
 if (typeof module !== 'undefined') {
-    module.exports = { SNAPSHOT_KEYS, MESSAGE_TYPE, READY_TYPE, filterCharacterData, isReady, onCsimPage }; // node --test
+    module.exports = { SNAPSHOT_KEYS, MESSAGE_TYPE, READY_TYPE, filterCharacterData, isReady, onCsimPage, storeKeyFor, STORE_KEYS }; // node --test
 } else if (/milkywayidle(cn)?\.com$/.test(location.hostname)) {
     onGamePage();
 } else {
