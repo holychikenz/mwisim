@@ -66,7 +66,10 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: live/rust   # test/rust may not exist; its build stays uncached
+          # A missing test/rust (no test branch) is logged and skipped by rust-cache, not an error.
+          workspaces: |
+            live/rust -> target
+            test/rust -> target
 
       - uses: taiki-e/install-action@v2
         with: { tool: wasm-pack@0.15.0 }
@@ -90,7 +93,7 @@ jobs:
         run: |
           ./build.sh wasm
           cd ui && npm ci && npm run build
-          ls dist/assets/csim_twin_bg-*.wasm && grep -q 'csim_twin_bg-' dist/assets/*.js
+          ls dist/assets/csim_twin_bg-*.wasm && grep -q 'csim_twin_bg-' dist/assets/*.js || exit 1
           # A test head without the storage namespace (ui/src/utils/serverStorage.js) would share live's
           # localStorage on this origin: never publish it.
           grep -q 'test::' dist/assets/*.js || { echo "::error::test build lacks the test:: storage namespace"; exit 1; }
