@@ -39,11 +39,13 @@ fn check(golden: &str, overrides: &str) {
 }
 
 #[test]
+#[ignore = "test branch: frozen live-data golden from the retired Flask oracle, not regenerable; see TEST-BRANCH.md"]
 fn matches_market_golden() {
     check("value__market.json", "");
 }
 
 #[test]
+#[ignore = "test branch: frozen live-data golden from the retired Flask oracle, not regenerable; see TEST-BRANCH.md"]
 fn matches_market_golden_with_essence_overrides() {
     check("value__market_named.json", r#"{"/items/milking_essence": 5, "items/star_fragment": 120}"#);
 }
