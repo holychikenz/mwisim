@@ -1,7 +1,7 @@
 name: Deploy UI to GitHub Pages
 
-# Builds the Vite React UI in ui/ (which bundles the engine sources from src/)
-# and publishes the static build to GitHub Pages.
+# Builds the wasm twin (rust/) and the Vite React UI in ui/ (which bundles the
+# engine sources from src/ and the wasm from rust/pkg/), and publishes the static build to GitHub Pages.
 
 on:
   push:
@@ -36,11 +36,33 @@ jobs:
           cache: npm
           cache-dependency-path: ui/package-lock.json
 
+      # The wasm twin (rust/pkg is gitignored): the in-browser enhancement costing and the
+      # experimental wasm engine need it, and the UI build silently omits it when absent.
+      - uses: dtolnay/rust-toolchain@1.92.0
+        with:
+          targets: wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: rust
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-pack@0.15.0
+
+      - name: Build wasm twin
+        working-directory: .
+        run: ./build.sh wasm
+
       - name: Install dependencies
         run: npm ci
 
       - name: Build
         run: npm run build
+
+      # The .wasm must be emitted AND referenced by a bundled chunk (the glue's new URL(...)).
+      - name: The wasm engine must be in the build
+        run: ls dist/assets/csim_twin_bg-*.wasm && grep -q 'csim_twin_bg-' dist/assets/*.js
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
