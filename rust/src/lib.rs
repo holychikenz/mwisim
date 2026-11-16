@@ -82,6 +82,39 @@ pub fn item_values(client: &str, character: &str, overrides: &str) -> String {
     json!({"character": name, "unit": "seconds", "values": values}).to_string()
 }
 
+/// cowstuff's `GET /api/enhance/character`: the EnhancementConfig read off the raw init_character_data.
+pub fn enhance_config(character: &str) -> String {
+    use mwi_econ::{enhance_sim::EnhanceSim, Gdc};
+    use serde_json::{json, Value};
+    let character: Value = match serde_json::from_str(character) {
+        Ok(c) => c,
+        Err(e) => return err_json(&format!("enhance_config: {e}"), false, None),
+    };
+    let gdc = Gdc::new(std::sync::Arc::new(json!({})), std::sync::Arc::new(character));
+    let market = std::collections::HashMap::new();
+    serde_json::to_string(&EnhanceSim::new(&gdc, &market, false, None).config_from_character()).unwrap_or_default()
+}
+
+/// cowstuff's `POST /api/enhance/calculate` for one character, with no market (asks fall back
+/// to vendor prices). `client` as `item_values`; `body` the request body as JSON text.
+pub fn enhance_calculate(client: &str, character: &str, body: &str) -> String {
+    use mwi_econ::{enhance_request, Gdc};
+    use serde_json::{json, Value};
+    let parsed = (serde_json::from_str::<Value>(client), serde_json::from_str::<Value>(character), serde_json::from_str::<Value>(body));
+    let (data, character, body) = match parsed {
+        (Ok(d), Ok(c), Ok(Value::Null)) => (d, c, json!({})),
+        (Ok(d), Ok(c), Ok(b @ Value::Object(_))) => (d, c, b),
+        (Err(e), _, _) | (_, Err(e), _) => return err_json(&format!("enhance_calculate: {e}"), false, None),
+        _ => return err_json("invalid JSON body", false, None),
+    };
+    let gdc = Gdc::new(std::sync::Arc::new(data), std::sync::Arc::new(character));
+    let market = std::collections::HashMap::new();
+    match enhance_request::prepare(&gdc, &market, body, None).and_then(|p| enhance_request::calculate(&p)) {
+        Ok(v) => v.to_string(),
+        Err((_, msg)) => err_json(&msg, false, None),
+    }
+}
+
 /// Run one request. Never panics on bad input: errors come back as `ok: false`.
 /// `progress` gets the JS "progress" event's fraction every 1000 ticks; for a batch
 /// (`iterations`) it gets the number of iterations completed instead.

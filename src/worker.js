@@ -131,6 +131,21 @@ onmessage = async function (event) {
             }
             break;
         }
+        case "enhance_config":
+        case "enhance_calculate": {
+            // MWIX adaptation: enhancement costing (rust mwi-econ enhance_sim, wasm) for
+            // ui/src/hooks/useEnhancementCosts.js. `character` and `body` are JSON text.
+            try {
+                const wasm = await loadWasmTwin();
+                const { type, character, body } = event.data;
+                const json = type === "enhance_config" ? wasm.enhanceConfig(character) : wasm.enhanceCalculate(character, body);
+                this.postMessage({ type: "enhance_result", json });
+            } catch (e) {
+                console.log(e);
+                this.postMessage({ type: "enhance_error", error: String(e?.message || e) });
+            }
+            break;
+        }
         case "start_guild_trial": {
             // Guild trial shard. Runs `iterations` full trial runs and returns a
             // lightweight per-iteration summary array (aggregated by multiWorker

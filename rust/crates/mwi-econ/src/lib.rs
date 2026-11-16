@@ -1,11 +1,14 @@
-//! mwi-econ: the item valuation from cowstuff's webapp-rs server (a port of
+//! mwi-econ: the item valuation and the enhancement simulator from cowstuff's webapp-rs server (a port of
 //! `cow/item_value.py` and friends), shared with csim. Game data stays `serde_json::Value`.
 
 pub mod util;
 
 pub mod alchemy;
 pub mod character_stats;
+pub mod enhance_request;
+pub mod enhance_sim;
 pub mod item_value;
+pub mod mt19937;
 pub mod transmutation;
 
 use serde_json::Value;

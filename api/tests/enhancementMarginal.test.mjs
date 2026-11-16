@@ -13,39 +13,37 @@ const ROWS = {
   3: [{ protect_at: 2, total_cost: 500 }, { protect_at: 3, total_cost: 600 }],
 };
 
+// The enhancement simulator, answering from ROWS.
+const engine = (onCall) => ({
+  calculate: async ({ target }) => {
+    onCall?.();
+    return { rows: ROWS[target], base_price: 0 };
+  },
+});
+
 test('audit-12: both totals of a marginal cost use the level-up\'s protection plan', async () => {
-  const real = globalThis.fetch;
-  globalThis.fetch = async (_url, init) => {
-    const { target } = JSON.parse(init.body);
-    return { ok: true, json: async () => ({ rows: ROWS[target], base_price: 0 }) };
-  };
-  try {
-    const result = await fetchMarginalCost({ itemHrid: '/items/x', currentLevel: 3, config: {} });
-    assert.equal(result.protectAt, 3);
-    assert.equal(result.seconds, 300);
-  } finally {
-    globalThis.fetch = real;
-  }
+  const result = await fetchMarginalCost({ itemHrid: '/items/x', currentLevel: 3, config: {}, engine: engine() });
+  assert.equal(result.protectAt, 3);
+  assert.equal(result.seconds, 300);
 });
 
 test('audit3-h: a scan stopped mid-request reports no progress afterwards', async () => {
-  const real = globalThis.fetch;
   const controller = new AbortController();
-  globalThis.fetch = async (_url, init) => {
-    controller.abort(); // the user presses Stop while this row is in flight
-    const { target } = JSON.parse(init.body);
-    return { ok: true, json: async () => ({ rows: ROWS[target], base_price: 0 }) };
-  };
   const progress = [];
-  try {
-    await costScanRows([{ id: 'a', itemHrid: '/items/x', currentLevel: 3 }], {}, {
-      signal: controller.signal,
-      onProgress: (done, total) => progress.push([done, total]),
-    });
-  } catch {
-    // an abort may surface as a rejection; either way, no progress after it
-  } finally {
-    globalThis.fetch = real;
-  }
+  // the user presses Stop while this row is in flight
+  await costScanRows([{ id: 'a', itemHrid: '/items/x', currentLevel: 3 }], {}, {
+    engine: engine(() => controller.abort()),
+    signal: controller.signal,
+    onProgress: (done, total) => progress.push([done, total]),
+  });
   assert.deepEqual(progress, []);
+});
+
+test('an engine error is the row\'s reason, including at +0', async () => {
+  const failing = { calculate: async () => { throw new Error('unknown item_hrid'); } };
+  for (const currentLevel of [0, 3]) {
+    const result = await fetchMarginalCost({ itemHrid: '/items/x', currentLevel, config: {}, engine: failing });
+    assert.equal(result.seconds, null);
+    assert.match(result.reason, /unknown item_hrid/);
+  }
 });

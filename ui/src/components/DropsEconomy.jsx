@@ -29,7 +29,7 @@ const ONE_HOUR = 60 * 60 * 1e9;
 const SOURCE_OPTIONS = [
   { value: 'vendor', label: 'Vendor prices (offline)' },
   { value: 'market', label: 'Market (live)' },
-  { value: 'iron', label: 'Iron time-value (cow webapp)' }
+  { value: 'iron', label: 'Iron time-value' }
 ];
 
 const MODE_OPTIONS = [
