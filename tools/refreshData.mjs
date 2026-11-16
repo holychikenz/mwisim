@@ -34,7 +34,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
-export const DEFAULT_DUMP = path.resolve(HERE, '../../cowstuff/milkyway_client_info.json');
+export const DEFAULT_DUMP = path.resolve(HERE, '../../cowstuff/milkyway_client_info_test.json');
 export const DEFAULT_DATA_DIR = path.resolve(HERE, '../src/combatsimulator/data');
 
 const serialise = (value) => JSON.stringify(value, null, 4);
