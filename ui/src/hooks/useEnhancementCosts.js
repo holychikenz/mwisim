@@ -118,6 +118,13 @@ export function useEnhancementCosts() {
             'No game snapshot for the iron character: import one with the csim-import userscript, then try again.'
           );
         }
+        // Material times come from cache.iron; costing against another character's (or an older
+        // snapshot's) times would mix two characters silently.
+        if (pricing.staleCharacter) {
+          throw new Error(
+            `Cached item times are for ${pricing.staleCharacter}. Refetch prices for ${pricing.ironCharacterName}, then try again.`
+          );
+        }
         engine = enhanceWorker(character, controller.signal);
         const resolved = await engine.config();
         setConfig(resolved);
