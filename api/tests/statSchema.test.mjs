@@ -174,9 +174,16 @@ test("every numeric stat any item grants is summed, or is named as excluded", ()
     );
 });
 
+const unmodelled = (s) => !EQUIPMENT_COMBAT_STATS.includes(s) && !DELIBERATELY_UNSUMMED.has(s);
+
 test("talisman stats are modelled", { todo: "test branch: talismans are not modelled yet (TEST-BRANCH.md)" }, () => {
-    const covered = new Set(EQUIPMENT_COMBAT_STATS);
-    assert.deepStrictEqual(UNMODELLED_ON_TEST.filter((s) => !covered.has(s)), []);
+    assert.deepStrictEqual(UNMODELLED_ON_TEST.filter(unmodelled), []);
+});
+
+// Fails once talismans ARE modelled, so the exemption above cannot outlive the gap.
+test("UNMODELLED_ON_TEST lists only stats that are still unmodelled", () => {
+    const stale = UNMODELLED_ON_TEST.filter((s) => !unmodelled(s));
+    assert.deepStrictEqual(stale, [], "now modelled: remove from UNMODELLED_ON_TEST (and the todo when it is empty)");
 });
 
 test("the digit-bearing regen stats survived, in both lists", () => {

@@ -108,6 +108,7 @@ jobs:
       # Lower this number as drifts are fixed. Raising it to accommodate a new
       # one is the same act as re-recording a fixture to make a change pass.
       - name: lab:check — sim-vs-game parity (ratcheted at 20)
-        # test branch and anything cut from it (they carry TEST-BRANCH.md): live captures vs test data, skipped by decision
-        if: hashFiles('TEST-BRANCH.md') == ''
+        # test branch and PRs into it: live captures vs test data, skipped by decision (TEST-BRANCH.md).
+        # Keyed on the branch, not on a file, so it cannot leak onto main.
+        if: github.ref != 'refs/heads/test' && github.base_ref != 'test'
         run: npm run lab:check -- --max-drift=20
