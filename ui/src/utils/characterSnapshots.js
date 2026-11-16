@@ -11,8 +11,17 @@
 //
 // Framework-free, localStorage only inside function bodies (node tests import it).
 // =============================================================================
+import { TEST_BUILD } from './serverStorage.js';
 
-export const SNAPSHOTS_KEY = 'csim_character_snapshots';
+// /mwisim/ and /mwisim/test/ share one origin, so one localStorage: the /test/ build keeps its
+// game snapshots under its own key, or test characters would show up in live csim (and vice
+// versa). Same path rule as userscript/csim-import.user.js storeKeyFor. A test build's Storage is
+// already namespaced test:: (serverStorage.js), so it takes the plain key, prefixed once.
+export function snapshotsKeyFor(pathname, testBuild = TEST_BUILD) {
+  if (testBuild) return 'csim_character_snapshots';
+  return /\/test(\/|$)/.test(pathname || '') ? 'csim_character_snapshots:test' : 'csim_character_snapshots';
+}
+export const SNAPSHOTS_KEY = snapshotsKeyFor(typeof location !== 'undefined' ? location.pathname : '');
 
 /** { [gameCharacterId]: characterData }, or {} when absent or unreadable. */
 export function loadSnapshots() {

@@ -188,3 +188,50 @@ test('prompt dismissal: persisted when it can be, never throws', () => {
     delete globalThis.localStorage;
   }
 });
+
+test('storeKeyFor: test server ↔ /mwisim/test/ only', () => {
+  const { storeKeyFor, STORE_KEYS } = userscript;
+  const L = STORE_KEYS.live, T = STORE_KEYS.test;
+  const table = [
+    ['www.milkywayidle.com', '/game', L],
+    ['www.milkywayidlecn.com', '/game', L],
+    ['test.milkywayidle.com', '/game', T],
+    ['holychikenz.github.io', '/mwisim/', L],
+    ['holychikenz.github.io', '/mwisim/test/', T],
+    ['holychikenz.github.io', '/mwisim/test', T],
+    ['localhost', '/', L],
+    ['127.0.0.1', '/sim/', L]
+  ];
+  for (const [hostname, pathname, want] of table) {
+    assert.equal(storeKeyFor({ hostname, pathname }), want, hostname + pathname);
+  }
+  assert.notEqual(T, L);
+  assert.ok(T !== 'snapshots' && L !== 'snapshots', 'the old mixed store is never read');
+
+  // onCsimPage reads and watches the store for its own page.
+  const keys = [];
+  globalThis.unsafeWindow = {
+    location: { origin: 'https://holychikenz.github.io', hostname: 'holychikenz.github.io', pathname: '/mwisim/test/' },
+    addEventListener() {}, postMessage() {}
+  };
+  globalThis.GM_getValue = (key, fallback) => { keys.push(key); return fallback; };
+  globalThis.GM_addValueChangeListener = (key) => keys.push(key);
+  try {
+    userscript.onCsimPage();
+    assert.deepEqual([...new Set(keys)], [T]);
+  } finally {
+    delete globalThis.unsafeWindow;
+    delete globalThis.GM_getValue;
+    delete globalThis.GM_addValueChangeListener;
+  }
+});
+
+test('csim keeps /test/ snapshots under their own localStorage key (one origin, two builds)', () => {
+  const { storeKeyFor, STORE_KEYS } = userscript;
+  for (const pathname of ['/mwisim/', '/mwisim/test/', '/mwisim/test', '/sim/', '/']) {
+    const userscriptTest = storeKeyFor({ hostname: 'holychikenz.github.io', pathname }) === STORE_KEYS.test;
+    const csimTest = snaps.snapshotsKeyFor(pathname) !== snaps.snapshotsKeyFor('/mwisim/');
+    assert.equal(csimTest, userscriptTest, pathname);
+  }
+  assert.equal(snaps.SNAPSHOTS_KEY, 'csim_character_snapshots', 'node has no location: the live key');
+});

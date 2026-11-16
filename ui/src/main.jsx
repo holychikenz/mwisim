@@ -1,3 +1,4 @@
+import './utils/serverStorage.js' // first: a test build namespaces localStorage before anything reads it
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { MantineProvider } from '@mantine/core'

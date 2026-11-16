@@ -5,6 +5,8 @@
 # Two build products live here and each has its own toolchain:
 #   1. tools/gen*.mjs -> src/combatsimulator/generated/*.js  (code generation)
 #   2. vite (ui/)     -> ui/dist/                            (React UI)
+#      `ui` first rebuilds the wasm twin (rust/pkg/) when wasm-pack is on PATH,
+#      and fails if that build fails; without wasm-pack it warns and bundles rust/pkg as is.
 # plus api/, which has no build step but does own the tests and parity gates.
 #
 # NOTE ON api/: the api npm scripts run with api/ as the working directory,
@@ -16,7 +18,7 @@
 #   (no target)  same as: install gen ui
 #   install      npm ci/install in ui/ and api/
 #   gen          regenerate src/combatsimulator/generated/*
-#   ui           vite build      -> ui/dist/
+#   ui           vite build      -> ui/dist/ (rebuilds rust/pkg first when wasm-pack is on PATH, else warns)
 #   lint         eslint in ui/
 #   test         api unit tests
 #   check        api test + sim:check + eval:check + twin-quick (what CI runs)
@@ -30,12 +32,14 @@
 #                SKIPs (and passes) without cargo or a built csim-native
 #   clean        remove ui/dist/
 # rust, wasm and twin are deliberately NOT in the default or in `all`, so a machine
-# without Rust keeps building.
+# without Rust keeps building (`ui` only rebuilds wasm when wasm-pack is present).
 # =============================================================================
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
+
+wasm_done=  # script-private: set once rust/pkg is rebuilt in this run, never read from the environment
 
 say() { printf '\n\033[1;34m==>\033[0m %s\n' "$*"; }
 
@@ -60,7 +64,17 @@ t_gen() {
   done
 }
 
-t_ui()   { say "vite -> ui/dist/";     (cd ui && npm run build); }
+t_ui() {
+  # Never bundle a stale rust/pkg (the glue's exports must match the JS); without wasm-pack, build without the engine.
+  if command -v wasm-pack >/dev/null; then
+    say "wasm-pack (rust/ -> rust/pkg/)"
+    # Explicit `if !`: set -e does not fire inside a function called from a condition.
+    if ! wasm_fresh; then echo "ui: wasm build FAILED" >&2; return 1; fi
+  else
+    say "WARN: wasm-pack not on PATH; ui/dist bundles rust/pkg as it is (no wasm engine if never built)"
+  fi
+  say "vite -> ui/dist/"; (cd ui && npm run build)
+}
 t_lint() { say "eslint (ui)";          (cd ui && npm run lint); }
 t_test() { say "api tests";            (cd api && npm test); }
 
@@ -74,8 +88,10 @@ t_check() {
 # csim-twin depends on mwi-econ (wasm item_values), so mwi-econ's serde_json preserve_order is always
 # on in the twin; measured harmless (twin:check 278/278, identical hashes, native and wasm).
 t_rust() { say "cargo (rust/)"; (cd rust && cargo build --release --locked && cargo test --release --locked && cargo test --release --locked -p mwi-econ); }
-wasm_build() { (cd rust && wasm-pack "$@" build --release --target web --out-dir pkg --out-name csim_twin); }
-t_wasm() { say "wasm-pack (rust/ -> rust/pkg/)"; wasm_build; }
+wasm_build() { (cd rust && wasm-pack "$@" build --release --target web --out-dir pkg --out-name csim_twin -- --locked); }
+# One quiet wasm rebuild per run: `all`/`ui check` would otherwise pay wasm-bindgen + wasm-opt twice.
+wasm_fresh() { [ -n "$wasm_done" ] || { wasm_build --quiet && wasm_done=1; }; }
+t_wasm() { say "wasm-pack (rust/ -> rust/pkg/)"; wasm_build && wasm_done=1; }
 t_twin() {
   local engines; engines="$(twin_engines)"
   say "api twin:check (${engines})"
@@ -96,7 +112,7 @@ t_twin_quick() {
   local engines=native
   if command -v wasm-pack >/dev/null; then
     # Explicit: on the left of && a failed build would skip set -e and leave a stale rust/pkg checked by `twin`.
-    if ! wasm_build --quiet; then echo "twin-quick: wasm build FAILED" >&2; return 1; fi
+    if ! wasm_fresh; then echo "twin-quick: wasm build FAILED" >&2; return 1; fi
     engines=native,wasm
   else
     echo "twin-quick: wasm skipped (wasm-pack not on PATH); checking native only"
