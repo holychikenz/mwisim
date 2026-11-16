@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
 publish = false
-description = "Item valuation shared by csim and cowstuff's webapp-rs server (moved from webapp-rs/server)."
+description = "Item valuation and the enhancement simulator, shared by csim and cowstuff's webapp-rs server (moved from webapp-rs/server)."
 
 [dependencies]
 # One pin set with csim-twin and webapp-rs/server: a dependent workspace resolves a single serde/serde_json.

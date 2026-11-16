@@ -250,16 +250,18 @@ observatory — and is answered separately. See §9.
 
 ## 9. Return on investment
 
-The cow webapp already carries a complete enhancement simulator with an explicit
-**iron-cow mode**, in which every cost it reports is denominated in **seconds** —
-the same unit as the consumable economics and therefore commensurable with the
-gains measured above.
+The enhancement simulator (the Rust `mwi-econ` crate's `enhance_sim`, shared with
+cowstuff's server and run here as wasm) has an explicit **iron-cow mode**, in which
+every cost it reports is denominated in **seconds** — the same unit as the
+consumable economics and therefore commensurable with the gains measured above.
+It answers what cowstuff's `/api/enhance/*` routes do, from the iron character's
+game snapshot:
 
-- `GET  /api/enhance/character` — an `EnhancementConfig` auto-filled from the live
-  character
-- `POST /api/enhance/calculate` `{iron_cow: true, config, item_hrid, target}` — a
-  Markov solution per protection level; `total_cost` is seconds, and `optimal_prot`
-  is already picked
+- `enhance_config(character)` (`GET /api/enhance/character`) — an
+  `EnhancementConfig` auto-filled from the character
+- `enhance_calculate(client, character, {iron_cow: true, config, item_hrid, target})`
+  (`POST /api/enhance/calculate`) — a Markov solution per protection level;
+  `total_cost` is seconds, and `optimal_prot` is already picked
 
 The Markov chain always starts at state 0, so the marginal cost of level *N→N+1*
 is the difference `cost(N+1) − cost(N)`, each minimised over `protect_at` — or each
@@ -280,11 +282,10 @@ T  =  (C / 3600) · E_old / (E_new − E_old)
 The arithmetic lives in `shared/enhancementRoi.js`, beside `consumableCost.js` and
 for the same two reasons: it is not the engine's business, and `ui/` has no test
 runner, so a figure that tells someone to grind for nine hours should not be the
-one part of the feature nothing covers. The fetching is client-side
-(`ui/src/utils/enhancementCosts.js`), exactly where the consumable production
-times already come from — the cow webapp is a personal local server holding one
-player's character, and the csim API is a stateless simulator that should not
-acquire a dependency on it.
+one part of the feature nothing covers. The costing is client-side
+(`ui/src/utils/enhancementCosts.js`, the wasm in a sim worker), exactly where the
+iron item times already come from — the csim API is a stateless combat simulator,
+and the character is the UI's business.
 
 One convention differs deliberately from its neighbour. `isKnownCost` in
 `consumableCost.js` **admits zero**, because a user can truthfully say a food
@@ -296,7 +297,8 @@ understand least.
 
 ### Two changes it needed in the cow webapp
 
-Both small, both in `cow/webapp/app.py`, and the UI degrades gracefully without
+(History: the simulator was then a route of cowstuff's Flask app; it now runs in the
+browser and needs neither.) Both small, both in `cow/webapp/app.py`, and the UI degrades gracefully without
 either — an uncostable row reports *why* rather than vanishing.
 
 1. **CORS on `/api/enhance/*`.** `_cors` was applied to only the three endpoints
@@ -380,17 +382,16 @@ The guard on the merge is load-bearing: overrides are **seconds**, and the marke
 source is **coins**. Laying one over the other would produce a number that is
 neither, so the merge is skipped unless `unit === 'seconds'`.
 
-### Posting them to the enhancement API
+### Posting them to the enhancement simulator
 
-The endpoint already accepted everything needed; nothing on the Python side had to
-change. `describeEnhancementInputs` resolves each input through the same
+The simulator already accepted everything needed. `describeEnhancementInputs` resolves each input through the same
 override-aware path the consumables use, and `fetchTargetCost` posts:
 
-- `material_unit_costs` — **positional**, zipped by the server against the non-coin
+- `material_unit_costs` — **positional**, zipped by the simulator against the non-coin
   entries of `enhancementCosts`, so the filter here must match its filter exactly
 - `protect_price` / `protect_hrid` — see **Protects: how they are priced** below.
   Posted even when unpriced, as 0, the same treatment the materials get; omitting
-  it would hand the choice back to the server's own search.
+  it would hand the choice back to the simulator's own search.
 - `base_price: 0`, always — `total_cost` is base + materials + attempts, and the
   acquisition price is sunk for a piece already worn. Zeroing it makes the marginal
   cost of the *first* level simply `cost(1)`, with no subtraction to get wrong, and
@@ -518,7 +519,7 @@ Note also that a forced level *below* the next one costs **nothing in protects**
 and more in time — which is correct, and is the clamp doing its work.
 
 One consequence worth knowing: changing either control does **not** refetch. Thirty
-requests to a personal Flask server should be asked for rather than triggered by a
+Markov solves should be asked for rather than triggered by a
 click, so the panel instead marks the table *settings changed — refetch* when the
 policy on screen no longer matches the one the figures were costed under. Showing
 yesterday's numbers under today's settings and saying nothing was the alternative,
@@ -549,7 +550,7 @@ worth +0.4 pp on a 20% baseline are correctly not treated as equals.
 ### §9 changes its unit, and §8 stands unchanged
 
 §8's division of labour survives intact: this feature says what a level is *worth*, and
-what it *costs* is a separate question answered against the cow webapp. §9's machinery
+what it *costs* is a separate question answered by the enhancement simulator. §9's machinery
 survives too — the Markov solve, the marginal-cost subtraction, the mirror choice, the
 unpriced-materials banner. What changes is the final division.
 

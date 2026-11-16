@@ -2,23 +2,24 @@
 // enhancementCosts — what the NEXT enhancement level costs, in seconds
 //
 // The other half of the Gear tab. The scan measures what a level is worth; this
-// asks the cow webapp's enhancement simulator what it costs, and because that
-// simulator has an iron-cow mode which denominates everything in production
-// SECONDS, both halves of the trade end up in the same currency. No exchange rate
-// between coins and combat time has to be invented, which is the thing that makes
-// the whole comparison honest. The arithmetic lives in shared/enhancementRoi.js,
-// where the api test runner can reach it.
+// asks the enhancement simulator what it costs, and because that simulator has an
+// iron-cow mode which denominates everything in production SECONDS, both halves of
+// the trade end up in the same currency. No exchange rate between coins and combat
+// time has to be invented, which is the thing that makes the whole comparison
+// honest. The arithmetic lives in shared/enhancementRoi.js, where the api test
+// runner can reach it.
 //
-// WHY CLIENT-SIDE. Exactly where the consumable production times already come
-// from, and for the same reasons. The cow webapp is a personal, local Flask
-// server holding one player's character; the csim API is a stateless simulator
-// that should not acquire a dependency on it. And the enhancement configuration —
-// enhancing level, tool, teas, observatory — is a fact about the player, which is
-// the UI's business.
+// WHY CLIENT-SIDE. Exactly where the iron item times already come from, and for
+// the same reasons: the simulator is the Rust mwi-econ crate (rust/crates/mwi-econ
+// enhance_sim, shared with cowstuff's server), run in the browser as wasm, on the
+// character snapshot the UI already holds. The csim API stays a stateless combat
+// simulator, and the enhancement configuration — enhancing level, tool, teas,
+// observatory — is a fact about the player, which is the UI's business.
 //
-// Endpoints used (both documented in EQUIPMENT-OPTIMIZER.md):
-//   GET  /api/enhance/character  -> an EnhancementConfig from the live character
-//   POST /api/enhance/calculate  -> Markov solution over protection levels
+// The `engine` (hooks/useEnhancementCosts.js, a sim worker) answers what
+// cowstuff's routes do (EQUIPMENT-OPTIMIZER.md):
+//   engine.config()          -> an EnhancementConfig from the character (GET /api/enhance/character)
+//   engine.calculate(body)   -> Markov solution over protection levels (POST /api/enhance/calculate)
 // =============================================================================
 
 import { resolveItemCost } from './consumableCosts';
@@ -32,48 +33,16 @@ import {
   pickProtectionRow,
 } from '../../../shared/enhancementRoi.js';
 
-/** The cow webapp, addressed absolutely; its CORS is open. */
-export const ENHANCE_API_BASE = 'http://127.0.0.1:12345';
-
 /** The cap, matching the engine's multiplier table. */
 export const MAX_ENHANCEMENT_LEVEL = 20;
 
 export { MIRROR_OF_PROTECTION, PROTECTION_PRICING };
 
-/** Requests are ~80ms each; this is a guard against a wedged server, not a budget. */
-const REQUEST_TIMEOUT_MS = 20_000;
-
-function withTimeout(signal) {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
-  signal?.addEventListener('abort', () => controller.abort(), { once: true });
-  return { signal: controller.signal, done: () => clearTimeout(timer) };
-}
-
-/**
- * The player's enhancing setup, auto-filled from their live character.
- *
- * @param {object} [opts]
- * @returns {Promise<object>} an EnhancementConfig
- */
-export async function fetchEnhancementConfig({ signal } = {}) {
-  const guard = withTimeout(signal);
-  try {
-    const response = await fetch(`${ENHANCE_API_BASE}/api/enhance/character`, {
-      signal: guard.signal,
-    });
-    if (!response.ok) throw new Error(`Enhancement config unavailable (HTTP ${response.status})`);
-    return await response.json();
-  } finally {
-    guard.done();
-  }
-}
-
 /**
  * The priced inputs to enhancing one item: its materials and its protection.
  *
- * WHY THIS EXISTS. Left to itself the server prices everything through the same
- * recursive production walker that feeds /api/value/market, and that walker
+ * WHY THIS EXISTS. Left to itself the simulator prices everything through the same
+ * recursive production walker that feeds the iron item times, and that walker
  * returns 0.0 for anything it cannot resolve — a drop-only material, an item with
  * no production route. Those zeroes are not free, they are UNKNOWN, and they only
  * ever understate. Measured on a Chaotic Flail: sinister_essence (18 per attempt)
@@ -83,10 +52,10 @@ export async function fetchEnhancementConfig({ signal } = {}) {
  *
  * So we resolve every input ourselves, through the same override-aware path the
  * consumables use, and post the numbers explicitly. `material_unit_costs` is
- * POSITIONAL: the server zips it against the non-coin entries of
+ * POSITIONAL: the simulator zips it against the non-coin entries of
  * `enhancementCosts`, in order, so the filter here must match its filter exactly.
  *
- * Coin is excluded because coin costs an ironcow no time — the server's iron
+ * Coin is excluded because coin costs an ironcow no time — the simulator's iron
  * branch prices it at 0 and adds it separately.
  *
  * @param {string} itemHrid
@@ -116,7 +85,7 @@ export function describeEnhancementInputs(
       name: gameItems?.[entry.itemHrid]?.name || lastSegment(entry.itemHrid),
     }));
 
-  // The server excludes `_refined` protections from its own cheapest-of search;
+  // The simulator excludes `_refined` protections from its own cheapest-of search;
   // match that, or we would post a price for an option it would never pick.
   // In the two mirror modes the item's own protections are not candidates at all —
   // which is the point of them: one priceable item instead of a dozen drop-only
@@ -158,26 +127,25 @@ export function describeEnhancementInputs(
  * choose where to start protecting will choose well, or the row matching a forced
  * `protectAt` when the player has told us their policy instead.
  *
- * Returns null when the API cannot answer — notably at `target = 1`, where its
+ * Returns null when the simulator cannot answer — notably at `target = 1`, where its
  * protection loop (`range(2, target + 1)`) is empty and no rows come back.
  *
  * @returns {Promise<{seconds: number, protectAt: number, protects: number|null,
  *                   basePrice: number}|null>}
  */
-export async function fetchTargetCost({ itemHrid, target, config, inputs, protectAt, signal }) {
-  const guard = withTimeout(signal);
+export async function fetchTargetCost({ itemHrid, target, config, inputs, protectAt, engine }) {
   try {
     const body = { iron_cow: true, config, item_hrid: itemHrid, target };
 
     if (inputs) {
       // Positional, zipped against the non-coin enhancementCosts. An unpriced
-      // material posts 0 — the same value the server would have derived — but the
+      // material posts 0 — the same value the simulator would have derived — but the
       // caller is told about it so the UI can say the figure is a floor.
       body.material_unit_costs = inputs.materials.map((row) => row.effective ?? 0);
       if (inputs.protection) {
         // Posted even when unpriced, as 0 — the same treatment the materials get,
         // and the caller is told so it can flag the figure as a floor. Leaving it
-        // out instead would hand the choice back to the server's own cheapest-of
+        // out instead would hand the choice back to the simulator's own cheapest-of
         // search, which is exactly what the mirror modes promise not to do. In
         // `free` mode the zero is the point rather than a fallback, and
         // `assumedFree` is how the caller tells the two apart.
@@ -193,14 +161,7 @@ export async function fetchTargetCost({ itemHrid, target, config, inputs, protec
     // every other level's difference exactly as it was.
     body.base_price = 0;
 
-    const response = await fetch(`${ENHANCE_API_BASE}/api/enhance/calculate`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-      signal: guard.signal,
-    });
-    if (!response.ok) return null;
-    const payload = await response.json();
+    const payload = await engine.calculate(body);
     const chosen = pickProtectionRow(payload?.rows, { protectAt });
     if (!chosen) return null;
     return {
@@ -211,8 +172,6 @@ export async function fetchTargetCost({ itemHrid, target, config, inputs, protec
     };
   } catch {
     return null;
-  } finally {
-    guard.done();
   }
 }
 
@@ -224,11 +183,11 @@ export async function fetchTargetCost({ itemHrid, target, config, inputs, protec
  *
  * For an item at +0 the lower side would be `target = 0`, which costs nothing
  * because you already hold the item, so the marginal cost is the cost of reaching
- * +1 less the base price. That needs `target = 1`, which the server's protection
+ * +1 less the base price. That needs `target = 1`, which the simulator's protection
  * loop cannot produce: `for prot in range(2, target + 1)` is empty there. Rather
  * than reimplement the success-rate table on this side — game data that lives in
  * the cow repo and would silently rot here — the case is reported as unknown with
- * a reason the panel can show. A one-line change on the server
+ * a reason the panel can show. A one-line change on the simulator
  * (`range(min(2, target), target + 1)`) fixes it, and this function picks that up
  * automatically the moment it lands.
  *
@@ -247,7 +206,7 @@ export async function fetchMarginalCost({
   config,
   inputs,
   protectAt,
-  signal,
+  engine,
 }) {
   const level = Math.max(0, Math.floor(Number(currentLevel) || 0));
   const unpriced = inputs?.unpriced || [];
@@ -263,15 +222,15 @@ export async function fetchMarginalCost({
     config,
     inputs,
     protectAt,
-    signal,
+    engine,
   });
   if (!target) {
     return {
       seconds: null,
       reason:
         level === 0
-          ? 'the enhancement API cannot cost the very first level (its protection loop starts at 2)'
-          : 'the enhancement API returned no costing for this item',
+          ? 'the enhancement simulator cannot cost the very first level (its protection loop starts at 2)'
+          : 'the enhancement simulator returned no costing for this item',
       unpriced,
       protection,
     };
@@ -298,12 +257,12 @@ export async function fetchMarginalCost({
     // The level-up's own protection plan, so both totals follow one plan; the
     // solver's cheapest plan for +N alone may differ and would mix the two.
     protectAt: target.protectAt,
-    signal,
+    engine,
   });
   if (!current) {
     return {
       seconds: null,
-      reason: 'the enhancement API returned no costing for this item',
+      reason: 'the enhancement simulator returned no costing for this item',
       unpriced,
       protection,
     };
@@ -341,14 +300,13 @@ function marginalProtects(atTarget, atCurrent) {
 /**
  * Cost every row of a scan result, sequentially.
  *
- * Sequential on purpose. Each request is ~80ms and a full party is under thirty
- * of them, so parallelism would save a second at most — and the server is a
- * single-threaded Flask development server holding one user's character, which
- * a fan-out would simply queue anyway.
+ * Sequential on purpose: the engine is one worker, which answers one costing at
+ * a time, and a full party is under thirty rows.
  *
  * @param {object[]} rows       scan result rows
  * @param {object} config       EnhancementConfig
  * @param {object} [opts]
+ * @param {{calculate: (body: object) => Promise<object>}} opts.engine  the enhancement simulator
  * @param {string} [opts.protectionPricing]  one of PROTECTION_PRICING
  * @param {number} [opts.protectAt]          forced protect level; free mode only
  * @param {(done: number, total: number) => void} [opts.onProgress]
@@ -362,6 +320,7 @@ export async function costScanRows(
     pricing,
     protectionPricing = PROTECTION_PRICING.CHEAPEST,
     protectAt,
+    engine,
     signal,
     onProgress,
   } = {}
@@ -392,7 +351,7 @@ export async function costScanRows(
           config,
           inputs,
           protectAt: forced,
-          signal,
+          engine,
         })
       );
     }

@@ -180,8 +180,8 @@ function ReturnOnInvestment({
   } = useEnhancementCosts();
 
   // Which policy the table on screen was actually costed under. Changing the
-  // controls does not refetch — thirty requests to a personal Flask server should
-  // be asked for, not triggered by a click on a switch — so without this the
+  // controls does not refetch — thirty Markov solves should be asked for, not
+  // triggered by a click on a switch — so without this the
   // panel would show yesterday's numbers under today's settings and say nothing.
   const [fetchedUnder, setFetchedUnder] = useState(null);
   // Results stay mounted across a re-run, so this panel outlives the scan it
@@ -338,12 +338,12 @@ function ReturnOnInvestment({
 
       {!costs && !loading && !error && (
         <Text size="xs" c="dimmed">
-          Asks the cow webapp&apos;s enhancement simulator what each next level costs, in
+          Asks the enhancement simulator what each next level costs, in
           production seconds, and works out{' '}
           {labyrinth
             ? 'how much enhancing buys one percentage point of clear rate'
             : 'how long you must fight before it pays for itself'}
-          . Requires the cow webapp on port 12345.
+          . Uses the iron character&apos;s game snapshot.
         </Text>
       )}
 

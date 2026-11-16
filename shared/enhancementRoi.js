@@ -16,7 +16,7 @@
 //
 // THE IDEA. The equipment scan measures a gain in EFFECTIVE encounters per hour —
 // encounters per hour of total time, combat plus the production owed for every
-// consumable burned. The cow webapp's enhancement simulator, in iron-cow mode,
+// consumable burned. The enhancement simulator (rust mwi-econ), in iron-cow mode,
 // reports what a level COSTS in seconds. Both sides are therefore denominated in
 // the same currency, and the honest comparison falls out without needing to
 // invent an exchange rate between coins and time.
@@ -295,7 +295,7 @@ export function enhancingHoursPerUnit({ costSeconds, gainPerLevel }) {
 /**
  * Marginal cost of one level, from two whole-programme costs.
  *
- * The cow webapp's Markov solver always starts a fresh item at +0 and reports the
+ * The enhancement simulator's Markov solver always starts a fresh item at +0 and reports the
  * expected cost of reaching a target, one row per level at which protecting
  * begins; `pickProtectionRow` decides which row to believe. The cost of the NEXT
  * level is therefore the difference between the chosen programme that reaches N+1

@@ -30,8 +30,10 @@ export function loadWasmTwin() {
         const data = {};
         for (const name of TWIN_DATA_NAMES) data[name] = dataProvider[EXPORT_NAME[name] ?? name];
         mod.load_data(JSON.stringify(data));
-        // The three maps the item valuation (rust/src/lib.rs item_values) reads; built on first use, as sim jobs never need them.
+        // The three maps the item valuation and enhancement costing (rust/src/lib.rs item_values,
+        // enhance_calculate) read; built on first use, as sim jobs never need them.
         let client = null;
+        const clientJson = () => (client ??= JSON.stringify({ actionDetailMap: data.actionDetailMap, itemDetailMap: data.itemDetailMap, enhancementLevelTotalBonusMultiplierTable: data.enhancementLevelTotalBonusMultiplierTable }));
         const mine = loading;
         const guard = (f) => {
             try {
@@ -44,10 +46,9 @@ export function loadWasmTwin() {
         };
         return {
             run: async (json, onProgress) => guard(() => mod.run(json, onProgress ?? null)),
-            itemValues: (character, overrides = "") => {
-                client ??= JSON.stringify({ actionDetailMap: data.actionDetailMap, itemDetailMap: data.itemDetailMap, enhancementLevelTotalBonusMultiplierTable: data.enhancementLevelTotalBonusMultiplierTable });
-                return guard(() => mod.item_values(client, character, overrides));
-            },
+            itemValues: (character, overrides = "") => guard(() => mod.item_values(clientJson(), character, overrides)),
+            enhanceConfig: (character) => guard(() => mod.enhance_config(character)),
+            enhanceCalculate: (character, body) => guard(() => mod.enhance_calculate(clientJson(), character, body)),
         };
     })();
     loading.catch(() => { loading = null; });

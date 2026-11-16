@@ -27,3 +27,18 @@ test('wasm item_values: the fixture character prices an item as the server golde
   assert.equal(out.values['/items/coin'], 0);
   console.log(`# item_values (wasm, incl. parse): ${ms.toFixed(0)} ms`);
 });
+
+test('wasm enhance_*: the fixture character costs an item as the server golden does', { skip }, async () => {
+  const b = await wasmBackend();
+  const maps = ['actionDetailMap', 'itemDetailMap', 'enhancementLevelTotalBonusMultiplierTable'];
+  const client = '{' + maps.map((m) => `"${m}":${read(`src/combatsimulator/data/${m}.json`)}`).join(',') + '}';
+  const character = read('fixtures/econ/character.json');
+  const config = JSON.parse(await b.enhanceConfig(character));
+  assert.equal(config.enhancing_level, JSON.parse(read('fixtures/econ/enhance__character.json')).enhancing_level);
+  const body = JSON.stringify({ config: {}, item_hrid: '/items/holy_brush', target: 10, iron_cow: true });
+  const out = JSON.parse(await b.enhanceCalculate(client, character, body));
+  const golden = JSON.parse(read('fixtures/econ/enhance_iron__calc.json'));
+  assert.equal(out.optimal_prot, golden.optimal_prot);
+  assert.ok(Math.abs(out.rows[0].total_cost - golden.rows[0].total_cost) <= 1e-6 * golden.rows[0].total_cost);
+  assert.equal(JSON.parse(await b.enhanceCalculate(client, character, '[]')).ok, false);
+});

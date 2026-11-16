@@ -52,3 +52,15 @@ pub fn selftest(input: &str) -> String {
 pub fn item_values(client: &str, character: &str, overrides: &str) -> String {
     crate::item_values(client, character, overrides)
 }
+
+/// The enhancing setup off a raw character (lib.rs `enhance_config`); stateless.
+#[wasm_bindgen]
+pub fn enhance_config(character: &str) -> String {
+    crate::enhance_config(character)
+}
+
+/// One enhancement costing (lib.rs `enhance_calculate`); stateless.
+#[wasm_bindgen]
+pub fn enhance_calculate(client: &str, character: &str, body: &str) -> String {
+    crate::enhance_calculate(client, character, body)
+}

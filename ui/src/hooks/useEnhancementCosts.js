@@ -7,13 +7,42 @@
 // there is nothing here another view could want, and nothing worth persisting,
 // since a cost is only meaningful against the scan that produced the gain.
 //
-// Explicitly user-initiated. The scan is useful on its own, the cow webapp may
-// not be running, and firing thirty requests at a personal Flask server the
-// moment a result renders would be presumptuous.
+// Explicitly user-initiated. The scan is useful on its own, and thirty Markov
+// solves the moment a result renders would be presumptuous.
+//
+// The costing runs in the browser: the Rust enhancement simulator (mwi-econ, as
+// wasm) in one sim worker per run, on the iron character's game snapshot.
 // =============================================================================
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { costScanRows, fetchEnhancementConfig } from '../utils/enhancementCosts';
+import { costScanRows } from '../utils/enhancementCosts';
+import { useSnapshots } from './useSnapshots';
+
+/** The enhancement simulator for one raw character, in a fresh sim worker; callers await one call at a time. */
+function enhanceWorker(character) {
+  const worker = new Worker(new URL('../../../src/worker.js', import.meta.url), { type: 'module' });
+  const text = JSON.stringify(character);
+  const call = (message) =>
+    new Promise((resolve, reject) => {
+      worker.onmessage = ({ data }) => {
+        if (data.type !== 'enhance_result') return reject(new Error(String(data.error)));
+        try {
+          const payload = JSON.parse(data.json);
+          if (payload?.ok === false) throw new Error(payload.error);
+          resolve(payload);
+        } catch (e) {
+          reject(e);
+        }
+      };
+      worker.onerror = (e) => reject(new Error(e.message || 'enhancement worker failed'));
+      worker.postMessage({ ...message, character: text });
+    });
+  return {
+    config: () => call({ type: 'enhance_config' }),
+    calculate: (body) => call({ type: 'enhance_calculate', body: JSON.stringify(body) }),
+    terminate: () => worker.terminate(),
+  };
+}
 
 export function useEnhancementCosts() {
   const [config, setConfig] = useState(null);
@@ -23,6 +52,7 @@ export function useEnhancementCosts() {
   const [error, setError] = useState(null);
 
   const abortRef = useRef(null);
+  const snapshots = useSnapshots();
 
   // Abort the fetch in flight, if any. An aborted fetch writes no state of
   // its own (see fetchCosts), so its loading flag is dropped here.
@@ -51,8 +81,17 @@ export function useEnhancementCosts() {
       setError(null);
       setProgress({ done: 0, total: rows?.length || 0 });
 
+      let engine = null;
       try {
-        const resolved = await fetchEnhancementConfig({ signal: controller.signal });
+        // The character the iron times follow (hooks/usePrices.js), so costs and prices agree.
+        const character = snapshots[pricing?.ironCharacter];
+        if (!character) {
+          throw new Error(
+            'No game snapshot for the iron character: import one with the csim-import userscript, then try again.'
+          );
+        }
+        engine = enhanceWorker(character);
+        const resolved = await engine.config();
         setConfig(resolved);
 
         const table = await costScanRows(rows, resolved, {
@@ -63,21 +102,15 @@ export function useEnhancementCosts() {
           pricing,
           protectionPricing,
           protectAt,
+          engine,
           signal: controller.signal,
           onProgress: (done, total) => setProgress({ done, total }),
         });
         if (!controller.signal.aborted) setCosts(table);
       } catch (caught) {
-        if (!controller.signal.aborted && caught?.name !== 'AbortError') {
-          // Overwhelmingly the likeliest cause, and the one the user can fix.
-          setError(
-            new Error(
-              'Cannot reach the enhancement API. Start the cow webapp (it listens on ' +
-                'port 12345), then try again.'
-            )
-          );
-        }
+        if (!controller.signal.aborted) setError(caught instanceof Error ? caught : new Error(String(caught)));
       } finally {
+        engine?.terminate();
         // Only the current fetch may settle the shared state: a superseded one
         // must not clear its successor's controller or loading flag.
         if (abortRef.current === controller) {
@@ -86,7 +119,7 @@ export function useEnhancementCosts() {
         }
       }
     },
-    [stop]
+    [stop, snapshots]
   );
 
   const clear = useCallback(() => {
