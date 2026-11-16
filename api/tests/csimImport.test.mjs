@@ -225,3 +225,13 @@ test('storeKeyFor: test server ↔ /mwisim/test/ only', () => {
     delete globalThis.GM_addValueChangeListener;
   }
 });
+
+test('csim keeps /test/ snapshots under their own localStorage key (one origin, two builds)', () => {
+  const { storeKeyFor, STORE_KEYS } = userscript;
+  for (const pathname of ['/mwisim/', '/mwisim/test/', '/mwisim/test', '/sim/', '/']) {
+    const userscriptTest = storeKeyFor({ hostname: 'holychikenz.github.io', pathname }) === STORE_KEYS.test;
+    const csimTest = snaps.snapshotsKeyFor(pathname) !== snaps.snapshotsKeyFor('/mwisim/');
+    assert.equal(csimTest, userscriptTest, pathname);
+  }
+  assert.equal(snaps.SNAPSHOTS_KEY, 'csim_character_snapshots', 'node has no location: the live key');
+});
