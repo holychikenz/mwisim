@@ -20,6 +20,7 @@ This branch is csim running on the **test server's** game data. It is `main` plu
   Check: `git diff main...test --stat` lists the data files.
 - **Never refresh live data here.** A bare `node tools/refreshData.mjs` reads the test dump.
 - `twin-quick` must stay green. JS and Rust see the same data, so a mismatch is a real twin bug. Fix it on `main`; never re-record it away.
+- The deploy builds this branch with `VITE_SERVER=test` (TEST DATA badge, `test::` localStorage). Local dev: `cd ui && VITE_SERVER=test npm run dev`.
 - Prices stay live. The UI fetches `www.milkywayidle.com/game_data/marketplace.json`, and an item that exists only on test has no price.
 
 ## Sync ritual
