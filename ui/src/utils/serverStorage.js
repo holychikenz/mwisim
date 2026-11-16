@@ -5,6 +5,8 @@ export const TEST_BUILD = isTestBuild(import.meta.env);
 
 // /mwisim/test/ shares live's origin, so a test build keeps its localStorage under a prefix, at the
 // Storage boundary so that no future key can forget it (as MWIX does, cowstuff 1aa09f4).
+// Only getItem/setItem/removeItem are wrapped: clear(), key(i), length and property access still see
+// the shared store (live keys too), so the UI must not use them.
 export function namespaceStorage(proto, prefix) {
   for (const m of ['getItem', 'setItem', 'removeItem']) {
     const f = proto[m];

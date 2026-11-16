@@ -33,7 +33,7 @@ jobs:
       - name: Is there a test branch?
         id: test
         run: |
-          if git -C live ls-remote --exit-code --heads origin test >/dev/null; then
+          if git -C live ls-remote --exit-code origin refs/heads/test >/dev/null; then
             echo exists=true >> "$GITHUB_OUTPUT"
           else
             echo "::notice::no test branch; deploying / only"
@@ -45,10 +45,13 @@ jobs:
         uses: actions/checkout@v4
         with: { ref: test, path: test }
 
-      # A push to test runs test's copy of this file; refuse to deploy live from a diverged copy.
+      # A run from any other ref executes that ref's copy of this file; refuse to deploy live from a
+      # copy that differs from main's (compared at the running workflow's own commit, not the head).
       - name: Workflow must match main's
-        if: github.ref_name == 'test'
-        run: diff -u live/.github/workflows/deploy.yml test/.github/workflows/deploy.yml
+        if: github.ref_name != 'main'
+        run: |
+          git -C live fetch -q --depth=1 origin "$GITHUB_WORKFLOW_SHA"
+          git -C live diff --exit-code HEAD FETCH_HEAD -- .github/workflows/deploy.yml
 
       - uses: actions/setup-node@v4
         with:
@@ -63,9 +66,7 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
         with:
-          workspaces: |
-            live/rust
-            test/rust
+          workspaces: live/rust   # test/rust may not exist; its build stays uncached
 
       - uses: taiki-e/install-action@v2
         with: { tool: wasm-pack@0.15.0 }
@@ -90,6 +91,9 @@ jobs:
           ./build.sh wasm
           cd ui && npm ci && npm run build
           ls dist/assets/csim_twin_bg-*.wasm && grep -q 'csim_twin_bg-' dist/assets/*.js
+          # A test head without the storage namespace (ui/src/utils/serverStorage.js) would share live's
+          # localStorage on this origin: never publish it.
+          grep -q 'test::' dist/assets/*.js || { echo "::error::test build lacks the test:: storage namespace"; exit 1; }
 
       - name: Assemble one site
         env:
