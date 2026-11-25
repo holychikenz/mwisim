@@ -34,8 +34,8 @@ export const TWIN_DATA_NAMES = [
   'labyrinthCrateDetailMap',
 ];
 
-/** Whether a worker job runs on the wasm twin: the toggle is on. */
-export const wantsWasmTwin = (job) => job.extra?.experimental?.engine === 'wasm';
+/** Whether a worker job runs on the wasm twin: always, now that the UI's JS option is gone (engine-retirement). */
+export const wantsWasmTwin = () => true;
 
 /** The twin's request shapes, written once; every seam builds its request here. */
 export const twinZoneRequest = ({ players, partyBuffs = [], zone, simulationTimeLimit, runLimits }) =>

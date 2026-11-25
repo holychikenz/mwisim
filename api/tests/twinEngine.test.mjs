@@ -87,11 +87,9 @@ test('runTwin resolves a batch to its array of results', async () => {
   assert.equal(out[1].a, 2);
 });
 
-test('wantsWasmTwin: the toggle picks wasm, labyrinths included', () => {
-  const job = { extra: { experimental: { engine: 'wasm' } } };
-  assert.equal(wantsWasmTwin(job), true);
-  assert.equal(wantsWasmTwin({ ...job, labyrinth: {} }), true);
-  assert.equal(wantsWasmTwin({}), false);
+test('wantsWasmTwin: every job runs on wasm, whatever an old stored toggle says', () => {
+  assert.equal(wantsWasmTwin({ extra: { experimental: { engine: 'js' } }, labyrinth: {} }), true);
+  assert.equal(wantsWasmTwin({}), true);
 });
 
 test('the request builders add only the defaults the seams applied', () => {

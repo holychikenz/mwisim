@@ -10,8 +10,8 @@ import { setTwinBackend, runTwin, wantsWasmTwin, twinRunRequest } from "../share
 import { loadWasmTwin } from "./twinWasm.js";
 
 onmessage = async function (event) {
-    // MWIX adaptation (Rust twin): extra.experimental.engine === "wasm" runs
-    // zone, labyrinth and trial jobs on the wasm build of rust/.
+    // MWIX adaptation (Rust twin): zone, labyrinth and trial jobs run on the
+    // wasm build of rust/ (always, since the UI's JS option was removed).
     let twin = null;
     try {
         twin = wantsWasmTwin(event.data) ? await loadWasmTwin() : null;
