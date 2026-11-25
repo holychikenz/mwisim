@@ -308,6 +308,11 @@ impl<'a> Sim<'a> {
         MIN_MAX_TICKS as f64 + (elapsed / 3600e9 * MAX_TICKS_PER_SIM_HOUR).ceil()
     }
 
+    /// The stall guard: a frozen clock gets MIN_MAX_TICKS events, however much budget it earned before freezing.
+    fn over_budget(total_ticks: u64, stalled: u64, sim_time: f64) -> bool {
+        stalled >= MIN_MAX_TICKS || (total_ticks >= MIN_MAX_TICKS && total_ticks as f64 >= Self::max_ticks_at(sim_time))
+    }
+
     /// Err((message, is_range_error)).
     /// `progress` gets the JS "progress" event's fraction every 1000 ticks.
     pub fn simulate(&mut self, limit: f64, run_limits: Option<(f64, f64)>, mut progress: Option<&mut dyn FnMut(f64)>) -> Result<(), (String, bool)> {
@@ -343,7 +348,7 @@ impl<'a> Sim<'a> {
             } else {
                 stalled += 1;
             }
-            if stalled >= MIN_MAX_TICKS || (total_ticks >= MIN_MAX_TICKS && total_ticks as f64 >= Self::max_ticks_at(self.simulation_time)) {
+            if Self::over_budget(total_ticks, stalled, self.simulation_time) {
                 return Err((
                     format!(
                         "csim simulate(): exceeded MAX_TICKS={} at simTime={:.2}s (limit={:.0}s) — pathological event rate, likely a wiring bug",
@@ -1955,3 +1960,7 @@ impl<'a> Sim<'a> {
         Ok(si)
     }
 }
+
+#[cfg(test)]
+#[path = "simulator_tests.rs"]
+mod tests;
