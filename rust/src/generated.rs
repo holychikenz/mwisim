@@ -155,6 +155,7 @@ pub const TRIGGER_CONDITION_KINDS: &[(&str, &str)] = &[
     ("/combat_trigger_conditions/attack_coffee", "EXACT_BUFF"),
     ("/combat_trigger_conditions/berserk", "EXACT_BUFF"),
     ("/combat_trigger_conditions/blind_status", "BLIND_STATUS"),
+    ("/combat_trigger_conditions/boss_status", "BOSS_STATUS"),
     ("/combat_trigger_conditions/channeling_coffee", "EXACT_BUFF"),
     ("/combat_trigger_conditions/crippling_slash", "EXACT_BUFF"),
     ("/combat_trigger_conditions/critical_aura", "PREFIX_BUFF"),
