@@ -118,6 +118,8 @@ test('a wasm trap fails that call only; the next one runs on a fresh instance', 
   const loads = wasmTestHooks.loads;
   wasmTestHooks.trapNextRun = true;
   assert.throws(() => monsterDetails([{ hrid: '/monsters/fly' }]), WebAssembly.RuntimeError);
+  // Before the reload lands (it is async; this is not), a call fails cleanly instead of using the trapped instance.
+  assert.throws(() => monsterDetails([{ hrid: '/monsters/fly' }]), /reloading after a crash/);
   for (let i = 0; i < 200 && wasmTestHooks.loads === loads; i++) await new Promise((r) => setTimeout(r, 10)); // the background re-instantiation
   assert.equal(wasmTestHooks.loads, loads + 1);
   assert.equal(monsterDetails([{ hrid: '/monsters/fly' }])[0].ok, true);

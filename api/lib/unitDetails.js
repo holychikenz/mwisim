@@ -28,9 +28,9 @@ try {
   if (globalThis.process?.versions?.node) {
     const nodeLoader = './twin/wasm.mjs';
     const m = await import(/* @vite-ignore */ nodeLoader);
-    reload = () => m.wasmBackend();
+    // m.runSync reads the module's current instance on every call.
+    reload = async () => { await m.wasmBackend(); runSync = m.runSync; };
     await reload();
-    runSync = m.runSync; // reads the module's current instance on every call
   } else {
     const { loadWasmTwin } = await import('../../src/twinWasm.js');
     reload = async () => { runSync = (await loadWasmTwin()).runSync; };
@@ -38,7 +38,8 @@ try {
   }
 } catch (e) {
   // Not thrown here: a build without rust/pkg must still load every module that imports this one.
-  loadError = e;
+  // Native alone cannot stand in: these calls are synchronous and native is a child process.
+  loadError = new Error(`Unit stats (trigger bounds, labyrinth stats) need the wasm engine, even when simulations run on native: ${e?.message ?? e}`);
 }
 
 function call(request) {
@@ -47,8 +48,13 @@ function call(request) {
   try {
     out = runSync(JSON.stringify(request));
   } catch (e) {
-    // This call fails; re-instantiate in the background so later calls do not hit a dropped or unsound instance.
-    if (e instanceof WebAssembly.RuntimeError) reload().catch(() => {});
+    // This call fails; re-instantiate in the background. Until that lands, calls fail cleanly rather than run
+    // on the unsound instance (the browser's runSync is bound to it; Node's already refuses a dropped one).
+    if (e instanceof WebAssembly.RuntimeError) {
+      runSync = null;
+      loadError = new Error('The wasm engine is reloading after a crash; try again.');
+      reload().catch((err) => { loadError = err; });
+    }
     throw e;
   }
   const res = JSON.parse(out);
