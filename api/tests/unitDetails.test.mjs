@@ -124,3 +124,38 @@ test('bad input: an unknown monster and a malformed DTO are per-entry errors, as
   assert.equal(checkPlayerDto({ hrid: 'x' }).ok, false);
   assert.throws(() => playerDetails([dtos[0]], { zoneBuffs: [{ typeHrid: '/buff_types/nope' }] }));
 });
+
+test('player_details bare equals JS createFromDTO + updateCombatDetails (SCLIRoster triggerPolicy)', { skip }, () => {
+  const shaped = dtos.concat(dtos.map((d) => ({ ...d, houseRooms: { '/house_rooms/dojo': 8 } })));
+  const twin = playerDetails(shaped, { bare: true });
+  shaped.forEach((dto, i) => {
+    const p = Player.createFromDTO(structuredClone(dto));
+    p.updateCombatDetails();
+    assert.deepStrictEqual(pick(twin[i]), pick(p), dto.hrid);
+  });
+});
+
+test('checkPlayerDto refuses exactly what Player.createFromDTO throws on', { skip }, () => {
+  const base = dtos.find((d) => Object.keys(d.equipment).length);
+  const without = (k) => Object.fromEntries(Object.entries(base).filter(([kk]) => kk !== k));
+  const cases = {
+    good: base,
+    empty: {},
+    null: null,
+    numericHrid: { ...base, hrid: 7 },
+    unknownItem: { ...base, equipment: { ...base.equipment, '/equipment_types/head': { hrid: '/items/nope', enhancementLevel: 0 } } },
+    unknownAbility: { ...base, intelligenceLevel: 200, abilities: [{ hrid: '/abilities/nope', level: 1, triggers: [] }] },
+    unknownFood: { ...base, food: [{ hrid: '/items/nope', triggers: [] }] },
+    unknownHouse: { ...base, houseRooms: { '/house_rooms/nope': 1 } },
+    ...Object.fromEntries(['equipment', 'food', 'drinks', 'abilities', 'houseRooms', 'achievements', 'hrid', 'staminaLevel'].map((k) => [`no ${k}`, without(k)])),
+  };
+  for (const [label, dto] of Object.entries(cases)) {
+    let jsOk = true;
+    try {
+      Player.createFromDTO(structuredClone(dto));
+    } catch {
+      jsOk = false;
+    }
+    assert.equal(checkPlayerDto(dto).ok, jsOk, label);
+  }
+});

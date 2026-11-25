@@ -196,6 +196,9 @@ pub struct DetailsReq {
     pub zone_buffs: Vec<RawBuff>,
     #[serde(default)]
     pub monsters: Vec<MonsterReq>,
+    /// Players only: `createFromDTO(dto); updateCombatDetails()` alone (no buffs, no reset).
+    #[serde(default)]
+    pub bare: bool,
 }
 
 #[derive(Deserialize, Clone, Debug)]

@@ -264,7 +264,8 @@ fn run_inner(data: &GameData, request: &str, mut progress: Option<&mut dyn FnMut
 }
 
 /// `player_details`: each player as a zone run builds it at combat start (create_player with
-/// the zone buffs and partyBuffs + its own extraBuffs, generatePermanentBuffs, reset(0)).
+/// the zone buffs and partyBuffs + its own extraBuffs, generatePermanentBuffs, reset(0)); with
+/// `bare`, `createFromDTO(dto); updateCombatDetails()` only.
 /// `monster_details`: `new Monster(hrid, tier, roomLevel); updateCombatDetails()`, plus its abilities.
 /// Each entry is `{ok:true, hrid, <base>Level..., combatDetails[, abilities]}` or `{ok:false, error}`.
 fn details(data: &GameData, kind: &str, request: &str) -> Result<String, String> {
@@ -293,8 +294,12 @@ fn details(data: &GameData, kind: &str, request: &str) -> Result<String, String>
                         extra.push(Buff::raw(b)?);
                     }
                     let mut u = player::create_player(data, &dto, (i + 1) as u32, zone_buffs.clone(), extra)?;
-                    u.generate_permanent_buffs();
-                    u.reset(0.0, false, &mut rng);
+                    if req.bare {
+                        u.update_combat_details();
+                    } else {
+                        u.generate_permanent_buffs();
+                        u.reset(0.0, false, &mut rng);
+                    }
                     Ok::<_, String>(u)
                 })();
                 built.map(|u| unit_j(&u, vec![])).unwrap_or_else(fail)
