@@ -7,10 +7,19 @@ import { test } from 'node:test';
 import assert from 'node:assert';
 
 import { mulberry32, withSeed } from '../lib/determinism.mjs';
-import { reviveTwinResult, runTwin, getTwinBackend, wantsWasmTwin, twinZoneRequest, twinLabRequest, twinTrialRequest, twinRunRequest } from '../../shared/twinEngine.js';
+import { spawnSync } from 'node:child_process';
+import { reviveTwinResult, runTwin, getTwinBackend, twinZoneRequest, twinLabRequest, twinTrialRequest, twinRunRequest } from '../../shared/twinEngine.js';
 
-test('the JS engine is the default backend', () => {
+test('no backend is registered until a caller registers one', () => {
   assert.equal(getTwinBackend(), null);
+});
+
+test('CSIM_ENGINE=js is a clear error, not a silent fallback', () => {
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', "await (await import('./lib/twin/index.mjs')).selectTwinFromEnv()"], {
+    cwd: new URL('..', import.meta.url), env: { ...process.env, CSIM_ENGINE: 'js' }, encoding: 'utf8',
+  });
+  assert.notEqual(r.status, 0);
+  assert.match(r.stderr, /CSIM_ENGINE=js: the JS combat engine was removed/);
 });
 
 test('reviveTwinResult turns the canonical sentinels back into values, in place', () => {
@@ -75,7 +84,7 @@ test('runTwin writes an error\'s rngState back, and poisons the stream when ther
     assert.equal(Math.random.state(), 42);
     await assert.rejects(runTwin(at(undefined), { kind: 'zone' }), /boom/);
     assert.throws(() => Math.random.state(), /unusable by the twin.*boom/);
-    assert.equal(typeof Math.random(), 'number'); // the JS engine can still draw
+    assert.equal(typeof Math.random(), 'number'); // a non-twin caller can still draw
     await assert.rejects(runTwin(at(1), { kind: 'zone' }), /unusable by the twin/);
   });
 });
@@ -85,11 +94,6 @@ test('runTwin resolves a batch to its array of results', async () => {
   const out = await withSeed(1, () => runTwin(fake, { kind: 'trial', iterations: 2 }));
   assert.ok(Number.isNaN(out[0].a));
   assert.equal(out[1].a, 2);
-});
-
-test('wantsWasmTwin: every job runs on wasm, whatever an old stored toggle says', () => {
-  assert.equal(wantsWasmTwin({ extra: { experimental: { engine: 'js' } }, labyrinth: {} }), true);
-  assert.equal(wantsWasmTwin({}), true);
 });
 
 test('the request builders add only the defaults the seams applied', () => {
@@ -108,7 +112,7 @@ test('the request builders add only the defaults the seams applied', () => {
   assert.ok(!('runLimits' in l));
   const lab = { labyrinthHrid: '/monsters/m', roomLevel: 60 };
   assert.deepEqual(twinRunRequest({ players: [], labyrinth: lab, simulationTimeLimit: 1, runLimits: { maxRuns: 2 } }), { kind: 'labyrinth', players: [], partyBuffs: [], labyrinth: lab, simulationTimeLimit: 1, runLimits: { maxRuns: 2 } });
-  assert.equal(twinRunRequest({ players: [], zone: { zoneHrid: 'z' }, labyrinth: lab, simulationTimeLimit: 1 }).kind, 'zone'); // zone wins, as in the JS seams
+  assert.equal(twinRunRequest({ players: [], zone: { zoneHrid: 'z' }, labyrinth: lab, simulationTimeLimit: 1 }).kind, 'zone'); // zone wins
   assert.ok(!('labyrinth' in twinRunRequest({ players: [], zone: { zoneHrid: 'z' }, simulationTimeLimit: 1 })));
 });
 
@@ -129,7 +133,7 @@ test('a twin trial batch goes in chunks of TWIN_TRIAL_CHUNK, with progress offse
     assert.deepEqual(sizes, [TWIN_TRIAL_CHUNK, 5]);
     assert.equal(out.length, TWIN_TRIAL_CHUNK + 5);
     assert.deepEqual(seen, Array.from({ length: TWIN_TRIAL_CHUNK + 5 }, (_, i) => i + 1));
-    // Fractional iterations: the JS loop runs ceil(n); the twin must get whole chunks summing to that.
+    // Fractional iterations run ceil(n), as the old loop did; the twin must get whole chunks summing to that.
     sizes.length = 0;
     const frac = await withSeed(1, () => runTrialIterations({ players: [], partyBuffs: [], trialHrid: 'x', iterations: TWIN_TRIAL_CHUNK + 4.5 }));
     assert.deepEqual(sizes, [TWIN_TRIAL_CHUNK, 5]);

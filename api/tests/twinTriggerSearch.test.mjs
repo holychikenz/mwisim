@@ -1,6 +1,7 @@
 // =============================================================================
-// A small seeded trigger search ranks identically on the JS engine and the
-// native twin: the pool workers select their backend from CSIM_ENGINE, so this
+// A small seeded trigger search on the native twin gives exactly the result the
+// JS engine gave (its digest recorded on JS, which native matched before JS was
+// deleted): the pool workers select their backend from CSIM_ENGINE, so this
 // covers poolWorker's seam end to end. Skipped without a built csim-native.
 // =============================================================================
 
@@ -9,6 +10,7 @@ import assert from 'node:assert/strict';
 import { existsSync } from 'node:fs';
 
 import { loadGameData } from '../lib/simulator.js';
+import { canonical, digest } from '../lib/determinism.mjs';
 import { BUILDS, toCsimPlayer } from '../bench/builds.mjs';
 import { NATIVE_BIN } from '../lib/twin/native.mjs';
 import { createSimulationPool, makePoolEvaluator } from '../lib/triggerSearch/pool.js';
@@ -40,10 +42,9 @@ async function search(engine) {
   }
 }
 
-test('a seeded trigger search ranks identically under js and native', { skip, timeout: 300_000 }, async () => {
-  const js = await search('js');
+test('a seeded trigger search on native ranks exactly as it did on JS', { skip, timeout: 300_000 }, async () => {
   const native = await search('native');
-  assert.ok(js.rows.length > 0);
-  assert.ok(js.simulationsRun > 0);
-  assert.deepEqual(native, js);
+  assert.equal(native.rows.length, 2);
+  assert.equal(native.simulationsRun, 33);
+  assert.equal(digest(canonical(native)), '77ae022af14a8dc13ba9871c7ab087e0334d7732a0ad931806fb5d3ca68f3000');
 });

@@ -1,9 +1,10 @@
 // =============================================================================
-// unitDetails parity: the wasm twin's player_details / monster_details against
-// JS Player / Monster, bit for bit (assert.deepStrictEqual compares numbers with
-// Object.is), on every fixture build, with and without buffs, and on every
-// monster at tiers 0-5 and at labyrinth room levels. The JS engine is the oracle
-// while it exists; skipped when rust/pkg is not built.
+// unitDetails smoke test: the wasm twin's player_details / monster_details
+// answer ok on every fixture build (with and without buffs) and every monster at
+// tiers 0-5 and labyrinth room levels, and refuse what the JS engine refused.
+// They were checked bit for bit against JS Player / Monster before JS was
+// deleted; lab:check (fixtures/lab) still pins their numbers. Skipped when
+// rust/pkg is not built.
 // =============================================================================
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -14,8 +15,6 @@ const ROOT = new URL('../../', import.meta.url);
 const skip = !existsSync(fileURLToPath(new URL('rust/pkg/csim_twin_bg.wasm', ROOT))) && 'wasm engine not built';
 
 const { playerDetails, monsterDetails, checkPlayerDto } = await import('../lib/unitDetails.js');
-const Player = (await import('../../src/combatsimulator/player.js')).default;
-const Monster = (await import('../../src/combatsimulator/monster.js')).default;
 const dp = await import('../../shared/dataProvider.js');
 const { buildCrateBuffs, knownCrates } = await import('../lib/target.js');
 const { buildLabUpgradeBuffs } = await import('../../shared/labUpgrades.js');
@@ -24,19 +23,6 @@ const { SEAL_OPTIONS, resolveSealBuffs } = await import('../../shared/personalBu
 const { GUILD_COMBAT_BUFFS, MAX_GUILD_BUFF_LEVEL, resolveGuildBuffs } = await import('../../ui/src/utils/guildBuffs.js');
 const { BUILDS, CASES, LAB_CASES, TRIAL_CASES, partyBuilds } = await import('../eval/cases.mjs');
 const { toCsimPlayer } = await import('../bench/builds.mjs');
-
-const LEVELS = ['stamina', 'intelligence', 'attack', 'melee', 'defense', 'ranged', 'magic'].map((k) => `${k}Level`);
-const pick = (u) => ({ ...Object.fromEntries(LEVELS.map((k) => [k, u[k]])), combatDetails: u.combatDetails });
-
-// bounds.js's composition: zoneBuffs, then partyBuffs + the DTO's own extraBuffs.
-function jsPlayer(dto, zoneBuffs, partyBuffs) {
-  const p = Player.createFromDTO(structuredClone(dto));
-  p.zoneBuffs = zoneBuffs;
-  p.extraBuffs = partyBuffs.concat(dto.extraBuffs || []);
-  p.generatePermanentBuffs();
-  p.reset();
-  return pick(p);
-}
 
 // ---- the builds ------------------------------------------------------------
 const dtos = [];
@@ -73,89 +59,56 @@ const VARIANTS = [
   ['houses, achievements, shrines, seals, community', loaded, zoneWithBuffs.buffs, buildCommunityBuffs({ mooPass: true, comExp: 20, comDrop: 20 })],
 ];
 
-test('player_details equals JS Player on every fixture build, with and without buffs', { skip }, () => {
+test('player_details answers ok on every fixture build, with and without buffs', { skip }, () => {
   let n = 0;
   for (const [label, shape, zoneBuffs, partyBuffs] of VARIANTS) {
     const shaped = dtos.map(shape);
     const twin = playerDetails(shaped, { zoneBuffs, partyBuffs });
     shaped.forEach((dto, i) => {
       assert.equal(twin[i].ok, true, `${label} ${dto.hrid}: ${twin[i].error}`);
-      assert.deepStrictEqual(pick(twin[i]), jsPlayer(dto, zoneBuffs, partyBuffs), `${label} ${dto.hrid}`);
+      assert.ok(twin[i].combatDetails.maxHitpoints > 0, `${label} ${dto.hrid}`);
       n++;
     });
   }
   assert.ok(n >= 4 * 20, `only ${n} player cases`);
+  for (const d of playerDetails(dtos, { bare: true })) assert.equal(d.ok, true, d.error);
 });
 
-test('player_details equals labStats on the lab fixtures (crates as zoneBuffs, upgrades as party, no DTO extraBuffs)', { skip }, () => {
-  for (const fx of labFixtures) {
-    const zoneBuffs = buildCrateBuffs(fx.player.crates || []);
-    const partyBuffs = buildLabUpgradeBuffs(fx.player.labUpgrades || {});
-    const dto = { ...fx.player.dto, extraBuffs: undefined };
-    const [twin] = playerDetails([dto], { zoneBuffs, partyBuffs });
-    assert.deepStrictEqual(pick(twin), jsPlayer(dto, zoneBuffs, partyBuffs), fx.label);
-  }
-});
-
-test('monster_details equals JS Monster at every tier and at labyrinth room levels', { skip }, () => {
+test('monster_details answers ok at every tier and at labyrinth room levels', { skip }, () => {
   const list = [];
   for (const hrid of Object.keys(dp.combatMonsterDetailMap)) {
     for (let t = 0; t <= 5; t++) list.push({ hrid, difficultyTier: t, roomLevel: 0 });
     for (const roomLevel of [20, 60, 100, 150, 250, 400]) list.push({ hrid, difficultyTier: 0, roomLevel });
   }
   const twin = monsterDetails(list);
-  list.forEach(({ hrid, difficultyTier, roomLevel }, i) => {
-    const m = new Monster(hrid, difficultyTier, roomLevel);
-    m.updateCombatDetails();
-    const js = { ...pick(m), abilities: m.abilities.filter(Boolean).map((a) => ({ hrid: a.hrid, level: a.level })) };
-    assert.deepStrictEqual({ ...pick(twin[i]), abilities: twin[i].abilities }, js, `${hrid} T${difficultyTier} R${roomLevel}`);
-  });
+  twin.forEach((m, i) => assert.equal(m.ok, true, `${list[i].hrid}: ${m.error}`));
   assert.ok(list.length > 1000);
 });
 
-test('bad input: an unknown monster and a malformed DTO are per-entry errors, as JS throws', { skip }, () => {
+test('bad input: an unknown monster and a malformed DTO are per-entry errors; an unknown buff type throws', { skip }, () => {
   const [m] = monsterDetails([{ hrid: '/monsters/nope' }]);
   assert.equal(m.ok, false);
-  assert.throws(() => new Monster('/monsters/nope'));
   const bad = { ...dtos[0], equipment: { '/equipment_types/main_hand': { hrid: '/items/nope', enhancementLevel: 0 } } };
-  assert.throws(() => Player.createFromDTO(structuredClone(bad)));
   assert.equal(checkPlayerDto(bad).ok, false);
   assert.deepStrictEqual(checkPlayerDto(dtos[0]), { ok: true });
   assert.equal(checkPlayerDto({ hrid: 'x' }).ok, false);
   assert.throws(() => playerDetails([dtos[0]], { zoneBuffs: [{ typeHrid: '/buff_types/nope' }] }));
 });
 
-test('player_details bare equals JS createFromDTO + updateCombatDetails (SCLIRoster triggerPolicy)', { skip }, () => {
-  const shaped = dtos.concat(dtos.map((d) => ({ ...d, houseRooms: { '/house_rooms/dojo': 8 } })));
-  const twin = playerDetails(shaped, { bare: true });
-  shaped.forEach((dto, i) => {
-    const p = Player.createFromDTO(structuredClone(dto));
-    p.updateCombatDetails();
-    assert.deepStrictEqual(pick(twin[i]), pick(p), dto.hrid);
-  });
-});
-
-test('checkPlayerDto refuses exactly what Player.createFromDTO throws on', { skip }, () => {
+test('checkPlayerDto refuses exactly what Player.createFromDTO threw on (recorded on the JS engine)', { skip }, () => {
   const base = dtos.find((d) => Object.keys(d.equipment).length);
   const without = (k) => Object.fromEntries(Object.entries(base).filter(([kk]) => kk !== k));
-  const cases = {
-    good: base,
-    empty: {},
-    null: null,
-    numericHrid: { ...base, hrid: 7 },
-    unknownItem: { ...base, equipment: { ...base.equipment, '/equipment_types/head': { hrid: '/items/nope', enhancementLevel: 0 } } },
-    unknownAbility: { ...base, intelligenceLevel: 200, abilities: [{ hrid: '/abilities/nope', level: 1, triggers: [] }] },
-    unknownFood: { ...base, food: [{ hrid: '/items/nope', triggers: [] }] },
-    unknownHouse: { ...base, houseRooms: { '/house_rooms/nope': 1 } },
-    ...Object.fromEntries(['equipment', 'food', 'drinks', 'abilities', 'houseRooms', 'achievements', 'hrid', 'staminaLevel'].map((k) => [`no ${k}`, without(k)])),
-  };
-  for (const [label, dto] of Object.entries(cases)) {
-    let jsOk = true;
-    try {
-      Player.createFromDTO(structuredClone(dto));
-    } catch {
-      jsOk = false;
-    }
-    assert.equal(checkPlayerDto(dto).ok, jsOk, label);
-  }
+  const cases = [
+    ['good', base, true],
+    ['empty', {}, false],
+    ['null', null, false],
+    ['numericHrid', { ...base, hrid: 7 }, true],
+    ['unknownItem', { ...base, equipment: { ...base.equipment, '/equipment_types/head': { hrid: '/items/nope', enhancementLevel: 0 } } }, false],
+    ['unknownAbility', { ...base, intelligenceLevel: 200, abilities: [{ hrid: '/abilities/nope', level: 1, triggers: [] }] }, false],
+    ['unknownFood', { ...base, food: [{ hrid: '/items/nope', triggers: [] }] }, false],
+    ['unknownHouse', { ...base, houseRooms: { '/house_rooms/nope': 1 } }, false],
+    ...['equipment', 'food', 'drinks', 'abilities', 'houseRooms', 'achievements'].map((k) => [`no ${k}`, without(k), false]),
+    ...['hrid', 'staminaLevel'].map((k) => [`no ${k}`, without(k), true]),
+  ];
+  for (const [label, dto, jsOk] of cases) assert.equal(checkPlayerDto(dto).ok, jsOk, label);
 });
