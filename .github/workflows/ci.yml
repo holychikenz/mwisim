@@ -71,16 +71,19 @@ jobs:
         working-directory: ui
         run: npm ci
 
-      # The Rust twin (rust/), so the twin-quick step below enforces parity.
-      # The toolchain is pinned by the action ref; wasm-pack is not installed,
-      # so twin-quick checks native only.
+      # The Rust twin (rust/), native and wasm, so the twin-quick step below enforces parity.
+      # The toolchain is pinned by the action ref. The wasm build is required: the trigger
+      # bounds and lab:check read player/monster stats from it (api/lib/unitDetails.js).
       - uses: dtolnay/rust-toolchain@1.92.0
+        with: { targets: wasm32-unknown-unknown }
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: rust
-      - name: rust — cargo build + test of the twin
+      - uses: taiki-e/install-action@v2
+        with: { tool: wasm-pack@0.15.0 }
+      - name: rust — cargo build + test of the twin, and the wasm package
         working-directory: .
-        run: ./build.sh rust
+        run: ./build.sh rust wasm
 
       # Unit tests, including the five guards on the eval harness itself
       # (api/tests/evalHarness.test.mjs). The first of those asserts that
