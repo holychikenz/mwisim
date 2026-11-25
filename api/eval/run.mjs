@@ -173,7 +173,7 @@ async function openEngine(root) {
 
 async function cmdRecord() {
   const seedCount = Number(arg('seeds', String(DEFAULT_SEEDS)));
-  const engine = await openEngine(arg('engine', DEFAULT_ROOT));
+  const engine = await openEngine(DEFAULT_ROOT);
   const cases = selectCases(arg('only'));
   mkdirSync(FIX_DIR, { recursive: true });
 
@@ -219,8 +219,7 @@ async function cmdRecord() {
 }
 
 /**
- * Compare a fresh measurement against a fixture. Exported so backrun.mjs runs
- * the identical comparison rather than a second, subtly different one.
+ * Compare a fresh measurement against a fixture.
  */
 export function compare(fx, fresh) {
   const byHash = new Map(fx.runs.map((r) => [r.seed, r.sha256]));
@@ -271,7 +270,7 @@ async function cmdCheck() {
   const only = arg('only');
   const wanted = only ? new Set(only.split(',')) : null;
 
-  const engine = await openEngine(arg('engine', DEFAULT_ROOT));
+  const engine = await openEngine(DEFAULT_ROOT);
 
   const rows = [];
   let strictFail = 0;
@@ -383,9 +382,8 @@ async function cmdCheck() {
 
 // ---- entry -------------------------------------------------------------------
 
-// Guarded: backrun.mjs imports measureCase/compare/listFixtures from here so
-// that the two tools cannot drift on what a comparison means. Without this an
-// import would run the CLI, print usage and exit(0) out from under the caller.
+// Guarded: tests import from here. Without this an import would run the CLI,
+// print usage and exit(0) out from under the caller.
 const isMain = process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href;
 
 if (isMain) switch (cmd) {
@@ -397,7 +395,7 @@ if (isMain) switch (cmd) {
     break;
   default:
     console.log('Usage:');
-    console.log('  npm run eval:check  [-- --only= --seeds= --tier=strict|stats|both --engine= --json=]');
-    console.log('  npm run eval:record [-- --only= --seeds= --engine=]');
+    console.log('  npm run eval:check  [-- --only= --seeds= --tier=strict|stats|both --json=]');
+    console.log('  npm run eval:record [-- --only= --seeds=]');
     process.exit(cmd ? 2 : 0);
 }
