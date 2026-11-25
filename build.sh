@@ -76,6 +76,12 @@ t_lint() { say "eslint (ui)";          (cd ui && npm run lint); }
 t_test() { say "api tests";            (cd api && npm test); }
 
 t_check() {
+  # The twin is the only engine now, so never test a stale build: rebuild native, and wasm when
+  # wasm-pack can, before any test (each a no-op when fresh; wasm at most once per run).
+  if command -v cargo >/dev/null; then
+    say "rebuild the twin"; (cd rust && cargo build --release --locked --quiet)
+    if command -v wasm-pack >/dev/null && ! wasm_fresh; then echo "check: wasm build FAILED" >&2; return 1; fi
+  fi
   t_test
   say "api sim:check";  (cd api && npm run sim:check)
   say "api eval:check"; (cd api && npm run eval:check)

@@ -11,12 +11,14 @@
 // pow guard prints one stderr line and falls back to wasm. A caller with worker
 // threads should decide on its main thread and set CSIM_ENGINE before creating
 // any (SCLIRoster's optimizer/src/csim.js does), or each worker decides alone.
+//
+// The wasm build (./build.sh wasm) is required even when native runs the
+// simulations: api/lib/unitDetails.js (trigger bounds, lab stats) is sync and
+// reads player/monster stats from wasm only.
 // =============================================================================
 
 import { existsSync } from 'node:fs';
 import { setTwinBackend, getTwinBackend } from '../../../shared/twinEngine.js';
-
-let selected = false;
 
 async function preferredNative() {
   const { nativeBackend, NATIVE_BIN } = await import('./native.mjs');
@@ -33,8 +35,18 @@ async function preferredNative() {
   }
 }
 
-export async function selectTwinFromEnv() {
-  if (selected) return getTwinBackend();
+// One selection per realm, shared by concurrent first callers (no second spawn, no orphaned child).
+let selecting = null;
+
+export function selectTwinFromEnv() {
+  // A backend registered by the caller (setTwinBackend: twin-parity, tests) wins.
+  if (!selecting && getTwinBackend()) return Promise.resolve(getTwinBackend());
+  selecting ??= select();
+  selecting.catch(() => { selecting = null; });
+  return selecting;
+}
+
+async function select() {
   const name = process.env.CSIM_ENGINE || 'auto';
   let b = null;
   if (name === 'auto') {
@@ -46,6 +58,5 @@ export async function selectTwinFromEnv() {
   else if (name === 'js') throw new Error('CSIM_ENGINE=js: the JS combat engine was removed; use native or wasm (or leave CSIM_ENGINE unset)');
   else throw new Error(`CSIM_ENGINE must be native or wasm (got "${name}")`);
   setTwinBackend(b);
-  selected = true;
   return b;
 }

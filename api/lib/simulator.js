@@ -14,8 +14,9 @@ const { runDungeonRunsSerial, addRunIdleTime, DEFAULT_MAX_RUN_HOURS, ONE_HOUR_NS
 const { buildCommunityBuffs } = await import('../../shared/communityBuffs.js');
 const { runTrialIterations } = await import('../../shared/guildTrialRuns.js');
 const { getTwinBackend, runTwin, twinZoneRequest } = await import('../../shared/twinEngine.js');
-// CSIM_ENGINE (native|wasm; unset: native if built, else wasm) picks the Rust twin backend.
-await (await import('./twin/index.mjs')).selectTwinFromEnv();
+// CSIM_ENGINE (native|wasm; unset: native if built, else wasm) picks the Rust twin backend,
+// on the first simulation, not at import: importing this module spawns and loads nothing.
+const { selectTwinFromEnv } = await import('./twin/index.mjs');
 
 /**
  * Build extra buffs based on options
@@ -70,6 +71,7 @@ async function simulateOnMainThread({ players: playersData, zone: zoneConfig, si
   // BUILDING buffs are excluded here: those are trial-only.
   const extraBuffs = buildExtraBuffs(extra).concat(guildBuffs);
 
+  await selectTwinFromEnv();
   return runTwin(getTwinBackend(), twinZoneRequest({ players: playersData, partyBuffs: extraBuffs, zone: zoneConfig, simulationTimeLimit, runLimits }));
 }
 
@@ -106,6 +108,7 @@ export async function runGuildTrialSimulation({
   if (!Number.isInteger(iterations) || iterations <= 0) {
     throw new RangeError(`iterations must be a positive integer, got ${iterations}`);
   }
+  await selectTwinFromEnv(); // runTrialIterations reads the registered backend
   const summaries = await runTrialIterations({
     players: playersData,
     // Same contract as the browser worker: party-wide buffs plus each member's

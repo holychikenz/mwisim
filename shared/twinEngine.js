@@ -80,6 +80,7 @@ let chain = Promise.resolve();
  * On an error the stream is advanced as far as the run drew before it threw.
  */
 export function runTwin(b, request, onProgress) {
+  if (!b) return Promise.reject(new Error('no csim twin backend registered: call selectTwinFromEnv() (api/lib/twin/index.mjs) or setTwinBackend() first'));
   const job = chain.then(async () => {
     const seeded = typeof Math.random.state === 'function';
     const rngState = seeded ? Math.random.state() : (Math.random() * 4294967296) >>> 0;

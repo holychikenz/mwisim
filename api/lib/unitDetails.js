@@ -22,16 +22,19 @@
 import { reviveTwinResult } from '../../shared/twinEngine.js';
 
 let runSync = null;
+let reload = null; // a fresh instance after a trap (the loaders drop a trapped one)
 let loadError = null;
 try {
   if (globalThis.process?.versions?.node) {
     const nodeLoader = './twin/wasm.mjs';
     const m = await import(/* @vite-ignore */ nodeLoader);
-    await m.wasmBackend();
-    runSync = m.runSync;
+    reload = () => m.wasmBackend();
+    await reload();
+    runSync = m.runSync; // reads the module's current instance on every call
   } else {
     const { loadWasmTwin } = await import('../../src/twinWasm.js');
-    runSync = (await loadWasmTwin()).runSync;
+    reload = async () => { runSync = (await loadWasmTwin()).runSync; };
+    await reload();
   }
 } catch (e) {
   // Not thrown here: a build without rust/pkg must still load every module that imports this one.
@@ -40,7 +43,15 @@ try {
 
 function call(request) {
   if (!runSync) throw loadError;
-  const res = JSON.parse(runSync(JSON.stringify(request)));
+  let out;
+  try {
+    out = runSync(JSON.stringify(request));
+  } catch (e) {
+    // This call fails; re-instantiate in the background so later calls do not hit a dropped or unsound instance.
+    if (e instanceof WebAssembly.RuntimeError) reload().catch(() => {});
+    throw e;
+  }
+  const res = JSON.parse(out);
   if (!res.ok) throw Object.assign(new Error(res.error), { twinRefusal: true });
   return reviveTwinResult(res.units);
 }

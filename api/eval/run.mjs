@@ -92,6 +92,11 @@ const arg = (name, fallback = null) => {
   const hit = argv.find((a) => a.startsWith(`--${name}=`));
   return hit ? hit.slice(name.length + 3) : fallback;
 };
+// Back-runs against another checkout's JS engine died with that engine; a silently ignored flag would measure HEAD.
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href && argv.some((a) => a.startsWith('--engine'))) {
+  console.error('eval: --engine is retired (back-runs needed the JS engine); eval runs this checkout on its twin (CSIM_ENGINE=native|wasm)');
+  process.exit(2);
+}
 
 // ---- the measurement --------------------------------------------------------
 

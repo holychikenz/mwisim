@@ -132,7 +132,8 @@ fn run_inner(data: &GameData, request: &str, mut progress: Option<&mut dyn FnMut
     struct KindOnly {
         kind: String,
     }
-    if let Ok(k) = serde_json::from_str::<KindOnly>(request) {
+    // A byte scan first, so a simulation request is not parsed twice.
+    if let Some(k) = request.contains("_details\"").then(|| serde_json::from_str::<KindOnly>(request).ok()).flatten() {
         if k.kind == "player_details" || k.kind == "monster_details" {
             return details(data, &k.kind, request).map_err(twin_only);
         }
@@ -290,8 +291,11 @@ fn details(data: &GameData, kind: &str, request: &str) -> Result<String, String>
                 let built = (|| {
                     let dto = <request::PlayerDto as serde::Deserialize>::deserialize(v).map_err(|e| format!("players[{i}]: {e}"))?;
                     let mut extra = party.clone();
-                    for b in dto.extra_buffs.iter().flatten() {
-                        extra.push(Buff::raw(b)?);
+                    // createFromDTO never read extraBuffs, so bare mode must not refuse on them.
+                    if !req.bare {
+                        for b in dto.extra_buffs.iter().flatten() {
+                            extra.push(Buff::raw(b)?);
+                        }
                     }
                     let mut u = player::create_player(data, &dto, (i + 1) as u32, zone_buffs.clone(), extra)?;
                     if req.bare {

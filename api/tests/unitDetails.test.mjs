@@ -112,3 +112,13 @@ test('checkPlayerDto refuses exactly what Player.createFromDTO threw on (recorde
   ];
   for (const [label, dto, jsOk] of cases) assert.equal(checkPlayerDto(dto).ok, jsOk, label);
 });
+
+test('a wasm trap fails that call only; the next one runs on a fresh instance', { skip }, async () => {
+  const { wasmTestHooks } = await import('../lib/twin/wasm.mjs');
+  const loads = wasmTestHooks.loads;
+  wasmTestHooks.trapNextRun = true;
+  assert.throws(() => monsterDetails([{ hrid: '/monsters/fly' }]), WebAssembly.RuntimeError);
+  for (let i = 0; i < 200 && wasmTestHooks.loads === loads; i++) await new Promise((r) => setTimeout(r, 10)); // the background re-instantiation
+  assert.equal(wasmTestHooks.loads, loads + 1);
+  assert.equal(monsterDetails([{ hrid: '/monsters/fly' }])[0].ok, true);
+});

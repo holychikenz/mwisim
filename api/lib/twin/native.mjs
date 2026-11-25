@@ -119,7 +119,7 @@ export function nativeBackend({ stallMs = STALL_MS } = {}) {
     powOk ??= send(`{"selftest":${JSON.stringify({ seed: 0, draws: 0, pow: POW_SAMPLE, numbers: [] })}}`).then((out) => {
       const got = JSON.parse(out).pow ?? [];
       const bad = POW_SAMPLE.filter((x, i) => !Object.is(Math.pow(x, 1.4), got[i])).length;
-      if (bad) throw new Error(`csim-native: pow(x, 1.4) differs from Math.pow on ${bad}/${POW_SAMPLE.length} samples; the native engine is not bit-identical on this platform. Use CSIM_ENGINE=wasm or js.`);
+      if (bad) throw new Error(`csim-native: pow(x, 1.4) differs from Math.pow on ${bad}/${POW_SAMPLE.length} samples; the native engine is not bit-identical on this platform. Use CSIM_ENGINE=wasm.`);
     });
     powOk.catch(() => { powOk = null; }); // a crashed check is retried; a real mismatch fails again
     return powOk;
