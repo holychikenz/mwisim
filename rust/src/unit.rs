@@ -1013,4 +1013,248 @@ mod tests {
             assert_eq!(cs.by_index(i), 7.5, "{n}");
         }
     }
+
+    // ---- buff instances: the JS buffStacking / buffMirror / buffTypes / statCaching / statSchema tests ----
+
+    use crate::buff::{buff_type_ord, Buff};
+    use crate::test_support::data;
+
+    const TYPE: &str = "/buff_types/armor";
+    const HRID: &str = "/buff_uniques/test_aura";
+    const STRONG: Option<u32> = Some(101);
+    const WEAK: Option<u32> = Some(102);
+
+    fn fly() -> Unit {
+        let mut cache = crate::monster::AbilityCache::default();
+        let mut u = crate::monster::create_monster(data(), &mut cache, "/monsters/fly", 0.0, 0.0, 1).unwrap();
+        u.update_combat_details();
+        u
+    }
+
+    fn aura(ratio: f64, duration: f64) -> Buff {
+        Buff::synth(HRID, TYPE, ratio, 0.0, duration)
+    }
+
+    /// The effective `combatBuffs[HRID]`: (ratioBoost, sourceKey).
+    fn eff(u: &Unit) -> Option<(f64, u32)> {
+        u.combat_buffs.iter().find(|(k, _)| &**k == HRID).map(|(_, b)| (b.ratio_boost, b.source))
+    }
+
+    fn instances(u: &Unit) -> Option<&Vec<BuffEntry>> {
+        u.buff_instances.iter().find(|(k, _)| &**k == HRID).map(|(_, v)| v)
+    }
+
+    fn keys(u: &Unit) -> Vec<String> {
+        u.combat_buffs.iter().map(|(k, _)| k.to_string()).collect()
+    }
+
+    // buffStacking.test.mjs: a weaker source does not replace a stronger active one (magnitude, for debuffs).
+    #[test]
+    fn weaker_source_does_not_replace_a_stronger_one() {
+        let mut u = fly();
+        u.add_buff(&aura(-0.5, 100.0), Some(0.0), STRONG);
+        u.add_buff(&aura(-0.2, 100.0), Some(10.0), WEAK);
+        assert_eq!(eff(&u), Some((-0.5, 101)), "strongest magnitude wins");
+        assert_eq!(instances(&u).unwrap().len(), 2, "both instances tracked");
+    }
+
+    // buffStacking.test.mjs: a stronger source added over a weaker one takes effect.
+    #[test]
+    fn stronger_source_takes_effect() {
+        let mut u = fly();
+        u.add_buff(&aura(0.2, 100.0), Some(0.0), WEAK);
+        assert_eq!(eff(&u), Some((0.2, 102)));
+        u.add_buff(&aura(0.5, 100.0), Some(0.0), STRONG);
+        assert_eq!(eff(&u), Some((0.5, 101)));
+    }
+
+    // buffStacking.test.mjs: when the strongest expires, the next strongest takes over.
+    #[test]
+    fn next_strongest_takes_over_on_expiry() {
+        let mut u = fly();
+        u.add_buff(&aura(0.5, 50.0), Some(0.0), STRONG);
+        u.add_buff(&aura(0.2, 200.0), Some(0.0), WEAK);
+        assert_eq!(eff(&u), Some((0.5, 101)));
+        u.remove_expired_buffs(60.0);
+        assert_eq!(eff(&u), Some((0.2, 102)), "weaker source promoted, entry not deleted");
+        assert_eq!(instances(&u).unwrap().len(), 1);
+    }
+
+    // buffStacking.test.mjs: the same source re-applying weaker replaces its own instance (fury decay).
+    #[test]
+    fn same_source_reapplying_weaker_replaces_itself() {
+        let mut u = fly();
+        u.add_buff(&aura(0.5, 100.0), Some(0.0), STRONG);
+        u.add_buff(&aura(0.2, 100.0), Some(10.0), STRONG);
+        assert_eq!(eff(&u), Some((0.2, 101)), "own instance replaced, not stacked");
+        assert_eq!(instances(&u).unwrap().len(), 1);
+    }
+
+    // buffStacking.test.mjs: same source, same strength refreshes the duration.
+    #[test]
+    fn same_source_same_strength_refreshes() {
+        let mut u = fly();
+        u.add_buff(&aura(0.3, 100.0), Some(0.0), STRONG);
+        assert_eq!(instances(&u).unwrap()[0].expire_time, 100.0);
+        u.add_buff(&aura(0.3, 100.0), Some(50.0), STRONG);
+        assert_eq!(instances(&u).unwrap().len(), 1, "refresh, not a second instance");
+        assert_eq!(instances(&u).unwrap()[0].expire_time, 150.0);
+        assert_eq!(eff(&u), Some((0.3, 101)));
+    }
+
+    // buffStacking.test.mjs: removing a source promotes the next strongest; the last removal deletes the entry.
+    #[test]
+    fn removing_sources() {
+        let mut u = fly();
+        u.add_buff(&aura(0.5, 100.0), Some(0.0), STRONG);
+        u.add_buff(&aura(0.2, 100.0), Some(0.0), WEAK);
+        u.remove_buff_instance(&aura(0.0, 0.0), 101);
+        assert_eq!(eff(&u), Some((0.2, 102)));
+        u.remove_buff_instance(&aura(0.0, 0.0), 102);
+        assert_eq!(eff(&u), None, "combatBuffs entry deleted");
+        assert!(instances(&u).is_none(), "instance array deleted");
+
+        // removeBuffs (the array form) removes the unit's own instance only.
+        let mut u = fly();
+        u.add_buffs(&[aura(0.4, 100.0)], None, None);
+        u.add_buff(&aura(0.1, 100.0), Some(0.0), WEAK);
+        u.remove_buffs(&[aura(0.0, 0.0)]);
+        assert_eq!(eff(&u), Some((0.1, 102)), "the other source remains effective");
+    }
+
+    // buffStacking.test.mjs: permanent buffs survive removeExpiredBuffs; buffs added with no time (enrage) never expire.
+    #[test]
+    fn permanent_and_timeless_buffs_never_expire() {
+        let mut u = fly();
+        u.add_permanent_buff(&Buff::synth("/buff_uniques/perm", TYPE, 0.0, 5.0, 100.0));
+        u.clear_buffs();
+        u.add_buffs(&[aura(0.1, 100.0)], None, STRONG);
+        assert!(instances(&u).unwrap()[0].expire_time.is_nan());
+        u.remove_expired_buffs(1e12);
+        let armor = u.boosts(buff_type_ord(TYPE).unwrap());
+        assert_eq!(armor, vec![(0.0, 5.0), (0.1, 0.0)], "permanent and timeless buffs both survive");
+    }
+
+    // buffMirror.test.mjs: re-assigning a key keeps its position; delete then re-insert moves it to the end.
+    #[test]
+    fn combat_buffs_keep_js_key_order() {
+        let b = |h: &str, ratio: f64| Buff::synth(h, TYPE, ratio, 0.0, 1e9);
+        let mut u = fly();
+        for (h, r) in [("/buff_uniques/m0", 0.1), ("/buff_uniques/m1", 0.2), ("/buff_uniques/m2", 0.3)] {
+            u.add_buff(&b(h, r), Some(0.0), STRONG);
+        }
+        u.add_buff(&b("/buff_uniques/m0", 0.9), Some(0.0), WEAK);
+        assert_eq!(keys(&u), ["/buff_uniques/m0", "/buff_uniques/m1", "/buff_uniques/m2"], "re-assign keeps the position");
+        assert_eq!(u.combat_buffs[0].1.ratio_boost, 0.9);
+
+        u.remove_buff_instance(&b("/buff_uniques/m0", 0.0), 101);
+        u.remove_buff_instance(&b("/buff_uniques/m0", 0.0), 102);
+        u.add_buff(&b("/buff_uniques/m0", 0.1), Some(0.0), STRONG);
+        assert_eq!(keys(&u), ["/buff_uniques/m1", "/buff_uniques/m2", "/buff_uniques/m0"], "re-insert goes last");
+    }
+
+    // buffMirror.test.mjs: clearBuffs rebuilds combatBuffs from permanentBuffs, in key order.
+    #[test]
+    fn clear_buffs_rebuilds_from_permanent_buffs() {
+        let mut u = fly();
+        u.add_permanent_buff(&Buff::synth("/buff_uniques/perm_a", "/buff_types/armor", 0.0, 1.0, 0.0));
+        u.add_permanent_buff(&Buff::synth("/buff_uniques/perm_b", "/buff_types/damage", 0.0, 2.0, 0.0));
+        u.add_buff(&aura(0.1, 100.0), Some(0.0), STRONG);
+        u.clear_buffs();
+        assert_eq!(keys(&u), ["/buff_types/armor", "/buff_types/damage"], "temporary buffs are gone");
+        assert!(instances(&u).is_none(), "and so are their instances");
+    }
+
+    // buffMirror.test.mjs / buffTypes.test.mjs: an unknown buff type is a loud failure, not a dropped buff.
+    #[test]
+    fn unknown_buff_type_is_an_error() {
+        // Built at run time: tools/genBuffTypes.mjs collects every buff-type literal in rust/src.
+        let bogus = ["/buff_types", "not_a_real_type"].join("/");
+        assert!(buff_type_ord(&bogus).unwrap_err().contains("Unknown buff type"));
+        assert!(buff_type_ord("constructor").is_err());
+        assert_eq!(buff_type_ord(generated::BUFF_TYPE_NAMES[0]), Ok(0));
+        let raw: crate::data::RawBuff = serde_json::from_value(serde_json::json!({
+            "uniqueHrid": HRID, "typeHrid": bogus, "ratioBoost": 0, "flatBoost": 0, "duration": 0
+        }))
+        .unwrap();
+        assert!(Buff::raw(&raw).is_err());
+    }
+
+    fn walk_strings(v: &serde_json::Value, prefix: &str, out: &mut std::collections::BTreeSet<String>) {
+        let take = |s: &str, out: &mut std::collections::BTreeSet<String>| {
+            if s.len() > prefix.len() && s.starts_with(prefix) {
+                out.insert(s.to_string());
+            }
+        };
+        match v {
+            serde_json::Value::String(s) => take(s, out),
+            serde_json::Value::Array(a) => a.iter().for_each(|x| walk_strings(x, prefix, out)),
+            serde_json::Value::Object(o) => {
+                for (k, x) in o {
+                    take(k, out);
+                    walk_strings(x, prefix, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // buffTypes.test.mjs: every buff type the bundled game data declares has an ordinal.
+    #[test]
+    fn every_buff_type_in_the_game_data_has_an_ordinal() {
+        let mut found = std::collections::BTreeSet::new();
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../src/combatsimulator/data");
+        for e in std::fs::read_dir(dir).unwrap() {
+            let p = e.unwrap().path();
+            if p.extension().is_some_and(|x| x == "json") {
+                walk_strings(&serde_json::from_str(&std::fs::read_to_string(&p).unwrap()).unwrap(), "/buff_types/", &mut found);
+            }
+        }
+        assert!(found.len() > 20, "the data scan found nothing: the walk is broken");
+        let missing: Vec<_> = found.iter().filter(|h| buff_type_ord(h).is_err()).collect();
+        assert!(missing.is_empty(), "no ordinal (regenerate generated.rs): {missing:?}");
+    }
+
+    // statCaching.test.mjs: updateCombatDetails is idempotent, so a skipped recompute is a no-op.
+    #[test]
+    fn update_combat_details_is_idempotent() {
+        let mut p = crate::test_support::player("melee", 100.0, 1, vec![]);
+        p.update_combat_details();
+        let once = format!("{:?}", p.cd);
+        p.update_combat_details();
+        p.update_combat_details();
+        assert_eq!(format!("{:?}", p.cd), once, "recomputing compounds");
+        p.add_buff(&aura(0.1, 5.0), Some(0.0), STRONG);
+        let with_buff = format!("{:?}", p.cd);
+        assert_ne!(with_buff, once);
+        p.update_combat_details();
+        p.update_combat_details();
+        assert_eq!(format!("{:?}", p.cd), with_buff, "buff boosts compound across recomputes");
+    }
+
+    // statCaching.test.mjs / statSchema.test.mjs: the equipment stat list is complete, and the digit-bearing regen stats survived.
+    #[test]
+    fn equipment_stat_lists_are_complete() {
+        let eq = generated::EQUIPMENT_COMBAT_STATS;
+        assert_eq!(eq.len(), 70, "the list lost or gained a stat");
+        assert_eq!(eq.iter().collect::<std::collections::BTreeSet<_>>().len(), 70, "duplicate stat name");
+        for stat in ["hpRegenPer10", "mpRegenPer10"] {
+            assert!(eq.contains(&stat) && generated::MONSTER_ZEROED_COMBAT_STATS.contains(&stat), "{stat}");
+        }
+        let stray: Vec<_> = generated::MONSTER_ZEROED_COMBAT_STATS.iter().filter(|s| !eq.contains(s)).collect();
+        assert!(stray.is_empty(), "monster zero-fill names outside EQUIPMENT_COMBAT_STATS: {stray:?}");
+
+        // Every numeric stat any item grants is summed, or excluded for a stated reason.
+        const UNSUMMED: [&str; 3] = ["attackInterval", "foodSlots", "drinkSlots"]; // weapon / pouch sourced
+        let items: serde_json::Value = serde_json::from_str(&crate::test_support::read("src/combatsimulator/data/itemDetailMap.json")).unwrap();
+        let mut missing = std::collections::BTreeSet::new();
+        for item in items.as_object().unwrap().values() {
+            for (stat, v) in item["equipmentDetail"]["combatStats"].as_object().into_iter().flatten() {
+                if v.is_number() && !eq.contains(&stat.as_str()) && !UNSUMMED.contains(&stat.as_str()) {
+                    missing.insert(stat.clone());
+                }
+            }
+        }
+        assert!(missing.is_empty(), "granted by items but never summed: {missing:?}");
+    }
 }

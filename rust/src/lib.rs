@@ -29,6 +29,8 @@ pub mod wasm;
 // A unit test, not tests/: an integration test rebuilds this cdylib with panic=unwind onto the same filename.
 #[cfg(test)]
 mod item_values_tests;
+#[cfg(test)]
+mod test_support;
 
 use buff::Buff;
 use data::GameData;

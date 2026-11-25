@@ -234,3 +234,168 @@ pub fn all_active(
     }
     Ok(ok)
 }
+
+/// The JS triggerKinds / triggerHoist / triggerIndex tests, re-asserted on this port.
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::buff::BuffEntry;
+    use crate::test_support::data;
+    use crate::unit::{PlayerPart, UnitKind};
+
+    const MULTI: [&str; 3] = [
+        "/combat_trigger_conditions/lowest_hp_percentage",
+        "/combat_trigger_conditions/number_of_active_units",
+        "/combat_trigger_conditions/number_of_dead_units",
+    ];
+
+    fn trig(dep: &str, cond: &str, cmp: &str, value: f64) -> Trigger {
+        let dto: TriggerDto = serde_json::from_value(serde_json::json!({
+            "dependencyHrid": dep, "conditionHrid": cond, "comparatorHrid": cmp, "value": value
+        }))
+        .unwrap();
+        Trigger::new(data(), &dto)
+    }
+
+    fn own(cond: &str) -> Trigger {
+        trig("/combat_trigger_dependencies/self", cond, "/combat_trigger_comparators/is_active", 0.0)
+    }
+
+    /// A unit whose combatBuffs hold exactly `keys`.
+    fn with_buffs(keys: &[&str]) -> Unit {
+        let mut u = Unit::blank(1, true, s("p"), UnitKind::Player(PlayerPart { equipment: Vec::new(), totals: Vec::new() }));
+        u.combat_buffs = keys
+            .iter()
+            .map(|k| (s(k), BuffEntry { type_ord: 0, ratio_boost: 0.0, flat_boost: 0.0, expire_time: f64::NAN, source: 1 }))
+            .collect();
+        u
+    }
+
+    fn present(t: &Trigger, keys: &[&str]) -> bool {
+        match t.dependency_value(&with_buffs(keys), 0.0).unwrap() {
+            TrigVal::Buff(p) => p,
+            v => panic!("{} is not a buff condition: {v:?}", t.condition_hrid),
+        }
+    }
+
+    // triggerKinds.test.mjs: every condition of the retired 55-arm switch has a kind, in exactly one group.
+    #[test]
+    fn every_listed_condition_has_a_kind() {
+        assert_eq!(TRIGGER_CONDITION_KINDS.len(), 55, "every arm of the retired switch is covered");
+        let mut names: Vec<_> = TRIGGER_CONDITION_KINDS.iter().map(|(h, _)| *h).collect();
+        names.sort();
+        names.dedup();
+        assert_eq!(names.len(), 55, "no condition appears in two groups");
+        for (h, _) in TRIGGER_CONDITION_KINDS {
+            assert_ne!(cond_kind(h), CondKind::Unknown, "{h}");
+        }
+    }
+
+    // triggerKinds.test.mjs / triggerHoist.test.mjs: an exact-buff condition reads its own hrid, a prefix one any key it prefixes.
+    #[test]
+    fn exact_and_prefix_buff_lookups() {
+        for (h, _) in TRIGGER_CONDITION_KINDS {
+            let t = own(h);
+            let me = t.buff_unique.to_string();
+            let (suffixed, truncated) = (format!("{me}_1"), me[..me.len() - 1].to_string());
+            match t.kind {
+                CondKind::ExactBuff => {
+                    assert!(!present(&t, &[]), "{h} on no buffs");
+                    assert!(present(&t, &["/buff_uniques/unrelated", &me]), "{h}");
+                    assert!(!present(&t, &[&suffixed]), "{h} must read its buff by exact hrid, not by prefix");
+                }
+                CondKind::PrefixBuff => {
+                    assert!(!present(&t, &[]), "{h} on no buffs");
+                    assert!(present(&t, &[&me]), "{h}");
+                    assert!(present(&t, &["/buff_uniques/unrelated", &suffixed]), "{h} must read its buff by prefix");
+                    assert!(!present(&t, &[&truncated]), "{h}: a truncated key is not a match");
+                }
+                _ => {}
+            }
+        }
+        // The near misses of triggerHoist: neither "fur" nor "furious" is a fury buff.
+        assert!(!present(&own("/combat_trigger_conditions/fury"), &["/buff_uniques/fur", "/buff_uniques/furious"]));
+    }
+
+    // triggerHoist.test.mjs: buffUniqueHrid is "/buff_uniques" + the condition's last path segment.
+    #[test]
+    fn buff_unique_hrid_is_the_condition_tail() {
+        for (cond, want) in [
+            ("berserk", "/buff_uniques/berserk"),
+            ("attack_coffee", "/buff_uniques/attack_coffee"),
+            ("fury", "/buff_uniques/fury"),
+            ("invincible_water_resistance", "/buff_uniques/invincible_water_resistance"),
+            ("not_a_real_condition_9", "/buff_uniques/not_a_real_condition_9"),
+        ] {
+            assert_eq!(&*own(&format!("/combat_trigger_conditions/{cond}")).buff_unique, want);
+        }
+    }
+
+    // triggerKinds.test.mjs / triggerHoist.test.mjs: unknown conditions and dependencies fail at evaluation, not construction.
+    #[test]
+    fn unknown_names_fail_at_evaluation() {
+        let t = own("/combat_trigger_conditions/not_a_real_condition");
+        assert_eq!(t.kind, CondKind::Unknown);
+        let u = with_buffs(&[]);
+        assert!(t.is_active(&u, None, None, None, 0.0).unwrap_err().contains("Unknown conditionHrid in trigger"));
+        let t = trig("/combat_trigger_dependencies/nonsense", "/combat_trigger_conditions/fury", "/combat_trigger_comparators/is_active", 0.0);
+        assert!(t.is_single.is_none());
+        assert!(t.is_active(&u, None, None, None, 0.0).unwrap_err().starts_with("TypeError"));
+        assert_eq!(own("/combat_trigger_conditions/fury").is_single, Some(true));
+    }
+
+    // triggerKinds.test.mjs: the three multi-target conditions have no kind; isActive resolves them first.
+    #[test]
+    fn multi_target_conditions_resolve_before_the_kind_table() {
+        let allies = [with_buffs(&[])];
+        for h in MULTI {
+            assert_eq!(cond_kind(h), CondKind::Unknown, "{h}");
+            let t = trig("/combat_trigger_dependencies/all_allies", h, "/combat_trigger_comparators/greater_than_equal", 0.0);
+            assert!(t.is_active(&allies[0], None, Some(&allies), None, 0.0).is_ok(), "{h}");
+        }
+    }
+
+    /// Declared by the game data (client dump v1.20260927.0, commit da912e2) but evaluated by neither engine.
+    const UNHANDLED: [&str; 1] = ["/combat_trigger_conditions/boss_status"];
+
+    fn game_data_conditions() -> Vec<String> {
+        let text = crate::test_support::read("src/combatsimulator/data/combatTriggerConditionDetailMap.json");
+        serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&text).unwrap().keys().cloned().collect()
+    }
+
+    // triggerIndex.test.mjs: every condition the game data declares is covered (bar the known gap below).
+    #[test]
+    fn every_game_data_condition_is_covered() {
+        let missing: Vec<_> = game_data_conditions()
+            .into_iter()
+            .filter(|c| !MULTI.contains(&c.as_str()) && !UNHANDLED.contains(&c.as_str()) && cond_kind(c) == CondKind::Unknown)
+            .collect();
+        assert!(missing.is_empty(), "regenerate rust/src/generated.rs: {missing:?}");
+    }
+
+    // triggerIndex.test.mjs: the known gap. The UI offers every game-data condition (ui/src/hooks/useGameData.js),
+    // so a "Boss Status" trigger makes the run fail with "Unknown conditionHrid in trigger".
+    #[test]
+    #[ignore = "engine divergence: /combat_trigger_conditions/boss_status (game data since da912e2) has no condition kind"]
+    fn boss_status_is_evaluated() {
+        let u = with_buffs(&[]);
+        for c in UNHANDLED {
+            assert!(game_data_conditions().iter().any(|g| g == c), "{c} left the game data: drop it from UNHANDLED");
+            assert!(own(c).is_active(&u, None, None, None, 0.0).is_ok(), "{c}");
+        }
+    }
+
+    // checkTriggers / CLAUDE.md: a slot fires only when ALL its triggers are true; every trigger is evaluated.
+    #[test]
+    fn all_triggers_must_hold() {
+        let u = with_buffs(&[]); // 110 / 110 HP
+        let yes = trig("/combat_trigger_dependencies/self", "/combat_trigger_conditions/current_hp", "/combat_trigger_comparators/greater_than_equal", 1.0);
+        let no = trig("/combat_trigger_dependencies/self", "/combat_trigger_conditions/current_hp", "/combat_trigger_comparators/less_than_equal", 0.0);
+        let bad = own("/combat_trigger_conditions/not_a_real_condition");
+        assert!(all_active(&[], &u, None, None, None, 0.0).unwrap());
+        assert!(all_active(&[yes.clone(), yes.clone()], &u, None, None, None, 0.0).unwrap());
+        assert!(!all_active(&[yes.clone(), no.clone()], &u, None, None, None, 0.0).unwrap());
+        assert!(!all_active(&[no.clone(), yes], &u, None, None, None, 0.0).unwrap());
+        assert!(all_active(&[no, bad], &u, None, None, None, 0.0).is_err(), "no short-circuit past a false trigger");
+    }
+}
