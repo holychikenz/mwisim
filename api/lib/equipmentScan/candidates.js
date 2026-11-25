@@ -41,7 +41,7 @@
 // =============================================================================
 
 const { itemDetailMap, enhancementLevelTotalMultiplierTable } = await import(
-  '../../../src/combatsimulator/dataProvider.js'
+  '../../../shared/dataProvider.js'
 );
 
 /**

@@ -43,7 +43,7 @@ const Monster = (await import('../../src/combatsimulator/monster.js')).default;
 const Buff = (await import('../../src/combatsimulator/buff.js')).default;
 const SimResult = (await import('../../src/combatsimulator/simResult.js')).default;
 const { extractTrialSummary, computeTrialRewards, aggregateTrialResults } =
-  await import('../../src/combatsimulator/guildTrialStats.js');
+  await import('../../shared/guildTrialStats.js');
 const { runGuildTrialSimulation } = await import('../lib/simulator.js');
 
 // A real captured player DTO (no abilities / weapon — a deliberately weak melee

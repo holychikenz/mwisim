@@ -11,7 +11,7 @@ import { COORDINATES, bestSwap, candidatesAt, estimateSwapDescent, swapContext, 
 import { prepareSwapRun, runSwapSearch } from '../routes/optimizeSwaps.js';
 import { costTables } from '../lib/optimizerRoute.js';
 
-const { itemDetailMap } = await import('../../src/combatsimulator/dataProvider.js');
+const { itemDetailMap } = await import('../../shared/dataProvider.js');
 
 const I = (name) => `/items/${name}`;
 const E = (slot) => `/equipment_types/${slot}`;

@@ -15,8 +15,8 @@ const loadJsEngine = () => (jsEngine ??= Promise.all([
   import('../../src/combatsimulator/player.js'),
   import('../../src/combatsimulator/zone.js'),
 ]).then(([c, p, z]) => ({ CombatSimulator: c.default, Player: p.default, Zone: z.default })));
-const { TRIAL_START_TIER } = await import('../../src/combatsimulator/trialLadder.js');
-const { aggregateTrialResults } = await import('../../src/combatsimulator/guildTrialStats.js');
+const { TRIAL_START_TIER } = await import('../../shared/trialLadder.js');
+const { aggregateTrialResults } = await import('../../shared/guildTrialStats.js');
 const { runDungeonRunsSerial, addRunIdleTime, DEFAULT_MAX_RUN_HOURS, ONE_HOUR_NS } = await import('../../shared/dungeonRuns.js');
 const { buildCommunityBuffs } = await import('../../shared/communityBuffs.js');
 const { runTrialIterations } = await import('../../shared/guildTrialRuns.js');

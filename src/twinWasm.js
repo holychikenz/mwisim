@@ -5,7 +5,7 @@
 // No top-level await here: it is statically imported by src/worker.js, whose onmessage must be set before any await.
 // =============================================================================
 
-import * as dataProvider from "./combatsimulator/dataProvider";
+import * as dataProvider from "../shared/dataProvider.js";
 import { TWIN_DATA_NAMES } from "../shared/twinEngine.js";
 
 const pkg = Object.values(import.meta.glob("../rust/pkg/csim_twin.js", { eager: true }))[0];

@@ -11,7 +11,7 @@
 // Unseeded, the twin is seeded from one Math.random() draw.
 // =============================================================================
 
-import { applySimSettings } from '../src/combatsimulator/simSettings.js';
+import { applySimSettings } from './simSettings.js';
 
 let backend = null; // null = the JS engine
 export const setTwinBackend = (b) => { backend = b; };

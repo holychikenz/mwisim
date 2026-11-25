@@ -6,7 +6,7 @@
 // scored job (api/lib/triggerSearch/runJob.js), answered as a `result`.
 // =============================================================================
 
-import { applySimSettingsFromExtra } from "../../../src/combatsimulator/simSettings";
+import { applySimSettingsFromExtra } from "../../../shared/simSettings.js";
 import { setTwinBackend } from "../../../shared/twinEngine.js";
 import { loadWasmTwin } from "../../../src/twinWasm.js";
 

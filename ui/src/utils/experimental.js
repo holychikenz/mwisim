@@ -1,6 +1,6 @@
 // =============================================================================
 // experimental — the UI side of the engine's EXPERIMENTAL knobs
-// (src/combatsimulator/simSettings.js).
+// (shared/simSettings.js).
 //
 // These are deliberately kept out of the session blob and in their own
 // localStorage key: they are a bench setting, not part of a build, and must not

@@ -25,7 +25,7 @@
 
 const Monster = (await import('../../../src/combatsimulator/monster.js')).default;
 const Player = (await import('../../../src/combatsimulator/player.js')).default;
-const { actionDetailMap } = await import('../../../src/combatsimulator/dataProvider.js');
+const { actionDetailMap } = await import('../../../shared/dataProvider.js');
 const { buildCrateBuffs } = await import('../target.js');
 
 /** Fallback when a zone cannot be resolved. Matches the peer's 10000. */

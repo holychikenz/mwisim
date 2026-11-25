@@ -14,7 +14,7 @@
 import LEVEL_XP from '../../shared/levelExperienceTable.json';
 import { abilityContext } from './abilitySearch.js';
 
-const { abilityDetailMap, itemDetailMap } = await import('../../src/combatsimulator/dataProvider.js');
+const { abilityDetailMap, itemDetailMap } = await import('../../shared/dataProvider.js');
 
 export const MAX_LEVEL = LEVEL_XP.length - 1; // 200
 export const DEFAULT_LEVELS = 10;

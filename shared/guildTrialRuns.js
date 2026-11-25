@@ -5,8 +5,8 @@
 // runGuildTrialSimulation).
 // =============================================================================
 
-import { extractTrialSummary } from '../src/combatsimulator/guildTrialStats.js';
-import { TRIAL_START_TIER } from '../src/combatsimulator/trialLadder.js';
+import { extractTrialSummary } from './guildTrialStats.js';
+import { TRIAL_START_TIER } from './trialLadder.js';
 import { getTwinBackend, runTwin, twinTrialRequest } from './twinEngine.js';
 
 // The JS engine, loaded on its first JS-path call only: a twin caller never loads it.

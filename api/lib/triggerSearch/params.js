@@ -36,7 +36,7 @@
 // =============================================================================
 
 const { combatTriggerConditionDetailMap, combatTriggerComparatorDetailMap, combatTriggerDependencyDetailMap } =
-  await import('../../../src/combatsimulator/dataProvider.js');
+  await import('../../../shared/dataProvider.js');
 
 /**
  * The seven searchable conditions, keyed by hrid.

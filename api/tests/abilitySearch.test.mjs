@@ -13,7 +13,7 @@ import { descend } from '../lib/descent.js';
 import { rankCandidates } from '../lib/equipmentScan/scan.js';
 import { prepareAbilityRun, runAbilitySearch } from '../routes/optimizeAbilities.js';
 
-const { abilityDetailMap } = await import('../../src/combatsimulator/dataProvider.js');
+const { abilityDetailMap } = await import('../../shared/dataProvider.js');
 
 const A = (name) => `/abilities/${name}`;
 const TRIGGER = { dependencyHrid: '/combat_trigger_dependencies/self', conditionHrid: 'x', comparatorHrid: 'y', value: 1 };

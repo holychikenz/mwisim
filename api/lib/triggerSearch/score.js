@@ -40,9 +40,9 @@ import {
   sumConsumablesUsed,
 } from '../../../shared/consumableCost.js';
 
-const { sumDamageToEnemies } = await import('../../../src/combatsimulator/guildTrialStats.js');
+const { sumDamageToEnemies } = await import('../../../shared/guildTrialStats.js');
 // Drop credit reads every kill's drop table (shared/drops.js).
-const { combatMonsterDetailMap } = await import('../../../src/combatsimulator/dataProvider.js');
+const { combatMonsterDetailMap } = await import('../../../shared/dataProvider.js');
 
 /** Nanoseconds in an hour. Same constant as api/cli.js:14 and App.jsx:50. */
 export const ONE_HOUR_NS = 60 * 60 * 1e9;

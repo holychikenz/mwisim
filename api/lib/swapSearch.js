@@ -20,7 +20,7 @@
 import { MAX_ENHANCEMENT_LEVEL } from './equipmentScan/candidates.js';
 import { descentWorkload } from './descent.js';
 
-const { itemDetailMap } = await import('../../src/combatsimulator/dataProvider.js');
+const { itemDetailMap } = await import('../../shared/dataProvider.js');
 
 const SLOT_LABELS = Object.fromEntries([['head', 'Head'], ['body', 'Body'], ['legs', 'Legs'], ['feet', 'Feet'], ['hands', 'Hands'],
   ['main_hand', 'Main Hand'], ['two_hand', 'Two Hand'], ['off_hand', 'Off Hand'], ['pouch', 'Pouch'], ['back', 'Back'], ['neck', 'Neck'],

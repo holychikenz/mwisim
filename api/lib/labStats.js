@@ -14,7 +14,7 @@ import { buildCrateBuffs, buildLabUpgradeBuffs } from './target.js';
 
 const Player = (await import('../../src/combatsimulator/player.js')).default;
 const Monster = (await import('../../src/combatsimulator/monster.js')).default;
-const { abilityDetailMap } = await import('../../src/combatsimulator/dataProvider.js');
+const { abilityDetailMap } = await import('../../shared/dataProvider.js');
 
 function round(v) {
   return typeof v === 'number' && !Number.isInteger(v) ? Number(v.toFixed(4)) : v;

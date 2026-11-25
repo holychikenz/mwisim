@@ -10,8 +10,8 @@ import { fileURLToPath } from 'node:url';
 import { NATIVE_BIN } from '../lib/twin/native.mjs';
 
 const API = fileURLToPath(new URL('..', import.meta.url));
-// Pure modules a twin caller may load: no Player, Monster, CombatSimulator or other engine class.
-const ALLOWED = new Set(['guildTrialStats.js', 'simSettings.js', 'trialLadder.js']);
+// The pure helpers moved to shared/ (G5), so a twin caller loads nothing from the engine directory.
+const ALLOWED = new Set();
 
 function engineFilesLoaded(env, body) {
   const script = `

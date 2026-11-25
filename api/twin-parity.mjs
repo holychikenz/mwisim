@@ -50,7 +50,7 @@ const CombatSimulator = (await import('../src/combatsimulator/combatSimulator.js
 const GuildTrial = (await import('../src/combatsimulator/guildTrial.js')).default;
 const Labyrinth = (await import('../src/combatsimulator/labyrinth.js')).default;
 const Player = (await import('../src/combatsimulator/player.js')).default;
-const { extractTrialSummary, aggregateTrialResults } = await import('../src/combatsimulator/guildTrialStats.js');
+const { extractTrialSummary, aggregateTrialResults } = await import('../shared/guildTrialStats.js');
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
