@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 const { summariseZoneRun } = await import('../../ui/src/utils/allZones.js');
 const { finderVariants, scoreZoneRow, topZones, rankZones, rankFinalists, countRuns, QUICK_HOURS, VERIFY_HOURS, FINALISTS, TOP_N } =
   await import('../../ui/src/utils/zoneProgress.js');
-const { itemDetailMap: items } = await import('../../src/combatsimulator/dataProvider.js');
+const { itemDetailMap: items } = await import('../../shared/dataProvider.js');
 
 const near = (a, b, msg) => assert.ok(Math.abs(a - b) < 1e-9, `${msg ?? ''} ${a} ≈ ${b}`);
 

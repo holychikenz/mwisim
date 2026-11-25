@@ -80,7 +80,7 @@ test('eval/engine.mjs reproduces runSimulation() bit for bit', async () => {
 // -- 2. fields only older engines emit are dropped, and nothing else -------
 
 test('canonical() drops wipeEvents and timeSeriesData, and nothing else', () => {
-  // Engines before audit2-5/audit2-17 (still loaded by eval/backrun.mjs) emit
+  // Engines before audit2-5/audit2-17 emitted
   // both; an old run must hash like the same run on the current engine.
   const current = { deaths: { player1: 2 }, timestamp: 't' };
   const old = { ...current, wipeEvents: [{ wave: 3, timestamp: 'x' }], timeSeriesData: { timestamps: [] } };

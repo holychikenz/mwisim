@@ -13,9 +13,8 @@
 //
 //  2. SPIRIT SHRINE. /buff_types/max_hitpoints and /buff_types/max_manapoints
 //     are new in this patch. Nothing upstream read them, so the Spirit shrine
-//     was a silent no-op. They must reach maxHitpoints/maxManapoints, and must
-//     do so IDEMPOTENTLY — updateCombatDetails() re-runs on every buff
-//     add/remove, so a bonus folded into persistent state would compound.
+//     was a silent no-op. They must reach maxHitpoints/maxManapoints (checked
+//     on the wasm twin's player_details).
 //
 //  3. GUILD CREDIT CONVERSION. Loot re-expressed as guild credits, taking the
 //     highest-tier option when an item offers several.
@@ -23,7 +22,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-const CombatUnit = (await import('../../src/combatsimulator/combatUnit.js')).default;
+import { existsSync as wasmBuilt } from 'node:fs';
+
+const wasmSkip = !wasmBuilt(new URL('../../rust/pkg/csim_twin_bg.wasm', import.meta.url)) && 'wasm engine not built';
+const { playerDetails } = await import('../lib/unitDetails.js');
+const { BUILDS, toCsimPlayer } = await import('../bench/builds.mjs');
+const dp = await import('../../shared/dataProvider.js');
 const {
   resolveGuildBuffs,
   resolveGuildBuildingBuffs,
@@ -112,60 +116,27 @@ test('every shrine definition carries at least one buff', () => {
 
 // ------------------------------------------------------------ spirit shrine
 
-/** A monster-flavoured unit (isPlayer=false skips the player-only regen branch). */
-function makeUnit() {
-  const unit = new CombatUnit();
-  unit.isPlayer = false;
-  for (const stat of ['stamina', 'intelligence', 'attack', 'melee', 'defense', 'ranged', 'magic']) {
-    unit[stat + 'Level'] = 100;
-  }
-  return unit;
+/** An ungeared L100 player's max HP and MP with these party buffs (wasm twin). */
+function maxes(partyBuffs) {
+  const dto = toCsimPlayer(BUILDS.bare, { level: 100, index: 1, items: dp.itemDetailMap, abilityData: dp.abilityDetailMap });
+  const [d] = playerDetails([dto], { zoneBuffs: [], partyBuffs });
+  assert.equal(d.ok, true, d.error);
+  return [d.combatDetails.maxHitpoints, d.combatDetails.maxManapoints];
 }
 
-test('Spirit shrine actually raises max HP and MP (was a silent no-op)', () => {
-  const base = makeUnit();
-  base.clearBuffs();
-  const baseHp = base.combatDetails.maxHitpoints;
-  const baseMp = base.combatDetails.maxManapoints;
+test('Spirit shrine actually raises max HP and MP (was a silent no-op)', { skip: wasmSkip }, () => {
+  const [baseHp, baseMp] = maxes([]);
   assert.ok(baseHp > 0 && baseMp > 0);
-
-  const buffed = makeUnit();
-  for (const b of resolveGuildBuffs({ [SPIRIT]: 20 })) {
-    buffed.addPermanentBuff(b);
-  }
-  buffed.clearBuffs(); // seeds combatBuffs from permanentBuffs, then recomputes
-
+  const [hp, mp] = maxes(resolveGuildBuffs({ [SPIRIT]: 20 }));
   // Spirit at level 20 is +20% to each.
-  assert.equal(buffed.combatDetails.maxHitpoints, Math.floor(baseHp * 1.2));
-  assert.equal(buffed.combatDetails.maxManapoints, Math.floor(baseMp * 1.2));
+  assert.equal(hp, Math.floor(baseHp * 1.2));
+  assert.equal(mp, Math.floor(baseMp * 1.2));
 });
 
-test('the max HP/MP boost is idempotent across repeated recomputes', () => {
-  // updateCombatDetails() runs again on every buff add/remove. If the boost
-  // were folded into combatStats with `+=` it would compound each time.
-  const unit = makeUnit();
-  for (const b of resolveGuildBuffs({ [SPIRIT]: 20 })) {
-    unit.addPermanentBuff(b);
-  }
-  unit.clearBuffs();
-  const first = unit.combatDetails.maxHitpoints;
-
-  for (let i = 0; i < 10; i++) unit.updateCombatDetails();
-  assert.equal(unit.combatDetails.maxHitpoints, first);
-});
-
-test('a flat max-HP boost adds before the ratio multiplies', () => {
-  const unit = makeUnit();
-  unit.addPermanentBuff({
-    uniqueHrid: '/buff_uniques/test_max_hp',
-    typeHrid: '/buff_types/max_hitpoints',
-    flatBoost: 500,
-    ratioBoost: 1, // +100%
-    duration: 0,
-  });
-  unit.clearBuffs();
+test('a flat max-HP boost adds before the ratio multiplies', { skip: wasmSkip }, () => {
+  const [hp] = maxes([{ uniqueHrid: '/buff_uniques/test_max_hp', typeHrid: '/buff_types/max_hitpoints', flatBoost: 500, ratioBoost: 1, flatBoostLevelBonus: 0, ratioBoostLevelBonus: 0, duration: 0 }]);
   // (10 * (10 + 100) + 0 + 500) * (1 + 0 + 1) = 1600 * 2
-  assert.equal(unit.combatDetails.maxHitpoints, 3200);
+  assert.equal(hp, 3200);
 });
 
 // -------------------------------------------------------- credit conversion

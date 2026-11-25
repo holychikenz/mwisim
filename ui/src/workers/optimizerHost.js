@@ -57,16 +57,15 @@ onmessage = async ({ data }) => {
     }
     // Never aborted here: the page cancels by terminating this host, which ends the pool's workers with it.
     const controller = new AbortController();
-    // The Simulate tab's engine toggle (utils/experimental.js), sent as extra.experimental; wasm unless it says js.
+    // The Simulate tab's knobs (utils/experimental.js), sent as extra.experimental.
     const experimental = data.body?.extra?.experimental;
-    const engine = experimental?.engine === "js" ? "js" : "wasm";
     // A heartbeat, as the API's SSE comments: useOptimizerRun's stall watchdog sees a live host through a long candidate.
     const heartbeat = setInterval(() => postMessage({ type: "heartbeat" }), HEARTBEAT_MS);
     await runPlanned(planned, {
         poolSize,
         signal: controller.signal,
         send: (frame) => postMessage({ type: "frame", frame }),
-        createPool: (size) => createBrowserPool(size, { engine, experimental }),
+        createPool: (size) => createBrowserPool(size, { experimental }),
     });
     clearInterval(heartbeat);
     postMessage({ type: "done" });

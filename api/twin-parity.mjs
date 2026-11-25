@@ -1,56 +1,50 @@
 #!/usr/bin/env node
 // =============================================================================
 // twin-parity — differential harness: the Rust twin (rust/) against frozen
-// goldens (fixtures/twin/goldens.json) or the JS engine, bit for bit, on the
-// same seeded random stream.
+// goldens (fixtures/twin/goldens.json), bit for bit, on the same seeded random
+// stream. The goldens were frozen on the retired JS engine and the twin matched
+// them before it was deleted; an intentional change re-freezes them.
 //
 //   npm run twin:check -- selftest [--engine=native|wasm]
-//   npm run twin:check -- check [--only=a,b] [--seeds=N] [--engines=js,native,wasm] [--oracle=golden|js]
-//   npm run twin:freeze -- [--only=a,b] [--seeds=N] [--engine=js|native|wasm]
-//   npm run twin:trace -- <caseId> [--seed=N] [--limit=300000] [--engine=native|wasm]
+//   npm run twin:check -- check [--only=a,b] [--seeds=N] [--engines=native,wasm]
+//   npm run twin:freeze -- [--only=a,b] [--seeds=N] [--engine=native|wasm]
+//   npm run twin:trace -- <caseId> [--seed=N] [--limit=300000] [--engines=native,wasm]
 //
 // `check` runs every case under withSeed on each engine and compares it with
-// the oracle: by default the goldens, which `freeze` records (on JS unless
-// --engine says otherwise; with --only it updates just those cases). `js` is an
-// engine too, so the JS engine is held to the same goldens while it exists.
-// --oracle=js compares against a live JS run instead, and prints the first
-// differing fields, which a golden (digests only) cannot. Compared:
+// the goldens, which `freeze` records (on wasm unless --engine says otherwise;
+// with --only it updates just those cases). Compared:
 // digest(canonical(result)) AND the end Math.random.state(): equal digests
 // with unequal end states mean the twin drew a different number of randoms
 // and happened to land on the same tree. Trial cases also compare the digest
 // of extractTrialSummary(result) and of aggregateTrialResults over 3
 // iterations on one stream. Exit 1 on any mismatch.
 //
-// `trace` records one line per processed event on both sides — time, type,
-// unit, rng state, heap size, HPs — finds the first record that differs, and
-// re-runs a deep window (heap contents) around it. The JS side is traced by
-// wrapping CombatSimulator.prototype.processEvent for the run; nothing is
-// installed otherwise, so this costs the engine nothing.
+// `trace` records one line per processed event on two twin backends (native
+// and wasm by default) — time, type, unit, rng state, heap size, HPs — finds
+// the first record that differs, and re-runs a deep window (heap contents)
+// around it.
 //
-// Both sides call the SAME product entry points (runSimulation,
-// runGuildTrialSimulation, the eval engine's runZone/runTrial); the only
-// difference is the backend registered in shared/twinEngine.js, which is what
-// CSIM_ENGINE sets in production. So the seams themselves are under test.
+// Every case calls the product entry points (runSimulation,
+// runGuildTrialSimulation, the eval engine's runZone/runTrial) with the backend
+// registered in shared/twinEngine.js, which is what CSIM_ENGINE sets in
+// production. So the seams themselves are under test.
 // =============================================================================
 
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs';
 import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 
-import { withSeed, canonical, digest, firstDiffs, mulberry32 } from './lib/determinism.mjs';
+import { withSeed, canonical, digest, mulberry32 } from './lib/determinism.mjs';
 import { runSimulation, runGuildTrialSimulation, loadGameData } from './lib/simulator.js';
 import { allEvalCases, seedsFor, EVAL_HOURS, buildNamesFor, BUILDS } from './eval/cases.mjs';
 import { loadEngine } from './eval/engine.mjs';
 import { toCsimPlayer } from './bench/builds.mjs';
 import { setTwinBackend, getTwinBackend, runTwin, twinRunRequest } from '../shared/twinEngine.js';
+import { TRIAL_START_TIER } from '../shared/trialLadder.js';
 import { nativeBackend } from './lib/twin/native.mjs';
 import { wasmBackend } from './lib/twin/wasm.mjs';
 
-const CombatSimulator = (await import('../src/combatsimulator/combatSimulator.js')).default;
-const GuildTrial = (await import('../src/combatsimulator/guildTrial.js')).default;
-const Labyrinth = (await import('../src/combatsimulator/labyrinth.js')).default;
-const Player = (await import('../src/combatsimulator/player.js')).default;
-const { extractTrialSummary, aggregateTrialResults } = await import('../src/combatsimulator/guildTrialStats.js');
+const { extractTrialSummary, aggregateTrialResults } = await import('../shared/guildTrialStats.js');
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
@@ -64,8 +58,7 @@ const flag = (name, dflt = null) => {
   return hit ? hit.slice(name.length + 3) : dflt;
 };
 
-// `js` is no backend: the JS engine runs when none is registered.
-const BACKENDS = { js: () => null, native: nativeBackend, wasm: wasmBackend };
+const BACKENDS = { native: nativeBackend, wasm: wasmBackend };
 const makeBackend = async (name) => {
   const make = BACKENDS[name];
   if (!make) {
@@ -75,7 +68,7 @@ const makeBackend = async (name) => {
   return make();
 };
 
-/** Run fn with backend b registered (null = the JS engine). */
+/** Run fn with backend b registered. */
 async function on(b, fn) {
   setTwinBackend(b);
   try {
@@ -91,12 +84,12 @@ async function on(b, fn) {
 
 const engine = await loadEngine(ROOT);
 const { gameData } = engine;
-setTwinBackend(null); // CSIM_ENGINE may be set; this harness picks per side
+setTwinBackend(null); // CSIM_ENGINE may be set; this harness picks per engine
 
 const trialAgg = (kase) => async () => {
   const summaries = [];
   for (let i = 0; i < 3; i++) summaries.push(extractTrialSummary(await engine.runTrial(kase)));
-  return aggregateTrialResults(summaries, { startTier: kase.startTier ?? GuildTrial.START_TIER });
+  return aggregateTrialResults(summaries, { startTier: kase.startTier ?? TRIAL_START_TIER });
 };
 
 function fixtureCases() {
@@ -144,19 +137,7 @@ function extraCases(nSeeds) {
   const jelly = { players: party(5, 600), trialHrid: '/guild_combat/jellyfish', startTier: 100, trialOptions: { enemyScale: 0.8 } };
   // A labyrinth with house rooms, achievements and a guild buff, so buffSources has every source.
   const labHouses = { players: [{ ...houses, food: [null, null, null], drinks: [null, null, null] }], labyrinth: { labyrinthHrid: '/monsters/cyclops', roomLevel: 60, crates: ['/items/expert_coffee_crate'] }, simulationTimeLimit: 1800e9 };
-  const lab = (spec) => () => {
-    const b = getTwinBackend();
-    if (b) return runTwin(b, twinRunRequest(structuredClone(spec)));
-    const { labyrinthHrid, roomLevel, crates } = spec.labyrinth;
-    const labyrinth = new Labyrinth(labyrinthHrid, roomLevel, crates);
-    const players = spec.players.map((dto) => {
-      const p = Player.createFromDTO(structuredClone(dto));
-      p.zoneBuffs = labyrinth.buffs;
-      p.extraBuffs = dto.extraBuffs || [];
-      return p;
-    });
-    return new CombatSimulator(players, null, labyrinth).simulate(spec.simulationTimeLimit);
-  };
+  const lab = (spec) => () => runTwin(getTwinBackend(), twinRunRequest(structuredClone(spec)));
   const trial = (spec, iterations) => () => runGuildTrialSimulation({ ...structuredClone(spec), iterations });
   return [
     { id: 'twin-houses', seeds: seeds('twin-houses'), run: () => runSimulation(structuredClone(housesReq)) },
@@ -197,40 +178,34 @@ function selectCases(nSeeds) {
   return cases.filter((c) => want.has(c.id));
 }
 
-/**
- * One case and seed on backend b (null = JS): the golden record (digests and end rng states) and,
- * for --oracle=js diagnostics, the canonical result and aggregate it was digested from.
- */
+/** One case and seed on backend b: the golden record (digests and end rng states). */
 async function observe(b, kase, seed) {
   const r = await seeded(b, seed, kase.run);
-  const canon = canonical(r.value);
-  const rec = { digest: digest(canon), rng: r.state };
+  const rec = { digest: digest(canonical(r.value)), rng: r.state };
   if (kase.trialResult) rec.summary = digest(canonical(extractTrialSummary(r.value)));
-  let aggCanon = null;
   if (kase.agg) {
     const a = await seeded(b, seed, kase.agg);
-    aggCanon = canonical(a.value);
-    rec.agg = digest(aggCanon);
+    rec.agg = digest(canonical(a.value));
     rec.aggRng = a.state;
   }
-  return { rec, canon, aggCanon };
+  return rec;
 }
 
 const readGoldens = () => (existsSync(GOLDEN_FILE) ? JSON.parse(readFileSync(GOLDEN_FILE, 'utf8')) : {});
 
 async function cmdFreeze() {
   const nSeeds = Number(flag('seeds', '4'));
-  const engineName = flag('engine', 'js');
+  const engineName = flag('engine', 'wasm');
   const cases = selectCases(nSeeds).filter((c) => !c.skip);
   // --only updates those cases and keeps the rest; a full freeze rewrites the file, dropping retired cases.
   const goldens = flag('only') ? readGoldens() : {};
   const b = await makeBackend(engineName);
   for (const kase of cases) {
     goldens[kase.id] = {};
-    for (const seed of kase.seeds) goldens[kase.id][seed] = (await observe(b, kase, seed)).rec;
+    for (const seed of kase.seeds) goldens[kase.id][seed] = await observe(b, kase, seed);
     console.log(`  FROZE    ${engineName} ${kase.id} (${kase.seeds.length} seeds)`);
   }
-  b?.close?.();
+  b.close?.();
   const sorted = Object.fromEntries(Object.keys(goldens).sort().map((id) => [id, goldens[id]]));
   mkdirSync(dirname(GOLDEN_FILE), { recursive: true });
   // One case per line: a re-freeze diffs as the cases it changed.
@@ -243,14 +218,9 @@ const FIELDS = [['digest', 'result'], ['rng', 'rng end state'], ['summary', 'tri
 
 async function cmdCheck() {
   const nSeeds = Number(flag('seeds', '4'));
-  const oracle = flag('oracle', 'golden');
-  if (oracle !== 'golden' && oracle !== 'js') {
-    console.error(`twin: unknown oracle "${oracle}" (golden | js)`);
-    process.exit(2);
-  }
   const engines = flag('engines', 'native').split(',');
   const cases = selectCases(nSeeds);
-  const goldens = oracle === 'golden' ? readGoldens() : null;
+  const goldens = readGoldens();
 
   let match = 0;
   let bad = 0;
@@ -267,8 +237,8 @@ async function cmdCheck() {
         let want;
         let got;
         try {
-          want = goldens ? { rec: goldens[kase.id]?.[seed] } : await observe(null, kase, seed);
-          if (!want.rec) {
+          want = goldens[kase.id]?.[seed];
+          if (!want) {
             console.log(`  MISSING  ${engineName} ${kase.id} seed=${seed}: no golden (npm run twin:freeze -- --only=${kase.id} --seeds=${nSeeds})`);
             bad++;
             continue;
@@ -279,69 +249,29 @@ async function cmdCheck() {
           bad++;
           continue;
         }
-        const problems = FIELDS.filter(([k]) => want.rec[k] !== got.rec[k]);
+        const problems = FIELDS.filter(([k]) => want[k] !== got[k]);
         if (problems.length === 0) {
           match++;
-          console.log(`  MATCH    ${engineName} ${kase.id} seed=${seed} ${got.rec.digest.slice(0, 16)} rng=${got.rec.rng}`);
+          console.log(`  MATCH    ${engineName} ${kase.id} seed=${seed} ${got.digest.slice(0, 16)} rng=${got.rng}`);
           continue;
         }
         bad++;
         console.log(`  MISMATCH ${engineName} ${kase.id} seed=${seed}`);
         for (const [k, what] of problems) {
-          const a = want.rec[k];
-          const c = got.rec[k];
-          console.log(`           ${what}: ${oracle} ${String(a).slice(0, 16)} ${engineName} ${String(c).slice(0, 16)}`);
-          // Only a live oracle has the values behind the digests.
-          const diffs = !goldens && (k === 'digest' ? [want.canon, got.canon] : k === 'agg' ? [want.aggCanon, got.aggCanon] : null);
-          if (diffs) {
-            for (const d of firstDiffs(...diffs)) {
-              console.log(`             ${d.path}: js ${String(d.expected).slice(0, 90)} twin ${String(d.got).slice(0, 90)}`);
-            }
-          }
+          console.log(`           ${what}: golden ${String(want[k]).slice(0, 16)} ${engineName} ${String(got[k]).slice(0, 16)}`);
         }
-        if (goldens) console.log(`           (--oracle=js shows the differing fields while the JS engine exists)`);
       }
     }
-    b?.close?.();
+    b.close?.();
   }
   console.log(`\n${'='.repeat(60)}`);
-  console.log(`twin:check ${engines.join(',')} vs ${oracle}: ${match} match, ${bad} mismatch, ${skipped} skipped`);
+  console.log(`twin:check ${engines.join(',')} vs golden: ${match} match, ${bad} mismatch, ${skipped} skipped`);
   process.exit(bad ? 1 : 0);
 }
 
 // ---- trace ------------------------------------------------------------------
 
-/** Record [n, time, type, unit, rng, heapLen, playerHp[], enemyHp[]|null, (heap)] per event. */
-async function jsTrace(kase, seed, from, to, deep) {
-  const out = [];
-  const real = CombatSimulator.prototype.processEvent;
-  let n = 0;
-  CombatSimulator.prototype.processEvent = function (event) {
-    if (n >= from && n < to) {
-      const who = (event.source ?? event.target)?.hrid ?? event.hrid ?? null;
-      const rec = [
-        n,
-        event.time,
-        event.type,
-        who,
-        Math.random.state(),
-        this.eventQueue.minHeap.heapArray.length,
-        this.players.map((p) => p.combatDetails.currentHitpoints),
-        this.enemies ? this.enemies.map((e) => e.combatDetails.currentHitpoints) : null,
-      ];
-      if (deep) rec.push(this.eventQueue.minHeap.heapArray.map((e) => [e.type, e.time]));
-      out.push(rec);
-    }
-    n++;
-    return real.call(this, event);
-  };
-  try {
-    await on(null, () => withSeed(seed, kase.run));
-  } finally {
-    CombatSimulator.prototype.processEvent = real;
-  }
-  return out;
-}
+// A trace record: [n, time, type, unit, rng, heapLen, playerHp[], enemyHp[]|null, (heap)] per event.
 
 /** The product call on backend b, with the trace window injected into its one twin request. */
 async function twinTrace(b, kase, seed, from, to, deep) {
@@ -367,8 +297,10 @@ async function cmdTrace() {
   }
   const seed = Number(flag('seed', String(kase.seeds[0])));
   const limit = Number(flag('limit', '300000'));
-  const b = await makeBackend(flag('engine', 'native'));
-  const sj = await jsTrace(kase, seed, 0, limit, false);
+  const [na, nb] = flag('engines', 'native,wasm').split(',');
+  const a = await makeBackend(na);
+  const b = await makeBackend(nb);
+  const sj = await twinTrace(a, kase, seed, 0, limit, false);
   const st = await twinTrace(b, kase, seed, 0, limit, false);
   const len = Math.min(sj.length, st.length);
   let k = -1;
@@ -379,24 +311,26 @@ async function cmdTrace() {
     }
   }
   if (k === -1 && sj.length === st.length) {
-    console.log(`twin:trace ${id} seed=${seed}: ${len} events, no divergence`);
+    console.log(`twin:trace ${id} seed=${seed}: ${len} events, no divergence (${na} vs ${nb})`);
+    a.close?.();
     b.close?.();
     process.exit(0);
   }
   if (k === -1) k = len;
   const from = Math.max(0, k - 20);
-  const dj = await jsTrace(kase, seed, from, k + 1, true);
+  const dj = await twinTrace(a, kase, seed, from, k + 1, true);
   const dt = await twinTrace(b, kase, seed, from, k + 1, true);
-  console.log(`twin:trace ${id} seed=${seed}: first divergence at event ${k} (js ${sj.length} events, twin ${st.length})`);
+  console.log(`twin:trace ${id} seed=${seed}: first divergence at event ${k} (${na} ${sj.length} events, ${nb} ${st.length})`);
   for (let i = 0; i < Math.max(dj.length, dt.length); i++) {
-    const a = JSON.stringify(dj[i]?.slice(0, 8));
-    const c = JSON.stringify(dt[i]?.slice(0, 8));
-    console.log(`${a === c ? ' ' : '>'} js   ${a}`);
-    if (a !== c) console.log(`> twin ${c}`);
+    const x = JSON.stringify(dj[i]?.slice(0, 8));
+    const y = JSON.stringify(dt[i]?.slice(0, 8));
+    console.log(`${x === y ? ' ' : '>'} ${na} ${x}`);
+    if (x !== y) console.log(`> ${nb} ${y}`);
   }
   const hj = dj[dj.length - 1]?.[8];
   const ht = dt[dt.length - 1]?.[8];
-  console.log(`heap at ${k}:\n  js   ${JSON.stringify(hj)}\n  twin ${JSON.stringify(ht)}`);
+  console.log(`heap at ${k}:\n  ${na} ${JSON.stringify(hj)}\n  ${nb} ${JSON.stringify(ht)}`);
+  a.close?.();
   b.close?.();
   process.exit(1);
 }
@@ -448,8 +382,8 @@ switch (cmd) {
   default:
     console.log('Usage:');
     console.log('  npm run twin:check -- selftest [--engine=native|wasm]');
-    console.log('  npm run twin:check -- check [--only=a,b] [--seeds=N] [--engines=js,native,wasm] [--oracle=golden|js]');
-    console.log('  npm run twin:freeze -- [--only=a,b] [--seeds=N] [--engine=js|native|wasm]');
-    console.log('  npm run twin:trace -- <caseId> [--seed=N] [--limit=300000] [--engine=native|wasm]');
+    console.log('  npm run twin:check -- check [--only=a,b] [--seeds=N] [--engines=native,wasm]');
+    console.log('  npm run twin:freeze -- [--only=a,b] [--seeds=N] [--engine=native|wasm]');
+    console.log('  npm run twin:trace -- <caseId> [--seed=N] [--limit=300000] [--engines=native,wasm]');
     process.exit(cmd ? 2 : 0);
 }

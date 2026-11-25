@@ -7,14 +7,14 @@
 // the ceilings out of the game data.
 //
 // Enemy side — enumerate every spawn combination the zone permits within its
-// maxSpawnCount / maxTotalStrength budget, instantiate each monster to read its
-// combat details, and keep the largest achievable total (for `all_enemies`) and
+// maxSpawnCount / maxTotalStrength budget, read each monster's combat details
+// (the wasm twin, api/lib/unitDetails.js), and keep the largest achievable total (for `all_enemies`) and
 // the largest single monster (for `targeted_enemy`). Boss waves and every
 // dungeon wave are folded in the same way, since a threshold has to hold for
 // the whole run, not just the common encounter.
 //
-// Party side — build each Player from its DTO exactly as the simulator will
-// (zoneBuffs + extraBuffs, generatePermanentBuffs, reset), then read
+// Party side — build each player from its DTO exactly as the simulator will
+// (zoneBuffs + extraBuffs, generatePermanentBuffs, reset; on the twin), then read
 // maxHitpoints / maxManapoints. This is the same path api/lib/labStats.js
 // takes, and it matters: a `self` + `current_hp` ceiling is the *player's*
 // maximum, not the enemy's. The peer fork gets this wrong.
@@ -23,9 +23,8 @@
 // room level, every attempt; see deriveLabyrinthEnemyBounds.
 // =============================================================================
 
-const Monster = (await import('../../../src/combatsimulator/monster.js')).default;
-const Player = (await import('../../../src/combatsimulator/player.js')).default;
-const { actionDetailMap } = await import('../../../src/combatsimulator/dataProvider.js');
+const { monsterDetails, playerDetails } = await import('../unitDetails.js');
+const { actionDetailMap } = await import('../../../shared/dataProvider.js');
 const { buildCrateBuffs } = await import('../target.js');
 
 /** Fallback when a zone cannot be resolved. Matches the peer's 10000. */
@@ -41,8 +40,7 @@ const MAX_ENUMERATION_NODES = 500_000;
 
 /**
  * Monster combat details are pure functions of (hrid, difficultyTier), and the
- * enumeration revisits the same pairs constantly. Constructing a Monster and
- * calling updateCombatDetails is not cheap, so memoise.
+ * enumeration revisits the same pairs constantly; a twin call is not free, so memoise.
  */
 const monsterCache = new Map();
 
@@ -55,16 +53,14 @@ function monsterVitals(monsterHrid, difficultyTier, roomLevel = 0) {
   if (cached) return cached;
 
   let vitals = { maxHitpoints: 1, maxManapoints: 1 };
-  try {
-    const monster = new Monster(String(monsterHrid), Number(difficultyTier) || 0, Number(roomLevel) || 0);
-    monster.updateCombatDetails();
+  const [monster] = monsterDetails([{ hrid: String(monsterHrid), difficultyTier: Number(difficultyTier) || 0, roomLevel: Number(roomLevel) || 0 }]);
+  // An unknown monster hrid in the spawn table (!ok) keeps the conservative 1
+  // rather than aborting the whole bounds computation.
+  if (monster.ok) {
     vitals = {
       maxHitpoints: Math.max(1, Number(monster.combatDetails?.maxHitpoints) || 1),
       maxManapoints: Math.max(1, Number(monster.combatDetails?.maxManapoints) || 1),
     };
-  } catch {
-    // An unknown monster hrid in the spawn table: fall through with the
-    // conservative 1 rather than aborting the whole bounds computation.
   }
 
   monsterCache.set(key, vitals);
@@ -255,26 +251,29 @@ export function deriveLabyrinthEnemyBounds(monsterHrid, roomLevel) {
  * @param {object[]} [opts.extraBuffs]
  */
 export function derivePlayerBounds(playerDTOs, { zoneBuffs = [], extraBuffs = [] } = {}) {
-  const players = (playerDTOs || []).map((dto) => {
-    try {
-      const player = Player.createFromDTO(structuredClone(dto));
-      player.zoneBuffs = zoneBuffs;
-      // Same composition the simulation itself will use (poolWorker.js), so the
-      // ceilings a threshold is expressed against are the ceilings the build
-      // actually has. Shrines and seals ride on the DTO, per player.
-      player.extraBuffs = extraBuffs.concat(dto.extraBuffs || []);
-      player.generatePermanentBuffs();
-      player.reset();
-      return {
-        hrid: dto.hrid,
-        maxHitpoints: Math.max(1, Number(player.combatDetails?.maxHitpoints) || 1),
-        maxManapoints: Math.max(1, Number(player.combatDetails?.maxManapoints) || 1),
-      };
-    } catch {
+  const dtos = playerDTOs || [];
+  // Same composition the simulation itself will use (poolWorker.js): extraBuffs
+  // as the party's, concatenated with each DTO's own (shrines and seals), so the
+  // ceilings a threshold is expressed against are the ceilings the build has.
+  let details;
+  try {
+    details = playerDetails(dtos, { zoneBuffs, partyBuffs: extraBuffs });
+  } catch (e) {
+    if (!e.twinRefusal) throw e; // the twin is not loaded: not a bad DTO
+    details = []; // a buff list the twin refuses: every player falls back below
+  }
+  const players = dtos.map((dto, i) => {
+    const player = details[i];
+    if (!player?.ok) {
       // A malformed DTO would throw later in the simulation anyway; give it a
       // usable ceiling so bounds derivation is not the thing that fails.
       return { hrid: dto?.hrid, maxHitpoints: FALLBACK_HP, maxManapoints: FALLBACK_HP };
     }
+    return {
+      hrid: dto.hrid,
+      maxHitpoints: Math.max(1, Number(player.combatDetails?.maxHitpoints) || 1),
+      maxManapoints: Math.max(1, Number(player.combatDetails?.maxManapoints) || 1),
+    };
   });
 
   const party = players.reduce(

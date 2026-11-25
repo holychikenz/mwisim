@@ -22,7 +22,7 @@
 //     format, with a trailing newline preserved where the file had one.
 //
 // A refresh is NOT finished when this script exits. The generated tables in
-// src/combatsimulator/generated/ are a pure function of this data, and the
+// rust/src/generated.rs are a pure function of this data, and the
 // eval baseline was recorded against the old numbers, so a data change that
 // touches either leaves the build red until they follow. The v1.20260927.0
 // refresh added a `boss_status` trigger condition (regenerate) and nerfed

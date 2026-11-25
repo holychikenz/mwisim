@@ -1,6 +1,6 @@
 // =============================================================================
 // experimental — the UI side of the engine's EXPERIMENTAL knobs
-// (src/combatsimulator/simSettings.js).
+// (shared/simSettings.js).
 //
 // These are deliberately kept out of the session blob and in their own
 // localStorage key: they are a bench setting, not part of a build, and must not
@@ -18,11 +18,8 @@ export const EXPERIMENTAL_DEFAULTS = Object.freeze({
   //            gets the model measured for it (see simSettings.js)
   // "random" = force upstream everywhere (U[0.5, 1.0)*CD, mean 0.75)
   // "half"   = force a flat 0.5*CD everywhere
-  monsterStartCooldown: 'auto',
-  // "wasm" = the Rust twin (rust/, ./build.sh wasm), bit-identical by
-  //          twin:check (default; deploy.yml fails a build without it)
-  // "js"   = the JS engine, kept as a fallback while it is retired
-  engine: 'wasm'
+  monsterStartCooldown: 'auto'
+  // The engine is always the wasm twin (engine-retirement); an old stored `engine` key is ignored.
 });
 
 export function loadExperimental() {

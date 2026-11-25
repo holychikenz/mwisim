@@ -44,11 +44,11 @@ function spawnSimWorker(init) {
 }
 
 /**
- * A started pool of `size` optimiser workers on `engine` ('wasm' | 'js'), with the
+ * A started pool of `size` optimiser workers on the wasm twin, with the
  * Simulate tab's `experimental` knobs; resolves once every worker has its engine loaded.
  */
-export const createBrowserPool = (size, { engine, experimental }) =>
-    startPool(size, () => spawnSimWorker({ engine, experimental }));
+export const createBrowserPool = (size, { experimental }) =>
+    startPool(size, () => spawnSimWorker({ experimental }));
 
 /** Cores minus one, as the API's pool leaves one free (there for the event loop, here for the page). */
 export const browserPoolSize = () => Math.max(1, (navigator.hardwareConcurrency || 4) - 1);

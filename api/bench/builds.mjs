@@ -433,7 +433,7 @@ function mustItem(items, hrid, what) {
   return item;
 }
 
-/** csim player DTO (src/combatsimulator/player.js Player.createFromDTO). */
+/** csim player DTO (the shape the twin's player request takes). */
 export function toCsimPlayer(build, { level, index, items, abilityData }) {
   const equipment = {};
   for (const [hrid, enh] of build.equipment) {

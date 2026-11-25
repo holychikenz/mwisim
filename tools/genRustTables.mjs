@@ -1,15 +1,11 @@
 #!/usr/bin/env node
 // =============================================================================
 // Generates rust/src/generated.rs — the engine-semantics tables the Rust twin
-// (rust/) needs, from the SAME collect() functions that produce the JS engine's
-// own generated files. One source of truth for both engines: a stat added to
-// EQUIPMENT_COMBAT_STATS, a trigger condition regrouped, or a buff type added
-// to the data reaches the twin by re-running this, and
-// api/tests/rustTables.test.mjs fails until it is re-run.
-//
-// Not generated: triggerIndex (Rust computes "/buff_uniques" + the condition's
-// last path segment, which is the formula that table precomputes) and buff-type
-// ordinals (the twin indexes BUFF_TYPE_NAMES itself).
+// (rust/) needs, from the collect() functions in genStatSchema.mjs,
+// genTriggerKinds.mjs and genBuffTypes.mjs (their source: tools/engineTables.json,
+// the game data and rust/src). A stat added to EQUIPMENT_COMBAT_STATS, a trigger
+// condition regrouped, or a buff type added to the data reaches the twin by
+// re-running this, and api/tests/rustTables.test.mjs fails until it is re-run.
 //
 // Usage:  node tools/genRustTables.mjs          # write the generated file
 //         node tools/genRustTables.mjs --stdout # print it, write nothing

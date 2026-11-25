@@ -9,7 +9,7 @@ pub fn buff_type_ord(type_hrid: &str) -> Result<u16, String> {
     BUFF_TYPE_NAMES
         .binary_search(&type_hrid)
         .map(|i| i as u16)
-        .map_err(|_| format!("Unknown buff type: {type_hrid} — regenerate src/combatsimulator/generated/buffTypes.js with `node tools/genBuffTypes.mjs`"))
+        .map_err(|_| format!("Unknown buff type: {type_hrid} — regenerate rust/src/generated.rs with `node tools/genRustTables.mjs`"))
 }
 
 /// `buff_type_ord` at compile time, through `bt!`: an unknown name fails the build.

@@ -128,6 +128,16 @@ pub fn run(data: &GameData, request: &str, progress: Option<&mut dyn FnMut(f64)>
 fn run_inner(data: &GameData, request: &str, mut progress: Option<&mut dyn FnMut(f64)>) -> Result<String, Fail> {
     // Request shape, kind and buff strictness are the twin's own refusals: JS would have run.
     let twin_only = |m: String| (m, false, None);
+    #[derive(serde::Deserialize)]
+    struct KindOnly {
+        kind: String,
+    }
+    // A byte scan first, so a simulation request is not parsed twice.
+    if let Some(k) = request.contains("_details\"").then(|| serde_json::from_str::<KindOnly>(request).ok()).flatten() {
+        if k.kind == "player_details" || k.kind == "monster_details" {
+            return details(data, &k.kind, request).map_err(twin_only);
+        }
+    }
     let req: Request = serde_json::from_str(request).map_err(|e| twin_only(format!("twin request: {e}")))?;
     // Zone and GuildTrial constructors throw in JS too, and draw nothing first.
     let at_start = |(m, r): (String, bool)| (m, r, Some(req.rng_state));
@@ -252,6 +262,71 @@ fn run_inner(data: &GameData, request: &str, mut progress: Option<&mut dyn FnMut
     }
     out.push('}');
     Ok(out)
+}
+
+/// `player_details`: each player as a zone run builds it at combat start (create_player with
+/// the zone buffs and partyBuffs + its own extraBuffs, generatePermanentBuffs, reset(0)); with
+/// `bare`, `createFromDTO(dto); updateCombatDetails()` only.
+/// `monster_details`: `new Monster(hrid, tier, roomLevel); updateCombatDetails()`, plus its abilities.
+/// Each entry is `{ok:true, hrid, <base>Level..., combatDetails[, abilities]}` or `{ok:false, error}`.
+fn details(data: &GameData, kind: &str, request: &str) -> Result<String, String> {
+    use sim_result::{combat_details_j, J};
+    let req: request::DetailsReq = serde_json::from_str(request).map_err(|e| format!("twin request: {e}"))?;
+    let raws = |v: &[data::RawBuff]| v.iter().map(Buff::raw).collect::<Result<Vec<_>, _>>();
+    let (zone_buffs, party) = (raws(&req.zone_buffs)?, raws(&req.party_buffs)?);
+    let unit_j = |u: &unit::Unit, extra: Vec<(String, J)>| {
+        let mut o = vec![("ok".into(), J::Bool(true)), ("hrid".into(), J::Str(u.hrid.to_string()))];
+        o.extend(unit::LEVEL_NAMES.iter().zip(u.base.iter()).map(|(k, x)| (format!("{k}Level"), J::Num(*x))));
+        o.push(("combatDetails".into(), combat_details_j(&u.cd)));
+        o.extend(extra);
+        J::Obj(o)
+    };
+    let fail = |e: String| J::Obj(vec![("ok".into(), J::Bool(false)), ("error".into(), J::Str(e))]);
+    let mut rng = Mulberry32::new(0); // reset(0) of a player draws nothing
+    let out: Vec<J> = if kind == "player_details" {
+        req.players
+            .iter()
+            .enumerate()
+            .map(|(i, v)| {
+                let built = (|| {
+                    let dto = <request::PlayerDto as serde::Deserialize>::deserialize(v).map_err(|e| format!("players[{i}]: {e}"))?;
+                    let mut extra = party.clone();
+                    // createFromDTO never read extraBuffs, so bare mode must not refuse on them.
+                    if !req.bare {
+                        for b in dto.extra_buffs.iter().flatten() {
+                            extra.push(Buff::raw(b)?);
+                        }
+                    }
+                    let mut u = player::create_player(data, &dto, (i + 1) as u32, zone_buffs.clone(), extra)?;
+                    if req.bare {
+                        u.update_combat_details();
+                    } else {
+                        u.generate_permanent_buffs();
+                        u.reset(0.0, false, &mut rng);
+                    }
+                    Ok::<_, String>(u)
+                })();
+                built.map(|u| unit_j(&u, vec![])).unwrap_or_else(fail)
+            })
+            .collect()
+    } else {
+        let mut cache = monster::AbilityCache::default();
+        req.monsters
+            .iter()
+            .map(|m| match monster::create_monster(data, &mut cache, &m.hrid, m.difficulty_tier, m.room_level, 1) {
+                Ok(mut u) => {
+                    u.update_combat_details();
+                    let abilities = u.abilities.iter().flatten().map(|a| J::Obj(vec![("hrid".into(), J::Str(a.hrid.to_string())), ("level".into(), J::Num(a.level))])).collect();
+                    unit_j(&u, vec![("abilities".into(), J::Arr(abilities))])
+                }
+                Err(e) => fail(e),
+            })
+            .collect()
+    };
+    let mut s = String::from("{\"ok\":true,\"units\":");
+    J::Arr(out).write(&mut s);
+    s.push('}');
+    Ok(s)
 }
 
 /// Parity probes for `twin:check selftest`. Input:

@@ -81,7 +81,29 @@ the commit (`git checkout <base> -- ui/`); the `api/` refactor is behaviour-iden
 
 ---
 
-## Stage 2 — retire the JS engine  ⏸ blocked; do not start until the gates below are green
+## Stage 2 — retire the JS engine  ✅ done on `feat/retire-js` (2026-11-25); the JS engine is deleted
+
+**Gate status (2026-11-25):**
+
+| # | Status | Where |
+|---|---|---|
+| G1 | ✅ goldens frozen; after 2d `twin:freeze` defaults to wasm | csim (main) |
+| G2 | ✅ sim:check (3/3), eval:check (464/464, 29/29) and lab:check (same 20 drifts) run on the twin, bit-identical to their JS-recorded fixtures: nothing re-recorded | csim `89f8f4a`, `52cfade` |
+| G3 | ✅ `player_details` / `monster_details` (rust/src/lib.rs), `api/lib/unitDetails.js` (sync, wasm); parity vs JS on 35 builds × 4 buff variants, bare mode, refusals and 95 monsters × tiers/room levels, all equal; bounds.js and labStats.js switched | csim `ce38b57`..`5748ea3` |
+| G4 | ✅ | csim (main) |
+| G5 | ✅ moved to `shared/`; 4 re-export stubs stay in `src/combatsimulator/` one release | csim `4b9fe99` |
+| G6 | ✅ triggerPolicy and dtoCheck use unitDetails through `csim.js`; cache keys on `rust` and JS-vs-twin (R3 closed); wasm fallback | SCLIRoster `feat/retire-js` |
+| G7 | ✅ **frozen**: build.py no longer rebundles `_vendor/csim-core.js`; build-csim.py reads csim `380b32e` or earlier and refuses a csim without the engine | cowstuff `feat/retire-js` |
+| G8 | ✅ no change: the data directory stays | — |
+| G9 | ✅ `tools/engineTables.json` + Rust sources; `gen` runs only genRustTables | csim `24c5163`, `6264593` |
+| default | ✅ CSIM_ENGINE unset = native if it passes the pow guard, else wasm; the UI's Engine control is gone | csim `89f8f4a` |
+| 2d | ✅ engine deleted, JS branches dropped, engine-internal tests deleted (see the commit `8377e42` message) | csim `cded8e7`..`042eaad` |
+
+Coverage given up by 2d: the audit-regression tests that drove JS internals (dead attacker, gap wipes, threat pick, player deaths/refill/slots, promote, stun re-arm) have no Rust unit test; the goldens hold them only where a golden case reaches them.
+
+The text below is the plan as written before the work.
+
+### (historical) blocked; do not start until the gates below are green
 
 **Gate (every row must be true before deletion):**
 

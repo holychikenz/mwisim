@@ -1346,7 +1346,7 @@ function App() {
         comExp: extraOptions.comExp,
         comDrop: extraOptions.comDrop,
         mooPass: extraOptions.mooPass,
-        // The engine toggle and knobs, as the Simulate tab's worker reads them (workers/optimizerHost.js).
+        // The experimental knobs, as the Simulate tab's worker reads them (workers/optimizerHost.js).
         experimental
       },
       // Empty, and deliberately still sent: this field is the PARTY-WIDE buff

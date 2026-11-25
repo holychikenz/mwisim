@@ -1,6 +1,7 @@
 // =============================================================================
-// The native twin against the JS engine on DTO shapes the corpus never sends,
-// plus the native backend's stall watchdog, pow guard, error kinds and the
+// The native twin on DTO shapes the corpus never sends (digests and seeded
+// draws recorded on the retired JS engine, which native matched bit for bit
+// before it was deleted), plus the native backend's stall watchdog, pow guard, error kinds and the
 // random stream an error leaves. Skipped without a built
 // rust/target/release/csim-native, so a machine with no Rust stays green.
 // =============================================================================
@@ -39,21 +40,21 @@ const basePlayer = () =>
   toCsimPlayer(BUILDS.melee, { level: 200, index: 1, items: loadGameData('itemDetailMap'), abilityData: loadGameData('abilityDetailMap') });
 const ZONE = { zoneHrid: '/actions/combat/gobo_planet', difficultyTier: 0 };
 
-/** The request on the twin (native) or the JS engine, under seed 1. */
-async function runOn(twin, req) {
-  const b = twin ? nativeBackend() : null;
+/** The request on the native twin, under seed 1. */
+async function runOn(req) {
+  const b = nativeBackend();
   setTwinBackend(b);
   try {
     return await withSeed(1, () => runSimulation(structuredClone(req)));
   } finally {
     setTwinBackend(null);
-    b?.close();
+    b.close();
   }
 }
 
-async function assertSame(req) {
-  const js = digest(canonical(await runOn(false, req)));
-  assert.equal(digest(canonical(await runOn(true, req))), js);
+/** `jsDigest`: the result's digest as the JS engine produced it under seed 1. */
+async function assertSame(req, jsDigest) {
+  assert.equal(digest(canonical(await runOn(req))), jsDigest);
 }
 
 test('a loose DTO (locked/unused slots without triggers, array achievements, null ability level) matches JS bit for bit', { skip }, async () => {
@@ -64,19 +65,19 @@ test('a loose DTO (locked/unused slots without triggers, array achievements, nul
   p.abilities[1].level = null;
   p.equipment['/equipment_types/pouch'] = null; // one food slot
   p.food[2] = { hrid: p.food[0].hrid };
-  await assertSame({ players: [p], zone: ZONE, simulationTimeLimit: 3600e9 });
+  await assertSame({ players: [p], zone: ZONE, simulationTimeLimit: 3600e9 }, 'd73eee5a4749742bcf503a841a7cd17be942610adbded3b14c9527d67e461f4a');
 });
 
 const dojo = (over) => ({ uniqueHrid: '/buff_uniques/guild_building_dojo', typeHrid: '/buff_types/attack_level', ratioBoost: null, ratioBoostLevelBonus: null, flatBoost: 4, flatBoostLevelBonus: 0, duration: null, ...over });
 
 test('a null buff number is 0, as in JS; a string one is refused', { skip }, async () => {
-  await assertSame({ players: [basePlayer()], zone: ZONE, simulationTimeLimit: 3600e9, guildBuffs: [dojo()] });
-  await assert.rejects(runOn(true, { players: [basePlayer()], zone: ZONE, simulationTimeLimit: 3600e9, guildBuffs: [dojo({ flatBoost: '4' })] }), /number or null/);
+  await assertSame({ players: [basePlayer()], zone: ZONE, simulationTimeLimit: 3600e9, guildBuffs: [dojo()] }, '5d9af50f097949e5898fdb6a17d0abc78085d6b21322d7d0363212365866adb8');
+  await assert.rejects(runOn({ players: [basePlayer()], zone: ZONE, simulationTimeLimit: 3600e9, guildBuffs: [dojo({ flatBoost: '4' })] }), /number or null/);
 });
 
 test('a missing or non-numeric zone.difficultyTier is an error on the twin', { skip }, async () => {
   for (const zone of [{ zoneHrid: ZONE.zoneHrid }, { ...ZONE, difficultyTier: '1' }]) {
-    await assert.rejects(runOn(true, { players: [basePlayer()], zone, simulationTimeLimit: 3600e9 }), /difficultyTier/);
+    await assert.rejects(runOn({ players: [basePlayer()], zone, simulationTimeLimit: 3600e9 }), /difficultyTier/);
   }
 });
 
@@ -158,9 +159,12 @@ test('js::number matches Number() on tricky JSON values', { skip }, async () => 
   }
 });
 
-/** Run `fn` on the twin or JS under seed 1; returns the error's class and message, and the next seeded draw. */
-async function throwThenDraw(twin, fn) {
-  const b = twin ? nativeBackend() : null;
+// The first draw of a fresh seed-1 stream: what an error that drew nothing leaves next.
+const SEED1_FIRST = 0.6270739405881613;
+
+/** Run `fn` on the native twin under seed 1; returns the error's class and message, and the next seeded draw. */
+async function throwThenDraw(fn) {
+  const b = nativeBackend();
   setTwinBackend(b);
   try {
     return await withSeed(1, async () => {
@@ -171,7 +175,7 @@ async function throwThenDraw(twin, fn) {
     });
   } finally {
     setTwinBackend(null);
-    b?.close();
+    b.close();
   }
 }
 
@@ -179,13 +183,10 @@ test('a mid-run throw leaves the seeded stream where JS leaves it, with the JS e
   const p = basePlayer();
   // Slot 1 is first checked after slot 0's cast, mid-fight; JS then reads a missing dependency.
   p.abilities[1].triggers = [{ dependencyHrid: '/combat_trigger_dependencies/bogus', conditionHrid: '/combat_trigger_conditions/current_hp', comparatorHrid: '/combat_trigger_comparators/greater_than_equal', value: 0 }];
-  const run = () => runSimulation(structuredClone({ players: [p], zone: ZONE, simulationTimeLimit: 3600e9 }));
-  const js = await throwThenDraw(false, run);
-  const tw = await throwThenDraw(true, run);
-  assert.ok(js.drew, 'the JS run must draw before it throws, or this proves nothing');
-  assert.equal(js.kind, TypeError);
+  const tw = await throwThenDraw(() => runSimulation(structuredClone({ players: [p], zone: ZONE, simulationTimeLimit: 3600e9 })));
+  assert.ok(tw.drew, 'the run must draw before it throws, or this proves nothing');
   assert.equal(tw.kind, TypeError);
-  assert.equal(tw.next, js.next);
+  assert.equal(tw.next, 0.6128388606011868); // the JS engine's next draw after the same throw
 });
 
 test('errors before the first draw keep their JS class and leave the stream untouched', { skip }, async () => {
@@ -194,35 +195,20 @@ test('errors before the first draw keep their JS class and leave the stream unto
     [RangeError, () => runGuildTrialSimulation({ players: [basePlayer()], trialHrid: '/guild_combat/swarm', startTier: 105, iterations: 2 })],
   ];
   for (const [kind, fn] of cases) {
-    const js = await throwThenDraw(false, fn);
-    const tw = await throwThenDraw(true, fn);
-    assert.equal(js.kind, kind);
+    const tw = await throwThenDraw(fn);
     assert.equal(tw.kind, kind);
-    assert.equal(tw.next, js.next);
+    assert.equal(tw.drew, false);
+    assert.equal(tw.next, SEED1_FIRST);
   }
 });
 
-test('run limits on a labyrinth job throw the JS RangeError at the same point on the twin (src/worker.js seam)', { skip }, async () => {
-  const CombatSimulator = (await import('../../src/combatsimulator/combatSimulator.js')).default;
-  const Labyrinth = (await import('../../src/combatsimulator/labyrinth.js')).default;
-  const Player = (await import('../../src/combatsimulator/player.js')).default;
+test('run limits on a labyrinth job throw the JS RangeError, before any draw (src/worker.js seam)', { skip }, async () => {
   const labyrinth = { labyrinthHrid: '/monsters/cyclops', roomLevel: 60 };
   const runLimits = { maxRuns: 2, maxRunDurationNs: 600e9 };
-  const run = async () => {
-    const players = [basePlayer()];
-    const b = getTwinBackend();
-    if (b) return runTwin(b, twinRunRequest({ players, labyrinth, simulationTimeLimit: 3600e9, runLimits }));
-    const lab = new Labyrinth(labyrinth.labyrinthHrid, labyrinth.roomLevel, labyrinth.crates);
-    const ps = players.map((d) => Object.assign(Player.createFromDTO(structuredClone(d)), { zoneBuffs: lab.buffs, extraBuffs: [] }));
-    return new CombatSimulator(ps, null, lab).simulate(3600e9, runLimits);
-  };
-  const js = await throwThenDraw(false, run);
-  const tw = await throwThenDraw(true, run);
-  assert.equal(js.kind, RangeError);
-  assert.match(js.message, /run limits apply to dungeons only/);
+  const tw = await throwThenDraw(() => runTwin(getTwinBackend(), twinRunRequest({ players: [basePlayer()], labyrinth, simulationTimeLimit: 3600e9, runLimits })));
   assert.equal(tw.kind, RangeError);
-  assert.equal(tw.message, js.message);
-  assert.equal(tw.next, js.next);
+  assert.equal(tw.message, 'csim simulate(): run limits apply to dungeons only');
+  assert.equal(tw.next, SEED1_FIRST);
 });
 
 test('a refusal only the twin makes kills the seeded stream for the twin', { skip }, async () => {
@@ -245,8 +231,8 @@ test('a chunked trial batch fires onIteration once per iteration, in order, and 
   const spec = { players, trialHrid: '/guild_combat/jellyfish', startTier: 100, trialOptions: { enemyScale: 0.2, durationSeconds: 120 } };
   const { runTrialIterations, TWIN_TRIAL_CHUNK } = await import('../../shared/guildTrialRuns.js');
   const iterations = TWIN_TRIAL_CHUNK + 2;
-  const go = async (twin) => {
-    const b = twin ? nativeBackend() : null;
+  const go = async () => {
+    const b = nativeBackend();
     setTwinBackend(b);
     try {
       const seen = [];
@@ -254,14 +240,12 @@ test('a chunked trial batch fires onIteration once per iteration, in order, and 
       return { seen, d: digest(canonical(summaries)) };
     } finally {
       setTwinBackend(null);
-      b?.close();
+      b.close();
     }
   };
-  const js = await go(false);
-  const tw = await go(true);
-  assert.deepEqual(js.seen, Array.from({ length: iterations }, (_, i) => i + 1));
-  assert.deepEqual(tw.seen, js.seen);
-  assert.equal(tw.d, js.d);
+  const tw = await go();
+  assert.deepEqual(tw.seen, Array.from({ length: iterations }, (_, i) => i + 1));
+  assert.equal(tw.d, 'f281c4f92df342e3d637b8bcb2d50c1c96e4389c117c143004f3a46157707aee'); // the JS loop's summaries
 });
 
 test('the native backend refuses to run when pow differs from Math.pow', { skip }, async (t) => {
@@ -276,21 +260,20 @@ test('the native backend refuses to run when pow differs from Math.pow', { skip 
   }
 });
 
-// preferNative (api/cli.js, SCLIRoster via CSIM_PREFER_NATIVE=1), in a fresh process each time.
+// The default engine (CSIM_ENGINE unset), in a fresh process each time.
 function select(env, prelude = '') {
   const url = new URL('../lib/twin/index.mjs', import.meta.url).href;
-  const src = `${prelude}; const b = await (await import(${JSON.stringify(url)})).selectTwinFromEnv(); console.log(b ? 'twin' : 'js', process.env.CSIM_ENGINE); b?.close?.();`;
-  const env2 = { ...process.env, CSIM_PREFER_NATIVE: '1', ...env };
+  const src = `${prelude}; const b = await (await import(${JSON.stringify(url)})).selectTwinFromEnv(); console.log('twin', process.env.CSIM_ENGINE); b?.close?.();`;
+  const env2 = { ...process.env, ...env };
   for (const [k, v] of Object.entries(env2)) if (v === undefined) delete env2[k];
   const r = spawnSync(process.execPath, ['--input-type=module', '-e', src], { env: env2, encoding: 'utf8' });
   return { out: r.stdout.trim(), err: r.stderr.split('\n').filter((l) => l.startsWith('csim:')) };
 }
 
-test('preferNative picks native, falls back to JS on a pow refusal with one line, and CSIM_ENGINE wins', { skip }, () => {
+test('unset CSIM_ENGINE picks native, falls back to wasm on a pow refusal with one line, and CSIM_ENGINE wins', { skip: (skip || !existsSync(new URL('../../rust/pkg/csim_twin_bg.wasm', import.meta.url))) && 'native or wasm not built' }, () => {
   assert.deepEqual(select({ CSIM_ENGINE: undefined }), { out: 'twin native', err: [] });
-  assert.deepEqual(select({ CSIM_ENGINE: 'js' }), { out: 'js js', err: [] });
   const refused = select({ CSIM_ENGINE: undefined }, 'const pow = Math.pow; Math.pow = (x, y) => pow(x, y) * 2');
-  assert.equal(refused.out, 'js js');
+  assert.equal(refused.out, 'twin wasm');
   assert.equal(refused.err.length, 1);
-  assert.match(refused.err[0], /native engine unavailable .*not bit-identical.*using JS/);
+  assert.match(refused.err[0], /native engine unavailable .*not bit-identical.*using wasm/);
 });

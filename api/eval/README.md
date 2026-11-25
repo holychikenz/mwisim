@@ -7,14 +7,13 @@ difference between them is the whole point:
 |---|---|
 | `fixtures/lab` (`lab-parity.mjs`) | *is the simulator right about the game?* |
 | `fixtures/sim` (`sim-parity.mjs`) | *does one deep result tree replay exactly?* |
-| `fixtures/eval` (this) | *does the engine still behave the same across a whole catalogue, and can we say so about a version from six weeks ago?* |
+| `fixtures/eval` (this) | *does the engine still behave the same across a whole catalogue?* |
 
 ```sh
 cd api
 npm run eval:check                          # 29 cases × 16 seeds, both tiers, ~12 s
 npm run eval:record                         # (re-)record the corpus from this engine
 npm run eval:check -- --only=dungeon-den-600 --tier=strict
-npm run eval:backrun -- --against=dabf8c9   # the same corpus against an older engine
 ```
 
 ## The two tiers, and why they are kept apart
@@ -76,42 +75,25 @@ Any field carrying wall-clock time, a UUID, a process identity, an absolute
 path or a memory address would have to be redacted before hashing, or the hash
 stops being a statement about behaviour. The current engine emits none: the
 only one, `wipeEvents[*].timestamp`, went with `wipeEvents` itself (audit2-5).
-`canonical()` still redacts it, keyed on the containing field, because
-`backrun` loads older engines that emit it.
+`canonical()` still redacts it, keyed on the containing field, as when the
+corpus was recorded.
 
 ## Why the harness duplicates `runSimulation`'s body
 
-`api/eval/engine.mjs` reimplements the ~12-line calling convention rather than
-importing `api/lib/simulator.js`. That file itself drifted across the
-optimisation span being measured, so a back-run that imported the historical
-copy would fold harness changes into the engine comparison, and one that
-imported the current copy against a historical engine would be a version
-mismatch waiting to throw. Either way the answer would stop being a statement
-about the engine.
-
+`api/eval/engine.mjs` reimplements the few-line calling convention (on the
+Rust twin that `CSIM_ENGINE` selects) rather than importing
+`api/lib/simulator.js`, so the corpus is fed no community or guild buffs.
 The price is a duplicate that can silently diverge. It is paid for by one test:
 **`api/tests/evalHarness.test.mjs`, "eval/engine.mjs reproduces runSimulation()
 bit for bit"** — a solo case and a five-player dungeon, asserted to produce the
-identical hash through both paths at HEAD. If that test is deleted or weakened,
+identical hash through both paths. If that test is deleted or weakened,
 this directory becomes a second engine harness that nobody is checking.
 
-## Why `git archive` and not `git worktree`
+## Back-runs (retired)
 
-A worktree is a checkout of the whole repository, `api/` included — and `api/`
-is precisely what must *not* change between the two measurements. It would also
-mean a second `node_modules` and a second loader. `git archive <ref>
-src/combatsimulator | tar -x -C <scratch>/<ref>` extracts ~4.7 MB of engine and
-nothing else, and the current harness loads it.
-
-## The heap-js control
-
-HEAD's engine uses a local heap (`src/combatsimulator/events/minHeap.js`) that
-copies heap-js 2.7.1 comparison for comparison (audit3-16; every hash was
-unchanged). Older engines still import `heap-js`, so `backrun` maps that one
-bare specifier to `api/node_modules/heap-js`, kept as an api devDependency for
-this alone and pinned to 2.7.1 (`bb4d767`). Both engines therefore run the same
-heap algorithm, which isolates engine source; a back-run says nothing about
-whether the bb4d767 dependency bump itself changed anything.
+`eval:backrun` re-ran the corpus against an older engine extracted with
+`git archive <ref> src/combatsimulator`. It retired with the JS engine
+(docs/engine-retirement/PLAN.md, 2d); `records/` keeps its verdicts.
 
 ## What a cross-version hash match does and does not prove
 
@@ -122,8 +104,7 @@ whether the bb4d767 dependency bump itself changed anything.
   where a distribution-preserving reorder reddened 460 of 464 hashes.
 - On a mismatch the verdict escalates to Tier B across all seeds. Agreement
   there makes the change *consistent with* behaviour preservation. That is a
-  weaker claim than Tier A's, and `backrun.mjs` always names the tier its
-  verdict rests on for exactly that reason.
+  weaker claim than Tier A's.
 
 ## Cross-platform
 
@@ -166,7 +147,6 @@ suite that asserts nothing.
 - `cases.mjs` — what runs and at which seeds. Zone cases are `CASES` from
   `../bench/builds.mjs`, imported unchanged; the labyrinth and guild-trial
   cases are declared here because they have no `zone`.
-- `engine.mjs` — `loadEngine(root)`, the engine-agnostic adapter.
+- `engine.mjs` — `loadEngine()`, the calling convention on the twin.
 - `run.mjs` — `record` / `check`, the tolerance arithmetic and the table.
-- `backrun.mjs` — extraction, the data-change guard, and the verdict.
-- `records/` — back-run verdicts, matching `bench/records/`.
+- `records/` — past back-run verdicts, matching `bench/records/`.

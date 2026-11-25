@@ -30,7 +30,7 @@
 // =============================================================================
 
 const { labyrinthCrateDetailMap, combatMonsterDetailMap, actionDetailMap } =
-  await import('../../src/combatsimulator/dataProvider.js');
+  await import('../../shared/dataProvider.js');
 
 /** Room levels the UI offers. Clamped rather than rejected — see normaliseTarget. */
 export const MIN_ROOM_LEVEL = 1;

@@ -117,9 +117,8 @@ async function main() {
     process.exit(1);
   }
 
-  // A local runner: native when it is built and works, JS otherwise; CSIM_ENGINE overrides.
   // Chosen only now, so --help, --list-zones and bad arguments never spawn it or warn.
-  await selectTwinFromEnv({ preferNative: true });
+  await selectTwinFromEnv();
 
   console.log(`\nRunning simulation...`);
   console.log(`  Zone: ${options.zone}`);

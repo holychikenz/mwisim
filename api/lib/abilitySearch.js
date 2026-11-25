@@ -20,7 +20,7 @@
 import { descentWorkload } from './descent.js';
 
 const { abilityDetailMap, abilitySlotsLevelRequirementList } =
-  await import('../../src/combatsimulator/dataProvider.js');
+  await import('../../shared/dataProvider.js');
 
 /** What the tool can vary: each slot by DTO index, and the cast order. */
 export const COORDINATES = ['s0', 's1', 's2', 's3', 's4', 'order'];

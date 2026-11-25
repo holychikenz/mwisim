@@ -1,4 +1,4 @@
-import { aggregateTrialResults } from "./combatsimulator/guildTrialStats";
+import { aggregateTrialResults } from "../shared/guildTrialStats.js";
 import { planShards, mergeSimResults, runDungeonRunsSerial, workerBatchRunner, addRunIdleTime, runZoneRepeats } from "../shared/dungeonRuns.js";
 
 onmessage = async function (event) {

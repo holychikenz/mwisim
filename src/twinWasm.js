@@ -5,7 +5,7 @@
 // No top-level await here: it is statically imported by src/worker.js, whose onmessage must be set before any await.
 // =============================================================================
 
-import * as dataProvider from "./combatsimulator/dataProvider";
+import * as dataProvider from "../shared/dataProvider.js";
 import { TWIN_DATA_NAMES } from "../shared/twinEngine.js";
 
 const pkg = Object.values(import.meta.glob("../rust/pkg/csim_twin.js", { eager: true }))[0];
@@ -34,7 +34,7 @@ export function loadWasmTwin() {
         }
         await mod.default({ module_or_path: wasmUrl });
         // shortcut: each worker re-stringifies the 13 maps (~5 ms of a ~20 ms load, measured in Node); pass raw text or a filtered subset (plan R3) if per-worker start-up on wasm starts to matter.
-        // The live dataProvider maps, so the twin sees what the JS engine in this realm sees.
+        // The live dataProvider maps, so the twin sees what the rest of this realm sees.
         const data = {};
         for (const name of TWIN_DATA_NAMES) data[name] = dataProvider[EXPORT_NAME[name] ?? name];
         mod.load_data(JSON.stringify(data));
@@ -54,6 +54,7 @@ export function loadWasmTwin() {
         };
         return {
             run: async (json, onProgress) => guard(() => mod.run(json, onProgress ?? null)),
+            runSync: (json) => guard(() => mod.run(json, null)),
             itemValues: (character, overrides = "") => guard(() => mod.item_values(clientJson(), character, overrides)),
             enhanceConfig: (character) => guard(() => mod.enhance_config(character)),
             enhanceCalculate: (character, body) => guard(() => mod.enhance_calculate(clientJson(), character, body)),

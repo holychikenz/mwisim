@@ -4,13 +4,13 @@
 //
 // Run from api/:  npm test
 //
-// E1–E7 drive the engine directly: `simulate(limit, { maxRuns, maxRunDurationNs })`.
-// E8–E11 go through api/lib/simulator.js, which splits runs into batches and
-// merges them back with shared/dungeonRuns.js.
+// E1–E7 drive the engine (the twin) directly: one request with
+// `runLimits: { maxRuns, maxRunDurationNs }`. E8–E11 go through
+// api/lib/simulator.js, which splits runs into batches and merges them back with
+// shared/dungeonRuns.js.
 //
-// F1–F6 check that every run starts from the t = 0 state, that nothing of run
-// N+1 is simulated, and that the idle between runs is added once, outside the
-// engine.
+// F4–F6 check that nothing of run N+1 is simulated, and that the idle between
+// runs is added once, outside the engine.
 //
 // All runs are seeded (lib/determinism.mjs), so every number asserted here is
 // a fixed outcome, not a statistical one.
@@ -26,15 +26,9 @@ import { withSeed } from '../lib/determinism.mjs';
 import { loadEngine } from '../eval/engine.mjs';
 import { BUILDS, toCsimPlayer } from '../bench/builds.mjs';
 
-const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
-const SRC = join(ROOT, 'src', 'combatsimulator');
+import { getTwinBackend, runTwin, twinZoneRequest } from '../../shared/twinEngine.js';
 
-const CombatSimulator = (await import(join(SRC, 'combatSimulator.js'))).default;
-const Player = (await import(join(SRC, 'player.js'))).default;
-const Zone = (await import(join(SRC, 'zone.js'))).default;
-const CombatStartEvent = (await import(join(SRC, 'events', 'combatStartEvent.js'))).default;
-const EnemyRespawnEvent = (await import(join(SRC, 'events', 'enemyRespawnEvent.js'))).default;
-const DungeonRunTimeoutEvent = (await import(join(SRC, 'events', 'dungeonRunTimeoutEvent.js'))).default;
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 
 const engine = await loadEngine(ROOT);
 const { itemDetailMap: items, abilityDetailMap: abilityData } = engine.gameData;
@@ -47,18 +41,13 @@ function dtos(builds, level) {
   return builds.map((name, i) => toCsimPlayer(BUILDS[name], { level, index: i + 1, items, abilityData }));
 }
 
+/** One engine run's inputs; `onProgress` may be set before runSeeded. */
 function makeSim(builds, level, zoneHrid = DEN) {
-  const zone = new Zone(zoneHrid, 0);
-  const players = dtos(builds, level).map((dto) => {
-    const p = Player.createFromDTO(structuredClone(dto));
-    p.zoneBuffs = zone.buffs;
-    p.extraBuffs = [];
-    return p;
-  });
-  return new CombatSimulator(players, zone, null, {});
+  return { players: dtos(builds, level), zone: { zoneHrid, difficultyTier: 0 }, onProgress: null };
 }
 
-const runSeeded = (seed, sim, limit, runLimits) => withSeed(seed, () => sim.simulate(limit, runLimits));
+const runSeeded = (seed, sim, limit, runLimits) =>
+  withSeed(seed, () => runTwin(getTwinBackend(), twinZoneRequest({ players: sim.players, zone: sim.zone, simulationTimeLimit: limit, runLimits }), sim.onProgress));
 
 // -- E1–E4: whole runs --------------------------------------------------------
 
@@ -90,71 +79,6 @@ test('E4 the default hour-based path assigns no run-mode key', async () => {
   assert.equal('dungeonsTimedOut' in r, false);
 });
 
-// -- E5: the timeout handler's guards -----------------------------------------
-
-function armed() {
-  const sim = makeSim(['melee'], 600);
-  sim.reset();
-  sim._beginRunMode({ maxRuns: 5, maxRunDurationNs: 60 * ONE_SECOND }, undefined);
-  sim.simulationTime = 100 * ONE_SECOND;
-  sim.dungeonRunStartTime = 40 * ONE_SECOND;
-  sim.allPlayersDead = false;
-  sim.enemies = [{}];
-  sim.zone.encountersKilled = 2;
-  return sim;
-}
-const timeout = (runStart = 40 * ONE_SECOND) => new DungeonRunTimeoutEvent(100 * ONE_SECOND, runStart);
-const queued = (sim, type) => sim.eventQueue.getMatching((e) => e.type === type);
-
-test('E5a a timeout after the boss died, before the next run is booked, is ignored', () => {
-  const sim = armed();
-  sim.enemies = null;
-  sim.zone.encountersKilled = sim.zone.dungeonSpawnInfo.maxWaves + 1;
-  sim.processDungeonRunTimeoutEvent(timeout());
-  assert.equal(queued(sim, CombatStartEvent.type), null);
-  assert.equal(sim.allPlayersDead, false);
-  assert.equal(sim.dungeonsTimedOut, 0);
-});
-
-test('E5b a timeout left over from an earlier run is ignored', () => {
-  const sim = armed();
-  sim.processDungeonRunTimeoutEvent(timeout(5 * ONE_SECOND));
-  assert.equal(queued(sim, CombatStartEvent.type), null);
-  assert.equal(sim.dungeonsTimedOut, 0);
-});
-
-test('E5c a timeout after the party already wiped is ignored', () => {
-  const sim = armed();
-  sim.allPlayersDead = true;
-  sim.processDungeonRunTimeoutEvent(timeout());
-  assert.equal(queued(sim, CombatStartEvent.type), null);
-  assert.equal(sim.dungeonsTimedOut, 0);
-});
-
-test('E5d a live run that times out fails, and the next run starts at once', () => {
-  const sim = armed();
-  sim.eventQueue.addEvent(new EnemyRespawnEvent(sim.simulationTime + 3 * ONE_SECOND));
-  sim.processDungeonRunTimeoutEvent(timeout());
-  const start = queued(sim, CombatStartEvent.type);
-  assert.ok(start, 'a CombatStartEvent is booked');
-  assert.equal(start.time, 100 * ONE_SECOND);
-  assert.equal(sim.zone.dungeonsFailed, 1);
-  assert.equal(sim.zone.encountersKilled, 1);
-  assert.equal(sim.allPlayersDead, false);
-  assert.equal(sim.enemies, null);
-  assert.equal(sim.dungeonsTimedOut, 1);
-  assert.equal(queued(sim, EnemyRespawnEvent.type), null);
-});
-
-test('E5e the timeout that ends run N stops the loop and books nothing more', () => {
-  const sim = armed();
-  sim.zone.dungeonsFailed = 4; // maxRuns is 5
-  sim.processDungeonRunTimeoutEvent(timeout());
-  assert.equal(sim.zone.dungeonsFailed, 5);
-  assert.equal(sim.trialEnded, true);
-  assert.equal(queued(sim, CombatStartEvent.type), null);
-});
-
 // -- E6: bad limits are refused -----------------------------------------------
 
 test('E6 run limits are refused outside a dungeon or when malformed', async () => {
@@ -175,7 +99,7 @@ test('E6 run limits are refused outside a dungeon or when malformed', async () =
 test('E7 run-mode progress counts runs, stays in [0, 1] and never goes back', async () => {
   const sim = makeSim(['melee'], 600);
   const seen = [];
-  sim.addEventListener('progress', (e) => seen.push(e.detail.progress));
+  sim.onProgress = (p) => seen.push(p);
   await runSeeded(2, sim, undefined, { maxRuns: 4, maxRunDurationNs: 3 * ONE_HOUR });
   assert.ok(seen.length > 0);
   for (let i = 0; i < seen.length; i++) {
@@ -265,104 +189,14 @@ test('E11 every key of a run-mode SimResult has a merge rule', async () => {
   assert.deepEqual(missing, []);
 });
 
-// -- F1–F4: every run starts fresh, and the stop check comes first ------------
-//
-// A run's start is the moment its first wave spawns (Zone.getNextWave hands
-// out wave #1). At that moment — before checkTriggers or any attack — every
-// player must look exactly as at t = 0, and the queue must hold only what the
-// t = 0 CombatStartEvent leaves behind, at the same offsets.
+// -- F4–F6: nothing of run N+1, and the idle between runs ----------------------
 
-function unitSnapshot(u) {
-  return {
-    hp: u.combatDetails.currentHitpoints,
-    mp: u.combatDetails.currentManapoints,
-    combatDetails: JSON.stringify(u.combatDetails),
-    buffInstances: Object.keys(u.buffInstances).sort(),
-    combatBuffs: JSON.stringify(Object.entries(u.combatBuffs).sort(([a], [b]) => (a < b ? -1 : 1))),
-    permanentBuffs: JSON.stringify(u.permanentBuffs),
-    food: u.food.map((f) => f?.lastUsed ?? null),
-    drinks: u.drinks.map((d) => d?.lastUsed ?? null),
-    abilities: u.abilities.map((a) => a?.lastUsed ?? null),
-    cc: [u.isStunned, u.isSilenced, u.isBlinded],
-    parked: u.isOutOfMana,
-  };
-}
-
-/** Record players and queue at each run start, wave-1 spawns, and consumable-use times. */
-function instrument(sim) {
-  const starts = [];
-  const uses = [];
-  const zone = sim.zone;
-  const nextWave = zone.getNextWave.bind(zone);
-  zone.getNextWave = () => {
-    const wave = nextWave();
-    if (zone.encountersKilled - 1 === 1) {
-      const now = sim.simulationTime;
-      starts.push({
-        time: now,
-        players: sim.players.map(unitSnapshot),
-        queue: sim.eventQueue.minHeap.heapArray.map((e) => `${e.type}@${e.time - now}`).sort(),
-      });
-    }
-    return wave;
-  };
-  const reset = sim.reset.bind(sim);
-  sim.reset = () => {
-    reset();
-    const sr = sim.simResult;
-    const add = sr.addConsumableUse.bind(sr);
-    sr.addConsumableUse = (unit, consumable) => {
-      uses.push(sim.simulationTime);
-      return add(unit, consumable);
-    };
-  };
-  return { starts, uses };
-}
-
-function assertFreshStarts(starts, n) {
-  assert.equal(starts.length, n, 'one wave-1 spawn per run, none for run N+1');
-  assert.equal(starts[0].time, 0);
-  for (let i = 1; i < starts.length; i++) {
-    assert.deepEqual(starts[i].players, starts[0].players, `run ${i + 1} players start as at t = 0`);
-    assert.deepEqual(starts[i].queue, starts[0].queue, `run ${i + 1} queue starts as at t = 0`);
-  }
-}
-
-test('F1 runs that complete each start from the t = 0 state', async () => {
-  const sim = makeSim(['melee'], 600);
-  const { starts, uses } = instrument(sim);
-  const r = await runSeeded(1, sim, undefined, { maxRuns: 3, maxRunDurationNs: 3 * ONE_HOUR });
+test('F4 nothing of run N+1 happens: no time after the last run', async () => {
+  const r = await runSeeded(1, makeSim(['melee'], 600), undefined, { maxRuns: 3, maxRunDurationNs: 3 * ONE_HOUR });
   assert.equal(r.dungeonsCompleted, 3);
-  assertFreshStarts(starts, 3);
-  assert.ok(uses.length > 0, 'the build does drink its coffees');
-});
-
-test('F2 runs that time out each start from the t = 0 state', async () => {
-  const sim = makeSim(MIXED_PARTY, 600);
-  const { starts } = instrument(sim);
-  const r = await runSeeded(2, sim, undefined, { maxRuns: 3, maxRunDurationNs: 90 * ONE_SECOND });
-  assert.equal(r.dungeonsTimedOut, 3);
-  assertFreshStarts(starts, 3);
-});
-
-test('F3 runs that wipe each start from the t = 0 state', async () => {
-  const sim = makeSim(['bare'], 10);
-  const { starts } = instrument(sim);
-  const r = await runSeeded(1, sim, undefined, { maxRuns: 4, maxRunDurationNs: 3 * ONE_HOUR });
-  assert.equal(r.dungeonsFailed, 4);
-  assertFreshStarts(starts, 4);
-});
-
-test('F4 nothing of run N+1 happens: no wave, no consumable, no time', async () => {
-  const sim = makeSim(['melee'], 600);
-  const { starts, uses } = instrument(sim);
-  const r = await runSeeded(1, sim, undefined, { maxRuns: 3, maxRunDurationNs: 3 * ONE_HOUR });
-  assert.equal(r.dungeonsCompleted, 3);
-  assert.equal(starts.length, 3);
   assert.equal(r.timeSpentAlive.find((e) => e.name === '#1').count, 3);
   // the engine's clock stops at the last boss kill
   assert.equal(r.simulatedTime, r.lastDungeonFinishTime);
-  for (const t of uses) assert.ok(t <= r.lastDungeonFinishTime, `consumable used at ${t} after the last run ended`);
 });
 
 test('F5 the engine carries the idle-gap constants in run mode only', async () => {

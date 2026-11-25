@@ -1,0 +1,414 @@
+// =============================================================================
+// guildTrialStats — pure helpers for guild-trial result plumbing.
+// -----------------------------------------------------------------------------
+// Shared by the browser workers (worker.js / multiWorker.js) and the headless
+// API. No DOM / worker globals so it is unit-testable directly under node.
+//
+//   extractTrialSummary(simResult)      → lightweight per-iteration record
+//   computeTrialRewards(tiers, opts)    → { points, tokensPerEligibleMember, tokensPerParticipant }
+//   aggregateTrialResults(summaries, o) → cross-iteration statistics
+// =============================================================================
+
+// The ladder constants only: importing GuildTrial would load the engine (Monster) for twin-only callers.
+import { TRIAL_START_TIER, TRIAL_TIER_STEP, TRIAL_MAX_TIER } from "./trialLadder.js";
+
+const ONE_SECOND_NS = 1e9;
+
+// Guild-token payout tuning (7/15/2026 "Guild Trials" patch). Kept as named
+// constants so the next balance patch is a one-line change here.
+//   TOKENS_BASE_POINTS_SHARE       — fraction of TOTAL BASE Guild Points every
+//                                     eligible member receives as tokens.
+//   TOKENS_PARTICIPATION_MULTIPLIER — extra payout for members who signed up for
+//                                     at least one trial (participation bonus).
+export const TOKENS_BASE_POINTS_SHARE = 0.5;
+export const TOKENS_PARTICIPATION_MULTIPLIER = 1.5;
+
+/**
+ * Total damage `sourceHrid` dealt TO ENEMIES over the run, summed from the
+ * engine's attack bookkeeping: simResult.attacks[source][target][ability] is a
+ * { [damageValue]: count } histogram ("miss" entries carry no damage). The
+ * source key is always the ORIGINAL attacking unit — auto-attacks, ability
+ * hits, damage-over-time ticks (DoTs record their sourceRef, so they keep
+ * paying a caster who has since died), parry counters, and thorns/retaliation
+ * the unit reflects onto monsters all land under it. Targets in
+ * `playerHridSet` are skipped so only damage to monsters counts (heals and
+ * anything aimed at fellow players never do).
+ *
+ * Exported because api/lib/triggerSearch/score.js scores optimiser candidates
+ * on the same walk. Both callers must agree on what "damage dealt" means, so
+ * there is one implementation rather than two that drift.
+ */
+export function sumDamageToEnemies(attacks, sourceHrid, playerHridSet) {
+    let total = 0;
+    const byTarget = attacks?.[sourceHrid];
+    if (!byTarget) return 0;
+    for (const [targetHrid, byAbility] of Object.entries(byTarget)) {
+        if (playerHridSet.has(targetHrid)) continue; // damage TO enemies only
+        for (const hits of Object.values(byAbility)) {
+            for (const [hit, count] of Object.entries(hits)) {
+                if (hit === "miss") continue;
+                const damage = Number(hit);
+                if (Number.isFinite(damage)) {
+                    total += damage * count;
+                }
+            }
+        }
+    }
+    return total;
+}
+
+/**
+ * Heal sources that are a unit's own upkeep rather than output to the party.
+ *
+ * The board's Healing column measures healing GIVEN to other members, so a
+ * player's own regen tick and their own lifesteal must not count — otherwise
+ * every bruiser posts a healing figure that is not comparable with a real
+ * healer's. Consumables (food/drink) are self-upkeep for the same reason and
+ * are matched by their "/items/" hrid prefix; abilities use "/abilities/".
+ *
+ * The raw simResult.healingDone keeps every source unfiltered — the exclusion
+ * happens only here, at the summary layer, so the decision stays revisable.
+ */
+export const SELF_UPKEEP_SOURCES = new Set(["regen", "lifesteal"]);
+const CONSUMABLE_SOURCE_PREFIX = "/items/";
+
+function isSelfUpkeepSource(source) {
+    return SELF_UPKEEP_SOURCES.has(source) || String(source).startsWith(CONSUMABLE_SOURCE_PREFIX);
+}
+
+/**
+ * Total healing a unit PERFORMED, excluding its own upkeep.
+ *
+ * Sibling of sumDamageToEnemies: same "one implementation, no drift" rationale.
+ * Walks simResult.healingDone, which combatSimulator keys by the HEALER (the
+ * caster/reviver), unlike hitpointsGained which is keyed by the target that
+ * received the healing.
+ */
+export function sumHealingDone(healingDone, healerHrid) {
+    let total = 0;
+    const bySource = healingDone?.[healerHrid];
+    if (!bySource) return 0;
+    for (const [source, amount] of Object.entries(bySource)) {
+        if (isSelfUpkeepSource(source)) continue;
+        const healed = Number(amount);
+        if (Number.isFinite(healed)) {
+            total += healed;
+        }
+    }
+    return total;
+}
+
+/**
+ * Pull the small, serialisable trial fields out of a full SimResult so many
+ * iterations can be shuttled between workers cheaply.
+ */
+export function extractTrialSummary(simResult) {
+    // Per-player total damage dealt to enemies over the whole run (all tiers,
+    // no per-tier/per-ability splits — keep the summary cheap). The roster's
+    // hrids come from simResult.manaUsed, which simulate() populates
+    // unconditionally for EVERY player — so players who dealt no damage still
+    // appear, with 0.
+    const playerHrids = Object.keys(simResult.manaUsed || {});
+    const playerHridSet = new Set(playerHrids);
+    const playerDamageDone = {};
+    for (const hrid of playerHrids) {
+        playerDamageDone[hrid] = sumDamageToEnemies(simResult.attacks, hrid, playerHridSet);
+    }
+
+    // Per-player total healing GIVEN over the whole run, self-upkeep excluded.
+    const playerHealingDone = {};
+    for (const hrid of playerHrids) {
+        playerHealingDone[hrid] = sumHealingDone(simResult.healingDone, hrid);
+    }
+
+    return {
+        maxTierCleared: simResult.trialMaxTierCleared ?? 0,
+        tiersCleared: simResult.trialTiersCleared ?? 0,
+        endReason: simResult.trialEndReason ?? "unknown", // "wipe" | "timeout" | "completed"
+        endTime: simResult.trialEndTime ?? simResult.simulatedTime ?? 0,
+        // Tier in progress (or just cleared, for "completed") when the run
+        // ended, and the fraction (0..1) of that tier's encounter TOTAL max HP
+        // removed by then. "completed" ⇒ 1.0; a timeout during the 3 s respawn
+        // gap reports the never-spawned NEXT tier with 0 progress.
+        finalTier: simResult.trialCurrentTier ?? 0,
+        finalTierHpRemovedFrac: simResult.trialFinalTierHpRemovedFrac ?? 0,
+        // { hrid: totalDamageDealtToEnemies } — endTime is the DPS denominator.
+        playerDamageDone,
+        // { hrid: totalHealingGiven } — self-upkeep sources already excluded.
+        playerHealingDone,
+        tierTimes: simResult.trialTierTimes ?? {}, // { tier: nsSpent }
+        playerDeaths: simResult.trialPlayerDeaths ?? {}, // { hrid: [tier, ...] }
+    };
+}
+
+/**
+ * Rewards for clearing `tiersCleared` tiers.
+ *   Combat points  = 400 (first tier) + 200 × (tiersCleared - 1)  [base Guild Points]
+ *   points         = basePoints × (1 + buildersHallBonus)         [Builders' Hall boost]
+ *
+ * Guild-token payout (7/15/2026 "Guild Trials" patch): tokens are now granted
+ * EQUALLY to every eligible member rather than scaling with each member's own
+ * ladder progress. Every eligible member receives tokens equal to
+ * TOKENS_BASE_POINTS_SHARE (50%) of the TOTAL BASE Guild Points earned
+ * (pre-Builders'-Hall), increased by the Treasury bonus. Members who signed up
+ * for at least one trial receive an ADDITIONAL payout via
+ * TOKENS_PARTICIPATION_MULTIPLIER (×1.5) as a participation bonus.
+ *   tokensPerEligibleMember = TOKENS_BASE_POINTS_SHARE × basePoints × (1 + treasuryBonus)
+ *   tokensPerParticipant    = tokensPerEligibleMember × TOKENS_PARTICIPATION_MULTIPLIER
+ * An unfinished tier pays up to 50% of its reward, proportional to HP removed
+ * (2026-08-14 rebalance), including an attempt on the first tier.
+ *
+ * The trial is a single weekly attempt with no re-clear of any tier (the run
+ * completes when the cap tier 300 is cleared), so tiersCleared is always the
+ * number of distinct tiers beaten.
+ */
+export function computeTrialRewards(tiersCleared, {
+    buildersHallBonus = 0, treasuryBonus = 0, finalTierHpRemovedFrac = 0,
+} = {}) {
+    const cleared = Math.max(0, Number(tiersCleared) || 0);
+    const progress = Number.isFinite(finalTierHpRemovedFrac)
+        ? Math.max(0, Math.min(1, finalTierHpRemovedFrac)) : 0;
+    const basePoints = (cleared > 0 ? 400 + 200 * (cleared - 1) : 0)
+        + 0.5 * progress * (cleared > 0 ? 200 : 400);
+    if (basePoints === 0) {
+        return { points: 0, tokensPerEligibleMember: 0, tokensPerParticipant: 0 };
+    }
+    const tokensPerEligibleMember = TOKENS_BASE_POINTS_SHARE * basePoints * (1 + treasuryBonus);
+    return {
+        points: basePoints * (1 + buildersHallBonus),
+        tokensPerEligibleMember,
+        tokensPerParticipant: tokensPerEligibleMember * TOKENS_PARTICIPATION_MULTIPLIER,
+    };
+}
+
+/**
+ * Aggregate per-iteration summaries into trial statistics.
+ * @param {Array} summaries  from extractTrialSummary
+ * @param {object} opts { startTier?, buildersHallBonus?, treasuryBonus? }
+ */
+export function aggregateTrialResults(summaries, opts = {}) {
+    const n = summaries.length;
+    const startTier = opts.startTier ?? TRIAL_START_TIER;
+    const step = TRIAL_TIER_STEP;
+    const cap = TRIAL_MAX_TIER;
+
+    if (n === 0) {
+        return {
+            iterations: 0,
+            startTier,
+            tierStep: step,
+            maxTierCap: cap,
+            perTierClearProbability: {},
+            maxTierDistribution: {},
+            maxTierDistributionPct: {},
+            avgTimePerTierMs: {},
+            expectedMaxTierCleared: 0,
+            expectedTiersCleared: 0,
+            wipeRate: 0,
+            timeoutRate: 0,
+            completedRate: 0,
+            deathsByTier: {},
+            endedAtTierCount: {},
+            avgFinalTierHpRemoved: {},
+            avgPlayerDps: {},
+            avgPlayerDamage: {},
+            avgPlayerHealing: {},
+            avgPartyDps: 0,
+            expectedGuildPoints: 0,
+            expectedTokensPerEligibleMember: 0,
+            expectedTokensPerParticipant: 0,
+        };
+    }
+
+    const highestAttempted = summaries.reduce(
+        (m, s) => Math.max(m, s.maxTierCleared || 0, (s.tierTimes && lastTierKey(s.tierTimes)) || 0),
+        startTier
+    );
+
+    const tiers = [];
+    for (let t = startTier; t <= Math.min(highestAttempted, cap); t += step) tiers.push(t);
+
+    const perTierClearProbability = {};
+    const maxTierDistribution = {};
+    const maxTierDistributionPct = {};
+    const tierTimeSum = {};
+    const tierTimeCount = {};
+    const deathsByTier = {};
+    // Bucketed by finalTier (the tier the run ENDED at — one step past the
+    // last cleared tier, so distinct from maxTierDistribution's buckets).
+    const endedAtTierCount = {};
+    const finalTierHpRemovedSum = {};
+    // Per-player and party DPS: each iteration contributes
+    // damage / endTimeSeconds (0 when endTime is 0), averaged over ALL n
+    // iterations — a player absent from an iteration contributes 0 to it.
+    const playerDpsSum = {};
+    let partyDpsSum = 0;
+    // Means of per-iteration TOTALS, which is a different quantity from the
+    // rate means above: a mean of damage/duration cannot be turned back into a
+    // total by multiplying by the mean duration, because duration and damage
+    // correlate across iterations (Jensen's inequality). These sums are
+    // therefore accumulated independently, with no duration guard — a
+    // degenerate short run still contributes its real total.
+    const playerDamageSum = {};
+    const playerHealingSum = {};
+
+    // Ensure the "0" (wiped on first tier, cleared nothing) bucket exists.
+    maxTierDistribution[0] = 0;
+
+    let wipes = 0;
+    let timeouts = 0;
+    let completions = 0; // cleared the cap tier (300) — run "completed"
+    let sumMaxTier = 0;
+    let sumTiersCleared = 0;
+    let sumPoints = 0;
+    let sumTokensEligible = 0;
+    let sumTokens = 0;
+
+    for (const s of summaries) {
+        const maxT = s.maxTierCleared || 0;
+        sumMaxTier += maxT;
+        sumTiersCleared += s.tiersCleared || 0;
+
+        maxTierDistribution[maxT] = (maxTierDistribution[maxT] || 0) + 1;
+
+        if (s.endReason === "wipe") wipes++;
+        else if (s.endReason === "timeout") timeouts++;
+        else if (s.endReason === "completed") completions++;
+
+        for (const t of tiers) {
+            // Monotonic ladder: tier t was cleared iff maxTierCleared >= t.
+            if (maxT >= t) {
+                perTierClearProbability[t] = (perTierClearProbability[t] || 0) + 1;
+            }
+        }
+
+        for (const [tierKey, ns] of Object.entries(s.tierTimes || {})) {
+            tierTimeSum[tierKey] = (tierTimeSum[tierKey] || 0) + ns;
+            tierTimeCount[tierKey] = (tierTimeCount[tierKey] || 0) + 1;
+        }
+
+        for (const tierList of Object.values(s.playerDeaths || {})) {
+            for (const tier of tierList) {
+                deathsByTier[tier] = (deathsByTier[tier] || 0) + 1;
+            }
+        }
+
+        // "How close did we get" progress on the tier each run ended at.
+        const finalTier = s.finalTier ?? 0;
+        endedAtTierCount[finalTier] = (endedAtTierCount[finalTier] || 0) + 1;
+        finalTierHpRemovedSum[finalTier] =
+            (finalTierHpRemovedSum[finalTier] || 0) + (s.finalTierHpRemovedFrac || 0);
+
+        // Per-player / party DPS contribution for this iteration. endTime 0
+        // (degenerate run) contributes 0 rather than dividing by zero.
+        const endSeconds = (s.endTime || 0) / ONE_SECOND_NS;
+        if (endSeconds > 0 && s.playerDamageDone) {
+            let partyDamage = 0;
+            for (const [hrid, damage] of Object.entries(s.playerDamageDone)) {
+                playerDpsSum[hrid] = (playerDpsSum[hrid] || 0) + (damage || 0) / endSeconds;
+                partyDamage += damage || 0;
+            }
+            partyDpsSum += partyDamage / endSeconds;
+        }
+
+        // Totals, accumulated regardless of duration (see note above).
+        for (const [hrid, damage] of Object.entries(s.playerDamageDone || {})) {
+            playerDamageSum[hrid] = (playerDamageSum[hrid] || 0) + (damage || 0);
+        }
+        for (const [hrid, healing] of Object.entries(s.playerHealingDone || {})) {
+            playerHealingSum[hrid] = (playerHealingSum[hrid] || 0) + (healing || 0);
+        }
+
+        // Rewards are paid per tier cleared. No tier is ever re-cleared (the
+        // run completes on clearing the cap), so deriving the count from the
+        // max tier reached is exact — and robust even if a summary's
+        // tiersCleared field were missing.
+        const distinctTiersCleared = maxT >= startTier ? (maxT - startTier) / step + 1 : 0;
+        const rw = computeTrialRewards(distinctTiersCleared, {
+            ...opts,
+            // Completed cap-tier progress belongs to the tier already paid.
+            finalTierHpRemovedFrac: s.endReason === "completed"
+                ? 0 : (s.finalTierHpRemovedFrac ?? 0),
+        });
+        sumPoints += rw.points;
+        sumTokensEligible += rw.tokensPerEligibleMember;
+        sumTokens += rw.tokensPerParticipant;
+    }
+
+    for (const t of tiers) {
+        perTierClearProbability[t] = (perTierClearProbability[t] || 0) / n;
+    }
+    for (const [k, c] of Object.entries(maxTierDistribution)) {
+        maxTierDistributionPct[k] = c / n;
+    }
+
+    const avgTimePerTierMs = {};
+    for (const [k, sum] of Object.entries(tierTimeSum)) {
+        avgTimePerTierMs[k] = sum / tierTimeCount[k] / (ONE_SECOND_NS / 1000);
+    }
+
+    // Mean finalTierHpRemovedFrac over the runs that ENDED at each tier.
+    const avgFinalTierHpRemoved = {};
+    for (const [k, sum] of Object.entries(finalTierHpRemovedSum)) {
+        avgFinalTierHpRemoved[k] = sum / endedAtTierCount[k];
+    }
+
+    // Mean per-iteration DPS across ALL n iterations.
+    const avgPlayerDps = {};
+    for (const [hrid, sum] of Object.entries(playerDpsSum)) {
+        avgPlayerDps[hrid] = sum / n;
+    }
+
+    // Mean per-iteration TOTAL damage / healing across ALL n iterations.
+    const avgPlayerDamage = {};
+    for (const [hrid, sum] of Object.entries(playerDamageSum)) {
+        avgPlayerDamage[hrid] = sum / n;
+    }
+    const avgPlayerHealing = {};
+    for (const [hrid, sum] of Object.entries(playerHealingSum)) {
+        avgPlayerHealing[hrid] = sum / n;
+    }
+
+    return {
+        iterations: n,
+        startTier,
+        tierStep: step,
+        maxTierCap: cap,
+        perTierClearProbability,
+        maxTierDistribution,
+        maxTierDistributionPct,
+        avgTimePerTierMs,
+        expectedMaxTierCleared: sumMaxTier / n,
+        expectedTiersCleared: sumTiersCleared / n,
+        // End-reason rates; wipeRate + timeoutRate + completedRate ≈ 1.
+        wipeRate: wipes / n,
+        timeoutRate: timeouts / n,
+        completedRate: completions / n,
+        deathsByTier,
+        // Runs that ENDED at each tier (≠ maxTierDistribution, which buckets
+        // by highest tier CLEARED), and mean final-tier HP progress per bucket.
+        endedAtTierCount,
+        avgFinalTierHpRemoved,
+        // Who is (not) contributing: mean over iterations of each player's
+        // total damage-to-enemies / run duration, and the party-wide total.
+        avgPlayerDps,
+        // Means of per-iteration TOTALS — comparable with the real board's
+        // Damage/Healing columns, which are totals over the whole trial.
+        // NOT reconstructible from avgPlayerDps × mean duration.
+        avgPlayerDamage,
+        avgPlayerHealing,
+        avgPartyDps: partyDpsSum / n,
+        expectedGuildPoints: sumPoints / n,
+        expectedTokensPerEligibleMember: sumTokensEligible / n,
+        expectedTokensPerParticipant: sumTokens / n,
+    };
+}
+
+function lastTierKey(tierTimes) {
+    let max = 0;
+    for (const k of Object.keys(tierTimes)) {
+        const v = Number(k);
+        if (v > max) max = v;
+    }
+    return max;
+}

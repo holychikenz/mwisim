@@ -32,7 +32,7 @@ import {
 } from '../../ui/src/utils/consumableCosts.js';
 import { formatNetSeconds } from '../../ui/src/utils/triggerOptimizer.js';
 
-const { itemDetailMap, actionDetailMap } = await import('../../src/combatsimulator/dataProvider.js');
+const { itemDetailMap, actionDetailMap } = await import('../../shared/dataProvider.js');
 const CLASS = consumableClassHrids(itemDetailMap, actionDetailMap);
 
 /** One player, one hour, `kills` gummy bears (sugar 1 × 20-100, five gummies 0.5 × 1), 120 donuts eaten. */

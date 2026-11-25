@@ -1,50 +1,62 @@
 // =============================================================================
 // selectTwinFromEnv — CSIM_ENGINE picks the Node combat engine:
-//   unset | js   the JS engine (default); nothing is imported
+//   unset        native when it is built and passes the pow guard, else wasm (the default)
 //   native       the Rust twin as a child process (./build.sh rust)
 //   wasm         the Rust twin as wasm (./build.sh wasm)
-// Registers the backend in shared/twinEngine.js and returns it (null for JS).
+// Anything else (including the retired `js`) throws.
+// Registers the backend in shared/twinEngine.js and returns it.
 //
-// preferNative (local runners: api/cli.js; or CSIM_PREFER_NATIVE=1) makes an
-// UNSET CSIM_ENGINE mean native when it works: built, spawns, and passes the
-// pow guard. Otherwise one stderr line and JS. An explicit CSIM_ENGINE always
-// wins. The outcome is written back to CSIM_ENGINE, so worker threads and
-// children started later inherit it. The decision is per realm: a caller with
-// worker threads should decide on its main thread and set CSIM_ENGINE before
-// creating any (SCLIRoster's optimizer/src/csim.js does), or each worker
-// spawns, checks and prints on its own.
+// An unset CSIM_ENGINE is decided once per realm and written back, so worker
+// threads and children started later inherit it. A built native that fails its
+// pow guard prints one stderr line and falls back to wasm. A caller with worker
+// threads should decide on its main thread and set CSIM_ENGINE before creating
+// any (SCLIRoster's optimizer/src/csim.js does), or each worker decides alone.
+//
+// The wasm build (./build.sh wasm) is required even when native runs the
+// simulations: api/lib/unitDetails.js (trigger bounds, lab stats) is sync and
+// reads player/monster stats from wasm only.
 // =============================================================================
 
+import { existsSync } from 'node:fs';
 import { setTwinBackend, getTwinBackend } from '../../../shared/twinEngine.js';
 
-let selected = false;
-
 async function preferredNative() {
+  const { nativeBackend, NATIVE_BIN } = await import('./native.mjs');
+  if (!existsSync(NATIVE_BIN)) return null;
   let b = null;
   try {
-    b = (await import('./native.mjs')).nativeBackend();
+    b = nativeBackend();
     await b.check();
-    process.env.CSIM_ENGINE = 'native';
     return b;
   } catch (err) {
     b?.close();
-    process.env.CSIM_ENGINE = 'js';
-    console.error(`csim: native engine unavailable (${err?.message ?? err}); using JS (fix: ./build.sh rust in csim; CSIM_ENGINE=js silences this)`);
+    console.error(`csim: native engine unavailable (${err?.message ?? err}); using wasm (fix: ./build.sh rust in csim; CSIM_ENGINE=wasm silences this)`);
     return null;
   }
 }
 
-export async function selectTwinFromEnv({ preferNative = process.env.CSIM_PREFER_NATIVE === '1' } = {}) {
-  // The implicit JS default (CSIM_ENGINE still unset) is not final: a later preferNative call
-  // may still pick native, so api/cli.js can decide after simulator.js's import-time call.
-  if (selected && !(preferNative && !process.env.CSIM_ENGINE)) return getTwinBackend();
-  const name = process.env.CSIM_ENGINE || (preferNative ? 'prefer-native' : 'js');
+// One selection per realm, shared by concurrent first callers (no second spawn, no orphaned child).
+let selecting = null;
+
+export function selectTwinFromEnv() {
+  // A backend registered by the caller (setTwinBackend: twin-parity, tests) wins.
+  if (!selecting && getTwinBackend()) return Promise.resolve(getTwinBackend());
+  selecting ??= select();
+  selecting.catch(() => { selecting = null; });
+  return selecting;
+}
+
+async function select() {
+  const name = process.env.CSIM_ENGINE || 'auto';
   let b = null;
-  if (name === 'prefer-native') b = await preferredNative();
-  else if (name === 'native') b = (await import('./native.mjs')).nativeBackend();
+  if (name === 'auto') {
+    b = await preferredNative();
+    process.env.CSIM_ENGINE = b ? 'native' : 'wasm';
+    b ??= await (await import('./wasm.mjs')).wasmBackend();
+  } else if (name === 'native') b = (await import('./native.mjs')).nativeBackend();
   else if (name === 'wasm') b = await (await import('./wasm.mjs')).wasmBackend();
-  else if (name !== 'js') throw new Error(`CSIM_ENGINE must be js, native or wasm (got "${name}")`);
+  else if (name === 'js') throw new Error('CSIM_ENGINE=js: the JS combat engine was removed; use native or wasm (or leave CSIM_ENGINE unset)');
+  else throw new Error(`CSIM_ENGINE must be native or wasm (got "${name}")`);
   setTwinBackend(b);
-  selected = true;
   return b;
 }

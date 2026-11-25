@@ -1,21 +1,14 @@
 // =============================================================================
-// guildTrialRuns — the guild-trial iteration loop (build players → GuildTrial →
-// simulate → summary), shared by the browser shard worker (src/worker.js
-// start_guild_trial) and the headless API (api/lib/simulator.js
-// runGuildTrialSimulation).
+// guildTrialRuns — the guild-trial iteration loop (twin requests → summaries),
+// shared by the browser shard worker (src/worker.js start_guild_trial) and the
+// headless API (api/lib/simulator.js runGuildTrialSimulation). Party buffs and
+// each DTO's own extraBuffs travel separately in the request; the twin appends
+// the DTO's after the party's, per member.
 // =============================================================================
 
-import { extractTrialSummary } from '../src/combatsimulator/guildTrialStats.js';
-import { TRIAL_START_TIER } from '../src/combatsimulator/trialLadder.js';
+import { extractTrialSummary } from './guildTrialStats.js';
+import { TRIAL_START_TIER } from './trialLadder.js';
 import { getTwinBackend, runTwin, twinTrialRequest } from './twinEngine.js';
-
-// The JS engine, loaded on its first JS-path call only: a twin caller never loads it.
-let jsEngine = null;
-const loadJsEngine = () => (jsEngine ??= Promise.all([
-  import('../src/combatsimulator/combatSimulator.js'),
-  import('../src/combatsimulator/player.js'),
-  import('../src/combatsimulator/guildTrial.js'),
-]).then(([c, p, g]) => ({ CombatSimulator: c.default, Player: p.default, GuildTrial: g.default })));
 
 /** Iterations per twin request: bounds the full SimResults (~118 KB each) held at once. */
 export const TWIN_TRIAL_CHUNK = 32;
@@ -47,37 +40,18 @@ export async function runTrialIterations({
 }) {
   const summaries = [];
   const twin = getTwinBackend();
-  if (twin) {
-    // Batch requests of at most TWIN_TRIAL_CHUNK iterations, so at most that many full
-    // SimResults are alive at once. runTwin threads the seeded stream from one request into
-    // the next, so the chunks draw exactly what one batch (and the JS loop) would. The twin's
-    // progress counts completed iterations, so onIteration fires as each finishes (and
-    // before a mid-chunk error).
-    let done = 0;
-    const fire = (n) => { for (; done < n; done++) onIteration?.(done + 1); }; // not `?.(++done)`: an absent callback skips its arguments
-    for (let start = 0; start < iterations; start += TWIN_TRIAL_CHUNK) {
-      const n = Math.min(TWIN_TRIAL_CHUNK, Math.ceil(iterations - start)); // ceil: the JS loop runs ceil(10.5) = 11; the twin takes only integers
-      const simResults = await runTwin(twin, twinTrialRequest({ players: playersData, partyBuffs, trialHrid, startTier, participantCount, trialOptions, iterations: n }), (k) => fire(start + k));
-      fire(start + simResults.length); // backends without progress
-      for (const r of simResults) summaries.push(extractTrialSummary(r));
-    }
-    return summaries;
-  }
-  const { CombatSimulator, Player, GuildTrial } = await loadJsEngine();
-  for (let it = 0; it < iterations; it++) {
-    const players = playersData.map((dto) => {
-      const p = Player.createFromDTO(structuredClone(dto));
-      p.zoneBuffs = []; // no labyrinth crates in trials
-      // `Player.createFromDTO` ignores `extraBuffs`, so it reaches this line
-      // only via the DTO itself; a DTO without it gets the party buffs alone.
-      p.extraBuffs = partyBuffs.concat(dto.extraBuffs || []);
-      return p;
-    });
-    const guildTrial = new GuildTrial(trialHrid, startTier, participantCount ?? players.length, trialOptions);
-    const combatSimulator = new CombatSimulator(players, null, null, { guildTrial });
-    const simResult = await combatSimulator.simulate(GuildTrial.TRIAL_DURATION_NS);
-    summaries.push(extractTrialSummary(simResult));
-    onIteration?.(it + 1);
+  // Batch requests of at most TWIN_TRIAL_CHUNK iterations, so at most that many full
+  // SimResults are alive at once. runTwin threads the seeded stream from one request into
+  // the next, so the chunks draw exactly what one batch would. The twin's
+  // progress counts completed iterations, so onIteration fires as each finishes (and
+  // before a mid-chunk error).
+  let done = 0;
+  const fire = (n) => { for (; done < n; done++) onIteration?.(done + 1); }; // not `?.(++done)`: an absent callback skips its arguments
+  for (let start = 0; start < iterations; start += TWIN_TRIAL_CHUNK) {
+    const n = Math.min(TWIN_TRIAL_CHUNK, Math.ceil(iterations - start)); // ceil: a fractional count (10.5) runs 11, as the old loop did; the twin takes only integers
+    const simResults = await runTwin(twin, twinTrialRequest({ players: playersData, partyBuffs, trialHrid, startTier, participantCount, trialOptions, iterations: n }), (k) => fire(start + k));
+    fire(start + simResults.length); // backends without progress
+    for (const r of simResults) summaries.push(extractTrialSummary(r));
   }
   return summaries;
 }

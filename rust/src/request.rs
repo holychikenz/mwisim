@@ -183,6 +183,34 @@ pub struct Request {
     pub trace: Option<TraceReq>,
 }
 
+/// `player_details` / `monster_details`: derived stats only, no simulation.
+#[derive(Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct DetailsReq {
+    /// Raw, so one malformed DTO is a per-entry error, not a refused request.
+    #[serde(default)]
+    pub players: Vec<Value>,
+    #[serde(default)]
+    pub party_buffs: Vec<RawBuff>,
+    #[serde(default)]
+    pub zone_buffs: Vec<RawBuff>,
+    #[serde(default)]
+    pub monsters: Vec<MonsterReq>,
+    /// Players only: `createFromDTO(dto); updateCombatDetails()` alone (no buffs, no reset).
+    #[serde(default)]
+    pub bare: bool,
+}
+
+#[derive(Deserialize, Clone, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct MonsterReq {
+    pub hrid: String,
+    #[serde(default)]
+    pub difficulty_tier: f64,
+    #[serde(default)]
+    pub room_level: f64,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

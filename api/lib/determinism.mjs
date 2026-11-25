@@ -40,10 +40,9 @@ export async function withSeed(seed, fn) {
 
 // ---- canonical serialisation -----------------------------------------------
 
-// Fields older engines emit and the current one no longer does (audit2-5,
-// audit2-17). eval/backrun.mjs still loads those engines, so they are dropped
-// before hashing; otherwise every pre-audit2 ref mismatches on their presence
-// alone (wipeEvents also carried a wall-clock timestamp).
+// Fields older engines emitted and the current one does not (audit2-5,
+// audit2-17). They are dropped before hashing, as when the recorded digests
+// were made (wipeEvents also carried a wall-clock timestamp).
 const DROPPED_KEYS = new Set(['wipeEvents', 'timeSeriesData']);
 
 // Key-sorted, with the JSON-hostile values the engine can produce spelled out

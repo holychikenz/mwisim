@@ -666,7 +666,7 @@ impl Unit {
 const STYLE_NAMES: [&str; 5] = ["stab", "slash", "smash", "ranged", "magic"];
 
 /// `structuredClone(unit.combatDetails)` with the JS field names.
-fn combat_details_j(cd: &CombatDetails) -> J {
+pub fn combat_details_j(cd: &CombatDetails) -> J {
     let mut o: Vec<(String, J)> = LEVEL_NAMES.iter().zip(cd.levels.iter()).map(|(k, x)| (format!("{k}Level"), J::Num(*x))).collect();
     o.push(("maxHitpoints".into(), J::Num(cd.max_hitpoints)));
     o.push(("currentHitpoints".into(), J::Num(cd.current_hitpoints)));
