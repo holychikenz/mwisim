@@ -1,5 +1,5 @@
 {
-  "//": "Engine-semantics lists (engine-retirement G9): the one source for tools/gen*.mjs, which used to parse them out of the JS engine. api/tests/engineTables.test.mjs holds them equal to the JS engine while it exists.",
+  "//": "Engine-semantics lists (engine-retirement G9): the one source for tools/gen*.mjs (rust/src/generated.rs), which used to parse them out of the retired JS engine.",
   "EQUIPMENT_COMBAT_STATS": [
     "stabAccuracy",
     "slashAccuracy",

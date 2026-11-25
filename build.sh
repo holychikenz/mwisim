@@ -3,7 +3,7 @@
 # build.sh — every build in this repository, in one place.
 #
 # Two build products live here and each has its own toolchain:
-#   1. tools/gen*.mjs -> src/combatsimulator/generated/*.js  (code generation)
+#   1. tools/genRustTables.mjs -> rust/src/generated.rs  (code generation)
 #   2. vite (ui/)     -> ui/dist/                            (React UI)
 #      `ui` first rebuilds the wasm twin (rust/pkg/) when wasm-pack is on PATH,
 #      and fails if that build fails; without wasm-pack it warns and bundles rust/pkg as is.
@@ -17,15 +17,15 @@
 # Usage:  ./build.sh [target ...]
 #   (no target)  same as: install gen ui
 #   install      npm ci/install in ui/ and api/
-#   gen          regenerate src/combatsimulator/generated/*
+#   gen          regenerate rust/src/generated.rs
 #   ui           vite build      -> ui/dist/ (rebuilds rust/pkg first when wasm-pack is on PATH, else warns)
 #   lint         eslint in ui/
 #   test         api unit tests
 #   check        api test + sim:check + eval:check + twin-quick (what CI runs)
 #   all          everything above
 #   rust         cargo build + test of the Rust twin (rust/) and test of rust/crates/mwi-econ; needs a Rust toolchain
-#   wasm         wasm-pack build of the twin -> rust/pkg/ (CSIM_ENGINE=wasm, UI engine toggle)
-#   twin         twin:check — JS and the Rust twin against the frozen goldens (fixtures/twin/), bit for bit
+#   wasm         wasm-pack build of the twin -> rust/pkg/ (CSIM_ENGINE=wasm, and the UI's engine)
+#   twin         twin:check — the Rust twin against the frozen goldens (fixtures/twin/), bit for bit
 #                (native, plus wasm when rust/pkg/ is built)
 #   twin-quick   the fast twin subset in `check`: selftest + check --seeds=2;
 #                rebuilds native, and wasm when wasm-pack is on PATH (else native only);
@@ -57,15 +57,12 @@ install_deps() {
 t_install() { install_deps ui; install_deps api; }
 
 t_gen() {
-  say "generate: src/combatsimulator/generated"
-  for g in tools/gen*.mjs; do
-    echo "  - $g"
-    node "$g"
-  done
+  say "generate: rust/src/generated.rs"
+  node tools/genRustTables.mjs
 }
 
 t_ui() {
-  # Never bundle a stale rust/pkg (the glue's exports must match the JS); without wasm-pack, build without the engine.
+  # Never bundle a stale rust/pkg (the glue's exports must match the JS that calls them); without wasm-pack, build without the engine.
   if command -v wasm-pack >/dev/null; then
     say "wasm-pack (rust/ -> rust/pkg/)"
     # Explicit `if !`: set -e does not fire inside a function called from a condition.
@@ -96,7 +93,7 @@ t_twin() {
   local engines; engines="$(twin_engines)"
   say "api twin:check (${engines})"
   # `|| exit 1`: a loop's status is its last iteration's, so a native failure would hide behind a passing wasm.
-  (cd api && for e in ${engines//,/ }; do npm run twin:check -- selftest --engine="$e" || exit 1; done && npm run twin:check -- check --engines="js,$engines")
+  (cd api && for e in ${engines//,/ }; do npm run twin:check -- selftest --engine="$e" || exit 1; done && npm run twin:check -- check --engines="$engines")
 }
 
 # The engines twin-quick and twin run: native, plus wasm when rust/pkg/ is built.
@@ -119,7 +116,7 @@ t_twin_quick() {
   fi
   say "twin-quick (${engines})"
   (cd api && for e in ${engines//,/ }; do npm run --silent twin:check -- selftest --engine="$e" || exit 1; done \
-    && npm run --silent twin:check -- check --engines="js,$engines" --seeds=2 | grep -v '^  MATCH ')
+    && npm run --silent twin:check -- check --engines="$engines" --seeds=2 | grep -v '^  MATCH ')
 }
 
 t_clean() { say "clean"; rm -rf ui/dist; }

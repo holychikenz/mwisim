@@ -1,51 +1,10 @@
-#!/usr/bin/env node
 // =============================================================================
-// Generates src/combatsimulator/generated/statSchema.js — straight-line copy
-// routines over the combat-stat block, compiled from the role lists the engine
-// declares.
-//
-// WHY. Measured on node 26.8.2, a keyed store `obj[nameString] = v` costs about
-// 21.5 ns once the loop touches more than one name: V8's keyed inline cache
-// goes megamorphic and stays there, and the cost is flat per access however
-// many names follow. The same store written as `obj.stabAccuracy = v` costs
-// about 0.35 ns. The engine performs 844 458 such keyed accesses per simulated
-// dungeon hour, in two loops — player.js's equipment-total copy (70 names) and
-// monster.js's zero-fill (63) — which is 18.2 ms of a 132 ms hour. Compiling
-// those two loops into straight-line field code is the same work, the same
-// values, in the same order, for 0.3 ms.
-//
-// WHY GENERATED, NOT TYPED. The lists are 70 and 63 names long and this
-// codebase has already had a hand-maintained stat list silently corrupted once
-// — a scrape whose character class dropped the two DIGIT-carrying names
-// (hpRegenPer10, mpRegenPer10) and moved kills/hr by 2%. Typing the same 133
-// names out a second time, by hand, in a second place, is how that happens
-// again. So: read the lists the engine already declares, compile them, commit
-// the output, and let api/tests/statSchema.test.mjs re-run this generator and
-// compare BYTE FOR BYTE. That test is what makes generation safe.
-//
-// Three deliberate choices:
-//
-//  * The role lists are THE ENGINE'S OWN (tools/engineTables.json since G9), not re-derived from the
-//    game data. That was tried first and it is wrong: five names in
-//    EQUIPMENT_COMBAT_STATS (combatDropQuantity, elementalThorns,
-//    physicalAmplify, physicalThorns, retaliation) are granted by no item in
-//    itemDetailMap, and three numeric item stats (attackInterval, foodSlots,
-//    drinkSlots) are deliberately absent because the engine sources them from
-//    the weapon and the pouch instead. The lists encode engine semantics, not
-//    data. Compiling them keeps the generated code identical to the loop it
-//    replaces BY CONSTRUCTION; deriving them would have changed behaviour.
-//
-//  * The extractor's pattern is [A-Za-z0-9_]+ and DIGITS ARE IN THE CLASS.
-//    extractList is exported so the test can prove that against a synthetic
-//    digit-bearing name rather than anyone eyeballing the regex.
-//
-//  * Names are emitted in SOURCE ORDER, not sorted. A copy over distinct keys
-//    has no summation order to disturb, so order cannot move a number — but
-//    emitting in source order makes the generated file diffable against the
-//    list it came from, which is the property a reviewer actually needs.
-//
-// Usage:  node tools/genStatSchema.mjs          # write the generated file
-//         node tools/genStatSchema.mjs --stdout # print it, write nothing
+// genStatSchema — collect(): the combat-stat role lists for rust/src/generated.rs
+// (tools/genRustTables.mjs). EQUIPMENT_COMBAT_STATS and MONSTER_ZEROED_COMBAT_STATS
+// are engine semantics, read from tools/engineTables.json (not derivable from the
+// game data: five equipment stats are granted by no item, and attackInterval,
+// foodSlots and drinkSlots come from the weapon and pouch instead). The residual
+// monster stats are derived from the bestiary.
 // =============================================================================
 
 import fs from "node:fs";
@@ -56,31 +15,6 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 // The role lists, once read from player.js / monster.js, now live here (engine-retirement G9).
 export const TABLES_PATH = path.join(ROOT, "tools/engineTables.json");
 const DATA_DIR = path.join(ROOT, "src/combatsimulator/data");
-const OUT_PATH = path.join(ROOT, "src/combatsimulator/generated/statSchema.js");
-
-// Digits ARE in the class. See the header.
-const NAME_PATTERN = /"([A-Za-z0-9_]+)"/g;
-
-/**
- * Pull a `const NAME = [ "a", "b", ... ];` array of string literals out of a
- * blob of source text. Bounded by the closing bracket so a later array in the
- * same file cannot bleed in.
- */
-export function extractList(text, constName) {
-    const start = text.indexOf(constName + " = [");
-    if (start === -1) throw new Error("List not found in source: " + constName);
-    const end = text.indexOf("];", start);
-    if (end === -1) throw new Error("Unterminated list: " + constName);
-    const body = text.slice(start, end);
-    const names = [...body.matchAll(NAME_PATTERN)].map((m) => m[1]);
-    if (names.length === 0) throw new Error("Empty list: " + constName);
-    const seen = new Set();
-    for (const name of names) {
-        if (seen.has(name)) throw new Error("Duplicate name in " + constName + ": " + name);
-        seen.add(name);
-    }
-    return names;
-}
 
 /**
  * Every stat key any monster's game-data block carries that is NOT in the
@@ -88,7 +22,7 @@ export function extractList(text, constName) {
  * are the keys whose semantics is "write only when present" — the zero-fill
  * list's own names mean "write the value, or 0". A key that appeared in a data
  * update and was missed here would be silently dropped from every monster, so
- * api/tests/statSchema.test.mjs asserts the union covers every block.
+ * api/tests/rustTables.test.mjs asserts the union covers every block.
  */
 export function collectResidualMonsterStats(zeroed) {
     const zeroedSet = new Set(zeroed);
@@ -115,173 +49,3 @@ export function collect() {
         monsterResidual: collectResidualMonsterStats(monsterZeroed),
     };
 }
-
-export function render({ equipment, monsterZeroed, monsterResidual }) {
-    const L = [];
-    L.push("// =============================================================================");
-    L.push("// GENERATED FILE — DO NOT EDIT BY HAND.");
-    L.push("//");
-    L.push("// Produced by tools/genStatSchema.mjs; see that file for why these loops are");
-    L.push("// compiled rather than typed, and api/tests/statSchema.test.mjs, which re-runs");
-    L.push("// the generator and compares this file byte for byte. Regenerate with:");
-    L.push("//");
-    L.push("//     node tools/genStatSchema.mjs");
-    L.push("//");
-    L.push("// Every name below is emitted from the list the engine declares, in that");
-    L.push("// list's own order, so each routine writes the same fields with the same");
-    L.push("// values in the same sequence as the keyed loop it replaces.");
-    L.push("//");
-    L.push("// No comments inside the function bodies: V8's inlining budget is measured in");
-    L.push("// SOURCE CHARACTERS, comments included, and these are the warmest routines in");
-    L.push("// the engine. Explanations belong above the function, never within it.");
-    L.push("// =============================================================================");
-    L.push("");
-    L.push("/** Count of names each routine covers, for the tests to assert against. */");
-    L.push("export const EQUIPMENT_STAT_COUNT = " + equipment.length + ";");
-    L.push("export const MONSTER_ZEROED_STAT_COUNT = " + monsterZeroed.length + ";");
-    L.push("");
-    L.push("/**");
-    L.push(" * Copy the summed equipment totals into a unit's combatStats.");
-    L.push(" * Replaces the 70-iteration keyed loop in Player.updateCombatDetails.");
-    L.push(" */");
-    L.push("export function copyEquipmentTotals(combatStats, totals) {");
-    for (const n of equipment) L.push(`    combatStats.${n} = totals.${n};`);
-    L.push("}");
-    L.push("");
-    L.push("/**");
-    L.push(" * Build the equipment-total record. A literal so every totals object shares");
-    L.push(" * one hidden class and copyEquipmentTotals reads it monomorphically, where");
-    L.push(" * upstream's `{}` grown by keyed stores lands in dictionary mode.");
-    L.push(" */");
-    L.push("export function makeEquipmentTotals() {");
-    L.push("    return {");
-    for (const n of equipment) L.push(`        ${n}: 0,`);
-    L.push("    };");
-    L.push("}");
-    L.push("");
-    L.push("/**");
-    L.push(" * Force to 0 every stat the monster's game-data block does not declare.");
-    L.push(" * The direct form of the 63-iteration keyed loop in");
-    L.push(" * Monster.updateCombatDetails. The `== null` test is upstream's, kept");
-    L.push(" * verbatim: it treats an explicit null as absent, which `!== undefined`");
-    L.push(" * would not.");
-    L.push(" *");
-    L.push(" * The engine does NOT call this on the hot path — see the mask trio below,");
-    L.push(" * which is 53x faster again. It is kept because it is the readable");
-    L.push(" * statement of the contract, and the tests check the mask against it.");
-    L.push(" */");
-    L.push("export function zeroMissingMonsterStats(combatStats, gameStats) {");
-    for (const n of monsterZeroed) L.push(`    if (gameStats.${n} == null) combatStats.${n} = 0;`);
-    L.push("}");
-    L.push("");
-    L.push("/**");
-    L.push(" * A per-block presence mask: true where the game-data block leaves the stat");
-    L.push(" * absent and the recompute must therefore write 0.");
-    L.push(" *");
-    L.push(" * WHY THIS EXISTS, rather than reading the game data directly. Monster stat");
-    L.push(" * blocks carry only the stats that monster actually has, so the bestiary");
-    L.push(" * presents about 95 distinct object shapes. A read of `gameStats.armor` is");
-    L.push(" * therefore megamorphic however it is written, and compiling the loop alone");
-    L.push(" * recovers only a third of its cost. Measured over all 95 real blocks:");
-    L.push(" * keyed loop 3844 ns, compiled named loads 2306 ns, mask 43.6 ns. The");
-    L.push(" * megamorphic reads happen ONCE per distinct block, at build-of-mask time;");
-    L.push(" * the recompute then reads a mask of one fixed shape.");
-    L.push(" *");
-    L.push(" * The mask MUST be cached against the game-data object's IDENTITY, never");
-    L.push(" * against the monster hrid: dataProvider.setOverrides() can replace the whole");
-    L.push(" * monster map at runtime and installs fresh nested objects, and an");
-    L.push(" * hrid-keyed cache would then serve a previous game version's presence set");
-    L.push(" * with no error at all.");
-    L.push(" */");
-    L.push("export function makeMonsterZeroMask() {");
-    L.push("    return {");
-    for (const n of monsterZeroed) L.push(`        ${n}: false,`);
-    L.push("    };");
-    L.push("}");
-    L.push("");
-    L.push("/** Build the mask for one game-data stat block. Once per block, not per recompute. */");
-    L.push("export function buildMonsterZeroMask(gameStats) {");
-    L.push("    const mask = makeMonsterZeroMask();");
-    for (const n of monsterZeroed) L.push(`    mask.${n} = gameStats.${n} == null;`);
-    L.push("    return mask;");
-    L.push("}");
-    L.push("");
-    L.push("/**");
-    L.push(" * Apply a prebuilt mask. Same names, same order, same written value as the");
-    L.push(" * keyed loop this replaces, so no number can move.");
-    L.push(" *");
-    L.push(" * Superseded on the hot path by the source-block trio below, which folds");
-    L.push(" * this and the flat key/value copy into one pass. Kept for the tests, which");
-    L.push(" * check that fold against it.");
-    L.push(" */");
-    L.push("export function applyMonsterZeroMask(combatStats, mask) {");
-    for (const n of monsterZeroed) L.push(`    if (mask.${n}) combatStats.${n} = 0;`);
-    L.push("}");
-    L.push("");
-    L.push("export const MONSTER_RESIDUAL_STATS = Object.freeze([");
-    for (const n of monsterResidual) L.push(`    ${JSON.stringify(n)},`);
-    L.push("]);");
-    L.push("");
-    L.push("/**");
-    L.push(" * A per-block SOURCE: the monster's game-data stat block, normalised to one");
-    L.push(" * fixed shape, so a recompute copies it with straight-line field code.");
-    L.push(" *");
-    L.push(" * The two loops this replaces did, in order: copy the keys the block has,");
-    L.push(" * scale armour and the three resistances, then write 0 into every zero-fill");
-    L.push(" * name the block lacks. For a zero-fill name the composition of those is");
-    L.push(" * exactly `the block's value, or 0` — an absent one is scaled while stale and");
-    L.push(" * then overwritten with 0, so the scaling cannot be observed — which is why");
-    L.push(" * the 63 below are copied unconditionally and the scaling still happens");
-    L.push(" * afterwards. The residual names carry no such guarantee: nothing zero-fills");
-    L.push(" * them, so they keep `write only when present` and their flags say which.");
-    L.push(" */");
-    L.push("export function makeMonsterStatSource() {");
-    L.push("    return {");
-    for (const n of monsterZeroed) L.push(`        ${n}: 0,`);
-    for (const n of monsterResidual) L.push(`        ${n}: undefined,`);
-    for (const n of monsterResidual) L.push(`        has_${n}: false,`);
-    L.push("    };");
-    L.push("}");
-    L.push("");
-    L.push("/** Normalise one game-data stat block. Once per block, not per recompute. */");
-    L.push("export function buildMonsterStatSource(gameStats) {");
-    L.push("    const source = makeMonsterStatSource();");
-    for (const n of monsterZeroed) L.push(`    if (gameStats.${n} != null) source.${n} = gameStats.${n};`);
-    for (const n of monsterResidual) {
-        L.push(`    if (gameStats.${n} !== undefined) {`);
-        L.push(`        source.${n} = gameStats.${n};`);
-        L.push(`        source.has_${n} = true;`);
-        L.push("    }");
-    }
-    L.push("    return source;");
-    L.push("}");
-    L.push("");
-    L.push("/** Copy a normalised source into a unit's combatStats. */");
-    L.push("export function applyMonsterStatSource(combatStats, source) {");
-    for (const n of monsterZeroed) L.push(`    combatStats.${n} = source.${n};`);
-    for (const n of monsterResidual) L.push(`    if (source.has_${n}) combatStats.${n} = source.${n};`);
-    L.push("}");
-    L.push("");
-    return L.join("\n");
-}
-
-export function generate() {
-    return render(collect());
-}
-
-const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-if (invokedDirectly) {
-    const text = generate();
-    if (process.argv.includes("--stdout")) {
-        process.stdout.write(text);
-    } else {
-        fs.mkdirSync(path.dirname(OUT_PATH), { recursive: true });
-        fs.writeFileSync(OUT_PATH, text);
-        const { equipment, monsterZeroed } = collect();
-        process.stderr.write(
-            `wrote ${path.relative(ROOT, OUT_PATH)} (${equipment.length} equipment, ${monsterZeroed.length} monster-zeroed)\n`
-        );
-    }
-}
-
-export { OUT_PATH };

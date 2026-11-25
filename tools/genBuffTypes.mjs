@@ -1,37 +1,11 @@
-#!/usr/bin/env node
 // =============================================================================
-// Generates src/combatsimulator/generated/buffTypes.js — the buff-type ordinal
-// table that CombatUnit's buff-boost index is keyed on.
-//
-// WHY GENERATED, NOT TYPED. A CPU profile of the candle put buff aggregation
-// (_buildBuffBoostIndex plus getBuffBoost) at ~16.5% of self time on
-// dungeon-den-600, and the fix is to key that index by a dense integer ordinal
-// instead of by string. That needs a complete list of buff-type hrids — and
-// this codebase has already had a hand-maintained stat list silently corrupted
-// once, by a scrape whose pattern dropped the two DIGIT-carrying names
-// (hpRegenPer10, mpRegenPer10) and moved kills/hr by 2%. A list that is wrong
-// by omission produces wrong combat numbers with no error. So: derive it, commit
-// the output, and let api/tests/buffTypes.test.mjs re-run this generator and
-// compare BYTE FOR BYTE. That test is what makes generation safe.
-//
-// Two deliberate choices:
-//
-//  * The JSON data maps are walked STRUCTURALLY — every string value in the
-//    parsed tree is examined — not regex-scraped. A structural walk cannot
-//    have a character-class bug, which is the exact failure recorded above.
-//    Where source text must be scanned (engine literals)
-//    the pattern is [A-Za-z0-9_]+ and DIGITS ARE IN THE CLASS; scanHrids is
-//    exported so the test can prove that against a synthetic digit-bearing
-//    name rather than anyone eyeballing the regex.
-//
-//  * Ordinals are assigned by SORTING the collected names, never by the order
-//    they were discovered in. Discovery order depends on file order and on
-//    which monster happens to be listed first in the game data; a sort means
-//    the same input always yields the same table, and a game-data update shows
-//    up as a reviewable diff instead of silently renumbering the world.
-//
-// Usage:  node tools/genBuffTypes.mjs          # write the generated file
-//         node tools/genBuffTypes.mjs --stdout # print it, write nothing
+// genBuffTypes — collect(): every buff-type hrid, sorted, for BUFF_TYPE_NAMES in
+// rust/src/generated.rs (tools/genRustTables.mjs). A list wrong by omission gives
+// wrong combat numbers with no error, so it is derived, not typed: the game data
+// is walked STRUCTURALLY (no character-class bug possible), the Rust engine's
+// literals are scanned with a pattern whose class includes DIGITS (hpRegenPer10
+// was once lost to one that did not), and the names are SORTED, so a data update
+// is a reviewable diff, not a renumbering.
 // =============================================================================
 
 import fs from "node:fs";
@@ -40,9 +14,8 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DATA_DIR = path.join(ROOT, "src/combatsimulator/data");
-// The Rust engine names the synthesised buff types as literals (engine-retirement G9: it used to scan the JS engine).
+// The Rust engine names the synthesised buff types as literals.
 const ENGINE_DIR = path.join(ROOT, "rust/src");
-const OUT_PATH = path.join(ROOT, "src/combatsimulator/generated/buffTypes.js");
 
 const PREFIX = "/buff_types/";
 
@@ -111,7 +84,7 @@ export function collect() {
     }
 
     // 4. The one site that BUILDS a buff-type hrid by concatenation rather than
-    //    writing it out: combatUnit.js's LEVEL_STATS table does
+    //    writing it out: the engine's level stats are
     //    "/buff_types/" + stat + "_level". A text scan cannot see those, so
     //    they are named here explicitly.
     for (const stat of ["stamina", "intelligence", "attack", "melee", "defense", "ranged", "magic"]) {
@@ -120,69 +93,3 @@ export function collect() {
 
     return [...found].sort();
 }
-
-export function render(names) {
-    const lines = [];
-    lines.push("// =============================================================================");
-    lines.push("// GENERATED FILE — DO NOT EDIT BY HAND.");
-    lines.push("//");
-    lines.push("// Produced by tools/genBuffTypes.mjs; see that file for why this is generated");
-    lines.push("// rather than typed, and api/tests/buffTypes.test.mjs, which re-runs the");
-    lines.push("// generator and compares this file byte for byte. Regenerate with:");
-    lines.push("//");
-    lines.push("//     node tools/genBuffTypes.mjs");
-    lines.push("//");
-    lines.push("// Ordinals are assigned by sorting the hrids, so the table is a pure function");
-    lines.push("// of the game data and a data update lands as a reviewable diff.");
-    lines.push("// =============================================================================");
-    lines.push("");
-    lines.push("/** ordinal -> buff-type hrid. */");
-    lines.push("export const BUFF_TYPE_NAMES = Object.freeze([");
-    for (const name of names) lines.push(`    ${JSON.stringify(name)},`);
-    lines.push("]);");
-    lines.push("");
-    lines.push("/** buff-type hrid -> ordinal. Null-prototype: no inherited keys to shadow. */");
-    lines.push("export const BUFF_TYPE = Object.freeze(Object.assign(Object.create(null), {");
-    names.forEach((name, i) => lines.push(`    ${JSON.stringify(name)}: ${i},`));
-    lines.push("}));");
-    lines.push("");
-    lines.push("export const BUFF_TYPE_COUNT = " + names.length + ";");
-    lines.push("");
-    lines.push("/**");
-    lines.push(" * Intern a buff-type hrid. An hrid this table has never seen MUST throw:");
-    lines.push(" * returning undefined would index the dense boost arrays at `undefined`,");
-    lines.push(" * silently contributing nothing, and the simulation would report a plausible");
-    lines.push(" * but wrong number with no error anywhere. Regenerate the table instead.");
-    lines.push(" */");
-    lines.push("export function buffTypeOrdinal(typeHrid) {");
-    lines.push("    const ordinal = BUFF_TYPE[typeHrid];");
-    lines.push("    if (ordinal === undefined) {");
-    lines.push("        throw new Error(");
-    lines.push("            \"Unknown buff type: \" + typeHrid +");
-    lines.push("            \" — regenerate src/combatsimulator/generated/buffTypes.js\" +");
-    lines.push("            \" with `node tools/genBuffTypes.mjs`\"");
-    lines.push("        );");
-    lines.push("    }");
-    lines.push("    return ordinal;");
-    lines.push("}");
-    lines.push("");
-    return lines.join("\n");
-}
-
-export function generate() {
-    return render(collect());
-}
-
-const invokedDirectly = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
-if (invokedDirectly) {
-    const text = generate();
-    if (process.argv.includes("--stdout")) {
-        process.stdout.write(text);
-    } else {
-        fs.mkdirSync(path.dirname(OUT_PATH), { recursive: true });
-        fs.writeFileSync(OUT_PATH, text);
-        process.stderr.write(`wrote ${path.relative(ROOT, OUT_PATH)} (${collect().length} buff types)\n`);
-    }
-}
-
-export { OUT_PATH };
