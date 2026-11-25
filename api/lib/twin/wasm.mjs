@@ -52,6 +52,13 @@ function guard(f) {
   }
 }
 
+/** `run` without the await, for callers that must stay synchronous (api/lib/unitDetails.js); load with wasmBackend() first. */
+export function runSync(json) {
+  if (!wasm) throw new Error('csim wasm engine not loaded (or dropped after a trap): await wasmBackend() first');
+  const m = wasm;
+  return guard(() => m.run(json, null));
+}
+
 export async function wasmBackend() {
   await load();
   return {
