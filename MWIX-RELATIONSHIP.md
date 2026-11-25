@@ -1,5 +1,11 @@
 # csim ↔ MWIX
 
+> **The JS engine is gone** (docs/engine-retirement/PLAN.md, 2d): `src/combatsimulator/`
+> now holds only `data/` and four re-export stubs (`dataProvider`, `simSettings`,
+> `guildTrialStats`, `trialLadder`). cowstuff froze its vendored `_vendor/csim-core.js`;
+> `tampermonkey/build-csim.py` must read csim at `380b32e` or earlier. The layout below
+> is historical.
+
 This directory began as a fork of [shykai/MWICombatSimulatorTest](https://github.com/shykai/MWICombatSimulatorTest)
 plus a React UI / Express API of our own. It is now owned by the
 `cowstuff` repository — what used to live at `/Users/morgan/pie/csim/` is

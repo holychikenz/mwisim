@@ -19,8 +19,8 @@ ui/src/utils/characterToPlayer.js ──▶ port of tampermonkey/src/kernel/csim
 - **The optimisers** (Triggers, Gear, Loadout, Abilities, Progress, Swaps) run
   the API's own tools (`api/lib/tools/*.js`) in the browser:
   `hooks/useOptimizerRun.js` → `src/workers/optimizerHost.js` → a pool of
-  `src/workers/optimizerSim.js` workers on the wasm twin (or the JS engine, per
-  the Settings engine toggle). See `../docs/engine-retirement/PLAN.md`.
+  `src/workers/optimizerSim.js` workers on the wasm twin, the only engine.
+  See `../docs/engine-retirement/PLAN.md`.
 - **Layout**: AppShell workbench — sticky header (zone, tier, duration,
   buffs, All Zones, Run), left rail (party + per-player config), main area
   (results dashboard with tabs).

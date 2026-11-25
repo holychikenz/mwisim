@@ -40,6 +40,8 @@ Data reference: `milkyway_client_info.json` → `guildTrialDetailMap`, `combatMo
 
 ### Phase 1 — Engine (`src/combatsimulator/`)
 
+(Historical: the JS engine was deleted; the trial engine is now `rust/src/guild_trial.rs`.)
+
 - [x] `guildTrial.js` — new `GuildTrial` class (sibling of `Labyrinth`/`Zone`):
   - [x] constructor(trialHrid, startTier, participantCount, options)
   - [x] `getEncounter()` → monsters from `guildTrialDetailMap[trialHrid].monsterHrids`, each `new Monster(hrid, 0, tier)` with HP × `(1 + 0.01 × participantCount)` (applied in `Monster.updateCombatDetails` via `trialHpScaleFactor` so it survives stat recomputes)

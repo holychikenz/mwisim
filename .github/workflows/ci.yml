@@ -29,9 +29,8 @@
 # platform-pinned and let the statistical tier carry CI. The contingency is
 # written out in api/eval/README.md under "Cross-platform".
 #
-# fetch-depth: 0 because eval:backrun needs history. It is not run here, but a
-# shallow clone makes it impossible to run by hand on a CI checkout, and full
-# history for this repository costs a second or two.
+# fetch-depth: 0 keeps full history on a CI checkout (a second or two) for
+# by-hand bisects.
 # =============================================================================
 
 name: ci
@@ -71,9 +70,8 @@ jobs:
         working-directory: ui
         run: npm ci
 
-      # The Rust twin (rust/), native and wasm, so the twin-quick step below enforces parity.
-      # The toolchain is pinned by the action ref. The wasm build is required: the trigger
-      # bounds and lab:check read player/monster stats from it (api/lib/unitDetails.js).
+      # The Rust twin (rust/), native and wasm: the only combat engine, so every step below
+      # needs it. The toolchain is pinned by the action ref.
       - uses: dtolnay/rust-toolchain@1.92.0
         with: { targets: wasm32-unknown-unknown }
       - uses: Swatinem/rust-cache@v2
@@ -105,10 +103,10 @@ jobs:
 
       # The fast twin subset ./build.sh check runs: selftest (rng, pow guard,
       # number parsing; the native pow guard is verified on linux amd64 and
-      # aarch64, and this gate keeps it so) and every twin:check case at 2 seeds, JS and the
-      # twin bit for bit against the frozen goldens (fixtures/twin/goldens.json; a change
+      # aarch64, and this gate keeps it so) and every twin:check case at 2 seeds, native and
+      # wasm bit for bit against the frozen goldens (fixtures/twin/goldens.json; a change
       # needs a reviewed `npm run twin:freeze`). The full 4-seed run: ./build.sh rust twin.
-      - name: twin-quick — JS and Rust twin vs goldens
+      - name: twin-quick — Rust twin (native, wasm) vs goldens
         working-directory: .
         run: ./build.sh twin-quick
 

@@ -1,7 +1,10 @@
 # csim — MWI combat simulator
 
-Engine in `src/combatsimulator/`, React UI in `ui/`, headless API and tests in
-`api/`. Everything builds through `./build.sh`:
+Engine: the Rust twin in `rust/` (native for Node, wasm for the UI; the JS
+engine was deleted, docs/engine-retirement/PLAN.md). Game data in
+`src/combatsimulator/data/`, React UI in `ui/`, headless API and tests in
+`api/`. Everything builds through `./build.sh` (`./build.sh rust wasm` for the
+engine):
 
 ```bash
 ./build.sh            # install, generate, build the UI (ui/dist/)
