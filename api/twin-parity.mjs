@@ -1,13 +1,20 @@
 #!/usr/bin/env node
 // =============================================================================
-// twin-parity — differential harness: the Rust twin (rust/) against the JS
-// engine, bit for bit, on the same seeded random stream.
+// twin-parity — differential harness: the Rust twin (rust/) against frozen
+// goldens (fixtures/twin/goldens.json) or the JS engine, bit for bit, on the
+// same seeded random stream.
 //
 //   npm run twin:check -- selftest [--engine=native|wasm]
-//   npm run twin:check -- check [--only=a,b] [--seeds=N] [--engines=native,wasm]
+//   npm run twin:check -- check [--only=a,b] [--seeds=N] [--engines=js,native,wasm] [--oracle=golden|js]
+//   npm run twin:freeze -- [--only=a,b] [--seeds=N] [--engine=js|native|wasm]
 //   npm run twin:trace -- <caseId> [--seed=N] [--limit=300000] [--engine=native|wasm]
 //
-// `check` runs every case on both engines under withSeed and compares
+// `check` runs every case under withSeed on each engine and compares it with
+// the oracle: by default the goldens, which `freeze` records (on JS unless
+// --engine says otherwise; with --only it updates just those cases). `js` is an
+// engine too, so the JS engine is held to the same goldens while it exists.
+// --oracle=js compares against a live JS run instead, and prints the first
+// differing fields, which a golden (digests only) cannot. Compared:
 // digest(canonical(result)) AND the end Math.random.state(): equal digests
 // with unequal end states mean the twin drew a different number of randoms
 // and happened to land on the same tree. Trial cases also compare the digest
@@ -26,7 +33,7 @@
 // CSIM_ENGINE sets in production. So the seams themselves are under test.
 // =============================================================================
 
-import { readdirSync, readFileSync } from 'fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'fs';
 import { join, dirname, basename } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -49,6 +56,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = join(__dirname, '..');
 const DATA_DIR = join(ROOT, 'src', 'combatsimulator', 'data');
 const FIX_DIR = join(ROOT, 'fixtures', 'sim');
+const GOLDEN_FILE = join(ROOT, 'fixtures', 'twin', 'goldens.json');
 
 const argv = process.argv.slice(2);
 const flag = (name, dflt = null) => {
@@ -56,7 +64,8 @@ const flag = (name, dflt = null) => {
   return hit ? hit.slice(name.length + 3) : dflt;
 };
 
-const BACKENDS = { native: nativeBackend, wasm: wasmBackend };
+// `js` is no backend: the JS engine runs when none is registered.
+const BACKENDS = { js: () => null, native: nativeBackend, wasm: wasmBackend };
 const makeBackend = async (name) => {
   const make = BACKENDS[name];
   if (!make) {
@@ -172,22 +181,76 @@ async function seeded(b, seed, fn) {
   );
 }
 
-// ---- check ------------------------------------------------------------------
+// ---- check / freeze -----------------------------------------------------------
+
+/** The cases --only names, or all; exits 2 on an unknown id. */
+function selectCases(nSeeds) {
+  const only = flag('only');
+  const cases = allCases(nSeeds);
+  if (!only) return cases;
+  const want = new Set(only.split(','));
+  const missing = [...want].filter((id) => !cases.some((c) => c.id === id));
+  if (missing.length) {
+    console.error(`twin: unknown case id(s): ${missing.join(', ')}`);
+    process.exit(2);
+  }
+  return cases.filter((c) => want.has(c.id));
+}
+
+/**
+ * One case and seed on backend b (null = JS): the golden record (digests and end rng states) and,
+ * for --oracle=js diagnostics, the canonical result and aggregate it was digested from.
+ */
+async function observe(b, kase, seed) {
+  const r = await seeded(b, seed, kase.run);
+  const canon = canonical(r.value);
+  const rec = { digest: digest(canon), rng: r.state };
+  if (kase.trialResult) rec.summary = digest(canonical(extractTrialSummary(r.value)));
+  let aggCanon = null;
+  if (kase.agg) {
+    const a = await seeded(b, seed, kase.agg);
+    aggCanon = canonical(a.value);
+    rec.agg = digest(aggCanon);
+    rec.aggRng = a.state;
+  }
+  return { rec, canon, aggCanon };
+}
+
+const readGoldens = () => (existsSync(GOLDEN_FILE) ? JSON.parse(readFileSync(GOLDEN_FILE, 'utf8')) : {});
+
+async function cmdFreeze() {
+  const nSeeds = Number(flag('seeds', '4'));
+  const engineName = flag('engine', 'js');
+  const cases = selectCases(nSeeds).filter((c) => !c.skip);
+  // --only updates those cases and keeps the rest; a full freeze rewrites the file, dropping retired cases.
+  const goldens = flag('only') ? readGoldens() : {};
+  const b = await makeBackend(engineName);
+  for (const kase of cases) {
+    goldens[kase.id] = {};
+    for (const seed of kase.seeds) goldens[kase.id][seed] = (await observe(b, kase, seed)).rec;
+    console.log(`  FROZE    ${engineName} ${kase.id} (${kase.seeds.length} seeds)`);
+  }
+  b?.close?.();
+  const sorted = Object.fromEntries(Object.keys(goldens).sort().map((id) => [id, goldens[id]]));
+  mkdirSync(dirname(GOLDEN_FILE), { recursive: true });
+  // One case per line: a re-freeze diffs as the cases it changed.
+  const lines = Object.entries(sorted).map(([id, bySeed]) => `  ${JSON.stringify(id)}: ${JSON.stringify(bySeed)}`);
+  writeFileSync(GOLDEN_FILE, `{\n${lines.join(',\n')}\n}\n`);
+  console.log(`\ntwin:freeze ${engineName}: ${cases.length} cases -> ${GOLDEN_FILE}`);
+}
+
+const FIELDS = [['digest', 'result'], ['rng', 'rng end state'], ['summary', 'trial summary'], ['agg', 'aggregate x3'], ['aggRng', 'aggregate x3 rng end state']];
 
 async function cmdCheck() {
   const nSeeds = Number(flag('seeds', '4'));
-  const only = flag('only');
-  const engines = flag('engines', 'native').split(',');
-  let cases = allCases(nSeeds);
-  if (only) {
-    const want = new Set(only.split(','));
-    cases = cases.filter((c) => want.has(c.id));
-    const missing = [...want].filter((id) => !cases.some((c) => c.id === id));
-    if (missing.length) {
-      console.error(`twin: unknown case id(s): ${missing.join(', ')}`);
-      process.exit(2);
-    }
+  const oracle = flag('oracle', 'golden');
+  if (oracle !== 'golden' && oracle !== 'js') {
+    console.error(`twin: unknown oracle "${oracle}" (golden | js)`);
+    process.exit(2);
   }
+  const engines = flag('engines', 'native').split(',');
+  const cases = selectCases(nSeeds);
+  const goldens = oracle === 'golden' ? readGoldens() : null;
 
   let match = 0;
   let bad = 0;
@@ -201,60 +264,48 @@ async function cmdCheck() {
         continue;
       }
       for (const seed of kase.seeds) {
-        const problems = [];
-        let js;
-        let tw;
+        let want;
+        let got;
         try {
-          js = await seeded(null, seed, kase.run);
-          tw = await seeded(b, seed, kase.run);
+          want = goldens ? { rec: goldens[kase.id]?.[seed] } : await observe(null, kase, seed);
+          if (!want.rec) {
+            console.log(`  MISSING  ${engineName} ${kase.id} seed=${seed}: no golden (npm run twin:freeze -- --only=${kase.id} --seeds=${nSeeds})`);
+            bad++;
+            continue;
+          }
+          got = await observe(b, kase, seed);
         } catch (err) {
           console.log(`  ERROR    ${engineName} ${kase.id} seed=${seed}: ${err?.message ?? err}`);
           bad++;
           continue;
         }
-        const cj = canonical(js.value);
-        const ct = canonical(tw.value);
-        const dj = digest(cj);
-        const dt = digest(ct);
-        if (dj !== dt) problems.push(['result', cj, ct]);
-        if (js.state !== tw.state) problems.push(['rng end state', js.state, tw.state]);
-        if (kase.trialResult && dj === dt) {
-          const sj = digest(canonical(extractTrialSummary(js.value)));
-          const st = digest(canonical(extractTrialSummary(tw.value)));
-          if (sj !== st) problems.push(['trial summary', sj, st]);
-        }
-        if (kase.agg && dj === dt) {
-          const aj = await seeded(null, seed, kase.agg);
-          const at = await seeded(b, seed, kase.agg);
-          if (digest(canonical(aj.value)) !== digest(canonical(at.value)) || aj.state !== at.state) {
-            problems.push(['aggregate x3', canonical(aj.value), canonical(at.value)]);
-          }
-        }
+        const problems = FIELDS.filter(([k]) => want.rec[k] !== got.rec[k]);
         if (problems.length === 0) {
           match++;
-          console.log(`  MATCH    ${engineName} ${kase.id} seed=${seed} ${dj.slice(0, 16)} rng=${js.state}`);
+          console.log(`  MATCH    ${engineName} ${kase.id} seed=${seed} ${got.rec.digest.slice(0, 16)} rng=${got.rec.rng}`);
           continue;
         }
         bad++;
         console.log(`  MISMATCH ${engineName} ${kase.id} seed=${seed}`);
-        for (const [what, a, c] of problems) {
-          if (what === 'rng end state') {
-            console.log(`           rng end state: js ${a} twin ${c}`);
-          } else if (typeof a === 'string') {
-            console.log(`           ${what}: js ${a.slice(0, 16)} twin ${c.slice(0, 16)}`);
-          } else {
-            console.log(`           ${what}:`);
-            for (const d of firstDiffs(a, c)) {
+        for (const [k, what] of problems) {
+          const a = want.rec[k];
+          const c = got.rec[k];
+          console.log(`           ${what}: ${oracle} ${String(a).slice(0, 16)} ${engineName} ${String(c).slice(0, 16)}`);
+          // Only a live oracle has the values behind the digests.
+          const diffs = !goldens && (k === 'digest' ? [want.canon, got.canon] : k === 'agg' ? [want.aggCanon, got.aggCanon] : null);
+          if (diffs) {
+            for (const d of firstDiffs(...diffs)) {
               console.log(`             ${d.path}: js ${String(d.expected).slice(0, 90)} twin ${String(d.got).slice(0, 90)}`);
             }
           }
         }
+        if (goldens) console.log(`           (--oracle=js shows the differing fields while the JS engine exists)`);
       }
     }
-    b.close?.();
+    b?.close?.();
   }
   console.log(`\n${'='.repeat(60)}`);
-  console.log(`twin:check ${engines.join(',')}: ${match} match, ${bad} mismatch, ${skipped} skipped`);
+  console.log(`twin:check ${engines.join(',')} vs ${oracle}: ${match} match, ${bad} mismatch, ${skipped} skipped`);
   process.exit(bad ? 1 : 0);
 }
 
@@ -392,11 +443,13 @@ const cmd = argv.find((a) => !a.startsWith('--'));
 switch (cmd) {
   case 'selftest': await cmdSelftest(); break;
   case 'check': await cmdCheck(); break;
+  case 'freeze': await cmdFreeze(); break;
   case 'trace': await cmdTrace(); break;
   default:
     console.log('Usage:');
     console.log('  npm run twin:check -- selftest [--engine=native|wasm]');
-    console.log('  npm run twin:check -- check [--only=a,b] [--seeds=N] [--engines=native,wasm]');
+    console.log('  npm run twin:check -- check [--only=a,b] [--seeds=N] [--engines=js,native,wasm] [--oracle=golden|js]');
+    console.log('  npm run twin:freeze -- [--only=a,b] [--seeds=N] [--engine=js|native|wasm]');
     console.log('  npm run twin:trace -- <caseId> [--seed=N] [--limit=300000] [--engine=native|wasm]');
     process.exit(cmd ? 2 : 0);
 }

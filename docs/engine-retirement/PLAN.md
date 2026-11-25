@@ -97,12 +97,14 @@ the commit (`git checkout <base> -- ui/`); the `api/` refactor is behaviour-iden
 | G8 | cowstuff webapp-rs default `CSIM_DATA_DIR` = `src/combatsimulator/data` | Follow the data move in G5, or keep the data where it is (recommended: **the data stays**; only the `.js` files go) | cowstuff |
 | G9 | `tools/gen*.mjs`, `refreshData.mjs` read engine sources | Point them at the data and the Rust sources | csim |
 
-### 2a. Golden fixtures for `twin:check` (can start now; no deletion)
-1. Add `npm run twin:freeze`: run every current twin:check case on **JS** under its seeds and write
-   `fixtures/twin/<case>.json` = `{ request, seed, digest, endRngState, trialSummaryDigest?, aggDigest? }`.
-2. Make `twin:check` compare the twin against these files by default; keep `--oracle=js` while JS exists.
-3. CI: `twin-quick` reads the goldens. A golden change needs a reviewed `twin:freeze`, like `eval:record`.
-- Rollback: delete `fixtures/twin/` and the flag; `twin:check` falls back to the JS oracle.
+### 2a. Golden fixtures for `twin:check` — DONE (G1)
+Landed as one file, `fixtures/twin/goldens.json` (case → seed → digests and end rng states), not one file
+per case, and without the request (the cases are rebuilt from code, so a changed case shows as a mismatch).
+`js` is an engine in `check`, so CI holds JS and the twin to the same goldens until JS is deleted.
+After deletion, `twin:freeze --engine=wasm` re-freezes an intentional change.
+- `npm run twin:freeze [-- --only=a,b --seeds=N --engine=js|native|wasm]` records; `twin:check` reads the
+  goldens by default, `--oracle=js` compares against a live JS run (field-level diffs) while JS exists.
+- Rollback: `twin:check -- check --oracle=js` restores the old comparison at once; or revert the commit.
 
 ### 2b. Move the twin-only callers off JS (csim)
 1. G4: inside `simulator.js` and `guildTrialRuns.js`, import the engine dynamically, only on the JS

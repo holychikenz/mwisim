@@ -25,7 +25,7 @@
 #   all          everything above
 #   rust         cargo build + test of the Rust twin (rust/) and test of rust/crates/mwi-econ; needs a Rust toolchain
 #   wasm         wasm-pack build of the twin -> rust/pkg/ (CSIM_ENGINE=wasm, UI engine toggle)
-#   twin         twin:check — the Rust twin against the JS engine, bit for bit
+#   twin         twin:check — JS and the Rust twin against the frozen goldens (fixtures/twin/), bit for bit
 #                (native, plus wasm when rust/pkg/ is built)
 #   twin-quick   the fast twin subset in `check`: selftest + check --seeds=2;
 #                rebuilds native, and wasm when wasm-pack is on PATH (else native only);
@@ -96,7 +96,7 @@ t_twin() {
   local engines; engines="$(twin_engines)"
   say "api twin:check (${engines})"
   # `|| exit 1`: a loop's status is its last iteration's, so a native failure would hide behind a passing wasm.
-  (cd api && for e in ${engines//,/ }; do npm run twin:check -- selftest --engine="$e" || exit 1; done && npm run twin:check -- check --engines="$engines")
+  (cd api && for e in ${engines//,/ }; do npm run twin:check -- selftest --engine="$e" || exit 1; done && npm run twin:check -- check --engines="js,$engines")
 }
 
 # The engines twin-quick and twin run: native, plus wasm when rust/pkg/ is built.
@@ -119,7 +119,7 @@ t_twin_quick() {
   fi
   say "twin-quick (${engines})"
   (cd api && for e in ${engines//,/ }; do npm run --silent twin:check -- selftest --engine="$e" || exit 1; done \
-    && npm run --silent twin:check -- check --engines="$engines" --seeds=2 | grep -v '^  MATCH ')
+    && npm run --silent twin:check -- check --engines="js,$engines" --seeds=2 | grep -v '^  MATCH ')
 }
 
 t_clean() { say "clean"; rm -rf ui/dist; }
