@@ -257,6 +257,9 @@ pub struct MonsterData {
     #[serde(default)]
     pub abilities: Vec<MonsterAbilityData>,
     pub combat_details: MonsterCombatDetails,
+    /// `isBoss`: what the Boss Status trigger condition reads.
+    #[serde(default)]
+    pub is_boss: bool,
 }
 
 #[derive(Deserialize, Clone, Debug)]

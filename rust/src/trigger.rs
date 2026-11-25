@@ -17,6 +17,7 @@ pub enum CondKind {
     StunStatus,
     BlindStatus,
     SilenceStatus,
+    BossStatus,
 }
 
 fn cond_kind(hrid: &str) -> CondKind {
@@ -31,6 +32,7 @@ fn cond_kind(hrid: &str) -> CondKind {
         Some("STUN_STATUS") => CondKind::StunStatus,
         Some("BLIND_STATUS") => CondKind::BlindStatus,
         Some("SILENCE_STATUS") => CondKind::SilenceStatus,
+        Some("BOSS_STATUS") => CondKind::BossStatus,
         _ => CondKind::Unknown,
     }
 }
@@ -184,6 +186,8 @@ impl Trigger {
             CondKind::StunStatus => TrigVal::Bool(u.is_stunned || u.stun_expire_time == Some(now)),
             CondKind::BlindStatus => TrigVal::Bool(u.is_blinded || u.blind_expire_time == Some(now)),
             CondKind::SilenceStatus => TrigVal::Bool(u.is_silenced || u.silence_expire_time == Some(now)),
+            // The game data's `isBoss`; players are never bosses.
+            CondKind::BossStatus => TrigVal::Bool(u.monster().is_some_and(|m| m.st.data.is_boss)),
             CondKind::Unknown => return Err(format!("Unknown conditionHrid in trigger: {}", self.condition_hrid)),
         })
     }
@@ -278,14 +282,14 @@ mod tests {
         }
     }
 
-    // triggerKinds.test.mjs: every condition of the retired 55-arm switch has a kind, in exactly one group.
+    // triggerKinds.test.mjs: every condition of the retired 55-arm switch has a kind, in exactly one group; + boss_status.
     #[test]
     fn every_listed_condition_has_a_kind() {
-        assert_eq!(TRIGGER_CONDITION_KINDS.len(), 55, "every arm of the retired switch is covered");
+        assert_eq!(TRIGGER_CONDITION_KINDS.len(), 56, "the retired switch's 55 arms plus boss_status");
         let mut names: Vec<_> = TRIGGER_CONDITION_KINDS.iter().map(|(h, _)| *h).collect();
         names.sort();
         names.dedup();
-        assert_eq!(names.len(), 55, "no condition appears in two groups");
+        assert_eq!(names.len(), 56, "no condition appears in two groups");
         for (h, _) in TRIGGER_CONDITION_KINDS {
             assert_ne!(cond_kind(h), CondKind::Unknown, "{h}");
         }
@@ -355,34 +359,39 @@ mod tests {
         }
     }
 
-    /// Declared by the game data (client dump v1.20260927.0, commit da912e2) but evaluated by neither engine.
-    const UNHANDLED: [&str; 1] = ["/combat_trigger_conditions/boss_status"];
-
     fn game_data_conditions() -> Vec<String> {
         let text = crate::test_support::read("src/combatsimulator/data/combatTriggerConditionDetailMap.json");
         serde_json::from_str::<serde_json::Map<String, serde_json::Value>>(&text).unwrap().keys().cloned().collect()
     }
 
-    // triggerIndex.test.mjs: every condition the game data declares is covered (bar the known gap below).
+    // triggerIndex.test.mjs: every condition the game data declares has a kind (the multi-target ones resolve first).
     #[test]
     fn every_game_data_condition_is_covered() {
         let missing: Vec<_> = game_data_conditions()
             .into_iter()
-            .filter(|c| !MULTI.contains(&c.as_str()) && !UNHANDLED.contains(&c.as_str()) && cond_kind(c) == CondKind::Unknown)
+            .filter(|c| !MULTI.contains(&c.as_str()) && cond_kind(c) == CondKind::Unknown)
             .collect();
         assert!(missing.is_empty(), "regenerate rust/src/generated.rs: {missing:?}");
     }
 
-    // triggerIndex.test.mjs: the known gap. The UI offers every game-data condition (ui/src/hooks/useGameData.js),
-    // so a "Boss Status" trigger makes the run fail with "Unknown conditionHrid in trigger".
+    // Boss Status (game data since v1.20260927.0): active exactly when the unit's monster data has isBoss.
     #[test]
-    #[ignore = "engine divergence: /combat_trigger_conditions/boss_status (game data since da912e2) has no condition kind"]
-    fn boss_status_is_evaluated() {
-        let u = with_buffs(&[]);
-        for c in UNHANDLED {
-            assert!(game_data_conditions().iter().any(|g| g == c), "{c} left the game data: drop it from UNHANDLED");
-            assert!(own(c).is_active(&u, None, None, None, 0.0).is_ok(), "{c}");
-        }
+    fn boss_status_reads_is_boss() {
+        let mut cache = crate::monster::AbilityCache::default();
+        let mut mon = |h: &str| crate::monster::create_monster(data(), &mut cache, h, 0.0, 0.0, 2).unwrap();
+        let (boss, plain) = (mon("/monsters/acrobat"), mon("/monsters/alligator"));
+        let player = with_buffs(&[]);
+        let cond = "/combat_trigger_conditions/boss_status";
+        let active = |dep: &str| trig(dep, cond, "/combat_trigger_comparators/is_active", 0.0);
+        let inactive = |dep: &str| trig(dep, cond, "/combat_trigger_comparators/is_inactive", 0.0);
+        let own_dep = "/combat_trigger_dependencies/self";
+        let enemy = "/combat_trigger_dependencies/targeted_enemy";
+        assert!(active(own_dep).is_active(&boss, None, None, None, 0.0).unwrap());
+        assert!(!active(own_dep).is_active(&plain, None, None, None, 0.0).unwrap());
+        assert!(inactive(own_dep).is_active(&plain, None, None, None, 0.0).unwrap());
+        assert!(!active(own_dep).is_active(&player, None, None, None, 0.0).unwrap(), "players are never bosses");
+        assert!(active(enemy).is_active(&player, Some(&boss), None, None, 0.0).unwrap());
+        assert!(inactive(enemy).is_active(&player, Some(&plain), None, None, 0.0).unwrap());
     }
 
     // checkTriggers / CLAUDE.md: a slot fires only when ALL its triggers are true; every trigger is evaluated.

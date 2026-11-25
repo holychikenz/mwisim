@@ -196,6 +196,7 @@
     "/combat_trigger_conditions/missing_mp": "MISSING_MP",
     "/combat_trigger_conditions/stun_status": "STUN_STATUS",
     "/combat_trigger_conditions/blind_status": "BLIND_STATUS",
-    "/combat_trigger_conditions/silence_status": "SILENCE_STATUS"
+    "/combat_trigger_conditions/silence_status": "SILENCE_STATUS",
+    "/combat_trigger_conditions/boss_status": "BOSS_STATUS"
   }
 }
