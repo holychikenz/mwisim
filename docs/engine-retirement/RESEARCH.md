@@ -123,5 +123,7 @@ Headless Chrome 158 against `vite preview` of `ui/dist`. All six tools ran throu
   statistics code (`stats.js`) under V8 versions with different math libraries, not the
   simulation. Simulation metrics were identical.
 - Node: wasm and js frames are identical for all six tools.
-- Cancellation: a `cancel` 1.5 s into a 1000 h × 10 replicate scan answered with
-  `cancelled: Equipment scan cancelled` and `done` at once.
+- Cancellation (abort path): an abort 1.5 s into a 1000 h × 10 replicate scan answered at once with
+  `cancelled: Equipment scan cancelled` and `done`. That check used a `cancel` message which review
+  then removed. The UI now cancels by terminating the host, and the nested pool workers die with
+  it. That terminate path has not been checked in a browser.

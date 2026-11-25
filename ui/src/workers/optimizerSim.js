@@ -14,15 +14,15 @@ import { loadWasmTwin } from "../../../src/twinWasm.js";
 // drops the messages (here `init`) that arrive while its imports evaluate.
 const loaded = import("../../../api/lib/triggerSearch/runJob.js");
 
-let twin = null;
+let engine = null;
 
 onmessage = async ({ data }) => {
     if (data?.type === "init") {
         try {
             await loaded;
             applySimSettingsFromExtra({ experimental: data.experimental });
-            twin = data.engine === "wasm" ? await loadWasmTwin() : null;
-            setTwinBackend(twin);
+            engine = data.engine;
+            if (engine === "wasm") await loadWasmTwin();
             postMessage({ type: "ready" });
         } catch (error) {
             postMessage({ type: "init_error", error: error?.message || String(error) });
@@ -32,6 +32,9 @@ onmessage = async ({ data }) => {
     if (data?.type !== "run") return;
     try {
         const { runJob } = await loaded;
+        // Per job, as src/worker.js does per message: after a trap loadWasmTwin() hands back a fresh instance (cached otherwise).
+        const twin = engine === "wasm" ? await loadWasmTwin() : null;
+        setTwinBackend(twin);
         const { metrics } = await runJob(data.job, twin);
         postMessage({ type: "result", id: data.job.id, metrics });
     } catch (error) {

@@ -7,7 +7,6 @@
 //   in:  { type: 'preview', id, path, body } → { type: 'preview', id, status, json }
 //        { type: 'run', path, body }         → { type: 'refused', status, json }
 //                                              | { type: 'frame' | 'heartbeat', frame }… then { type: 'done' }
-//        { type: 'cancel' }                  aborts the run: its pool is torn down, a `cancelled` frame follows
 // One run per host; useOptimizerRun starts a fresh host for each.
 // =============================================================================
 
@@ -27,15 +26,10 @@ const loaded = Promise.all([
 
 const unknownTool = (path) => ({ status: 404, json: { success: false, error: `No optimiser tool ${String(path)}` } });
 
+// shortcut: the heartbeat proves the host alive, not that a pool job progresses (as the API's SSE heartbeat); add a per-job timeout if a hung candidate shows up.
 const HEARTBEAT_MS = 10_000;
 
-let controller = null;
-
 onmessage = async ({ data }) => {
-    if (data?.type === "cancel") {
-        controller?.abort();
-        return;
-    }
     let modules;
     try {
         modules = await loaded;
@@ -43,6 +37,8 @@ onmessage = async ({ data }) => {
         // Answered, not dropped: the page would wait on a reply that never comes.
         const failed = { status: 500, json: { success: false, error: `The optimiser failed to load: ${error?.message || error}` } };
         postMessage(data?.type === "preview" ? { type: "preview", id: data.id, ...failed } : { type: "refused", ...failed });
+        // The failed import is cached in `loaded`: end this host so the page's next request gets a fresh one.
+        close();
         return;
     }
     const { TOOLS, planTool, previewTool, runPlanned, clampPoolSize, browserPoolSize, createBrowserPool } = modules;
@@ -58,7 +54,8 @@ onmessage = async ({ data }) => {
         postMessage({ type: "refused", status, json });
         return;
     }
-    controller = new AbortController();
+    // Never aborted here: the page cancels by terminating this host, which ends the pool's workers with it.
+    const controller = new AbortController();
     // The Simulate tab's engine toggle (utils/experimental.js), sent as extra.experimental; wasm unless it says js.
     const experimental = data.body?.extra?.experimental;
     const engine = experimental?.engine === "js" ? "js" : "wasm";

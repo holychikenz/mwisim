@@ -2,7 +2,7 @@
 // twinWasm — the browser worker's loader for the wasm Rust twin (rust/pkg/,
 // built by `./build.sh wasm`). The globs are empty in a checkout without that
 // build, so the UI still builds; loadWasmTwin() then throws instead.
-// No top-level await: workers build as iife.
+// No top-level await here: it is statically imported by src/worker.js, whose onmessage must be set before any await.
 // =============================================================================
 
 import * as dataProvider from "./combatsimulator/dataProvider";

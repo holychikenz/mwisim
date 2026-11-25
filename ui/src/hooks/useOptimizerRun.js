@@ -27,11 +27,17 @@ const PROGRESS_THROTTLE_MS = 100;
 
 const newHost = () => new Worker(new URL('../workers/optimizerHost.js', import.meta.url), { type: 'module' });
 
-/** A host that died (a module that failed to load) answers with this, not silence. */
-const hostCrash = (name, event) => {
+/** A host that died answers with this, not silence: before any frame it never started, after one it stopped. */
+const hostCrash = (name, event, started = false) => {
   event?.preventDefault?.();
-  return new Error(`${name} could not start in this browser${event?.message ? `: ${event.message}` : ''}.`);
+  const what = started ? 'stopped unexpectedly' : 'could not start in this browser';
+  return new Error(`${name} ${what}${event?.message ? `: ${event.message}` : ''}.`);
 };
+
+// One preview host for every optimiser hook: previews are routed by `path` and `id`, and each host holds the game
+// data and api/lib, so six would cost six copies. Replaced when it crashes or closes itself after a failed load.
+let previewHost = null;
+let previewId = 0;
 
 /**
  * @param {object} options
@@ -55,8 +61,6 @@ export function useOptimizerRun({ endpoint, kind, name }) {
   const path = endpoint.replace(/^\/?api\//, '');
   // The run in flight: its host, and `end` to settle its promise when stop() ends it from outside.
   const runRef = useRef(null);
-  const previewHostRef = useRef(null);
-  const previewIdRef = useRef(0);
   // A late preview or run must not settle state that belongs to a newer one.
   const [nextPreview] = useState(createLatestGate);
   const [nextRun] = useState(createLatestGate);
@@ -75,8 +79,7 @@ export function useOptimizerRun({ endpoint, kind, name }) {
     const run = runRef.current;
     runRef.current = null;
     if (run) {
-      // Terminating the host also ends its pool's workers; the cancel first lets it tear them down itself.
-      run.host.postMessage({ type: 'cancel' });
+      // Terminating the host ends its pool's workers with it (nested workers die with their owner).
       run.host.terminate();
       run.end();
     }
@@ -84,11 +87,7 @@ export function useOptimizerRun({ endpoint, kind, name }) {
 
   // Kill any in-flight run when the component unmounts, so navigating away does
   // not leave a worker pool saturating the machine for a result nobody will read.
-  useEffect(() => () => {
-    stop();
-    previewHostRef.current?.terminate();
-    previewHostRef.current = null;
-  }, [stop]);
+  useEffect(() => stop, [stop]);
 
   const armWatchdog = useCallback(() => {
     clearWatchdog();
@@ -109,17 +108,22 @@ export function useOptimizerRun({ endpoint, kind, name }) {
     setError(null);
     try {
       const { status, json } = await new Promise((resolve, reject) => {
-        const host = (previewHostRef.current ??= newHost());
-        const id = ++previewIdRef.current;
+        const host = (previewHost ??= newHost());
+        const id = ++previewId;
         const onMessage = ({ data }) => {
           if (data?.type !== 'preview' || data.id !== id) return;
           done();
+          // A host whose modules failed to load answers 500 and closes itself: the next preview starts a fresh one.
+          if (data.status === 500 && previewHost === host) {
+            previewHost = null;
+            host.terminate();
+          }
           resolve(data);
         };
         const onError = (event) => {
           done();
           // A crashed host is replaced on the next preview.
-          if (previewHostRef.current === host) previewHostRef.current = null;
+          if (previewHost === host) previewHost = null;
           host.terminate();
           reject(hostCrash(name, event));
         };
@@ -208,10 +212,12 @@ export function useOptimizerRun({ endpoint, kind, name }) {
       try {
         await new Promise((resolve, reject) => {
           let finished = false;
+          let started = false;
           current.end = resolve;
           host.onmessage = ({ data }) => {
             if (runRef.current !== current) return; // superseded or cancelled: stop() already ended it
             armWatchdog();
+            started = true;
             if (data?.type === 'refused') reject(new Error(data.json?.error || `${name} refused the run (${data.status}).`));
             else if (data?.type === 'frame') finished = handleFrame(data.frame) || finished;
             else if (data?.type === 'done') {
@@ -219,7 +225,7 @@ export function useOptimizerRun({ endpoint, kind, name }) {
               resolve();
             }
           };
-          host.onerror = (event) => reject(hostCrash(name, event));
+          host.onerror = (event) => reject(hostCrash(name, event, started));
           host.postMessage({ type: 'run', path, body: payload });
         });
       } catch (caught) {

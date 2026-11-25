@@ -75,7 +75,8 @@ the commit (`git checkout <base> -- ui/`); the `api/` refactor is behaviour-iden
    SCLIRoster needs `loader.js`, `lib/simulator.js`, `rng.js`, `twin/native.mjs`, `node_modules`.
 2. Pool calibration as the peer fork does it (TRIGGER-OPTIMIZER.md §7) if `hardwareConcurrency - 1`
    oversubscribes on some machines.
-3. A Playwright smoke test of the six tabs in CI (the browser check above was a one-off CDP
+3. A per-job timeout in the pool (`poolCore.js`): the host's heartbeat, like the API's SSE one, shows the host is alive, not that a job is progressing, so a hung candidate is never timed out (found by review; this predates the branch).
+4. A Playwright smoke test of the six tabs in CI (the browser check above was a one-off CDP
    script and is not in the repo).
 
 ---
