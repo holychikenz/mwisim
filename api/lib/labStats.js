@@ -8,12 +8,13 @@
 //     upgrade buffs (extraBuffs) exactly as src/worker.js does, then reset
 //     (clearBuffs → updateCombatDetails) — the same path processCombatStartEvent
 //     drives, so the result matches SimResult.playerStats.
+// Both come from the wasm twin (api/lib/unitDetails.js), not the JS engine.
 // =============================================================================
 
 import { buildCrateBuffs, buildLabUpgradeBuffs } from './target.js';
 
-const Player = (await import('../../src/combatsimulator/player.js')).default;
-const Monster = (await import('../../src/combatsimulator/monster.js')).default;
+import { monsterDetails, playerDetails } from './unitDetails.js';
+
 const { abilityDetailMap } = await import('../../shared/dataProvider.js');
 
 function round(v) {
@@ -49,14 +50,19 @@ function combatLevel(u) {
   return 0.1 * (u.staminaLevel + u.intelligenceLevel + u.attackLevel + u.defenseLevel + offence) + 0.5 * best;
 }
 
+// An entry as the twin returns it, or the JS engine's throw.
+function unit(entry) {
+  if (!entry.ok) throw new Error(entry.error);
+  return entry;
+}
+
 export function computeLabMonsterStats(monsterHrid, roomLevel) {
-  const m = new Monster(monsterHrid, 0, roomLevel);
-  m.updateCombatDetails(); // re-copies base then scales; idempotent.
+  const m = unit(monsterDetails([{ hrid: monsterHrid, difficultyTier: 0, roomLevel }])[0]);
   return {
     monsterHrid,
     roomLevel,
     derived: extractDerived(m),
-    abilities: (m.abilities || []).filter(Boolean).map((a) => ({
+    abilities: m.abilities.map((a) => ({
       hrid: a.hrid,
       name: abilityDetailMap[a.hrid]?.name,
       level: a.level,
@@ -65,17 +71,15 @@ export function computeLabMonsterStats(monsterHrid, roomLevel) {
 }
 
 export function computeLabPlayerStats(dto, { crates = [], labUpgrades = {} } = {}) {
-  const player = Player.createFromDTO(structuredClone(dto));
-
   // Crate buffs → zoneBuffs, and the lab-shop upgrades → extraBuffs. Both now
   // come from api/lib/target.js, which the optimisers' worker also uses: this
   // file used to carry its own copy of the upgrade table, and two copies of a
-  // mirror of src/worker.js is one too many to keep honest.
-  player.zoneBuffs = buildCrateBuffs(crates);
-  player.extraBuffs = buildLabUpgradeBuffs(labUpgrades);
-
-  player.generatePermanentBuffs();
-  player.reset(); // reset(0) → clearBuffs → updateCombatDetails (combat-start state)
+  // mirror of src/worker.js is one too many to keep honest. extraBuffs is the
+  // upgrades ALONE (the DTO's own extraBuffs are not added), as it always was here.
+  const player = unit(playerDetails([{ ...dto, extraBuffs: undefined }], {
+    zoneBuffs: buildCrateBuffs(crates),
+    partyBuffs: buildLabUpgradeBuffs(labUpgrades),
+  })[0]); // generatePermanentBuffs + reset(0) → clearBuffs → updateCombatDetails (combat-start state)
 
   return {
     baseLevels: {
