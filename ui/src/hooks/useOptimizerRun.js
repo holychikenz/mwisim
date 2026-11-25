@@ -14,6 +14,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRunResults } from './useRunResults.js';
 import { createLatestGate } from '../utils/latestRequest';
+import { createPreviewClient } from '../workers/previewClient.js';
 
 /**
  * Abandon a run that has gone quiet. The host heartbeats every 10s
@@ -34,10 +35,8 @@ const hostCrash = (name, event, started = false) => {
   return new Error(`${name} ${what}${event?.message ? `: ${event.message}` : ''}.`);
 };
 
-// One preview host for every optimiser hook: previews are routed by `path` and `id`, and each host holds the game
-// data and api/lib, so six would cost six copies. Replaced when it crashes or closes itself after a failed load.
-let previewHost = null;
-let previewId = 0;
+// One preview host for every optimiser hook (workers/previewClient.js).
+const requestPreview = createPreviewClient(newHost, (event) => hostCrash('The optimiser', event));
 
 /**
  * @param {object} options
@@ -107,34 +106,7 @@ export function useOptimizerRun({ endpoint, kind, name }) {
     setPreviewing(true);
     setError(null);
     try {
-      const { status, json } = await new Promise((resolve, reject) => {
-        const host = (previewHost ??= newHost());
-        const id = ++previewId;
-        const onMessage = ({ data }) => {
-          if (data?.type !== 'preview' || data.id !== id) return;
-          done();
-          // A host whose modules failed to load answers 500 and closes itself: the next preview starts a fresh one.
-          if (data.status === 500 && previewHost === host) {
-            previewHost = null;
-            host.terminate();
-          }
-          resolve(data);
-        };
-        const onError = (event) => {
-          done();
-          // A crashed host is replaced on the next preview.
-          if (previewHost === host) previewHost = null;
-          host.terminate();
-          reject(hostCrash(name, event));
-        };
-        const done = () => {
-          host.removeEventListener('message', onMessage);
-          host.removeEventListener('error', onError);
-        };
-        host.addEventListener('message', onMessage);
-        host.addEventListener('error', onError);
-        host.postMessage({ type: 'preview', id, path, body: payload });
-      });
+      const { status, json } = await requestPreview(path, payload);
       if (!json?.success) throw new Error(json?.error || `Preview failed (${status})`);
       if (!isLatest()) return null;
       setPreview(json);
@@ -148,7 +120,7 @@ export function useOptimizerRun({ endpoint, kind, name }) {
     } finally {
       if (isLatest()) setPreviewing(false);
     }
-  }, [nextPreview, path, name]);
+  }, [nextPreview, path]);
 
   /**
    * Run the search, streaming progress.

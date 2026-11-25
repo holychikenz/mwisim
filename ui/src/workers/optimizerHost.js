@@ -36,7 +36,8 @@ onmessage = async ({ data }) => {
     } catch (error) {
         // Answered, not dropped: the page would wait on a reply that never comes.
         const failed = { status: 500, json: { success: false, error: `The optimiser failed to load: ${error?.message || error}` } };
-        postMessage(data?.type === "preview" ? { type: "preview", id: data.id, ...failed } : { type: "refused", ...failed });
+        // `loadFailed` tells the page this host is broken, unlike a 500 from a tool whose preview threw.
+        postMessage(data?.type === "preview" ? { type: "preview", id: data.id, loadFailed: true, ...failed } : { type: "refused", ...failed });
         // The failed import is cached in `loaded`: end this host so the page's next request gets a fresh one.
         close();
         return;
