@@ -21,11 +21,28 @@
 // The seed is varied BETWEEN stages, never within one, so a threshold that
 // only wins against one particular spawn sequence gets found out later.
 //
-// The generator itself (and the main-thread `withSeed`) live in
-// api/lib/determinism.mjs; this file only installs it inside a worker.
+// The generator lives here, free of node:crypto, so the in-browser optimiser
+// (ui/src/workers/optimizerSim.js) imports it too; api/lib/determinism.mjs re-exports it.
 // =============================================================================
 
-import { mulberry32 } from '../determinism.mjs';
+// mulberry32 — small, fast, and good enough that a seed change visibly
+// reshuffles the run. The engine only ever needs a uniform in [0, 1).
+//
+// `.state()` reads the whole generator state (one u32) and `.state(v)` sets it.
+// The Rust twin (shared/twinEngine.js) uses it to continue this exact stream
+// and hand the advanced state back. It changes no output.
+export function mulberry32(seed) {
+  let a = seed >>> 0;
+  const next = function () {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  next.state = (v) => (v === undefined ? a : (a = v >>> 0));
+  return next;
+}
 
 /**
  * Swap Math.random for a seeded generator.

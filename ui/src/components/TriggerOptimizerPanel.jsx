@@ -161,7 +161,6 @@ function ConsumableCostRow({ row, disabled, onChange }) {
 export function TriggerOptimizerPanel({
   preview,
   previewing,
-  apiReachable,
   selection = [],
   onSelectionChange,
   config = DEFAULT_TRIGGER_OPT_CONFIG,
@@ -229,21 +228,6 @@ export function TriggerOptimizerPanel({
       : [...selection, row];
     onSelectionChange?.(next);
   };
-
-  if (apiReachable === false) {
-    return (
-      <Alert color="orange" title="csim API not running" variant="light">
-        <Text size="xs">
-          Unlike the other modes, the Trigger Optimizer runs its simulations on the server — hundreds of
-          them, across a thread pool.
-        </Text>
-        <Text size="xs" mt={6}>
-          Start it with <Text span ff="monospace">npm start</Text> in <Text span ff="monospace">csim/api</Text>,
-          then reopen this panel.
-        </Text>
-      </Alert>
-    );
-  }
 
   return (
     <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="sm">

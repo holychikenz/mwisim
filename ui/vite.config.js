@@ -29,18 +29,10 @@ export default defineConfig({
       // (the engine lives at the csim repo root, outside ui/).
       allow: ['..']
     },
-    proxy: {
-      // Optional: the Express API (csim/api) for headless/automation use.
-      '/api': {
-        target: 'http://localhost:3001',
-        changeOrigin: true
-      },
-      // apiBase.js pingApi() probes /health; without this dev served index.html
-      // and every API error read as "cannot reach the API".
-      '/health': {
-        target: 'http://localhost:3001',
-        changeOrigin: true
-      }
-    }
+  },
+  // ES-module workers: the optimiser host (src/workers/optimizerHost.js) bundles
+  // api/lib, whose modules load the engine's data with top-level await.
+  worker: {
+    format: 'es'
   }
 })
