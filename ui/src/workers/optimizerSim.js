@@ -1,8 +1,7 @@
 // =============================================================================
 // optimizerSim — one worker of the in-browser optimiser pool (browserPool.js):
 // the browser twin of api/lib/triggerSearch/poolWorker.js. `init` loads the
-// engine once (the wasm twin, or the JS engine when the UI's engine toggle says
-// "js") and applies the experimental knobs; then each `run` is one seeded,
+// wasm twin once and applies the experimental knobs; then each `run` is one seeded,
 // scored job (api/lib/triggerSearch/runJob.js), answered as a `result`.
 // =============================================================================
 
@@ -10,19 +9,16 @@ import { applySimSettingsFromExtra } from "../../../shared/simSettings.js";
 import { setTwinBackend } from "../../../shared/twinEngine.js";
 import { loadWasmTwin } from "../../../src/twinWasm.js";
 
-// Loaded after onmessage is set: runJob.js loads the engine with top-level await, and a module worker
+// Loaded after onmessage is set: runJob.js has top-level await, and a module worker
 // drops the messages (here `init`) that arrive while its imports evaluate.
 const loaded = import("../../../api/lib/triggerSearch/runJob.js");
-
-let engine = null;
 
 onmessage = async ({ data }) => {
     if (data?.type === "init") {
         try {
             await loaded;
             applySimSettingsFromExtra({ experimental: data.experimental });
-            engine = data.engine;
-            if (engine === "wasm") await loadWasmTwin();
+            await loadWasmTwin();
             postMessage({ type: "ready" });
         } catch (error) {
             postMessage({ type: "init_error", error: error?.message || String(error) });
@@ -34,7 +30,7 @@ onmessage = async ({ data }) => {
     try {
         ({ runJob } = await loaded);
         // Per job, as src/worker.js does per message: after a trap loadWasmTwin() hands back a fresh instance (cached otherwise).
-        twin = engine === "wasm" ? await loadWasmTwin() : null;
+        twin = await loadWasmTwin();
     } catch (error) {
         // No engine is a dead worker, not a failed candidate: browserPool ends it, so its later jobs are not all errors.
         postMessage({ type: "fatal", error: error?.message || String(error) });

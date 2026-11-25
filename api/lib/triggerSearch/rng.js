@@ -1,10 +1,9 @@
 // =============================================================================
 // rng — seeded randomness for reproducible candidate comparison
 //
-// The engine calls Math.random() directly (zone.js:34,90 for spawn selection,
-// and throughout combatSimulator for hit/crit rolls). It has no seed parameter
-// and we deliberately do NOT add one: src/combatsimulator/ is upstream-tracked
-// (see MWIX-RELATIONSHIP.md) and every local adaptation costs us at each sync.
+// The engine (the Rust twin) takes over the Math.random stream rather than a
+// seed parameter: shared/twinEngine.js runTwin reads the seeded state, runs
+// on it, and writes the end state back (mulberry32 below exposes .state()).
 //
 // Instead we replace Math.random inside each worker_thread. A worker has its
 // own global scope, so the substitution cannot leak into the main thread or

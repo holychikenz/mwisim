@@ -1,20 +1,16 @@
-import CombatSimulator from "./combatsimulator/combatSimulator";
-import Player from "./combatsimulator/player";
-import Zone from "./combatsimulator/zone";
-import Labyrinth from "./combatsimulator/labyrinth";
 import { applySimSettingsFromExtra } from "../shared/simSettings.js";
 import { buildCommunityBuffs } from "../shared/communityBuffs.js";
 import { runTrialIterations } from "../shared/guildTrialRuns.js";
 import { buildLabUpgradeBuffs } from "../shared/labUpgrades.js";
-import { setTwinBackend, runTwin, wantsWasmTwin, twinRunRequest } from "../shared/twinEngine.js";
+import { setTwinBackend, runTwin, twinRunRequest } from "../shared/twinEngine.js";
 import { loadWasmTwin } from "./twinWasm.js";
 
 onmessage = async function (event) {
     // MWIX adaptation (Rust twin): zone, labyrinth and trial jobs run on the
-    // wasm build of rust/ (always, since the UI's JS option was removed).
+    // wasm build of rust/, the only combat engine.
     let twin = null;
     try {
-        twin = wantsWasmTwin(event.data) ? await loadWasmTwin() : null;
+        twin = await loadWasmTwin();
     } catch (e) {
         console.log(e);
         this.postMessage({ type: "simulation_error", error: e });
@@ -48,70 +44,17 @@ onmessage = async function (event) {
             }
             extraBuffs = extraBuffs.concat(event.data.guildBuffs || []);
 
-            if (twin) {
-                const { zone, labyrinth, simulationTimeLimit, maxRuns, maxRunDurationNs } = event.data;
-                try {
-                    const players = event.data.players;
-                    const simResult = await runTwin(
-                        twin,
-                        // runLimits on a labyrinth too: the twin then throws JS's RangeError at the same point.
-                        twinRunRequest({ players, partyBuffs: extraBuffs, zone, labyrinth, simulationTimeLimit, runLimits: maxRuns ? { maxRuns, maxRunDurationNs } : undefined }),
-                        (progress) => this.postMessage({ type: "simulation_progress", progress, zone: zone?.zoneHrid, difficultyTier: zone?.difficultyTier, roomLevel: labyrinth?.roomLevel }),
-                    );
-                    this.postMessage({ type: "simulation_result", simResult });
-                } catch (e) {
-                    console.log(e);
-                    this.postMessage({ type: "simulation_error", error: e });
-                }
-                break;
-            }
-
-            let playersData = event.data.players;
-            let players = [];
-            let zone = null;
-            if (event.data.zone) {
-                zone = new Zone(event.data.zone.zoneHrid, event.data.zone.difficultyTier);
-            }
-            let labyrinth = null;
-            if (event.data.labyrinth) {
-                labyrinth = new Labyrinth(event.data.labyrinth.labyrinthHrid, event.data.labyrinth.roomLevel, event.data.labyrinth.crates);
-            }
-            for (let i = 0; i < playersData.length; i++) {
-                let currentPlayer = Player.createFromDTO(structuredClone(playersData[i]));
-                currentPlayer.zoneBuffs = zone?.buffs || labyrinth?.buffs || [];
-                // Party-wide buffs first, this unit's own tail after. Shrines
-                // are bought per member and seals are equipped per character,
-                // so both are properties of the UNIT: the UI resolves them per
-                // player and hangs them off the DTO, exactly as the trial path
-                // has done since 2026-09-18. `Player.createFromDTO` ignores the
-                // field, so it reaches this line only via the DTO object
-                // itself; a DTO without it yields the old behaviour exactly.
-                currentPlayer.extraBuffs = extraBuffs.concat(playersData[i].extraBuffs || []);
-                players.push(currentPlayer);
-            }
-            let simulationTimeLimit = event.data.simulationTimeLimit;
-            let combatSimulator = new CombatSimulator(players, zone, labyrinth);
-            combatSimulator.addEventListener("progress", (event) => {
-                this.postMessage({
-                    type: "simulation_progress",
-                    progress: event.detail.progress,
-                    zone: event.detail.zone,
-                    difficultyTier: event.detail.difficultyTier,
-                    labyrinth: event.detail.labyrinth,
-                    roomLevel: event.detail.roomLevel,
-                });
-            });
-
-            // MWIX adaptation (dungeon run mode): `maxRuns` asks for that many
-            // dungeon runs instead of an amount of time (see
-            // CombatSimulator._beginRunMode); multiWorker's
-            // start_simulation_dungeon_runs sends one such message per batch.
-            const runLimits = event.data.maxRuns
-                ? { maxRuns: event.data.maxRuns, maxRunDurationNs: event.data.maxRunDurationNs }
-                : undefined;
+            const { zone, labyrinth, simulationTimeLimit, maxRuns, maxRunDurationNs } = event.data;
             try {
-                let simResult = await combatSimulator.simulate(simulationTimeLimit, runLimits);
-                this.postMessage({ type: "simulation_result", simResult: simResult });
+                const players = event.data.players;
+                const simResult = await runTwin(
+                    twin,
+                    // MWIX adaptation (dungeon run mode): `maxRuns` asks for that many dungeon runs instead of an
+                    // amount of time; on a labyrinth the twin refuses it with a RangeError.
+                    twinRunRequest({ players, partyBuffs: extraBuffs, zone, labyrinth, simulationTimeLimit, runLimits: maxRuns ? { maxRuns, maxRunDurationNs } : undefined }),
+                    (progress) => this.postMessage({ type: "simulation_progress", progress, zone: zone?.zoneHrid, difficultyTier: zone?.difficultyTier, roomLevel: labyrinth?.roomLevel }),
+                );
+                this.postMessage({ type: "simulation_result", simResult });
             } catch (e) {
                 console.log(e);
                 this.postMessage({ type: "simulation_error", error: e });
@@ -153,7 +96,7 @@ onmessage = async function (event) {
             //   { players[], guildTrial: { trialHrid, startTier, participantCount,
             //     trialOptions }, guildBuffs[], extra, iterations }
             // trialOptions: { bonusHpRegenRatio?, bonusMpRegenRatio?, enemyScale? }
-            // — forwarded wholesale to GuildTrial (enemyScale is the debug knob
+            // — forwarded wholesale to the twin's trial (enemyScale is the debug knob
             // that scales the monsters' effective level; ladder/reporting keep
             // the true tier).
             const cfg = event.data.guildTrial || {};

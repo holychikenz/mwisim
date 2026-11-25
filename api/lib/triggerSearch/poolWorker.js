@@ -19,7 +19,7 @@
 import { parentPort } from 'worker_threads';
 
 const { runJob } = await import('./runJob.js');
-// CSIM_ENGINE=native|wasm: each worker registers its own twin backend (env is inherited from the pool's process).
+// CSIM_ENGINE: each worker registers its own twin backend (env is inherited from the pool's process).
 const twin = await (await import('../twin/index.mjs')).selectTwinFromEnv();
 
 parentPort.on('message', async (message) => {
@@ -29,7 +29,7 @@ parentPort.on('message', async (message) => {
     const { metrics } = await runJob(message.job, twin);
     parentPort.postMessage({ type: 'result', id: message.job.id, metrics });
   } catch (error) {
-    // A candidate that throws (an invalid trigger shape, MAX_TICKS exceeded)
+    // A candidate that throws (an invalid trigger shape, a stalled clock)
     // must not take the run down with it — report and let it not compete.
     parentPort.postMessage({ type: 'result', id: message.job.id, error: error?.message || String(error) });
   }

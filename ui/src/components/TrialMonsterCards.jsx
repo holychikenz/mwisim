@@ -16,7 +16,7 @@ import { usePersistentState } from '../hooks/usePersistentState';
 // badger fields two — so duplicates collapse into a single card with a ×N
 // badge). Stats are read straight off the bundled combatMonsterDetailMap:
 // trials always run at difficultyTier 0, so the base JSON values ARE the
-// Tier 0 · Lv 100 stats (see src/combatsimulator/guildTrial.js).
+// Tier 0 · Lv 100 stats (see rust/src/guild_trial.rs).
 // =============================================================================
 
 // The five attack styles carried in every monster's combatDetails. A monster

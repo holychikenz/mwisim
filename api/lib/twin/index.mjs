@@ -3,8 +3,8 @@
 //   unset        native when it is built and passes the pow guard, else wasm (the default)
 //   native       the Rust twin as a child process (./build.sh rust)
 //   wasm         the Rust twin as wasm (./build.sh wasm)
-//   js           the legacy JS engine (until it is deleted); nothing is imported
-// Registers the backend in shared/twinEngine.js and returns it (null for JS).
+// Anything else (including the retired `js`) throws.
+// Registers the backend in shared/twinEngine.js and returns it.
 //
 // An unset CSIM_ENGINE is decided once per realm and written back, so worker
 // threads and children started later inherit it. A built native that fails its
@@ -43,7 +43,8 @@ export async function selectTwinFromEnv() {
     b ??= await (await import('./wasm.mjs')).wasmBackend();
   } else if (name === 'native') b = (await import('./native.mjs')).nativeBackend();
   else if (name === 'wasm') b = await (await import('./wasm.mjs')).wasmBackend();
-  else if (name !== 'js') throw new Error(`CSIM_ENGINE must be native, wasm or js (got "${name}")`);
+  else if (name === 'js') throw new Error('CSIM_ENGINE=js: the JS combat engine was removed; use native or wasm (or leave CSIM_ENGINE unset)');
+  else throw new Error(`CSIM_ENGINE must be native or wasm (got "${name}")`);
   setTwinBackend(b);
   selected = true;
   return b;

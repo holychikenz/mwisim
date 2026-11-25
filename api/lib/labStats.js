@@ -50,7 +50,7 @@ function combatLevel(u) {
   return 0.1 * (u.staminaLevel + u.intelligenceLevel + u.attackLevel + u.defenseLevel + offence) + 0.5 * best;
 }
 
-// An entry as the twin returns it, or the JS engine's throw.
+// An entry as the twin returns it; a refused entry throws its error.
 function unit(entry) {
   if (!entry.ok) throw new Error(entry.error);
   return entry;

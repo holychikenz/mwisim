@@ -21,7 +21,7 @@
 //   finalFlat  = flatBoost  + (level - 1) * flatBoostLevelBonus
 //
 // The (level - 1) is deliberate and matches both the game server and the
-// engine's own Buff class (src/combatsimulator/buff.js): level 1 yields the
+// engine's own buff resolution (rust/src/buff.rs): level 1 yields the
 // BASE value, not base + one bonus step. Verified against server-resolved
 // `guildActionTypeBuffsMap["/action_types/combat"]`, which for a character with
 // force_combat at level 2 reports damage ratioBoost 0.006 — i.e.

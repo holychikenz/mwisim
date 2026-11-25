@@ -8,20 +8,13 @@ const __dirname = dirname(__filename);
 // Path to the simulation source files
 const SRC_PATH = join(__dirname, '../../src/combatsimulator');
 
-// The JS engine, loaded on its first JS-path call only: with CSIM_ENGINE=native|wasm it is never loaded.
-let jsEngine = null;
-const loadJsEngine = () => (jsEngine ??= Promise.all([
-  import('../../src/combatsimulator/combatSimulator.js'),
-  import('../../src/combatsimulator/player.js'),
-  import('../../src/combatsimulator/zone.js'),
-]).then(([c, p, z]) => ({ CombatSimulator: c.default, Player: p.default, Zone: z.default })));
 const { TRIAL_START_TIER } = await import('../../shared/trialLadder.js');
 const { aggregateTrialResults } = await import('../../shared/guildTrialStats.js');
 const { runDungeonRunsSerial, addRunIdleTime, DEFAULT_MAX_RUN_HOURS, ONE_HOUR_NS } = await import('../../shared/dungeonRuns.js');
 const { buildCommunityBuffs } = await import('../../shared/communityBuffs.js');
 const { runTrialIterations } = await import('../../shared/guildTrialRuns.js');
 const { getTwinBackend, runTwin, twinZoneRequest } = await import('../../shared/twinEngine.js');
-// CSIM_ENGINE=native|wasm routes the seams below to the Rust twin; unset is the JS engine.
+// CSIM_ENGINE (native|wasm; unset: native if built, else wasm) picks the Rust twin backend.
 await (await import('./twin/index.mjs')).selectTwinFromEnv();
 
 /**
@@ -70,48 +63,14 @@ export async function runSimulation({ players: playersData, zone: zoneConfig, si
   return simulateOnMainThread(args);
 }
 
-/** One simulate() on a fresh Zone and fresh players — runSimulation's main-thread body. */
+/** One twin run — runSimulation's body. */
 async function simulateOnMainThread({ players: playersData, zone: zoneConfig, simulationTimeLimit, extra = {}, guildBuffs = [] }, runLimits) {
-  // Main thread (faster for small simulations)
   // Guild SHRINE buffs are permanent character buffs and apply to every fight,
   // not just guild trials — mirrors the same concat in src/worker.js. Guild
   // BUILDING buffs are excluded here: those are trial-only.
   const extraBuffs = buildExtraBuffs(extra).concat(guildBuffs);
 
-  const twin = getTwinBackend();
-  if (twin) {
-    return runTwin(twin, twinZoneRequest({ players: playersData, partyBuffs: extraBuffs, zone: zoneConfig, simulationTimeLimit, runLimits }));
-  }
-
-  const { CombatSimulator, Player, Zone } = await loadJsEngine();
-  // Create Zone
-  const zone = new Zone(zoneConfig.zoneHrid, zoneConfig.difficultyTier);
-
-  // Create Player objects from DTOs
-  const players = [];
-  for (let i = 0; i < playersData.length; i++) {
-    const currentPlayer = Player.createFromDTO(structuredClone(playersData[i]));
-    currentPlayer.zoneBuffs = zone.buffs;
-    // Shared buffs first, this unit's own tail after. Shrines are bought per
-    // guild member and seals are equipped per character, so the UI resolves
-    // both per player and hangs them off the DTO — the same concat src/worker.js
-    // does in its `start_simulation` and `start_guild_trial` cases (named rather
-    // than cited by line, so this reference cannot rot). A DTO without
-    // `extraBuffs` yields the old behaviour exactly; Player.createFromDTO
-    // ignores the field, so it reaches this line only via the DTO itself.
-    currentPlayer.extraBuffs = extraBuffs.concat(playersData[i].extraBuffs || []);
-    players.push(currentPlayer);
-  }
-
-  // `labyrinth` is the third positional arg: pass null explicitly. Omitting it
-  // made `this.labyrinth` truthy, and startNewEncounter() calls
-  // this.labyrinth.getMonster() unconditionally, throwing on the first encounter.
-  const combatSimulator = new CombatSimulator(players, zone, null);
-
-  // Run simulation
-  const simResult = await combatSimulator.simulate(simulationTimeLimit, runLimits);
-
-  return simResult;
+  return runTwin(getTwinBackend(), twinZoneRequest({ players: playersData, partyBuffs: extraBuffs, zone: zoneConfig, simulationTimeLimit, runLimits }));
 }
 
 /**

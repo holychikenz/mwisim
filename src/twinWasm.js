@@ -34,7 +34,7 @@ export function loadWasmTwin() {
         }
         await mod.default({ module_or_path: wasmUrl });
         // shortcut: each worker re-stringifies the 13 maps (~5 ms of a ~20 ms load, measured in Node); pass raw text or a filtered subset (plan R3) if per-worker start-up on wasm starts to matter.
-        // The live dataProvider maps, so the twin sees what the JS engine in this realm sees.
+        // The live dataProvider maps, so the twin sees what the rest of this realm sees.
         const data = {};
         for (const name of TWIN_DATA_NAMES) data[name] = dataProvider[EXPORT_NAME[name] ?? name];
         mod.load_data(JSON.stringify(data));

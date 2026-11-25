@@ -7,10 +7,9 @@
 //   src/multiWorker.js       — the browser: one shard per core, each a nested worker
 //   api/lib/simulator.js     — Node, the API and tests: batches on the main thread
 //
-// The engine side is simulate(limit, { maxRuns, maxRunDurationNs }) — see
-// CombatSimulator._beginRunMode. The engine never imports this file: MWIX
-// vendors only src/combatsimulator/ (MWIX-RELATIONSHIP.md), and batching is not
-// the engine's business. A batch is just one more simulate() on a fresh Zone.
+// The engine side is a twin request with runLimits { maxRuns, maxRunDurationNs }
+// (rust/src/simulator.rs). Batching is not the engine's business: a batch is
+// just one more run request.
 //
 // SHARDS AND BATCHES. A shard is the runs one worker owns (planShards). Within
 // a shard, runs go in batches (planBatches) so no single simulate() is asked
