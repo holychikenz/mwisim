@@ -48,7 +48,6 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const TRIGGER_PATH = path.join(ROOT, "src/combatsimulator/trigger.js");
 const OUT_PATH = path.join(ROOT, "src/combatsimulator/generated/triggerKinds.js");
 
 // Digits ARE in the class, for the reason genBuffTypes.mjs states: a pattern
@@ -87,10 +86,11 @@ export function extractScalarKinds(source) {
 }
 
 export function collect() {
-    const source = fs.readFileSync(TRIGGER_PATH, "utf8");
-    const exact = extractList(source, "EXACT_BUFF_CONDITIONS");
-    const prefix = extractList(source, "PREFIX_BUFF_CONDITIONS");
-    const scalars = extractScalarKinds(source);
+    // The grouping lists, once read from trigger.js, now live in tools/engineTables.json (engine-retirement G9).
+    const tables = JSON.parse(fs.readFileSync(path.join(ROOT, "tools/engineTables.json"), "utf8"));
+    const exact = tables.EXACT_BUFF_CONDITIONS;
+    const prefix = tables.PREFIX_BUFF_CONDITIONS;
+    const scalars = Object.entries(tables.SCALAR_CONDITION_KINDS);
 
     const byCondition = new Map();
     const assign = (hrid, kind) => {

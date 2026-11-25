@@ -25,7 +25,7 @@
 //
 // Three deliberate choices:
 //
-//  * The role lists are READ FROM THE ENGINE SOURCE, not re-derived from the
+//  * The role lists are THE ENGINE'S OWN (tools/engineTables.json since G9), not re-derived from the
 //    game data. That was tried first and it is wrong: five names in
 //    EQUIPMENT_COMBAT_STATS (combatDropQuantity, elementalThorns,
 //    physicalAmplify, physicalThorns, retaliation) are granted by no item in
@@ -53,7 +53,8 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const ENGINE_DIR = path.join(ROOT, "src/combatsimulator");
+// The role lists, once read from player.js / monster.js, now live here (engine-retirement G9).
+export const TABLES_PATH = path.join(ROOT, "tools/engineTables.json");
 const DATA_DIR = path.join(ROOT, "src/combatsimulator/data");
 const OUT_PATH = path.join(ROOT, "src/combatsimulator/generated/statSchema.js");
 
@@ -106,11 +107,10 @@ export function collectResidualMonsterStats(zeroed) {
 }
 
 export function collect() {
-    const playerSrc = fs.readFileSync(path.join(ENGINE_DIR, "player.js"), "utf8");
-    const monsterSrc = fs.readFileSync(path.join(ENGINE_DIR, "monster.js"), "utf8");
-    const monsterZeroed = extractList(monsterSrc, "MONSTER_ZEROED_COMBAT_STATS");
+    const tables = JSON.parse(fs.readFileSync(TABLES_PATH, "utf8"));
+    const monsterZeroed = tables.MONSTER_ZEROED_COMBAT_STATS;
     return {
-        equipment: extractList(playerSrc, "EQUIPMENT_COMBAT_STATS"),
+        equipment: tables.EQUIPMENT_COMBAT_STATS,
         monsterZeroed,
         monsterResidual: collectResidualMonsterStats(monsterZeroed),
     };

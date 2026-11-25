@@ -40,7 +40,8 @@ import { fileURLToPath } from "node:url";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const DATA_DIR = path.join(ROOT, "src/combatsimulator/data");
-const ENGINE_DIR = path.join(ROOT, "src/combatsimulator");
+// The Rust engine names the synthesised buff types as literals (engine-retirement G9: it used to scan the JS engine).
+const ENGINE_DIR = path.join(ROOT, "rust/src");
 const OUT_PATH = path.join(ROOT, "src/combatsimulator/generated/buffTypes.js");
 
 const PREFIX = "/buff_types/";
@@ -79,7 +80,7 @@ function listFiles(dir, ext, acc = []) {
         if (entry.isDirectory()) {
             if (entry.name === "generated" || entry.name === "data") continue;
             listFiles(full, ext, acc);
-        } else if (entry.name.endsWith(ext)) {
+        } else if (entry.name.endsWith(ext) && entry.name !== "generated.rs") { // its BUFF_TYPE_NAMES is this table's output
             acc.push(full);
         }
     }
@@ -97,7 +98,7 @@ export function collect() {
     // 2. Buff types the engine names as literals — the combat-effect buffs
     //    (fury, damage-taken and so on) that no data map declares because the
     //    engine synthesises them.
-    for (const file of listFiles(ENGINE_DIR, ".js").sort()) {
+    for (const file of listFiles(ENGINE_DIR, ".rs").sort()) {
         for (const hrid of scanHrids(fs.readFileSync(file, "utf8"))) found.add(hrid);
     }
 
