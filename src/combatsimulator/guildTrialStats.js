@@ -9,7 +9,8 @@
 //   aggregateTrialResults(summaries, o) → cross-iteration statistics
 // =============================================================================
 
-import GuildTrial from "./guildTrial";
+// The ladder constants only: importing GuildTrial would load the engine (Monster) for twin-only callers.
+import { TRIAL_START_TIER, TRIAL_TIER_STEP, TRIAL_MAX_TIER } from "./trialLadder";
 
 const ONE_SECOND_NS = 1e9;
 
@@ -187,9 +188,9 @@ export function computeTrialRewards(tiersCleared, {
  */
 export function aggregateTrialResults(summaries, opts = {}) {
     const n = summaries.length;
-    const startTier = opts.startTier ?? GuildTrial.START_TIER;
-    const step = GuildTrial.TIER_STEP;
-    const cap = GuildTrial.MAX_TIER;
+    const startTier = opts.startTier ?? TRIAL_START_TIER;
+    const step = TRIAL_TIER_STEP;
+    const cap = TRIAL_MAX_TIER;
 
     if (n === 0) {
         return {

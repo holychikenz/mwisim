@@ -8,11 +8,14 @@ const __dirname = dirname(__filename);
 // Path to the simulation source files
 const SRC_PATH = join(__dirname, '../../src/combatsimulator');
 
-// Dynamic import the simulation classes (for non-worker simulation)
-const CombatSimulator = (await import('../../src/combatsimulator/combatSimulator.js')).default;
-const Player = (await import('../../src/combatsimulator/player.js')).default;
-const Zone = (await import('../../src/combatsimulator/zone.js')).default;
-const GuildTrial = (await import('../../src/combatsimulator/guildTrial.js')).default;
+// The JS engine, loaded on its first JS-path call only: with CSIM_ENGINE=native|wasm it is never loaded.
+let jsEngine = null;
+const loadJsEngine = () => (jsEngine ??= Promise.all([
+  import('../../src/combatsimulator/combatSimulator.js'),
+  import('../../src/combatsimulator/player.js'),
+  import('../../src/combatsimulator/zone.js'),
+]).then(([c, p, z]) => ({ CombatSimulator: c.default, Player: p.default, Zone: z.default })));
+const { TRIAL_START_TIER } = await import('../../src/combatsimulator/trialLadder.js');
 const { aggregateTrialResults } = await import('../../src/combatsimulator/guildTrialStats.js');
 const { runDungeonRunsSerial, addRunIdleTime, DEFAULT_MAX_RUN_HOURS, ONE_HOUR_NS } = await import('../../shared/dungeonRuns.js');
 const { buildCommunityBuffs } = await import('../../shared/communityBuffs.js');
@@ -80,6 +83,7 @@ async function simulateOnMainThread({ players: playersData, zone: zoneConfig, si
     return runTwin(twin, twinZoneRequest({ players: playersData, partyBuffs: extraBuffs, zone: zoneConfig, simulationTimeLimit, runLimits }));
   }
 
+  const { CombatSimulator, Player, Zone } = await loadJsEngine();
   // Create Zone
   const zone = new Zone(zoneConfig.zoneHrid, zoneConfig.difficultyTier);
 
@@ -131,7 +135,7 @@ async function simulateOnMainThread({ players: playersData, zone: zoneConfig, si
 export async function runGuildTrialSimulation({
   players: playersData,
   trialHrid,
-  startTier = GuildTrial.START_TIER,
+  startTier = TRIAL_START_TIER,
   participantCount,
   iterations = 100,
   trialOptions = {},

@@ -102,9 +102,10 @@ jobs:
 
       # The fast twin subset ./build.sh check runs: selftest (rng, pow guard,
       # number parsing; the native pow guard is verified on linux amd64 and
-      # aarch64, and this gate keeps it so) and every twin:check case at 2 seeds, bit for bit
-      # against JS. The full 16-seed run stays manual: ./build.sh rust twin.
-      - name: twin-quick — Rust twin vs JS
+      # aarch64, and this gate keeps it so) and every twin:check case at 2 seeds, JS and the
+      # twin bit for bit against the frozen goldens (fixtures/twin/goldens.json; a change
+      # needs a reviewed `npm run twin:freeze`). The full 4-seed run: ./build.sh rust twin.
+      - name: twin-quick — JS and Rust twin vs goldens
         working-directory: .
         run: ./build.sh twin-quick
 
