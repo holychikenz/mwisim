@@ -38,10 +38,13 @@ export function createPreviewClient(newHost, crashError) {
     return entry;
   };
 
-  return (path, body) => new Promise((resolve, reject) => {
+  const request = (path, body) => new Promise((resolve, reject) => {
     const entry = (current ??= start());
     const id = ++nextId;
     entry.pending.set(id, { resolve, reject });
     entry.host.postMessage({ type: 'preview', id, path, body });
   });
+  /** End the host (a dev hot reload would otherwise leave one behind per edit); the next request starts afresh. */
+  request.dispose = () => current && retire(current, new Error('The optimiser preview was reset.'));
+  return request;
 }

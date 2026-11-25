@@ -30,10 +30,17 @@ onmessage = async ({ data }) => {
         return;
     }
     if (data?.type !== "run") return;
+    let runJob, twin;
     try {
-        const { runJob } = await loaded;
+        ({ runJob } = await loaded);
         // Per job, as src/worker.js does per message: after a trap loadWasmTwin() hands back a fresh instance (cached otherwise).
-        const twin = engine === "wasm" ? await loadWasmTwin() : null;
+        twin = engine === "wasm" ? await loadWasmTwin() : null;
+    } catch (error) {
+        // No engine is a dead worker, not a failed candidate: browserPool ends it, so its later jobs are not all errors.
+        postMessage({ type: "fatal", error: error?.message || String(error) });
+        return;
+    }
+    try {
         setTwinBackend(twin);
         const { metrics } = await runJob(data.job, twin);
         postMessage({ type: "result", id: data.job.id, metrics });

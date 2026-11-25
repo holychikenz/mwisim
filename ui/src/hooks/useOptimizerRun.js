@@ -37,6 +37,7 @@ const hostCrash = (name, event, started = false) => {
 
 // One preview host for every optimiser hook (workers/previewClient.js).
 const requestPreview = createPreviewClient(newHost, (event) => hostCrash('The optimiser', event));
+import.meta.hot?.dispose(() => requestPreview.dispose());
 
 /**
  * @param {object} options

@@ -21,7 +21,8 @@ function spawnSimWorker(init) {
     };
     worker.onmessage = ({ data }) => {
         // An engine that will not load fails the pool's start, as a worker_thread that throws on import does.
-        if (data?.type === "init_error") {
+        // `fatal`: the engine would not reload after a trap; the pool drops this worker as a dead worker_thread.
+        if (data?.type === "init_error" || data?.type === "fatal") {
             emit("error", new Error(data.error));
             exit();
             return;

@@ -147,7 +147,10 @@ class SimulationPool {
     );
 
     this.#drain();
-    return Promise.all(results);
+    const settled = await Promise.all(results);
+    // Every worker died mid-batch: fail the run rather than rank on whichever candidates happened to finish.
+    if (!this.destroyed && !this.workers.length) throw new Error('no workers left');
+    return settled;
   }
 
   /** Terminate every worker. Safe to call twice. */

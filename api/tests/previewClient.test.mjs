@@ -50,3 +50,13 @@ test('a crash rejects every waiting preview and the next starts a fresh host', a
   request('a', {});
   assert.equal(hosts.length, 2);
 });
+
+test('dispose ends the host and rejects waiting previews; the next request starts a fresh host', async () => {
+  const { hosts, request } = setup();
+  const waiting = request('a', {});
+  request.dispose();
+  await assert.rejects(waiting, /reset/);
+  assert.equal(hosts[0].terminated, true);
+  request('a', {});
+  assert.equal(hosts.length, 2);
+});
