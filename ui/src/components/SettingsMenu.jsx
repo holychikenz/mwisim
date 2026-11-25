@@ -101,8 +101,8 @@ export function SettingsMenu({ settings, onChange }) {
             value={s.engine}
             onChange={(v) => set({ engine: v })}
             data={[
-              { value: 'js', label: 'JS' },
-              { value: 'wasm', label: 'Rust (wasm)' }
+              { value: 'wasm', label: 'Rust (wasm)' },
+              { value: 'js', label: 'JS (legacy)' }
             ]}
           />
           <Text size="xs" c="dimmed">

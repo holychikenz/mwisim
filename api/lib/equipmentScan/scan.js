@@ -45,7 +45,7 @@ import {
   ONE_HOUR_NS,
 } from '../triggerSearch/score.js';
 import { pairedComparison } from './stats.js';
-import { AbortError } from '../triggerSearch/pool.js';
+import { AbortError } from '../triggerSearch/poolCore.js';
 
 /**
  * Defaults.

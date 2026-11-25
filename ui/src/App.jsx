@@ -252,9 +252,8 @@ function App() {
     clearResults: clearSimResults
   } = useSimulation();
 
-  // The trigger optimiser is the only feature that runs on the csim API rather
-  // than in a browser worker — the search is hundreds of simulations and belongs
-  // on a machine with real threads. See utils/apiBase.js.
+  // The optimisers run the csim API's own tools in the browser, over a pool of
+  // engine workers (hooks/useOptimizerRun.js, workers/optimizerHost.js).
   const triggerOpt = useTriggerOptimizer();
   const [triggerOptConfig, setTriggerOptConfig] = useState(() => loadTriggerOptState().config);
   const [triggerOptSelection, setTriggerOptSelection] = useState([]);
@@ -1346,7 +1345,9 @@ function App() {
       extra: {
         comExp: extraOptions.comExp,
         comDrop: extraOptions.comDrop,
-        mooPass: extraOptions.mooPass
+        mooPass: extraOptions.mooPass,
+        // The engine toggle and knobs, as the Simulate tab's worker reads them (workers/optimizerHost.js).
+        experimental
       },
       // Empty, and deliberately still sent: this field is the PARTY-WIDE buff
       // list, and shrines are no longer party-wide. The server composes
@@ -1365,6 +1366,7 @@ function App() {
     zone,
     difficultyTier,
     extraOptions,
+    experimental,
     // usePrices returns a fresh object literal each render, so depend on the stable
     // values inside it rather than the wrapper — otherwise the preview refetches on
     // every keystroke anywhere in the app.
@@ -1706,7 +1708,7 @@ function App() {
   }, [characters, applyPlayerEdit]);
 
   const subjectPanelProps = (engine, config, setConfig, costRows) => ({
-    preview: engine.preview, previewing: engine.previewing, apiReachable: engine.apiReachable, loading: engine.loading,
+    preview: engine.preview, previewing: engine.previewing, loading: engine.loading,
     config, onConfigChange: setConfig, subjectOptions, subject: subjectSlot == null ? null : String(subjectSlot),
     onSubjectChange: (value) => setSubjectPick(Number(value)), subjectNotice, pricing, consumableCostRows: costRows
   });
@@ -1735,7 +1737,6 @@ function App() {
         <TriggerOptimizerPanel
           preview={triggerOpt.preview}
           previewing={triggerOpt.previewing}
-          apiReachable={triggerOpt.apiReachable}
           selection={triggerOptSelection}
           onSelectionChange={setTriggerOptSelection}
           config={triggerOptConfig}
@@ -1765,7 +1766,6 @@ function App() {
         <EquipmentOptimizerPanel
           preview={equipOpt.preview}
           previewing={equipOpt.previewing}
-          apiReachable={equipOpt.apiReachable}
           selection={equipOptSelection}
           onSelectionChange={setEquipOptSelection}
           config={equipOptConfig}

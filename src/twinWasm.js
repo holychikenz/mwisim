@@ -2,7 +2,7 @@
 // twinWasm — the browser worker's loader for the wasm Rust twin (rust/pkg/,
 // built by `./build.sh wasm`). The globs are empty in a checkout without that
 // build, so the UI still builds; loadWasmTwin() then throws instead.
-// No top-level await: workers build as iife.
+// No top-level await here: it is statically imported by src/worker.js, whose onmessage must be set before any await.
 // =============================================================================
 
 import * as dataProvider from "./combatsimulator/dataProvider";
@@ -23,7 +23,15 @@ let loads = 0;
 export function loadWasmTwin() {
     loading ??= (async () => {
         if (!pkg || !wasmUrl) throw new Error("The Rust (wasm) engine is not in this build: run ./build.sh wasm ui");
-        const mod = loads++ === 0 ? pkg : await import(/* @vite-ignore */ URL.createObjectURL(new Blob([pkgSource], { type: "text/javascript" })));
+        let mod = pkg;
+        if (loads++ > 0) {
+            const url = URL.createObjectURL(new Blob([pkgSource], { type: "text/javascript" }));
+            try {
+                mod = await import(/* @vite-ignore */ url);
+            } finally {
+                URL.revokeObjectURL(url); // the module is evaluated by now; the URL is only needed to fetch it
+            }
+        }
         await mod.default({ module_or_path: wasmUrl });
         // shortcut: each worker re-stringifies the 13 maps (~5 ms of a ~20 ms load, measured in Node); pass raw text or a filtered subset (plan R3) if per-worker start-up on wasm starts to matter.
         // The live dataProvider maps, so the twin sees what the JS engine in this realm sees.

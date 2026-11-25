@@ -37,7 +37,7 @@
 // =============================================================================
 
 import { gridFor, coarseGridSize } from './grids.js';
-import { AbortError } from './pool.js';
+import { AbortError } from './poolCore.js';
 import { applyValues, countConditions, readValues } from './params.js';
 import {
   DEFAULT_INSENSITIVITY_EPSILON,

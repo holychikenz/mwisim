@@ -28,7 +28,6 @@ export function CandidateOptimizerPanel({
   blurb,
   preview,
   previewing,
-  apiReachable,
   loading,
   config,
   onConfigChange,
@@ -41,20 +40,6 @@ export function CandidateOptimizerPanel({
   children
 }) {
   const setCfg = (patch) => onConfigChange?.({ ...config, ...patch });
-
-  if (apiReachable === false) {
-    return (
-      <Alert color="orange" title="csim API not running" variant="light">
-        <Text size="xs">
-          Like the other optimisers, {title} runs its simulations on the server, across a thread pool.
-        </Text>
-        <Text size="xs" mt={6}>
-          Start it with <Text span ff="monospace">npm start</Text> in{' '}
-          <Text span ff="monospace">csim/api</Text>, then reopen this panel.
-        </Text>
-      </Alert>
-    );
-  }
 
   // Read from the preview: the server echoes the target it will actually run.
   const labyrinth = preview?.target?.kind === 'labyrinth';

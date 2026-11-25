@@ -16,6 +16,11 @@ ui/src/utils/characterToPlayer.js ──▶ port of tampermonkey/src/kernel/csim
   `simulation_progress` / `simulation_result` / `simulation_error`).
   The Express API (`csim/api/`) still exists for headless/automation use,
   but the UI does not depend on it.
+- **The optimisers** (Triggers, Gear, Loadout, Abilities, Progress, Swaps) run
+  the API's own tools (`api/lib/tools/*.js`) in the browser:
+  `hooks/useOptimizerRun.js` → `src/workers/optimizerHost.js` → a pool of
+  `src/workers/optimizerSim.js` workers on the wasm twin (or the JS engine, per
+  the Settings engine toggle). See `../docs/engine-retirement/PLAN.md`.
 - **Layout**: AppShell workbench — sticky header (zone, tier, duration,
   buffs, All Zones, Run), left rail (party + per-player config), main area
   (results dashboard with tabs).
@@ -32,7 +37,7 @@ ui/src/utils/characterToPlayer.js ──▶ port of tampermonkey/src/kernel/csim
 
 ```bash
 npm install
-npm run dev      # http://localhost:5173 (proxies /api and /health to :3001)
+npm run dev      # http://localhost:5173
 npm run build    # production bundle in dist/
 npm run lint
 ```

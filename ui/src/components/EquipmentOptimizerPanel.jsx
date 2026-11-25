@@ -92,7 +92,6 @@ function SlotRow({ row, checked, disabled, onToggle }) {
 export function EquipmentOptimizerPanel({
   preview,
   previewing,
-  apiReachable,
   selection,
   onSelectionChange,
   config,
@@ -140,21 +139,6 @@ export function EquipmentOptimizerPanel({
   const dungeon = !labyrinth && !!preview?.target?.dungeon;
   const rateShort = dungeon ? 'completions' : 'enc';
   const rateNoun = dungeon ? 'dungeon completions' : 'encounters';
-
-  if (apiReachable === false) {
-    return (
-      <Alert color="orange" title="csim API not running" variant="light">
-        <Text size="xs">
-          Like the Trigger Optimizer, the Equipment Optimizer runs its simulations on the server —
-          dozens of them, across a thread pool.
-        </Text>
-        <Text size="xs" mt={6}>
-          Start it with <Text span ff="monospace">npm start</Text> in{' '}
-          <Text span ff="monospace">csim/api</Text>, then reopen this panel.
-        </Text>
-      </Alert>
-    );
-  }
 
   return (
     <SimpleGrid cols={{ base: 1, lg: 2 }} spacing="sm">

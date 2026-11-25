@@ -19,10 +19,10 @@ export const EXPERIMENTAL_DEFAULTS = Object.freeze({
   // "random" = force upstream everywhere (U[0.5, 1.0)*CD, mean 0.75)
   // "half"   = force a flat 0.5*CD everywhere
   monsterStartCooldown: 'auto',
-  // "js"   = the JS engine (default)
   // "wasm" = the Rust twin (rust/, ./build.sh wasm), bit-identical by
-  //          twin:check; labyrinths still run on JS
-  engine: 'js'
+  //          twin:check (default; deploy.yml fails a build without it)
+  // "js"   = the JS engine, kept as a fallback while it is retired
+  engine: 'wasm'
 });
 
 export function loadExperimental() {

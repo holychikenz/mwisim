@@ -58,13 +58,12 @@ test('audit-6: an abort mid-batch rejects the evaluation and frees the workers',
   assert.equal(pool.workers.length, 0);
 });
 
-test('audit-6: losing the last worker fails the queue instead of hanging', async (t) => {
+test('audit-6: losing the last worker fails the run instead of hanging or ranking a partial batch', async (t) => {
   const pool = await pool1(t);
   const run = pool.run([job(1), job(2)]);
   await sleep(300);
   await pool.workers[0].terminate();
-  const results = await within(2000, run);
-  assert.ok(results.every((r) => r.error), JSON.stringify(results));
+  await assert.rejects(within(2000, run), /no workers left/);
   await pool.destroy();
 });
 
@@ -73,7 +72,7 @@ test('audit2-2: a run() after the last worker is gone rejects instead of hanging
   const first = pool.run([job(1)]);
   await sleep(300);
   await pool.workers[0].terminate();
-  await within(2000, first);
+  await assert.rejects(within(2000, first), /no workers left/);
   await assert.rejects(within(2000, pool.run([job(2)])), /no workers left/);
 });
 

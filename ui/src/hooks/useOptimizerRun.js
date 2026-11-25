@@ -1,48 +1,47 @@
 // =============================================================================
-// useOptimizerRun — drives one of the backend optimisers (trigger search,
-// equipment scan) over csim/api. useTriggerOptimizer and useEquipmentOptimizer
-// are this hook with their endpoint, result kind and name.
+// useOptimizerRun — drives one of the optimiser tools (trigger search, equipment
+// scan, loadout, abilities, progress, swaps) in the browser. useTriggerOptimizer
+// and its siblings are this hook with their tool path, result kind and name.
 //
 // Mirrors useSimulation's contract ({ loading, progress, results, error, run…,
-// clearResults }) so App can treat it the same way, but the transport is
-// different: this talks to csim/api rather than spawning a Web Worker.
-//
-// SSE over POST, not EventSource. EventSource can only issue GET requests, and
-// the payload here is a full set of player DTOs plus a stage configuration —
-// far too large for a query string, and it would put build data in a URL. So we
-// POST and read the response body as a stream, splitting frames on the blank
-// line ourselves.
+// clearResults }) so App can treat it the same way. The tools are the csim API's
+// own (api/lib/tools/*.js), run by a Web Worker host (workers/optimizerHost.js)
+// over a pool of engine workers, so no API needs to be running: previews go to
+// one long-lived host, and each run gets a fresh host, terminated when it ends
+// or is cancelled. The frames are the API's SSE frames, unchanged.
 // =============================================================================
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRunResults } from './useRunResults.js';
-import { apiUrl, pingApi } from '../utils/apiBase';
 import { createLatestGate } from '../utils/latestRequest';
+import { createPreviewClient } from '../workers/previewClient.js';
 
 /**
- * Abandon a run that has gone quiet. The server heartbeats every 10s
- * (api/routes/optimizeTriggers.js HEARTBEAT_MS), so silence for this long means
- * the connection is genuinely dead rather than merely busy with a long candidate.
- * useSimulation uses 30s against a worker that reports every 1000 ticks; this is
- * looser because a single 72-hour candidate can legitimately take a while.
+ * Abandon a run that has gone quiet. The host heartbeats every 10s
+ * (workers/optimizerHost.js), so silence for this long means it is wedged
+ * rather than merely busy with a long candidate.
  */
 const STALL_TIMEOUT_MS = 60_000;
 
 /** Frames arrive fast; repainting on every one wastes far more time than it costs. */
 const PROGRESS_THROTTLE_MS = 100;
 
-const API_DOWN_MESSAGE =
-  'Cannot reach the csim API. Start it with `npm start` in csim/api ' +
-  '(it listens on port 3001), then try again.';
+const newHost = () => new Worker(new URL('../workers/optimizerHost.js', import.meta.url), { type: 'module' });
 
-/** A 404 from a reachable API means the running API predates this tool. */
-const httpError = (name, status, fallback) => (status === 404
-  ? `${name} is not on the running csim API: it is older than this page. Restart it (\`npm start\` in csim/api).`
-  : fallback);
+/** A host that died answers with this, not silence: before any frame it never started, after one it stopped. */
+const hostCrash = (name, event, started = false) => {
+  event?.preventDefault?.();
+  const what = started ? 'stopped unexpectedly' : 'could not start in this browser';
+  return new Error(`${name} ${what}${event?.message ? `: ${event.message}` : ''}.`);
+};
+
+// One preview host for every optimiser hook (workers/previewClient.js).
+const requestPreview = createPreviewClient(newHost, (event) => hostCrash('The optimiser', event));
+import.meta.hot?.dispose(() => requestPreview.dispose());
 
 /**
  * @param {object} options
- * @param {string} options.endpoint  e.g. '/api/optimize-triggers'; the preview is `${endpoint}/preview`
+ * @param {string} options.endpoint  the tool's path, e.g. '/api/optimize-triggers' (api/lib/tools/*.js `path`)
  * @param {string} options.kind      the `__kind` its results are tagged with, for App's routing
  * @param {string} options.name      how errors name it, e.g. 'The optimiser'
  */
@@ -58,9 +57,10 @@ export function useOptimizerRun({ endpoint, kind, name }) {
   // The payload the shown preview answers: a panel that seeds state from it can tell when it is stale.
   const [previewFor, setPreviewFor] = useState(null);
   const [previewing, setPreviewing] = useState(false);
-  const [apiReachable, setApiReachable] = useState(null); // null = not yet checked
 
-  const abortRef = useRef(null);
+  const path = endpoint.replace(/^\/?api\//, '');
+  // The run in flight: its host, and `end` to settle its promise when stop() ends it from outside.
+  const runRef = useRef(null);
   // A late preview or run must not settle state that belongs to a newer one.
   const [nextPreview] = useState(createLatestGate);
   const [nextRun] = useState(createLatestGate);
@@ -76,15 +76,17 @@ export function useOptimizerRun({ endpoint, kind, name }) {
 
   const stop = useCallback(() => {
     clearWatchdog();
-    if (abortRef.current) {
-      abortRef.current.abort();
-      abortRef.current = null;
+    const run = runRef.current;
+    runRef.current = null;
+    if (run) {
+      // Terminating the host ends its pool's workers with it (nested workers die with their owner).
+      run.host.terminate();
+      run.end();
     }
   }, [clearWatchdog]);
 
   // Kill any in-flight run when the component unmounts, so navigating away does
-  // not leave a worker pool saturating the server for a result nobody will read.
-  // (The server also aborts on socket close — belt and braces.)
+  // not leave a worker pool saturating the machine for a result nobody will read.
   useEffect(() => stop, [stop]);
 
   const armWatchdog = useCallback(() => {
@@ -97,43 +99,29 @@ export function useOptimizerRun({ endpoint, kind, name }) {
   }, [clearWatchdog, stop, name]);
 
   /**
-   * Ask the backend what can be searched and what it will cost. Cheap and
-   * synchronous server-side; called on every configuration change.
+   * Ask the tool what can be searched and what it will cost. Cheap; called on
+   * every configuration change, so one long-lived host answers every preview.
    */
   const fetchPreview = useCallback(async (payload) => {
     const isLatest = nextPreview();
     setPreviewing(true);
     setError(null);
     try {
-      const response = await fetch(apiUrl(`${endpoint}/preview`), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-      // Not JSON: Express's HTML 404, from an API started before this tool's route existed.
-      const body = await response.json().catch(() => null);
-      if (!response.ok || !body?.success) {
-        throw new Error(body?.error || httpError(name, response.status, `Preview failed (HTTP ${response.status})`));
-      }
+      const { status, json } = await requestPreview(path, payload);
+      if (!json?.success) throw new Error(json?.error || `Preview failed (${status})`);
       if (!isLatest()) return null;
-      setPreview(body);
+      setPreview(json);
       setPreviewFor(payload);
-      setApiReachable(true);
-      return body;
+      return json;
     } catch (caught) {
-      // Distinguish "the API is not running" from "the API said no". The former is
-      // by far the likelier mistake, since every other panel in this UI works
-      // without the API at all and a user has no reason to expect they need it.
-      const reachable = await pingApi();
       if (!isLatest()) return null;
-      setApiReachable(reachable);
       setPreview(null);
-      setError(reachable ? caught : new Error(API_DOWN_MESSAGE));
+      setError(caught);
       return null;
     } finally {
       if (isLatest()) setPreviewing(false);
     }
-  }, [nextPreview, endpoint, name]);
+  }, [nextPreview, path]);
 
   /**
    * Run the search, streaming progress.
@@ -151,128 +139,84 @@ export function useOptimizerRun({ endpoint, kind, name }) {
       begin();
       setError(null);
 
-      const controller = new AbortController();
-      abortRef.current = controller;
+      const host = newHost();
+      const current = { host, end: () => {} };
+      runRef.current = current;
       armWatchdog();
 
-      try {
-        const response = await fetch(apiUrl(endpoint), {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-          signal: controller.signal,
-        });
+      const handleFrame = (frame) => {
+        switch (frame.type) {
+          case 'start':
+            setStage('start');
+            setLabel(`Pool of ${frame.poolSize} · ${frame.workload?.total ?? '?'} simulations planned`);
+            return false;
 
-        // Validation failures answer with JSON before the stream opens.
-        if (!response.ok) {
-          let message = httpError(name, response.status, `HTTP ${response.status}`);
-          try {
-            const body = await response.json();
-            if (body?.error) message = body.error;
-          } catch {
-            // Not JSON — keep the status line.
-          }
-          throw new Error(message);
-        }
-        if (!response.body) throw new Error('This browser cannot stream the response body.');
-
-        setApiReachable(true);
-
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder();
-        let buffer = '';
-        let finished = false;
-
-        const handleFrame = (raw) => {
-          armWatchdog();
-          // SSE comments (the server's keepalive) carry no data.
-          if (raw.startsWith(':')) return;
-          if (!raw.startsWith('data: ')) return;
-
-          let frame;
-          try {
-            frame = JSON.parse(raw.slice(6));
-          } catch {
-            return; // A truncated frame is not worth failing the whole run over.
-          }
-
-          switch (frame.type) {
-            case 'start':
-              setStage('start');
-              setLabel(`Pool of ${frame.poolSize} · ${frame.workload?.total ?? '?'} simulations planned`);
-              break;
-
-            case 'progress': {
-              const now = Date.now();
-              if (now - lastPaintRef.current >= PROGRESS_THROTTLE_MS) {
-                lastPaintRef.current = now;
-                setProgress(Math.min(100, Math.max(0, (frame.progress || 0) * 100)));
-                setStage(frame.stage || '');
-                setLabel(frame.label || '');
-              }
-              break;
+          case 'progress': {
+            const now = Date.now();
+            if (now - lastPaintRef.current >= PROGRESS_THROTTLE_MS) {
+              lastPaintRef.current = now;
+              setProgress(Math.min(100, Math.max(0, (frame.progress || 0) * 100)));
+              setStage(frame.stage || '');
+              setLabel(frame.label || '');
             }
-
-            case 'result':
-              // Tagged so App can route it, exactly as the guild trial is.
-              publish({ __kind: kind, ...frame.result, meta: payload.meta || {} });
-              setProgress(100);
-              setStage('done');
-              setLabel('');
-              finished = true;
-              break;
-
-            case 'cancelled':
-              finished = true;
-              break;
-
-            case 'error':
-              setError(new Error(frame.error || `${name} failed.`));
-              finished = true;
-              break;
-
-            default:
-              break;
+            return false;
           }
-        };
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buffer += decoder.decode(value, { stream: true });
-          let boundary;
-          while ((boundary = buffer.indexOf('\n\n')) >= 0) {
-            handleFrame(buffer.slice(0, boundary));
-            buffer = buffer.slice(boundary + 2);
-          }
-        }
+          case 'result':
+            // Tagged so App can route it, exactly as the guild trial is.
+            publish({ __kind: kind, ...frame.result, meta: payload.meta || {} });
+            setProgress(100);
+            setStage('done');
+            setLabel('');
+            return true;
 
-        if (!finished) {
-          // The stream closed without a terminal frame — a dropped connection or a
-          // server that died mid-run.
-          setError((current) => current || new Error(`${name} connection closed unexpectedly.`));
+          case 'cancelled':
+            return true;
+
+          case 'error':
+            setError(new Error(frame.error || `${name} failed.`));
+            return true;
+
+          default:
+            return false;
         }
+      };
+
+      try {
+        await new Promise((resolve, reject) => {
+          let finished = false;
+          let started = false;
+          current.end = resolve;
+          host.onmessage = ({ data }) => {
+            if (runRef.current !== current) return; // superseded or cancelled: stop() already ended it
+            armWatchdog();
+            started = true;
+            if (data?.type === 'refused') reject(new Error(data.json?.error || `${name} refused the run (${data.status}).`));
+            else if (data?.type === 'frame') finished = handleFrame(data.frame) || finished;
+            else if (data?.type === 'done') {
+              if (!finished) setError((current) => current || new Error(`${name} ended without a result.`));
+              resolve();
+            }
+          };
+          host.onerror = (event) => reject(hostCrash(name, event, started));
+          host.postMessage({ type: 'run', path, body: payload });
+        });
       } catch (caught) {
-        if (caught?.name !== 'AbortError') {
-          const reachable = await pingApi();
-          if (!isLatest()) return;
-          setApiReachable(reachable);
-          setError(reachable ? caught : new Error(API_DOWN_MESSAGE));
-        }
+        if (isLatest()) setError(caught);
       } finally {
-        // A superseded run must not clear its successor's controller, watchdog
-        // or loading flag.
+        // A superseded run must not clear its successor's host, watchdog or loading flag.
         if (isLatest()) {
           clearWatchdog();
-          abortRef.current = null;
+          if (runRef.current === current) runRef.current = null;
           setLoading(false);
         }
+        host.terminate();
       }
     },
-    [armWatchdog, clearWatchdog, stop, publish, begin, nextRun, endpoint, kind, name]
+    [armWatchdog, clearWatchdog, stop, publish, begin, nextRun, path, kind, name]
   );
 
-  /** Cancel an in-flight run. The server sees the socket close and tears down its pool. */
+  /** Cancel an in-flight run: its host and pool are terminated. */
   const cancel = useCallback(() => {
     stop();
     setLoading(false);
@@ -300,7 +244,6 @@ export function useOptimizerRun({ endpoint, kind, name }) {
     preview,
     previewFor,
     previewing,
-    apiReachable,
     fetchPreview,
     runOptimizer,
     cancel,
