@@ -1,5 +1,6 @@
 import Monster from "./monster";
 import { guildTrialDetailMap } from "./dataProvider";
+import { TRIAL_START_TIER, TRIAL_TIER_STEP, TRIAL_MAX_TIER, TRIAL_DURATION_NS } from "./trialLadder";
 
 // =============================================================================
 // GuildTrial — a climbing-ladder combat mode, sibling of Zone / Labyrinth.
@@ -25,12 +26,12 @@ import { guildTrialDetailMap } from "./dataProvider";
 // owns encounter composition and ladder state.
 // =============================================================================
 class GuildTrial {
-    static START_TIER = 100;
-    static TIER_STEP = 10;
-    static MAX_TIER = 300;
+    static START_TIER = TRIAL_START_TIER;
+    static TIER_STEP = TRIAL_TIER_STEP;
+    static MAX_TIER = TRIAL_MAX_TIER;
 
     // Hard stop: 1 hour of simulated trial time.
-    static TRIAL_DURATION_NS = 3600 * 1e9;
+    static TRIAL_DURATION_NS = TRIAL_DURATION_NS;
 
     // Official client GuildTrial constants (v1.20260927.0).
     static HP_RATIO_PER_PARTICIPANT = 0.01;

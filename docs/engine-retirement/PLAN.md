@@ -109,6 +109,10 @@ After deletion, `twin:freeze --engine=wasm` re-freezes an intentional change.
 ### 2b. Move the twin-only callers off JS (csim)
 1. G4: inside `simulator.js` and `guildTrialRuns.js`, import the engine dynamically, only on the JS
    branch. Twin callers then load no JS engine code. SCLIRoster on native benefits at once.
+   — DONE. The ladder constants moved to `src/combatsimulator/trialLadder.js` (no imports), so
+   `guildTrialStats.js` no longer pulls in `GuildTrial` → `Monster`. `api/tests/lazyJsEngine.test.mjs`
+   records every loaded module: a native zone + trial loads only `guildTrialStats`, `simSettings`,
+   `trialLadder`. Checked against SCLIRoster `npm test` and cowstuff `build-csim.py` (bundle evaluates).
 2. G5: move `dataProvider.js`, `simSettings.js`, `guildTrialStats.js` (and `sumDamageToEnemies`) to
    `shared/`; leave one-line re-exports in `src/combatsimulator/` so MWIX's bundler and SCLIRoster
    keep working.

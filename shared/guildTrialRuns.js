@@ -5,11 +5,17 @@
 // runGuildTrialSimulation).
 // =============================================================================
 
-import CombatSimulator from '../src/combatsimulator/combatSimulator.js';
-import Player from '../src/combatsimulator/player.js';
-import GuildTrial from '../src/combatsimulator/guildTrial.js';
 import { extractTrialSummary } from '../src/combatsimulator/guildTrialStats.js';
+import { TRIAL_START_TIER } from '../src/combatsimulator/trialLadder.js';
 import { getTwinBackend, runTwin, twinTrialRequest } from './twinEngine.js';
+
+// The JS engine, loaded on its first JS-path call only: a twin caller never loads it.
+let jsEngine = null;
+const loadJsEngine = () => (jsEngine ??= Promise.all([
+  import('../src/combatsimulator/combatSimulator.js'),
+  import('../src/combatsimulator/player.js'),
+  import('../src/combatsimulator/guildTrial.js'),
+]).then(([c, p, g]) => ({ CombatSimulator: c.default, Player: p.default, GuildTrial: g.default })));
 
 /** Iterations per twin request: bounds the full SimResults (~118 KB each) held at once. */
 export const TWIN_TRIAL_CHUNK = 32;
@@ -33,7 +39,7 @@ export async function runTrialIterations({
   players: playersData,
   partyBuffs,
   trialHrid,
-  startTier = GuildTrial.START_TIER,
+  startTier = TRIAL_START_TIER,
   participantCount,
   trialOptions = {},
   iterations,
@@ -57,6 +63,7 @@ export async function runTrialIterations({
     }
     return summaries;
   }
+  const { CombatSimulator, Player, GuildTrial } = await loadJsEngine();
   for (let it = 0; it < iterations; it++) {
     const players = playersData.map((dto) => {
       const p = Player.createFromDTO(structuredClone(dto));
