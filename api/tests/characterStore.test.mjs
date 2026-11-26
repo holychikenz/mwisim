@@ -580,3 +580,34 @@ test('legacy trigger memory: a set exported before the [] rule loses its unslott
   assert.deepEqual(stamped.loadout.triggerMemory['/abilities/cleave'], []);
   assert.equal(playerToExportFormat(resolvePlayer(character(), loadout()), 'z', 0, 24).abilityMemoryVersion, 2);
 });
+
+test('finding 11: re-saving what another tab saved writes the same text, so two tabs cannot ping-pong', async () => {
+  const { loadSession, saveSession, SESSION_KEY } = await import('../../ui/src/utils/session.js');
+  const { loadGuildTrialState, saveGuildTrialState, GUILD_TRIAL_KEY } = await import('../../ui/src/utils/roster.js');
+  localStorage.clear();
+  // One round: an un-normalised blob (no ids, no counts, a partial config) settles after the first re-save.
+  const settles = (key, raw, resave) => {
+    localStorage.setItem(key, raw);
+    resave();
+    const once = localStorage.getItem(key);
+    resave();
+    assert.equal(localStorage.getItem(key), once);
+  };
+  saveCharacters(storeWith(character(), { tank: loadout(), mage: createLoadout() }));
+  settles('csim_characters', localStorage.getItem('csim_characters'), () => {
+    const { status, ...store } = loadCharacters();
+    assert.equal(status, 'ok');
+    saveCharacters(store);
+  });
+  const session = { party: { 1: { characterId: 'c', loadoutName: 'tank' }, 2: null, 3: null, 4: null, 5: null },
+    selectedPlayers: [1], zone: '/actions/combat/swamp_planet', difficultyTier: 2, duration: 42,
+    zoneWorkers: '', dungeonRuns: 10, maxRunHours: 3 };
+  saveSession(session);
+  const savedSession = localStorage.getItem(SESSION_KEY);
+  settles(SESSION_KEY, savedSession, () => saveSession(loadSession().data));
+  assert.equal(localStorage.getItem(SESSION_KEY), savedSession);
+  settles(GUILD_TRIAL_KEY,
+    JSON.stringify({ schemaVersion: 2, roster: [{ characterId: 'c', loadoutName: 'tank' }, { characterId: 'c', loadoutName: 'tank' }],
+      trialConfig: { iterations: 5 } }),
+    () => saveGuildTrialState(loadGuildTrialState().data));
+});

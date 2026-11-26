@@ -72,9 +72,11 @@ import {
   rosterSize,
   clampCount,
   DEFAULT_TRIAL_CONFIG,
+  GUILD_TRIAL_KEY,
   trialIterations
 } from './utils/roster';
 import {
+  CHARACTERS_KEY,
   createCharacter,
   dropLegacyEmptyMemory,
   emptyStore,
@@ -128,7 +130,7 @@ import {
   toScan
 } from './utils/equipmentOptimizer';
 import { isTool, toTargetPayload } from './utils/optimizerTarget';
-import { loadSession } from './utils/session';
+import { loadSession, SESSION_KEY } from './utils/session';
 import {
   DEFAULT_ZONE_HRID,
   simulableZones,
@@ -392,6 +394,43 @@ function App() {
   // (one result over workers × duration hours). 1 = a single run, as before.
   const [zoneWorkers, setZoneWorkers] = useState(() => clampZoneWorkers(savedSession?.zoneWorkers));
   const [maxRunHours, setMaxRunHours] = useState(() => clampRunHours(savedSession?.maxRunHours));
+
+  // Another tab saved: take its copy, so our next save does not write our stale one back over it.
+  // Each field is read as its initialiser above reads it, so re-saving what we take writes the same text
+  // and fires no event back (setItem with an unchanged value is silent).
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.storageArea !== localStorage) return;
+      // Storage events carry the raw key; the /test/ build's keys are `test::`-prefixed (utils/serverStorage.js).
+      if (e.key !== null && e.key.startsWith('test::') !== TEST_BUILD) return;
+      const key = e.key === null ? null : e.key.replace(/^test::/, ''); // null: clear(), reload all
+      if (key === null || key === CHARACTERS_KEY) {
+        const { status, ...store } = loadCharacters();
+        if (status !== 'incompatible') setCharacters(store);
+      }
+      if (key === null || key === SESSION_KEY) {
+        const s = loadSession().data;
+        setParty(normalizeParty(s.party));
+        setSelectedPlayers(Array.isArray(s?.selectedPlayers) && s.selectedPlayers.length ? s.selectedPlayers : [1]);
+        setZone(s?.zone || DEFAULT_ZONE_HRID);
+        setDifficultyTier(typeof s?.difficultyTier === 'number' ? s.difficultyTier : 0);
+        setDuration(typeof s?.duration === 'number' ? clampDuration(s.duration) : 100);
+        // Not clamped, unlike the initialisers: these hold the raw input while the other tab's user is
+        // typing (clamped on blur), and clamping it here would write back over their half-typed value.
+        setDungeonRuns(s?.dungeonRuns ?? clampRunCount());
+        setZoneWorkers(s?.zoneWorkers ?? clampZoneWorkers());
+        setMaxRunHours(s?.maxRunHours ?? clampRunHours());
+      }
+      if (key === null || key === GUILD_TRIAL_KEY) {
+        const t = loadGuildTrialState().data;
+        setRoster(t.roster);
+        setSelectedEntryId(t.selectedEntryId);
+        setTrialConfig(t.trialConfig);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
   // Genuinely account- or server-wide only. Seals used to live here and are now
   // a per-character field on each player (see createDefaultPlayer), because a
   // seal is an item ONE character equips.
