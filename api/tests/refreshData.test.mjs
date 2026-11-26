@@ -20,7 +20,6 @@ function fixture() {
   // Same content, deliberately NOT the house serialisation.
   fs.writeFileSync(path.join(dataDir, 'sameMap.json'), '{"a":{"n":1}}');
   fs.writeFileSync(path.join(dataDir, 'staleMap.json'), JSON.stringify({ a: 1 }, null, 4));
-  fs.writeFileSync(path.join(dataDir, 'goneMap.json'), '{}');
 
   const dumpPath = path.join(dir, 'dump.json');
   fs.writeFileSync(dumpPath, JSON.stringify({
@@ -50,11 +49,13 @@ test('a changed file is rewritten in the house format', () => {
   assert.ok(out.includes('0.00008'), out);
 });
 
-test('a key absent from the dump is reported, not silently emptied', () => {
+test('a key absent from the dump refuses the refresh and writes nothing', () => {
   const { dumpPath, dataDir } = fixture();
-  const r = refresh({ dumpPath, dataDir });
-  assert.deepEqual(r.missing, ['goneMap']);
+  fs.writeFileSync(path.join(dataDir, 'goneMap.json'), '{}');
+  const before = fs.readFileSync(path.join(dataDir, 'staleMap.json'), 'utf8');
+  assert.throws(() => refresh({ dumpPath, dataDir }), /goneMap missing from the dump/);
   assert.equal(fs.readFileSync(path.join(dataDir, 'goneMap.json'), 'utf8'), '{}');
+  assert.equal(fs.readFileSync(path.join(dataDir, 'staleMap.json'), 'utf8'), before);
 });
 
 test('--check writes nothing', () => {
@@ -70,4 +71,15 @@ test('a non-client dump is refused', () => {
   const bad = path.join(path.dirname(dataDir), 'bad.json');
   fs.writeFileSync(bad, JSON.stringify({ type: 'init_character_data' }));
   assert.throws(() => refresh({ dumpPath: bad, dataDir }), /not an init_client_data dump/);
+});
+
+test('a dump with one key null and one missing writes nothing', () => {
+  const { dumpPath, dataDir } = fixture();
+  fs.writeFileSync(path.join(dataDir, 'goneMap.json'), '{}');
+  const dump = JSON.parse(fs.readFileSync(dumpPath, 'utf8'));
+  fs.writeFileSync(dumpPath, JSON.stringify({ ...dump, staleMap: null }));
+  const read = (f) => fs.readFileSync(path.join(dataDir, f), 'utf8');
+  const before = read('staleMap.json');
+  assert.throws(() => refresh({ dumpPath, dataDir }), /staleMap.*null|goneMap/s);
+  assert.equal(read('staleMap.json'), before);
 });
