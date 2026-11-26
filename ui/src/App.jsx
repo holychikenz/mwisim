@@ -73,7 +73,8 @@ import {
   clampCount,
   DEFAULT_TRIAL_CONFIG,
   GUILD_TRIAL_KEY,
-  trialIterations
+  trialIterations,
+  trialParticipants
 } from './utils/roster';
 import {
   CHARACTERS_KEY,
@@ -884,8 +885,8 @@ function App() {
   // unless explicitly overridden in trial options. Rows whose character or
   // loadout is gone are not simulated (handleStartTrial skips them), so they
   // are not counted either.
-  const participantCount = trialConfig.participantCount
-    ?? rosterSize(roster.filter(entry => resolveRef(characters, entry)));
+  const participantCount = trialParticipants(trialConfig,
+    rosterSize(roster.filter(entry => resolveRef(characters, entry))));
   // The selected trial's monster reference (rendered as cards in the viewport).
   const selectedTrialDetail = (gameData?.guildTrials || []).find(t => t.hrid === trialConfig.trialHrid) || null;
 
@@ -1272,7 +1273,7 @@ function App() {
 
     if (playerDTOs.length === 0) return;
 
-    const effectiveParticipants = trialConfig.participantCount ?? playerDTOs.length;
+    const effectiveParticipants = trialParticipants(trialConfig, playerDTOs.length);
     const trialDetail = (gameData?.guildTrials || []).find(t => t.hrid === trialConfig.trialHrid);
     // Debugging knob: UI stores PERCENT (default 100), engine wants a ratio.
     // Scales enemy effective level (tier × enemyScale) without moving the

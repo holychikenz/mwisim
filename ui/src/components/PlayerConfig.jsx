@@ -114,7 +114,8 @@ function GearDoll({ items, equipment, onChange }) {
               <NumberInput
                 label="Enhancement"
                 value={enhancementLevel}
-                onChange={(v) => onChange(slot.key, selected, Math.max(0, Math.min(20, Number(v) || 0)))}
+                onChange={(v) => onChange(slot.key, selected, Math.max(0, Math.min(20, Math.round(Number(v) || 0))))}
+                allowDecimal={false}
                 min={0}
                 max={20}
                 size="xs"

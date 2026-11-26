@@ -313,6 +313,14 @@ test('audit2-14: the UI cleans a saved or imported iteration count before runnin
   assert.equal(trialIterations({ iterations: 250 }), 250);
 });
 
+test('a saved or imported decimal participant count is rounded before it reaches the engine', async () => {
+  const { trialParticipants } = await import('../../ui/src/utils/roster.js');
+  assert.equal(trialParticipants({ participantCount: 30.5 }, 7), 31);
+  assert.equal(trialParticipants({ participantCount: 0.2 }, 7), 1);
+  assert.equal(trialParticipants({ participantCount: null }, 7), 7);
+  assert.equal(trialParticipants({}, 7), 7);
+});
+
 
 // --------------------------------------------------------------------------
 // Healing summary filter

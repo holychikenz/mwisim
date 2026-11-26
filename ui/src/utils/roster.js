@@ -60,6 +60,15 @@ export function trialIterations(config) {
   return Number.isInteger(n) && n > 0 ? n : DEFAULT_TRIAL_CONFIG.iterations;
 }
 
+/**
+ * The participant count to run: the override, or `rosterCount` when there is
+ * none. A saved or imported override may be a decimal, which the engine refuses.
+ */
+export function trialParticipants(config, rosterCount) {
+  const n = config?.participantCount;
+  return n == null ? rosterCount : Math.max(1, Math.round(Number(n) || 1));
+}
+
 
 let __seq = 0;
 /** Collision-resistant id without leaning on any specific browser global. */

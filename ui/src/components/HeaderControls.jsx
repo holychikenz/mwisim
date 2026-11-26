@@ -341,7 +341,8 @@ export function HeaderControls({
                   label="Participant count"
                   description={`Auto = roster size (${rosterLength}). Each adds +1% monster HP, +2% attack/cast speed and +2 ability haste`}
                   value={effectiveParticipants}
-                  onChange={(v) => setCfg({ participantCount: Math.max(1, Number(v) || 1) })}
+                  onChange={(v) => setCfg({ participantCount: Math.max(1, Math.round(Number(v) || 1)) })}
+                  allowDecimal={false}
                   min={1}
                   max={200}
                   size="xs"
