@@ -87,6 +87,11 @@ test('shrine levels above 20 count; building levels still cap at 20; negatives a
   assert.match(describeShrines({ [FORCE]: 25 }), / 25$/, 'the roster label says what is simulated');
   assert.deepEqual(resolveGuildBuildingBuffs({ [DOJO]: 999 }), resolveGuildBuildingBuffs({ [DOJO]: 20 }));
   assert.deepEqual(resolveGuildBuffs({ [FORCE]: -5 }), []);
+  // Not a finite number: no shrine, rather than an Infinity/NaN boost reaching the engine.
+  for (const bad of [Infinity, NaN]) {
+    assert.deepEqual(resolveGuildBuffs({ [FORCE]: bad }), [], String(bad));
+    assert.deepEqual(shrineLevelsFrom({ [FORCE]: { level: bad } }), {}, String(bad));
+  }
 });
 
 test('resolved buffs zero their per-level bonus fields so nothing double-counts', () => {

@@ -288,8 +288,8 @@ export const MAX_GUILD_BUILDING_LEVEL = 20;
 function resolveLevelledBuffs(defs, levels = {}, maxLevel = 20) {
   const resolved = [];
   for (const def of defs) {
-    const raw = Math.floor(Number(levels?.[def.hrid]) || 0);
-    const level = Math.max(0, Math.min(maxLevel, raw));
+    const raw = Math.floor(Number(levels?.[def.hrid]));
+    const level = Number.isFinite(raw) ? Math.max(0, Math.min(maxLevel, raw)) : 0; // Infinity/NaN: none
     if (level <= 0) continue;
     for (const b of def.buffs) {
       resolved.push({

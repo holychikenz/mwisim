@@ -105,8 +105,8 @@ export function shrineLevelsFrom(map) {
   const levels = {};
   for (const def of GUILD_COMBAT_BUFFS) {
     const entry = map[def.hrid];
-    const raw = Math.floor(Number(entry?.level ?? entry) || 0);
-    const level = Math.max(0, raw);
+    const raw = Math.floor(Number(entry?.level ?? entry));
+    const level = Number.isFinite(raw) ? Math.max(0, raw) : 0; // Infinity/NaN: none
     if (level > 0) levels[def.hrid] = level;
   }
   return levels;
