@@ -435,3 +435,27 @@ test('roster export build ids are stable across exports and unique per (characte
   assert.equal(new Set(ids).size, pairs.length);
   assert.deepEqual(pairs.map(([characterId, loadoutName]) => exportBuildId({ characterId, loadoutName })), ids);
 });
+
+test('a re-imported roster build exports under the id it was imported with', async () => {
+  const { exportBuildId } = await import('../../ui/src/utils/roster.js');
+  // Import makes buildId the character id, with one loadout named `default`.
+  const first = exportBuildId({ characterId: 'm123', loadoutName: 'default' });
+  assert.equal(first, 'm123');
+  assert.equal(exportBuildId({ characterId: first, loadoutName: 'default' }), first);
+  const reimported = exportBuildId({ characterId: 'm1|tank', loadoutName: 'default' });
+  assert.equal(exportBuildId({ characterId: reimported, loadoutName: 'default' }), reimported);
+});
+
+test('two different rows of one export never share a build id', async () => {
+  const { exportBuildIds } = await import('../../ui/src/utils/roster.js');
+  // An imported build `m1|tank` (loadout default) beside the original m1/tank.
+  const rows = [
+    { characterId: 'm1', loadoutName: 'tank' },
+    { characterId: 'm1|tank', loadoutName: 'default' },
+    { characterId: 'm1', loadoutName: 'tank' }
+  ];
+  const ids = exportBuildIds(rows);
+  assert.equal(ids[0], 'm1|tank');
+  assert.notEqual(ids[1], ids[0]);
+  assert.equal(ids[2], ids[0]); // the same pair is the same build
+});

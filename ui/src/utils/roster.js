@@ -34,7 +34,26 @@ export function refKey(ref) {
  * and so it never occurs inside a part; it leaves `~` alone, which would let "c~x"+"y" = "c"+"x~y".
  */
 export function exportBuildId(ref) {
+  // Import makes each build a character whose id is the buildId, with one `default` loadout:
+  // emitting that id bare makes export -> import -> export a fixed point.
+  if (ref?.loadoutName === 'default') return ref?.characterId || '';
   return `${encodeURIComponent(ref?.characterId || '')}|${encodeURIComponent(ref?.loadoutName || '')}`;
+}
+
+/**
+ * exportBuildId for each row of one export. A bare imported id can equal another pair's encoded
+ * id (`m1|tank`/default beside m1/tank); the later pair gets `#2`, `#3`, ... so builds never merge.
+ */
+export function exportBuildIds(refs) {
+  const owner = new Map(); // build id -> refKey of the row that holds it
+  return refs.map(ref => {
+    const key = refKey(ref);
+    const base = exportBuildId(ref);
+    let id = base;
+    for (let n = 2; owner.has(id) && owner.get(id) !== key; n++) id = `${base}#${n}`;
+    owner.set(id, key);
+    return id;
+  });
 }
 
 export const MAX_ROW_COUNT = 99;
