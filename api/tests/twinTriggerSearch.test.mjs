@@ -46,5 +46,6 @@ test('a seeded trigger search on native ranks exactly as it did on JS', { skip, 
   const native = await search('native');
   assert.equal(native.rows.length, 2);
   assert.equal(native.simulationsRun, 33);
-  assert.equal(digest(canonical(native)), '77ae022af14a8dc13ba9871c7ab087e0334d7732a0ad931806fb5d3ca68f3000');
+  // Re-pinned for audit-8 (a parry-killed caster dies once): only enemyKillsPerHour moved, the ranking did not.
+  assert.equal(digest(canonical(native)), 'a316f689eca918c20e0f1d91934f0dce8d0e8f5bbacc0319426b074245527b08');
 });

@@ -1750,9 +1750,7 @@ impl<'a> Sim<'a> {
                     self.sim_result.add_manapoints_gained(&sh, "manaLeech", r.mana_leech_mana);
                 }
                 self.record_reflects(temp_source, temp_target, &r);
-                if self.units[temp_target].cd.current_hitpoints == 0.0 {
-                    self.on_death(temp_target);
-                }
+                // A caster killed here dies at the end of try_use_ability; dying here too counted it twice.
                 if self.units[temp_source].cd.current_hitpoints == 0.0 && (r.thorn_damage_done != 0.0 || r.retaliation_damage_done != 0.0) {
                     self.on_death(temp_source);
                 }

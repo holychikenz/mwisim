@@ -919,3 +919,22 @@ fn a_bad_participant_count_is_a_range_error() {
     }
     assert_eq!(run_trial(serde_json::json!(3))["ok"], true);
 }
+
+// ---- audit-8: a caster killed by a parry dies once ----
+
+#[test]
+fn a_caster_killed_by_a_parry_dies_once() {
+    let z = zone("/actions/combat/smelly_planet");
+    let zb = zone_buffs(&z);
+    let mut sim = new_sim(vec![player("melee", 200.0, 1, zb)], Some(z), None, 1);
+    ready(&mut sim);
+    put_enemies(&mut sim, &[("/monsters/alligator", 0.0)]);
+    sim.units[0].cd.cs.parry = 2.0; // beats any draw
+    sim.units[1].cd.current_hitpoints = 1.0;
+    sim.units[1].cd.current_manapoints = 1000.0;
+    let slot = sim.units[1].abilities.iter().position(|a| a.as_ref().is_some_and(|a| &*a.hrid == "/abilities/scratch")).expect("scratch slot");
+    sim.simulation_time = 10e9;
+    assert!(sim.try_use_ability(1, slot).unwrap(), "the cast went off");
+    assert_eq!(sim.units[1].cd.current_hitpoints, 0.0, "the parry killed the caster");
+    assert_eq!(death_count(&sim, "/monsters/alligator"), Some(1.0));
+}
