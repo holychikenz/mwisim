@@ -269,8 +269,8 @@ export const GUILD_COMBAT_BUILDINGS = [
   },
 ];
 
-// Highest shrine level the UI lets you pick (0 = off). The game's shrines climb
-// well past this, but the input is a level knob, not a hard cap.
+// Highest shrine level the UI input lets you pick (0 = off): the input's knob.
+// The game's shrines climb past it, so imported and resolved levels are not capped.
 export const MAX_GUILD_BUFF_LEVEL = 20;
 
 // Guild buildings cap at level 20 in the game data (maxLevel: 20).
@@ -314,7 +314,7 @@ function resolveLevelledBuffs(defs, levels = {}, maxLevel = 20) {
  * @param {Record<string, number>} levels  { [buffHrid]: level }
  */
 export function resolveGuildBuffs(levels = {}) {
-  return resolveLevelledBuffs(GUILD_COMBAT_BUFFS, levels, MAX_GUILD_BUFF_LEVEL);
+  return resolveLevelledBuffs(GUILD_COMBAT_BUFFS, levels, Infinity);
 }
 
 /**
@@ -389,7 +389,7 @@ export function ownsShrines(build) {
 export function describeShrines(levels) {
   const parts = [];
   for (const def of GUILD_COMBAT_BUFFS) {
-    const level = Math.max(0, Math.min(MAX_GUILD_BUFF_LEVEL, Number(levels?.[def.hrid]) || 0));
+    const level = Math.max(0, Number(levels?.[def.hrid]) || 0);
     if (level > 0) parts.push(`${def.name.toLowerCase()} ${level}`);
   }
   return parts.length ? parts.join(' · ') : 'none';
