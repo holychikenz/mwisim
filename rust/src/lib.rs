@@ -106,18 +106,41 @@ pub fn enhance_config(client: &str, character: &str) -> String {
 /// cowstuff's `POST /api/enhance/calculate` for one character, with no market (asks fall back
 /// to vendor prices). `client` as `item_values`; `body` the request body as JSON text.
 pub fn enhance_calculate(client: &str, character: &str, body: &str) -> String {
-    use mwi_econ::{enhance_request, Gdc};
-    use serde_json::{json, Value};
-    let parsed = (serde_json::from_str::<Value>(client), serde_json::from_str::<Value>(character), serde_json::from_str::<Value>(body));
-    let (data, character, body) = match parsed {
-        (Ok(d), Ok(c), Ok(Value::Null)) => (d, c, json!({})),
-        (Ok(d), Ok(c), Ok(b @ Value::Object(_))) => (d, c, b),
-        (Err(e), _, _) | (_, Err(e), _) => return err_json(&format!("enhance_calculate: {e}"), false, None),
-        _ => return err_json("invalid JSON body", false, None),
+    let gdc = match econ_gdc(client, character) {
+        Ok(g) => g,
+        Err(e) => return err_json(&format!("enhance_calculate: {e}"), false, None),
     };
-    let gdc = Gdc::new(std::sync::Arc::new(data), std::sync::Arc::new(character));
+    match enhance_body(body) {
+        Ok(body) => {
+            let boot = mwi_econ::enhance_request::iron_bootstraps(&gdc, &body, None);
+            enhance_calculate_with(&gdc, boot, body)
+        }
+        Err(e) => e,
+    }
+}
+
+/// The parsed client data and character, as the econ calls take them.
+pub fn econ_gdc(client: &str, character: &str) -> Result<mwi_econ::Gdc, serde_json::Error> {
+    let data = serde_json::from_str::<serde_json::Value>(client)?;
+    let character = serde_json::from_str::<serde_json::Value>(character)?;
+    Ok(mwi_econ::Gdc::new(std::sync::Arc::new(data), std::sync::Arc::new(character)))
+}
+
+/// An enhance body: a JSON object, null as `{}`; anything else is the error reply.
+pub fn enhance_body(body: &str) -> Result<serde_json::Value, String> {
+    match serde_json::from_str::<serde_json::Value>(body) {
+        Ok(serde_json::Value::Null) => Ok(serde_json::json!({})),
+        Ok(b @ serde_json::Value::Object(_)) => Ok(b),
+        Ok(_) => Err(err_json("invalid JSON body", false, None)),
+        Err(e) => Err(err_json(&format!("enhance_calculate: {e}"), false, None)),
+    }
+}
+
+/// `enhance_calculate` on an already parsed character, with `iron_bootstraps(gdc, body)` passed in.
+pub fn enhance_calculate_with(gdc: &mwi_econ::Gdc, boot: mwi_econ::enhance_request::Bootstraps, body: serde_json::Value) -> String {
+    use mwi_econ::enhance_request;
     let market = std::collections::HashMap::new();
-    match enhance_request::prepare(&gdc, &market, body, None).and_then(|p| enhance_request::calculate(&p)) {
+    match enhance_request::prepare_with(gdc, &market, body, boot).and_then(|p| enhance_request::calculate(&p)) {
         Ok(v) => v.to_string(),
         Err((_, msg)) => err_json(&msg, false, None),
     }

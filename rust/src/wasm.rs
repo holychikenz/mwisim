@@ -59,8 +59,44 @@ pub fn enhance_config(client: &str, character: &str) -> String {
     crate::enhance_config(client, character)
 }
 
-/// One enhancement costing (lib.rs `enhance_calculate`); stateless.
+/// The last character's parsed econ data and Iron Cow bootstraps: a Gear-tab scan costs ~60 rows
+/// against one character, and each parse is 3.7 MB of JSON.
+struct EconCache {
+    client: String,
+    character: String,
+    gdc: mwi_econ::Gdc,
+    /// (iron_cow, essence_overrides as sent) -> its bootstraps.
+    boot: Option<(String, mwi_econ::enhance_request::Bootstraps)>,
+}
+
+thread_local! {
+    static ECON: RefCell<Option<EconCache>> = const { RefCell::new(None) };
+}
+
+/// One enhancement costing (lib.rs `enhance_calculate`), cached on the exact client and character text.
 #[wasm_bindgen]
 pub fn enhance_calculate(client: &str, character: &str, body: &str) -> String {
-    crate::enhance_calculate(client, character, body)
+    use mwi_econ::enhance_request::iron_bootstraps;
+    ECON.with(|c| {
+        let mut c = c.borrow_mut();
+        if !c.as_ref().is_some_and(|e| e.client == client && e.character == character) {
+            *c = None;
+            match crate::econ_gdc(client, character) {
+                Ok(gdc) => *c = Some(EconCache { client: client.into(), character: character.into(), gdc, boot: None }),
+                Err(e) => return crate::err_json(&format!("enhance_calculate: {e}"), false, None),
+            }
+        }
+        let e = c.as_mut().expect("filled above");
+        let body = match crate::enhance_body(body) {
+            Ok(b) => b,
+            Err(reply) => return reply,
+        };
+        let iron = mwi_econ::util::truthy(body.get("iron_cow").unwrap_or(&serde_json::Value::Bool(false)));
+        let key = format!("{iron}:{}", body.get("essence_overrides").map(|v| v.to_string()).unwrap_or_default());
+        if e.boot.as_ref().is_none_or(|(k, _)| *k != key) {
+            e.boot = Some((key, iron_bootstraps(&e.gdc, &body, None)));
+        }
+        let boot = e.boot.as_ref().and_then(|(_, b)| b.clone());
+        crate::enhance_calculate_with(&e.gdc, boot, body)
+    })
 }

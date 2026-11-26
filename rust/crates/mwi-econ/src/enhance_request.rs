@@ -13,6 +13,9 @@ use std::collections::HashMap;
 
 pub type Error = (u16, String);
 
+/// The Iron Cow essence bootstraps (`iron_bootstraps`); None when not Iron Cow.
+pub type Bootstraps = Option<IndexMap<String, f64>>;
+
 fn bad(msg: impl Into<String>) -> Error {
     (400, msg.into())
 }
@@ -41,10 +44,16 @@ pub fn prepare<'a>(
     body: Value,
     query_overrides: Option<&str>,
 ) -> Result<Prepared<'a>, Error> {
+    let bootstraps = iron_bootstraps(gdc, &body, query_overrides);
+    prepare_with(gdc, market, body, bootstraps)
+}
+
+/// The Iron Cow bootstraps `prepare` computes for this body (None unless `iron_cow`): the refined
+/// essence bootstraps plus the client's overrides (query string first, then the JSON body, as Flask).
+/// Iron Cow prices are seconds. A caller may cache them per (character, iron_cow, overrides).
+pub fn iron_bootstraps(gdc: &Gdc, body: &Value, query_overrides: Option<&str>) -> Bootstraps {
     let iron_cow = truthy(body.get("iron_cow").unwrap_or(&Value::Bool(false)));
-    // Iron Cow prices are seconds: hand the simulator the refined essence bootstraps plus
-    // the client's overrides (query string first, then the JSON body, as Flask).
-    let bootstraps = iron_cow.then(|| {
+    iron_cow.then(|| {
         let raw = query_overrides.map(str::to_string).or_else(|| match body.get("essence_overrides") {
             Some(Value::String(s)) => Some(s.clone()),
             Some(v @ Value::Object(_)) => Some(v.to_string()),
@@ -52,7 +61,17 @@ pub fn prepare<'a>(
         });
         let overrides = parse_essence_overrides(raw.as_deref());
         refined_essence_bootstraps(gdc, "default", ALCHEMY_ESSENCE_BOOTSTRAP_SECONDS, &overrides).0
-    });
+    })
+}
+
+/// `prepare` with the bootstraps already computed (`iron_bootstraps` of the same body).
+pub fn prepare_with<'a>(
+    gdc: &'a Gdc,
+    market: &'a HashMap<String, f64>,
+    body: Value,
+    bootstraps: Bootstraps,
+) -> Result<Prepared<'a>, Error> {
+    let iron_cow = truthy(body.get("iron_cow").unwrap_or(&Value::Bool(false)));
     let cfg = EnhancementConfig::from_json(body.get("config").unwrap_or(&json!({}))).map_err(bad)?;
     let item_hrid = match body.get("item_hrid") {
         Some(Value::String(h)) if !h.is_empty() && gdc.get_item(h).is_some() => h.clone(),
