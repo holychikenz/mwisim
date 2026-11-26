@@ -50,7 +50,9 @@ jobs:
               --status success --limit 1 --json headSha --jq '.[0].headSha // empty'
           }
           main=$(green main)
-          test=$(green test)
+          # gh run list still returns a deleted branch's old runs: no branch, no /test/.
+          test=""
+          if gh api "repos/$GITHUB_REPOSITORY/branches/test" --silent 2>/dev/null; then test=$(green test); fi
           [ -n "$main" ] || { echo "::error::main has no green ci push run; not deploying"; exit 1; }
           [ -n "$test" ] || echo "::notice::test has no branch or no green ci push run; deploying / only"
           echo "main=$main" >> "$GITHUB_OUTPUT"
@@ -70,13 +72,16 @@ jobs:
           path: test
 
       # A workflow_dispatch run from any other ref executes that ref's copy of this file; refuse to
-      # deploy live from a copy that differs from main's (compared at the running workflow's own
-      # commit, not the head). Under workflow_run ref_name is always main, so this never runs there.
+      # deploy live from a copy that differs from main's head (live is checked out at main's latest
+      # GREEN commit, so main's head is fetched). Under workflow_run ref_name is always main, so this
+      # never runs there.
       - name: Workflow must match main's
         if: github.ref_name != 'main'
         run: |
+          git -C live fetch -q --depth=1 origin main
+          head=$(git -C live rev-parse FETCH_HEAD)
           git -C live fetch -q --depth=1 origin "$GITHUB_WORKFLOW_SHA"
-          git -C live diff --exit-code HEAD FETCH_HEAD -- .github/workflows/deploy.yml
+          git -C live diff --exit-code "$head" FETCH_HEAD -- .github/workflows/deploy.yml
 
       - uses: actions/setup-node@v4
         with:
