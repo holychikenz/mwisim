@@ -106,7 +106,8 @@ export function GuildTrialPanel({
     const wireRoster = [];
     for (const entry of entries) {
       if (!entry.build) continue;
-      const buildId = refKey(entry).replace(/[^\w-]+/g, '_');
+      // The row id: unique and persisted. A cleaned-up name merged "tank 1" with "tank_1".
+      const buildId = entry.id;
       masterBuilds[buildId] = { ...entry.build, id: buildId, name: entry.displayName };
       wireRoster.push({ id: entry.id, buildId, count: entry.count });
     }

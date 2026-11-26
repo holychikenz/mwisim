@@ -543,7 +543,8 @@ export function HeaderControls({
       {simMode === 'guildTrial' ? (
         <NumberInput
           value={cfg.iterations}
-          onChange={(v) => setCfg({ iterations: Math.max(1, Math.min(100000, Number(v) || 1)) })}
+          onChange={(v) => setCfg({ iterations: Math.max(1, Math.min(100000, Math.round(Number(v)) || 1)) })}
+          allowDecimal={false}
           min={1}
           max={100000}
           step={100}
