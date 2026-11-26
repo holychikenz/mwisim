@@ -114,7 +114,8 @@ pub fn run_decompose_pass<'a>(
         let input_name = info.get("name").cloned().unwrap_or_else(|| json!(from_hrid(input_hrid)));
         let item_level = info.get("itemLevel").cloned().unwrap_or(json!(0));
         let craft_display = if has_craft_cost { format_time(craft_time) } else { "-".into() };
-        for o in decompose_outcome_for_input(info, p.pvalue, p.action_time, craft_time) {
+        let action_time = p.action_time_at(info.get("itemLevel").and_then(Value::as_f64).unwrap_or(0.0));
+        for o in decompose_outcome_for_input(info, p.pvalue, action_time, craft_time) {
             if !essence_set.contains(&o.output_hrid) {
                 continue;
             }

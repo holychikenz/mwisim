@@ -121,3 +121,19 @@ fn bad_json_is_an_error_not_a_panic() {
     let out: Value = serde_json::from_str(&crate::item_values("{", "{}", "")).unwrap();
     assert_eq!(out["ok"], false);
 }
+
+/// audit-12: a decompose takes the item's own level-over action time, not the flat alchemy time.
+#[test]
+fn decompose_time_uses_the_level_over_bonus() {
+    use std::sync::Arc;
+    let data: Value = serde_json::from_str(&client()).unwrap();
+    let ch: Value = serde_json::from_str(&read("fixtures/econ/character.json")).unwrap();
+    let gdc = mwi_econ::Gdc::new(Arc::new(data), Arc::new(ch));
+    let (p, sources) = mwi_econ::alchemy::run_decompose_pass(&gdc, "default", None, true);
+    let row = sources.values().flatten().find(|r| r["input_hrid"] == "/items/azure_milk").expect("an azure_milk row");
+    let f = |k: &str| row[k].as_f64().unwrap();
+    let action = f("time_per_unit_seconds") * f("bulk_multiplier") * p.pvalue * f("per_action_count_listed");
+    let want = p.action_time_at(20.0); // azure_milk is itemLevel 20
+    assert!(want < p.action_time, "{want} vs the flat {}", p.action_time);
+    assert!((action - want).abs() <= 1e-3 * want, "the row's action time {action}, want {want} (flat {})", p.action_time);
+}
