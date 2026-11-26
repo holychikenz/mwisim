@@ -191,7 +191,7 @@ pub fn simulate(p: &Prepared) -> Result<Value, Error> {
     let mut sim = EnhanceSim::new(gdc, p.market, p.iron_cow, p.bootstraps.clone());
 
     let target = body_int(body, "target", 10)?.clamp(1, 20);
-    let protect_at = body_int(body, "protect_at", 2)?.clamp(0, target);
+    let protect_at = body_int(body, "protect_at", 2)?.clamp(target.min(2), target);
     let n = body_int(body, "n", 32768)?.clamp(1, 200_000) as usize;
     let money = body.get("money_i_have").filter(|v| truthy(v));
     let money_i_have = match money {
@@ -221,4 +221,23 @@ pub fn simulate(p: &Prepared) -> Result<Value, Error> {
     payload["decomp"] = sim.decomposition_value(item_level(item), target as usize, decomp_catalyst(body));
     payload["iron_cow"] = json!(p.iron_cow);
     Ok(payload)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    /// audit-19: simulate clamps protect_at to 2..target as calculate does (0 drove the level negative).
+    #[test]
+    fn simulate_clamps_protect_at() {
+        let data = json!({"itemDetailMap": {"/items/x": {"hrid": "/items/x", "itemLevel": 10, "enhancementCosts": []}}});
+        let gdc = Gdc::new(Arc::new(data), Arc::new(json!({})));
+        let market = HashMap::new();
+        for (target, sent, want) in [(5, 0, 2), (5, 1, 2), (5, 3, 3), (1, 0, 1)] {
+            let body = json!({"item_hrid": "/items/x", "target": target, "protect_at": sent, "n": 10, "seed": 1});
+            let out = prepare(&gdc, &market, body, None).and_then(|p| simulate(&p));
+            assert_eq!(out.map(|v| v["protect_at"].clone()), Ok(json!(want)), "target {target}, protect_at {sent}");
+        }
+    }
 }
