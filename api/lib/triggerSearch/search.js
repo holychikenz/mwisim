@@ -658,7 +658,8 @@ export async function optimizeTriggers({
     stages,
     seedBase,
     verifyHours,
-    verifyReplicates: reps,
+    // The baseline-only branch ran once, at full length.
+    verifyReplicates: verified ? reps : 1,
     // Surfaced so the UI can be candid: if the measured noise at the verification
     // stage is comparable to the winner's margin over the baseline, the "winner"
     // has not really been shown to be better, and the user should be told that

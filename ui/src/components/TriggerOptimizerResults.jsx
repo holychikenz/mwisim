@@ -238,6 +238,8 @@ export function TriggerOptimizerResults({ results, items, abilities, onClear }) 
     ? LABYRINTH_METRIC_COLUMNS
     : (dungeon ? DUNGEON_METRIC_COLUMNS : METRIC_COLUMNS).filter((column) => !column.costed || costed);
   const consumableSeconds = leader?.metrics?.consumableSecondsPerHour || 0;
+  // One decimal at most: 100h over 6 replicates is 16.7h, not 16.666666666666668h.
+  const hoursEach = Number((verifyHours / verifyReplicates).toFixed(1));
   const timeShare = leader?.metrics?.consumableTimeShare || 0;
 
   return (
@@ -246,7 +248,9 @@ export function TriggerOptimizerResults({ results, items, abilities, onClear }) 
         <Title order={4}>Trigger Optimizer</Title>
         <Group gap="xs">
           <Badge variant="light">{simulationsRun} simulations</Badge>
-          <Badge variant="light">verified on {verifyReplicates} paired seeds × {verifyHours / verifyReplicates}h</Badge>
+          <Badge variant="light">
+            {verifyReplicates === 1 ? `verified in one ${hoursEach}h run` : `verified on ${verifyReplicates} paired seeds × ${hoursEach}h`}
+          </Badge>
           <ClearResultsButton onClear={onClear} />
         </Group>
       </Group>
@@ -287,8 +291,10 @@ export function TriggerOptimizerResults({ results, items, abilities, onClear }) 
             <Text size="xs" c="dimmed" mt={6}>
               Run-to-run spread for this build and {labyrinth ? 'room' : dungeon ? 'dungeon' : 'zone'} was {cvPct.toFixed(2)}% at{' '}
               {noise.measuredAtHours}h over{' '}
-              {noise.samples} runs. A candidate counts only when its gain clears a family-wise 95% interval over{' '}
-              {verifyReplicates} paired runs of {verifyHours / verifyReplicates}h.
+              {noise.samples} runs.{' '}
+              {verifyReplicates === 1
+                ? `No candidate differed from your thresholds, so only they were verified, in one ${hoursEach}h run.`
+                : `A candidate counts only when its gain clears a family-wise 95% interval over ${verifyReplicates} paired runs of ${hoursEach}h.`}
             </Text>
           )}
         </Alert>

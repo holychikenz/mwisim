@@ -1025,6 +1025,8 @@ test('no searchable parameters still yields a baseline row', async () => {
   assert.equal(result.rows.length, 1);
   assert.equal(result.rows[0].isBaseline, true);
   assert.equal(result.inconclusive, true);
+  // The baseline ran once, at the full verify length, and the result says so.
+  assert.equal(result.verifyReplicates, 1);
 });
 
 test('the reported band and per-stage epsilons reach the caller', async () => {
