@@ -170,6 +170,13 @@ hence the second coarse pass, which repeats until nothing moves.
 Cheap sims kill most candidates; only the survivors earn expensive ones. A fresh
 baseline is simulated at every stage (`il`) so deltas are always like-for-like.
 
+(This port's stage 4 differs: each distinct finalist is paired with the baseline on
+6 seeds `s+3..s+8`, the verify hours split across them (72 h → 6 × 12 h), and a row
+counts as a real gain only when its paired Student-t interval clears zero after a
+Šidák family-wise correction — `rankCandidates` in `api/lib/equipmentScan/scan.js`.
+A baseline that fails every verification run leaves nothing to pair, so the search
+refuses rather than ranking against an earlier stage.)
+
 A checkpoint is emitted after each stage (`onCheckpoint`) carrying
 `{completedPhase, candidates, screening, stageBaselines}`, and a run can resume from
 `initial`/`coarse`/`fine` — the phase gate is just `d >= 1|2|3`. (The peer's. This port has no checkpoint or resume: a client-posted
@@ -257,13 +264,13 @@ luck; their 0.5% insensitivity band is likewise beneath the floor.
 
 The variance scales as 1/√t almost exactly (5.730% × √(6/24) predicts 2.865%; 2.942%
 measured), so we **calibrate once** — a handful of baseline repeats at the cheapest
-fidelity — and derive every stage's epsilon from it. Rank epsilon is 1.5σ, the
+fidelity — and derive stages 1-3's epsilons from it. Rank epsilon is 1.5σ, the
 insensitivity band 3σ, floored at the peer's numbers so we are never *less*
 discriminating on a quiet zone, and capped at 25%.
 
 Consequence worth stating: on a loud zone almost everything ties, and the tool
 reports `inconclusive` — "nothing beat your current thresholds by more than the
-measurement noise". That is the honest answer, and far more useful than a confident
+measurement noise" (at verification: no family-wise significant paired gain). That is the honest answer, and far more useful than a confident
 ranking of noise.
 
 ### Departures

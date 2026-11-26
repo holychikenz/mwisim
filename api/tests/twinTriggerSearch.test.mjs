@@ -1,8 +1,7 @@
 // =============================================================================
-// A small seeded trigger search on the native twin gives exactly the result the
-// JS engine gave (its digest recorded on JS, which native matched before JS was
-// deleted): the pool workers select their backend from CSIM_ENGINE, so this
-// covers poolWorker's seam end to end. Skipped without a built csim-native.
+// A small seeded trigger search on the native twin ranks exactly as recorded:
+// the pool workers select their backend from CSIM_ENGINE, so this covers
+// poolWorker's seam end to end. Skipped without a built csim-native.
 // =============================================================================
 
 import { test } from 'node:test';
@@ -42,10 +41,12 @@ async function search(engine) {
   }
 }
 
-test('a seeded trigger search on native ranks exactly as it did on JS', { skip, timeout: 300_000 }, async () => {
+test('a seeded trigger search ranks exactly as recorded on the twin', { skip, timeout: 300_000 }, async () => {
   const native = await search('native');
   assert.equal(native.rows.length, 2);
-  assert.equal(native.simulationsRun, 33);
-  // Re-pinned for audit-8 (a parry-killed caster dies once): only enemyKillsPerHour moved, the ranking did not.
-  assert.equal(digest(canonical(native)), 'a316f689eca918c20e0f1d91934f0dce8d0e8f5bbacc0319426b074245527b08');
+  // 31 search simulations + verification: the baseline and one finalist on 6 paired seeds (was 2 on one seed).
+  assert.equal(native.simulationsRun, 43);
+  // Re-pinned for audit-9 (paired, replicated verification): stages 1-3 are unchanged; the verify rows are
+  // now replicate means with paired statistics, and the finalist's -0.9% is no longer called significant.
+  assert.equal(digest(canonical(native)), '187df3a7531e50a71e4630b637034801aae591c860c51b36fd700763082eb5e3');
 });

@@ -46,6 +46,7 @@ import {
   validateTriggerShape,
 } from '../lib/triggerSearch/params.js';
 
+import { DEFAULT_SCAN } from '../lib/equipmentScan/scan.js';
 import { boundsFromSpawnInfo, deriveBounds, deriveEnemyBounds } from '../lib/triggerSearch/bounds.js';
 
 import {
@@ -919,6 +920,21 @@ test('the funnel finds a known optimum', async () => {
   assert.ok(result.simulationsRun <= result.estimatedSimulations, 'the estimate is an upper bound');
 });
 
+test('verification pairs every finalist with the baseline on DEFAULT_SCAN.replicates seeds and reports the family-wise verdict', async () => {
+  const { playerDTOs, params, evaluate, stages } = syntheticSetup({ optimum: 60, initial: 0 });
+  const verifyJobs = [];
+  const spy = async (jobs, meta) => {
+    if (meta?.stage === 'verify') for (const job of jobs) verifyJobs.push({ seed: job.seed, limit: job.simulationTimeLimit });
+    return evaluate(jobs, meta);
+  };
+  const result = await optimizeTriggers({ playerDTOs, params, evaluate: spy, stages, seedBase: 7 });
+  assert.equal(new Set(verifyJobs.map((j) => j.seed)).size, DEFAULT_SCAN.replicates);
+  for (const j of verifyJobs) assert.equal(j.limit, stages.verify.hours / DEFAULT_SCAN.replicates * 3600e9);
+  const candidates = result.rows.filter((row) => !row.isBaseline);
+  assert.ok(candidates.length > 0);
+  for (const row of candidates) assert.equal(row.significant, row.statistics.significantFamilywise);
+});
+
 test('the funnel finds an optimum that is off the coarse grid', async () => {
   // 63 is not a multiple of 10, so only the fine pass can reach it.
   const { playerDTOs, params, evaluate, stages } = syntheticSetup({ optimum: 63, initial: 0 });
@@ -1007,7 +1023,7 @@ test('the reported band and per-stage epsilons reach the caller', async () => {
     assert.ok(result.epsilons.byStage[stage].rank > 0, `${stage} epsilon present`);
   }
   assert.equal(result.noise.calibrated, false, 'calibration was switched off for this fixture');
-  assert.ok(result.epsilons.significanceBar > 0);
+  assert.equal(result.verifyReplicates, DEFAULT_SCAN.replicates);
 });
 
 test('noise calibration widens the epsilons it derives', async () => {

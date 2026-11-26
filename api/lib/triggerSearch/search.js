@@ -22,7 +22,8 @@
 //   Stage 3  fine    24h   one fine coordinate-descent pass over each of the
 //                          top few combinations. Cost: keep x sum of fine grids.
 //
-//   Stage 4  verify  72h   re-run finalists and baseline on one pinned seed.
+//   Stage 4  verify  72h   finalists paired with the baseline on DEFAULT_SCAN.replicates
+//                          seeds (72h split across them), Student-t + Sidak verdict.
 //
 // The beam is the improvement. The peer runs greedy coordinate descent, taking
 // only the single best value for each parameter before moving to the next — so
@@ -36,6 +37,7 @@
 // threshold that only beat one particular sequence is found out at the next.
 // =============================================================================
 
+import { DEFAULT_SCAN, rankCandidates } from '../equipmentScan/scan.js';
 import { gridFor, coarseGridSize } from './grids.js';
 import { AbortError } from './poolCore.js';
 import { applyValues, countConditions, readValues } from './params.js';
@@ -116,7 +118,7 @@ export function estimateWorkload(params, stageOverrides = {}) {
     0
   );
   const fine = stages.fine.keep * fineGridTotal + 1;
-  const verify = stages.fine.keep + 1;
+  const verify = (stages.fine.keep + 1) * DEFAULT_SCAN.replicates;
 
   return {
     calibration,
@@ -154,24 +156,6 @@ export function estimateWorkload(params, stageOverrides = {}) {
  * moved it" is then false — a candidate did move it — and the ordinary
  * gain/no-gain verdict is the true one.
  */
-function rescuesFromZero(objective, baseline, metrics) {
-  // A baseline that finishes NO dungeon runs has no relative margin to beat —
-  // computeDeltas reports pct null against a zero — so without this a candidate
-  // that finishes some would never count as a gain, and the headline would say
-  // "no change worth making" above a row that turns failure into success. Both
-  // are measured on the same pinned verification seed, so the paired design
-  // stands behind it. Scoped to the completion objectives: the labyrinth's 0%
-  // clear rate has the same shape but predates this and is left as it was.
-  //
-  // The baseline must have been MEASURED. A failed baseline simulation leaves
-  // `baseline` empty, and a missing value is not a zero: coercing it would claim
-  // a rescue from a starting point nobody observed.
-  if (!COMPLETION_OBJECTIVES.has(objective)) return false;
-  const base = baseline?.[objective];
-  if (base == null || !Number.isFinite(Number(base))) return false;
-  return Number(base) <= 1e-9 && (Number(metrics?.[objective]) || 0) > 1e-9;
-}
-
 function saturationOf(objective, baseline, rows, verifiedBaseline) {
   // For a dungeon, only a like-for-like measurement may claim "no run ever
   // completes": the baseline measured at verification, beside at least one
@@ -552,51 +536,72 @@ export async function optimizeTriggers({
   }
 
   // ---------------------------------------------------------------------------
-  // Stage 4 — verification. Finalists and the baseline together, on one seed at
-  // full fidelity, so the headline numbers and their deltas come from a single
-  // fair comparison rather than being stitched across stages.
+  // Stage 4 — verification. Every distinct finalist is paired with the baseline
+  // on DEFAULT_SCAN.replicates seeds (the verify hours split across them, so the
+  // simulated total is unchanged) and judged by rankCandidates' paired Student-t
+  // with a Sidak family-wise bar: one seed and a 1.5-sigma bar called a
+  // no-difference row "Real" about 29% of the time.
   // ---------------------------------------------------------------------------
   throwIfAborted(signal);
-  const verifySeed = seedBase + 3;
   const verifyHours = stages.verify.hours;
+  const reps = DEFAULT_SCAN.replicates;
+  const hoursEach = verifyHours / reps;
 
   // Deduplicate against the baseline and each other: the beam can converge two
-  // finalists onto the same vector, and a finalist may BE the baseline. Left
-  // unchecked those become duplicate rows in the ranked table, which reads as two
-  // separate recommendations that happen to be identical.
-  const verifyVectors = [];
-  const verifySeen = new Set();
-  for (const values of [baselineValues, ...finalists]) {
+  // finalists onto the same vector, and a finalist may BE the baseline.
+  const baselineKey = vectorKey(baselineValues);
+  const verifySeen = new Set([baselineKey]);
+  const candidates = [];
+  for (const values of finalists) {
     const key = vectorKey(values);
     if (verifySeen.has(key)) continue;
     verifySeen.add(key);
-    verifyVectors.push(values);
+    candidates.push({ id: `verify:${candidates.length}`, values });
   }
 
-  const verified = await evaluateVectors(verifyVectors, {
-    hours: verifyHours,
-    seed: verifySeed,
-    stage: 'verify',
-    label: `verify ${finalists.length} finalist${finalists.length === 1 ? '' : 's'} at ${verifyHours}h`,
-    idPrefix: 'verify',
-  });
-
-  if (!verified.some((entry) => entry.metrics)) {
-    throw new Error(`Every simulation failed: ${firstError ?? 'no result'}`);
+  let verified = null;
+  let verifiedBaseline;
+  if (candidates.length) {
+    let anyOk = false;
+    const verifyEvaluate = async (jobs, meta) => {
+      const out = await evaluate(jobs, { ...meta, stage: 'verify', hours: hoursEach });
+      for (const r of out || []) {
+        if (r?.metrics && !r.error) anyOk = true;
+        else firstError ??= r?.error ?? null;
+      }
+      return out;
+    };
+    const before = completed;
+    try {
+      verified = await rankCandidates({
+        candidates, objective, hours: hoursEach, replicates: reps, seedBase: seedBase + 3, signal,
+        playerDTOs: applyValues(playerDTOs, params, baselineValues),
+        evaluate: verifyEvaluate,
+        applyCandidate: (dtos, row) => applyValues(dtos, params, row.values),
+        onProgress: (x) => {
+          completed = before + x.completed;
+          report('verify', `verify ${candidates.length} finalist${candidates.length === 1 ? '' : 's'} · ${x.label}`);
+        },
+      });
+    } catch (error) {
+      // A baseline that alone failed keeps rankCandidates' refusal: no pair, so claim nothing.
+      if (anyOk || !/Every baseline simulation failed/.test(error?.message)) throw error;
+      throw new Error(`Every simulation failed: ${firstError ?? 'no result'}`);
+    }
+    completed = before + verified.simulationsRun;
+    verifiedBaseline = verified.baseline.metrics;
+  } else {
+    // Nothing distinct to compare: the baseline alone, once, at full fidelity.
+    verifiedBaseline = await evaluateBaseline({ hours: verifyHours, seed: seedBase + 3, stage: 'verify' });
+    if (!verifiedBaseline) throw new Error(`Every simulation failed: ${firstError ?? 'no result'}`);
   }
+  const baseline = verifiedBaseline;
 
-  const baselineKey = vectorKey(baselineValues);
-  const baselineEntry = verified.find((entry) => vectorKey(entry.values) === baselineKey);
-  const baseline = baselineEntry?.metrics || stageBaselines.fine || stageBaselines.coarse || stageBaselines.initial || {};
-
-  // The baseline competes on merit: if no threshold change beat leaving things
-  // alone, the honest answer is to say so, and rank #1 will be the baseline.
-  const ranked = rankAt('verify', verified);
-
-  // The bar a margin must clear to be worth reporting as an improvement: the
-  // verification stage's own rank epsilon, which is 1.5 standard deviations of
-  // this build-and-zone's measured noise at that fidelity.
-  const significanceBar = stageEpsilons.verify.rank;
+  // The baseline competes on merit: it leads unless a candidate measurably (family-wise) beats it.
+  const measured = verified?.rows.filter((row) => !row.unmeasured) ?? [];
+  const wins = measured.filter((row) => row.significantFamilywise && row.delta > 0);
+  const ranked = [...wins, { id: 'verify:baseline', values: baselineValues, metrics: baseline },
+    ...measured.filter((row) => !wins.includes(row))];
 
   const rows = ranked.map((entry, index) => {
     const deltas = computeDeltas(entry.metrics, baseline);
@@ -607,16 +612,11 @@ export async function optimizeTriggers({
       rank: index + 1,
       id: entry.id,
       isBaseline,
-      // Whether this row's advantage over the baseline is larger than the noise.
-      // A false here means "we cannot tell these apart" — and the UI must say so
-      // rather than presenting a +0.4% delta as though it were a finding.
-      significant:
-        !isBaseline &&
-        ((Number.isFinite(marginPct) && Math.abs(marginPct) > significanceBar) ||
-          // The VERIFIED baseline only, never the earlier-stage fallback: a zero
-          // measured over a shorter window on another seed is not the same
-          // zero, and a rescue claim needs a like-for-like pair.
-          rescuesFromZero(objective, baselineEntry?.metrics, entry.metrics)),
+      // Whether the paired difference clears the family-wise interval. A false
+      // here means "we cannot tell these apart" — and the UI must say so rather
+      // than presenting a +0.4% delta as though it were a finding.
+      significant: !isBaseline && !!entry.significantFamilywise,
+      statistics: entry.statistics ?? null,
       marginPct: Number.isFinite(marginPct) ? marginPct : null,
       changedCount: entry.values.reduce(
         (total, value, i) => total + (value === baselineValues[i] ? 0 : 1),
@@ -657,6 +657,7 @@ export async function optimizeTriggers({
     stages,
     seedBase,
     verifyHours,
+    verifyReplicates: reps,
     // Surfaced so the UI can be candid: if the measured noise at the verification
     // stage is comparable to the winner's margin over the baseline, the "winner"
     // has not really been shown to be better, and the user should be told that
@@ -672,18 +673,17 @@ export async function optimizeTriggers({
     epsilons: {
       floors: { rank: rankFloor, insensitivity: insensitivityFloor },
       byStage: stageEpsilons,
-      significanceBar,
     },
-    // True when no candidate beat the baseline by more than the noise. The
+    // True when no candidate beat the baseline past the family-wise interval. The
     // correct advice then is "change nothing" — and saying so plainly is more
     // useful than presenting a ranked table that implies otherwise.
-    inconclusive: !rows.some((row) => row.significant && (row.deltas[objective]?.value || 0) > 0),
+    inconclusive: wins.length === 0,
     // Different claim from `inconclusive`, and only a labyrinth run can make it:
     // the objective is pinned at one of its limits, so every candidate ties by
     // construction. 'ceiling' means the room is already cleared every time and
     // no threshold will improve on that; 'floor' means nothing ever clears, and
     // no threshold will rescue it. The measurement succeeded in both cases.
-    saturated: saturationOf(objective, baseline, rows, baselineEntry?.metrics),
+    saturated: saturationOf(objective, baseline, rows, baseline),
     simulationsRun: completed,
     estimatedSimulations: estimate.total,
   };
