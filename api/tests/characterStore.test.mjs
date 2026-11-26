@@ -247,6 +247,21 @@ test('a resolved player produces a clean DTO', () => {
   assert.equal(dto.equipment['/equipment_types/main_hand'].hrid, '/items/cheese_sword');
 });
 
+test('a saved or imported enhancement level reaches the engine as a whole number in 0..20', () => {
+  const dtoLevel = (enhancementLevel) => toPlayerDTO({
+    equipment: { '/equipment_types/main_hand': { itemHrid: '/items/cheese_sword', enhancementLevel } }
+  }).equipment['/equipment_types/main_hand'].enhancementLevel;
+  assert.equal(dtoLevel(5.5), 6);
+  assert.equal(dtoLevel(25), 20);
+  assert.equal(dtoLevel(-1), 0);
+  assert.equal(dtoLevel(undefined), 0);
+  assert.equal(dtoLevel('x'), 0);
+  const imported = exportFormatToPlayer({ player: { equipment: [
+    { itemLocationHrid: '/item_locations/main_hand', itemHrid: '/items/cheese_sword', enhancementLevel: 5.5 }
+  ] } }, 1);
+  assert.equal(imported.equipment['/equipment_types/main_hand'].enhancementLevel, 6);
+});
+
 test('the version gate backs up rather than mangles', () => {
   localStorage.clear();
   const FALLBACK = { schemaVersion: 2, party: {}, selectedPlayers: [1] };
