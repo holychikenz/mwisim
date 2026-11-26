@@ -54,6 +54,9 @@ impl GuildTrial {
             _ => return Err((format!("Guild trial has no monsters (skilling trial?): {}", req.trial_hrid), false)),
         };
         let n = req.participant_count;
+        if !(n >= 1.0 && n == n.trunc()) {
+            return Err((format!("participantCount must be an integer >= 1, got {n}"), true));
+        }
         let opts = req.trial_options.clone().unwrap_or_default();
         let raw_scale = number(opts.enemy_scale.as_ref());
         let enemy_scale = if raw_scale.is_finite() && raw_scale > 0.0 { js::min(5.0, js::max(0.05, raw_scale)) } else { 1.0 };

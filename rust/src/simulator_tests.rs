@@ -879,3 +879,43 @@ fn a_zero_cooldown_consumable_is_refused() {
     p["drinks"] = serde_json::json!([{"hrid": "/items/wisdom_tea", "triggers": []}]);
     assert_eq!(run_zone(vec![p])["ok"], false);
 }
+
+// ---- audit-6: bad numbers are refused, not run as NaN ----
+
+#[test]
+fn a_missing_level_is_refused() {
+    let mut p = dto_json("melee", 90.0, 1);
+    p.as_object_mut().unwrap().remove("meleeLevel");
+    let out = run_zone(vec![p]);
+    assert_eq!(out["ok"], false, "{out}");
+    assert!(out["error"].as_str().unwrap_or("").contains("meleeLevel"), "{out}");
+}
+
+#[test]
+fn an_enhancement_level_off_the_table_is_refused() {
+    for bad in [serde_json::json!(21), serde_json::json!(-1), serde_json::json!(2.5)] {
+        let mut p = dto_json("melee", 90.0, 1);
+        let slot = p["equipment"].as_object_mut().unwrap().values_mut().find(|v| !v.is_null()).unwrap();
+        slot["enhancementLevel"] = bad.clone();
+        let out = run_zone(vec![p]);
+        assert_eq!(out["ok"], false, "+{bad}: {out}");
+    }
+}
+
+#[test]
+fn a_bad_participant_count_is_a_range_error() {
+    let run_trial = |n: serde_json::Value| -> serde_json::Value {
+        let req = serde_json::json!({
+            "kind": "trial", "players": [dto_json("melee", 90.0, 1)],
+            "guildTrial": {"trialHrid": "/guild_combat/badger", "startTier": 100, "participantCount": n},
+            "settings": {}, "rngState": 1,
+        });
+        serde_json::from_str(&crate::run(data(), &req.to_string(), None)).unwrap()
+    };
+    for bad in [serde_json::json!(-150), serde_json::json!(0), serde_json::json!(2.5)] {
+        let out = run_trial(bad.clone());
+        assert_eq!(out["ok"], false, "participantCount {bad}: ok");
+        assert_eq!(out["errorKind"], "RangeError", "participantCount {bad}: {}", out["error"]);
+    }
+    assert_eq!(run_trial(serde_json::json!(3))["ok"], true);
+}

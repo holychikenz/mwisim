@@ -42,19 +42,19 @@ pub struct AbilityDto {
 #[serde(rename_all = "camelCase")]
 pub struct PlayerDto {
     pub hrid: String,
-    #[serde(default = "nan", deserialize_with = "num_or_nan")]
+    #[serde(deserialize_with = "strict_level")]
     pub stamina_level: f64,
-    #[serde(default = "nan", deserialize_with = "num_or_nan")]
+    #[serde(deserialize_with = "strict_level")]
     pub intelligence_level: f64,
-    #[serde(default = "nan", deserialize_with = "num_or_nan")]
+    #[serde(deserialize_with = "strict_level")]
     pub attack_level: f64,
-    #[serde(default = "nan", deserialize_with = "num_or_nan")]
+    #[serde(deserialize_with = "strict_level")]
     pub melee_level: f64,
-    #[serde(default = "nan", deserialize_with = "num_or_nan")]
+    #[serde(deserialize_with = "strict_level")]
     pub defense_level: f64,
-    #[serde(default = "nan", deserialize_with = "num_or_nan")]
+    #[serde(deserialize_with = "strict_level")]
     pub ranged_level: f64,
-    #[serde(default = "nan", deserialize_with = "num_or_nan")]
+    #[serde(deserialize_with = "strict_level")]
     pub magic_level: f64,
     pub equipment: OrderedMap<Option<EquipmentDto>>,
     /// Raw: a slot DTO is parsed only when JS would read it (truthy, in a usable slot).
@@ -85,6 +85,10 @@ fn strict_num<'de, D: serde::Deserializer<'de>>(d: D, field: &str) -> Result<f64
         Value::Number(n) => Ok(n.as_f64().unwrap_or(f64::NAN)),
         v => Err(serde::de::Error::custom(format!("{field} must be a number, got {v}"))),
     }
+}
+
+fn strict_level<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+    strict_num(d, "player level")
 }
 
 fn strict_tier<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
