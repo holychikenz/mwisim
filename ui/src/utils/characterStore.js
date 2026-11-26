@@ -354,13 +354,6 @@ export function upsertCharacter(store, character) {
   };
 }
 
-/** Merge a character PARTIAL onto the stored character (levels, buffs, …). */
-export function patchCharacter(store, characterId, partial) {
-  const existing = store?.characters?.[characterId];
-  if (!existing) return store;
-  return upsertCharacter(store, { ...existing, ...partial, id: existing.id, name: existing.name });
-}
-
 /** The stored character an import lands on: same game characterId (an in-game
  *  rename re-imports onto its old record), else the name's slug — unless that
  *  slug is a different game character's, which then gets a record of its own. */

@@ -251,7 +251,7 @@ function dungeonMetrics(simResult, perHour, onClock) {
   };
 }
 
-/** The bill is known, so the objective is time-denominated, with either table: every metric, and optimizerRoute's costTables. */
+/** The bill is known, so the objective is time-denominated, with either table: every metric, and optimizerTool's costTables. */
 export const costsKnown = (consumableCosts, dropCreditCosts) => !!(consumableCosts || dropCreditCosts);
 
 /**

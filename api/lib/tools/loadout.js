@@ -1,5 +1,5 @@
 // =============================================================================
-// loadout — optimiser tool (optimizerTool.js; Express: /api/optimize-loadout). every saved loadout of ONE party member against the one it
+// loadout — optimiser tool (optimizerTool.js). every saved loadout of ONE party member against the one it
 // wears now, on shared seeds. The UI sends each loadout as a DTO; this tool
 // owns the ids and everything that is the character's rather than the loadout's,
 // and labels a loadout whose unpriced food or drink a costed ranking counts as free.

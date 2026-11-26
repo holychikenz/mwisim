@@ -22,7 +22,7 @@ import {
 } from '../../shared/consumableCost.js';
 import { calculateExpectedDrops } from '../../shared/drops.js';
 import { rankResults, scoreSimResult } from '../lib/triggerSearch/score.js';
-import { prepareEquipmentRun } from '../routes/optimizeEquipment.js';
+import { prepareEquipmentRun } from '../lib/tools/equipment.js';
 import {
   BEAR_ZONE_ZEROED,
   buildDropCreditCosts,

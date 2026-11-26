@@ -11,7 +11,7 @@
 //   plan → run (POST /api/optimize-triggers over SSE, or the browser host)
 //     Frames are `start`, `progress`, `result`, `error`, `cancelled`.
 //
-// The run aborts when the client disconnects or cancels (optimizerRoute.js, optimizerHost.js): an
+// The run aborts when the client disconnects or cancels (optimizerHost.js): an
 // optimiser run holds a whole worker pool, and a user who navigates away must not leave a
 // dozen threads saturating the machine until they finish. It also emits SSE
 // heartbeat comments, because a single 72-hour candidate simulation can outlast a

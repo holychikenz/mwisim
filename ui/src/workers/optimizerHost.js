@@ -1,8 +1,8 @@
 // =============================================================================
 // optimizerHost — the optimiser tools (api/lib/tools/*.js) run in the browser,
-// so the UI needs no csim API. The same previewTool / planTool / runPlanned the
-// Express routes call (api/lib/optimizerTool.js), with postMessage for JSON and
-// SSE and a pool of Web Workers (browserPool.js) for worker_threads.
+// so the UI needs no csim API. The transport-free previewTool / planTool /
+// runPlanned (api/lib/optimizerTool.js), with postMessage for the frames and a
+// pool of Web Workers (browserPool.js) for worker_threads.
 //
 //   in:  { type: 'preview', id, path, body } → { type: 'preview', id, status, json }
 //        { type: 'run', path, body }         → { type: 'refused', status, json }

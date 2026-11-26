@@ -2,9 +2,9 @@
 
 Engine: the Rust twin in `rust/` (native for Node, wasm for the UI; the JS
 engine was deleted, docs/engine-retirement/PLAN.md). Game data in
-`src/combatsimulator/data/`, React UI in `ui/`, headless API and tests in
-`api/`. Everything builds through `./build.sh` (`./build.sh rust wasm` for the
-engine):
+`src/combatsimulator/data/`, React UI in `ui/`, the in-process simulator API
+(`api/lib/simulator.js`) and tests in `api/`. Everything builds through
+`./build.sh` (`./build.sh rust wasm` for the engine):
 
 ```bash
 ./build.sh            # install, generate, build the UI (ui/dist/)

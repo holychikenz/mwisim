@@ -32,8 +32,7 @@ import { runDungeonRunsSerial, workerBatchRunner, addRunIdleTime, runZoneRepeats
 //   ←  { type: "zone_runs_unsupported" }   run here over one worker.js instead
 //
 // Because we never modify worker.js or the engine, upstream rebases pass
-// straight through this seam. The Express API (csim/api) remains available
-// for headless/automation callers but is no longer needed to use this UI.
+// straight through this seam.
 // =============================================================================
 
 function createSimWorker() {

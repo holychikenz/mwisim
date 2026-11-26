@@ -1369,7 +1369,7 @@ function App() {
       // Drop credit: seconds each over the consumable class, only with the Costs
       // page's toggle on and a seconds source (buildDropCreditCosts). The server
       // credits it beside a known bill — a cost table, or nothing slotted to eat
-      // (api/lib/optimizerRoute.js sanitiseDropCreditCosts) — never in a labyrinth.
+      // (api/lib/optimizerTool.js sanitiseDropCreditCosts) — never in a labyrinth.
       dropCreditCosts: buildDropCreditCosts({
         prices: pricing.prices,
         fetchedPrices: pricing.fetchedPrices,
@@ -1751,7 +1751,7 @@ function App() {
     config, onConfigChange: setConfig, subjectOptions, subject: subjectSlot == null ? null : String(subjectSlot),
     onSubjectChange: (value) => setSubjectPick(Number(value)), subjectNotice, pricing, consumableCostRows: costRows
   });
-  // What the server will compare: it caps the list and reports the rest as skipped (api/routes/optimizeLoadout.js).
+  // What the server will compare: it caps the list and reports the rest as skipped (api/lib/tools/loadout.js).
   // Read from a preview of THIS payload; until one arrives, the payload's own list (and Run waits for it).
   const loadoutFresh = useMemo(() => samePayload(loadoutOpt.previewFor, loadoutOptPayload), [loadoutOpt.previewFor, loadoutOptPayload]);
   const loadoutCount = (loadoutFresh ? loadoutOpt.preview?.candidates : loadoutOptPayload?.candidates.length) || 0;

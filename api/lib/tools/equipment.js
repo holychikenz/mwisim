@@ -31,7 +31,7 @@ const MAX_CANDIDATES = 40;
 /**
  * Clamp the scan configuration. These arrive from NumberInputs, so they are user
  * data rather than trusted settings. Hours, replicates and alpha clamp as every
- * paired run's do (optimizerRoute.js sanitiseFidelity); the step is the scan's own.
+ * paired run's do (optimizerTool.js sanitiseFidelity); the step is the scan's own.
  */
 function sanitiseScan(input) {
   const integer = (value, fallback, min, max) => {

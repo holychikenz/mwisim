@@ -8,8 +8,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { COORDINATES, bestSwap, candidatesAt, estimateSwapDescent, swapContext, swapGroups } from '../lib/swapSearch.js';
-import { prepareSwapRun, runSwapSearch } from '../routes/optimizeSwaps.js';
-import { costTables } from '../lib/optimizerRoute.js';
+import { prepareSwapRun, runSwapSearch } from '../lib/tools/swaps.js';
+import { costTables } from '../lib/optimizerTool.js';
 
 const { itemDetailMap } = await import('../../shared/dataProvider.js');
 

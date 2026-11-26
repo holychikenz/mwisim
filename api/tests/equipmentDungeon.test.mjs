@@ -11,7 +11,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { prepareEquipmentRun } from '../routes/optimizeEquipment.js';
+import { prepareEquipmentRun } from '../lib/tools/equipment.js';
 import { DUNGEON_REPORTED_METRICS, REPORTED_METRICS, reportedMetricsFor } from '../lib/triggerSearch/score.js';
 import { scanEquipment } from '../lib/equipmentScan/scan.js';
 

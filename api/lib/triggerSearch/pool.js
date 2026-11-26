@@ -7,8 +7,8 @@
 // browser cannot see the machine's core count reliably and cannot measure it
 // cheaply. Node can just ask os.availableParallelism(), so it does.
 //
-// One worker is left free. The Express event loop has to stay responsive enough
-// to keep flushing SSE frames while the pool saturates the rest of the machine;
+// One worker is left free. The main event loop has to stay responsive enough
+// to keep sending progress frames while the pool saturates the rest of the machine;
 // a pool that takes every core makes progress reporting stutter, which reads to
 // the user as a hang.
 // =============================================================================

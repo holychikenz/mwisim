@@ -5,7 +5,7 @@
 // Why a module singleton rather than options threaded through the constructor:
 // the things we want to A/B are buried deep in the unit/ability layer
 // (CombatUnit.resetCooldowns, and whatever comes next), and every caller —
-// worker.js, multiWorker.js shards, the All Zones sweep, the Express API —
+// worker.js, multiWorker.js shards, the All Zones sweep —
 // already goes through one entry point per worker. Each worker is a fresh
 // module instance, so applying the settings once at the top of an `onmessage`
 // is both sufficient and leak-free.
@@ -50,28 +50,8 @@ const DEFAULTS = Object.freeze({
 
 let settings = { ...DEFAULTS };
 
-// Which kind of encounter is being simulated: "labyrinth" or "zone" (the
-// latter covering zones, dungeons and guild trials — everything that is not a
-// labyrinth room). Set by CombatSimulator, read only by the "auto" mode.
-let encounterContext = "zone";
-
 export function resetSimSettings() {
     settings = { ...DEFAULTS };
-    encounterContext = "zone";
-}
-
-export function setEncounterContext(context) {
-    encounterContext = context === "labyrinth" ? "labyrinth" : "zone";
-}
-
-// The resolved model for the encounter currently being simulated: "half" or
-// "random". This — not the raw setting — is what the engine should branch on.
-export function resolveMonsterStartCooldown() {
-    const mode = settings.monsterStartCooldown;
-    if (mode === "half" || mode === "random") {
-        return mode;
-    }
-    return encounterContext === "labyrinth" ? "half" : "random";
 }
 
 // Apply a partial settings patch, ignoring unknown keys and invalid values so a

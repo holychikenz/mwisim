@@ -1,5 +1,5 @@
 // =============================================================================
-// abilities — optimiser tool (optimizerTool.js; Express: /api/optimize-abilities). other owned abilities in each slot of ONE party member,
+// abilities — optimiser tool (optimizerTool.js). other owned abilities in each slot of ONE party member,
 // and other cast orders, against the current setup on shared seeds; or a
 // coordinate descent to the best combination. Candidates: lib/abilitySearch.js;
 // the search: lib/descent.js.
