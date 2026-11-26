@@ -100,14 +100,14 @@ function vectorKey(values) {
  *
  * @param {object[]} params
  * @param {object} [stageOverrides]
- * @returns {{initial: number, coarse: number, fine: number, verify: number, total: number}}
+ * @returns {{initial: number, coarse: number, fine: number, verify: number, verifyReplicates: number, total: number}}
  */
 export function estimateWorkload(params, stageOverrides = {}) {
   const stages = mergeStages(stageOverrides);
   const count = params.length;
   const calibration = stages.calibration.repeats >= 2 ? stages.calibration.repeats : 0;
   if (count === 0) {
-    return { calibration, initial: 0, coarse: 0, fine: 0, verify: 1, total: calibration + 1 };
+    return { calibration, initial: 0, coarse: 0, fine: 0, verify: 1, verifyReplicates: 1, total: calibration + 1 };
   }
 
   const initial = coarseGridSize(params) + 1; // + baseline
@@ -126,6 +126,7 @@ export function estimateWorkload(params, stageOverrides = {}) {
     coarse,
     fine,
     verify,
+    verifyReplicates: DEFAULT_SCAN.replicates,
     total: calibration + initial + coarse + fine + verify,
   };
 }

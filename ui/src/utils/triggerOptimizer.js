@@ -118,7 +118,8 @@ export function estimateSeconds(workload, stages, workerCount = 4) {
     (workload.initial || 0) * stages.initial.hours +
     (workload.coarse || 0) * stages.coarse.hours +
     (workload.fine || 0) * stages.fine.hours +
-    (workload.verify || 0) * stages.verify.hours;
+    // Each replicate runs its share of the verify hours (search.js splits them).
+    (workload.verify || 0) * stages.verify.hours / (workload.verifyReplicates || 1);
 
   // Measured on this machine across three zones: ~4-5 simulated hours per second
   // per worker on a single-spawn zone, ~4.5 on a busy dungeon. Rounded DOWN to 3

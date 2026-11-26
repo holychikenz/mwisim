@@ -848,6 +848,18 @@ test('estimateWorkload is an upper bound that accounts for every stage', () => {
   assert.equal(noCalibration.calibration, 0);
 });
 
+test('the time estimate counts each verification replicate at its own length', async () => {
+  const { estimateSeconds } = await import('../../ui/src/utils/triggerOptimizer.js');
+  const { DEFAULT_STAGES } = await import('../lib/triggerSearch/search.js');
+  const params = [{ kind: 'percentage', maxValue: 100, initialValue: 50 }];
+  const { verify, verifyReplicates } = estimateWorkload(params);
+  // 6 finalists × 6 replicates of 12h = 6 × 72 simulated hours; 3 h/s on one worker.
+  assert.equal(estimateSeconds({ verify, verifyReplicates }, DEFAULT_STAGES, 1) * 3, 6 * 72);
+  // No parameters: one baseline verification at the full length.
+  const empty = estimateWorkload([]);
+  assert.equal(estimateSeconds({ verify: empty.verify, verifyReplicates: empty.verifyReplicates }, DEFAULT_STAGES, 1) * 3, 72);
+});
+
 /**
  * A synthetic search problem: a single percentage threshold whose score peaks at
  * a known value. Noiseless and instant, so the funnel's logic can be asserted
