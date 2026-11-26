@@ -1114,3 +1114,11 @@ test('audit2-19: caller epsilon floors are clamped to [0, MAX_DERIVED_EPSILON]',
   const result = await optimizeTriggers({ playerDTOs, params, evaluate, epsilons: { rank: -1, insensitivity: 7 } });
   assert.deepEqual(result.epsilons.floors, { rank: 0, insensitivity: MAX_DERIVED_EPSILON });
 });
+
+test('per-replicate verification hours never round to 0h', async () => {
+  const { replicateHours } = await import('../../ui/src/utils/triggerOptimizer.js');
+  assert.equal(replicateHours(0.25, 6), 0.042);
+  assert.equal(replicateHours(1, 6), 0.17);
+  assert.equal(replicateHours(100, 6), 16.7);
+  assert.equal(replicateHours(72, 6), 12);
+});

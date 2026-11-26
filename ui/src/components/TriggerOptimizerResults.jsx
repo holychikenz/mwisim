@@ -1,5 +1,5 @@
 import { Alert, Badge, Group, SimpleGrid, Stack, Table, Text, Title, Tooltip } from '@mantine/core';
-import { formatBand, formatNetSeconds, formatSeconds } from '../utils/triggerOptimizer';
+import { formatBand, formatNetSeconds, formatSeconds, replicateHours } from '../utils/triggerOptimizer';
 import { nameOf } from '../utils/names';
 import { ClearResultsButton, NumTd, Section, StatCard } from './ResultParts';
 
@@ -238,8 +238,7 @@ export function TriggerOptimizerResults({ results, items, abilities, onClear }) 
     ? LABYRINTH_METRIC_COLUMNS
     : (dungeon ? DUNGEON_METRIC_COLUMNS : METRIC_COLUMNS).filter((column) => !column.costed || costed);
   const consumableSeconds = leader?.metrics?.consumableSecondsPerHour || 0;
-  // One decimal at most: 100h over 6 replicates is 16.7h, not 16.666666666666668h.
-  const hoursEach = Number((verifyHours / verifyReplicates).toFixed(1));
+  const hoursEach = replicateHours(verifyHours, verifyReplicates);
   const timeShare = leader?.metrics?.consumableTimeShare || 0;
 
   return (
