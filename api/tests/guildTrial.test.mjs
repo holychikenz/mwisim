@@ -319,6 +319,13 @@ test('a saved or imported decimal participant count is rounded before it reaches
   assert.equal(trialParticipants({ participantCount: 0.2 }, 7), 1);
   assert.equal(trialParticipants({ participantCount: null }, 7), 7);
   assert.equal(trialParticipants({}, 7), 7);
+  // An unusable override means the roster size; a usable one is bounded like the input (1..200).
+  for (const n of ['', 'auto', false, true, NaN, Infinity, 1e999, -Infinity]) {
+    assert.equal(trialParticipants({ participantCount: n }, 7), 7, String(n));
+  }
+  assert.equal(trialParticipants({ participantCount: 0 }, 7), 1);
+  assert.equal(trialParticipants({ participantCount: '30.5' }, 7), 31);
+  assert.equal(trialParticipants({ participantCount: 500 }, 7), 200);
 });
 
 

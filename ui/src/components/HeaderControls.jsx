@@ -26,6 +26,7 @@ import {
   MAX_GUILD_BUILDING_LEVEL
 } from '../utils/guildBuffs';
 import { levelToTierIndex, tierIndexToLevel, MAX_TIER_INDEX } from '../utils/trialTiers';
+import { trialParticipants, MIN_PARTICIPANTS, MAX_PARTICIPANTS } from '../utils/roster';
 import { simulableZones, zoneTiers, findZone } from '../utils/zones';
 import { SettingsMenu } from './SettingsMenu';
 import { UserscriptBadge } from './UserscriptBadge';
@@ -164,7 +165,7 @@ export function HeaderControls({
     [guildTrials]
   );
   const cfg = trialConfig || {};
-  const effectiveParticipants = cfg.participantCount ?? rosterLength;
+  const effectiveParticipants = trialParticipants(cfg, rosterLength);
   const guildBuffLevels = cfg.guildBuffLevels || {};
   const enemyScalePct = cfg.enemyScale ?? 100;
   const guildBuildingLevels = cfg.guildBuildingLevels || {};
@@ -343,8 +344,8 @@ export function HeaderControls({
                   value={effectiveParticipants}
                   onChange={(v) => setCfg({ participantCount: Math.max(1, Math.round(Number(v) || 1)) })}
                   allowDecimal={false}
-                  min={1}
-                  max={200}
+                  min={MIN_PARTICIPANTS}
+                  max={MAX_PARTICIPANTS}
                   size="xs"
                 />
                 {cfg.participantCount != null && (
