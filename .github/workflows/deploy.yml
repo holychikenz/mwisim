@@ -1,12 +1,16 @@
 name: Deploy UI to GitHub Pages
 
-# Pages holds ONE artifact, so every run builds both sites from the branch HEADS (by name, not the
-# triggering SHA): main -> /, test -> /test/. Each branch is built as-is, wasm included (rust/pkg is
-# gitignored, and rust/src/generated.rs follows each branch's data). A push to either rebuilds both;
-# no test branch means no /test/. VITE_SERVER=test only labels the test build and namespaces its storage.
+# Triggered by a green ci run on main or test; the triggering branch builds at the tested SHA.
+# Pages holds ONE artifact, so every run builds both sites: main -> /, test -> /test/; the other
+# branch builds at its head. Each branch is built as-is, wasm included (rust/pkg is gitignored, and
+# rust/src/generated.rs follows each branch's data). No test branch means no /test/.
+# VITE_SERVER=test only labels the test build and namespaces its storage.
+# workflow_run only fires from main's copy of this file, with github.ref_name always 'main'.
 
 on:
-  push:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
     branches: [main, test]
   workflow_dispatch:
 
@@ -24,11 +28,20 @@ concurrency:
 
 jobs:
   build:
+    # workflow_run fires on any conclusion and for pull_request runs too (a PR's head branch can be
+    # named main or test), so deploy only a successful push run from this repository.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.event == 'push' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     steps:
       - name: Checkout main
         uses: actions/checkout@v4
-        with: { ref: main, path: live }
+        with:
+          ref: ${{ github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_sha || 'main' }}
+          path: live
 
       - name: Is there a test branch?
         id: test
@@ -43,10 +56,13 @@ jobs:
       - name: Checkout test
         if: steps.test.outputs.exists == 'true'
         uses: actions/checkout@v4
-        with: { ref: test, path: test }
+        with:
+          ref: ${{ github.event.workflow_run.head_branch == 'test' && github.event.workflow_run.head_sha || 'test' }}
+          path: test
 
-      # A run from any other ref executes that ref's copy of this file; refuse to deploy live from a
-      # copy that differs from main's (compared at the running workflow's own commit, not the head).
+      # A workflow_dispatch run from any other ref executes that ref's copy of this file; refuse to
+      # deploy live from a copy that differs from main's (compared at the running workflow's own
+      # commit, not the head). Under workflow_run ref_name is always main, so this never runs there.
       - name: Workflow must match main's
         if: github.ref_name != 'main'
         run: |
@@ -87,7 +103,7 @@ jobs:
       - name: Build /test/ (test)
         id: build_test
         if: steps.test.outputs.exists == 'true'
-        continue-on-error: ${{ github.ref_name != 'test' }}
+        continue-on-error: ${{ (github.event.workflow_run.head_branch || github.ref_name) != 'test' }}
         working-directory: test
         env: { VITE_SERVER: test }
         run: |
