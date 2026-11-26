@@ -409,8 +409,10 @@ function App() {
         const { status, ...store } = loadCharacters();
         if (status !== 'incompatible') setCharacters(store);
       }
-      if (key === null || key === SESSION_KEY) {
-        const s = loadSession().data;
+      // An 'incompatible' blob (corrupt, or from a newer build) is skipped: taking its fallback would reset this tab and save that over it.
+      const session = key === null || key === SESSION_KEY ? loadSession() : null;
+      if (session && session.status !== 'incompatible') {
+        const s = session.data;
         setParty(normalizeParty(s.party));
         setSelectedPlayers(Array.isArray(s?.selectedPlayers) && s.selectedPlayers.length ? s.selectedPlayers : [1]);
         setZone(s?.zone || DEFAULT_ZONE_HRID);
@@ -422,8 +424,9 @@ function App() {
         setZoneWorkers(s?.zoneWorkers ?? clampZoneWorkers());
         setMaxRunHours(s?.maxRunHours ?? clampRunHours());
       }
-      if (key === null || key === GUILD_TRIAL_KEY) {
-        const t = loadGuildTrialState().data;
+      const trial = key === null || key === GUILD_TRIAL_KEY ? loadGuildTrialState() : null;
+      if (trial && trial.status !== 'incompatible') {
+        const t = trial.data;
         setRoster(t.roster);
         setSelectedEntryId(t.selectedEntryId);
         setTrialConfig(t.trialConfig);

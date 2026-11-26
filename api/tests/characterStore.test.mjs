@@ -611,3 +611,13 @@ test('finding 11: re-saving what another tab saved writes the same text, so two 
       trialConfig: { iterations: 5 } }),
     () => saveGuildTrialState(loadGuildTrialState().data));
 });
+
+test('a future-version session or trial blob reports incompatible, so another tab\'s copy is not taken', async () => {
+  const { loadSession, SESSION_KEY } = await import('../../ui/src/utils/session.js');
+  const { loadGuildTrialState, GUILD_TRIAL_KEY } = await import('../../ui/src/utils/roster.js');
+  localStorage.clear();
+  localStorage.setItem(SESSION_KEY, JSON.stringify({ schemaVersion: 99, party: {} }));
+  localStorage.setItem(GUILD_TRIAL_KEY, JSON.stringify({ schemaVersion: 99, roster: [] }));
+  assert.equal(loadSession().status, 'incompatible');
+  assert.equal(loadGuildTrialState().status, 'incompatible');
+});
