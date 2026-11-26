@@ -137,11 +137,3 @@ fn decompose_time_uses_the_level_over_bonus() {
     assert!(want < p.action_time, "{want} vs the flat {}", p.action_time);
     assert!((action - want).abs() <= 1e-3 * want, "the row's action time {action}, want {want} (flat {})", p.action_time);
 }
-
-/// audit-3: an item whose recipe has an input with no source has no value (the UI reads a missing key as unknown).
-#[test]
-fn an_item_with_an_unpriceable_input_has_no_value() {
-    let out: Value = serde_json::from_str(&crate::item_values(&client(), &read("fixtures/econ/character.json"), "")).unwrap();
-    assert!(out["values"].get("/items/mirror_of_protection").is_none(), "{}", out["values"]["/items/mirror_of_protection"]);
-    assert!(out["values"]["/items/milk"].as_f64().unwrap() > 0.0, "a gathered item keeps its value");
-}

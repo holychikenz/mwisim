@@ -23,7 +23,7 @@ test('wasm item_values: the fixture character prices an item as the server golde
   const ms = performance.now() - t0;
   const golden = JSON.parse(read('fixtures/econ/value__market.json'));
   assert.equal(out.character, 'TwinTester');
-  assert.equal(out.values['/items/milk'], golden.values['/items/milk']);
+  assert.equal(out.values['/items/acrobatic_hood'], golden.values['/items/acrobatic_hood']);
   assert.equal(out.values['/items/coin'], 0);
   console.log(`# item_values (wasm, incl. parse): ${ms.toFixed(0)} ms`);
 });
