@@ -5,6 +5,7 @@
 //! seeded Monte Carlo matches bit for bit. The legacy stub API
 //! (enhance_sim.py:1081+) is not ported.
 
+use crate::character_stats::CharacterStats;
 use crate::item_value::ItemValueCalculator;
 use crate::mt19937::Mt19937;
 use crate::Gdc;
@@ -81,6 +82,9 @@ pub struct EnhancementConfig {
     pub tea_wisdom: bool,
     pub hourly_rate: f64,
     pub percent_rate: f64,
+    /// Speed (percentage points) and XP bonus from enhancing pieces no named field covers, plus house/achievement wisdom.
+    pub extra_speed: f64,
+    pub extra_xp: f64,
 }
 
 impl Default for EnhancementConfig {
@@ -115,6 +119,8 @@ impl Default for EnhancementConfig {
             tea_wisdom: false,
             hourly_rate: 5_000_000.0,
             percent_rate: 2.0,
+            extra_speed: 0.0,
+            extra_xp: 0.0,
         }
     }
 }
@@ -331,6 +337,11 @@ impl<'a> EnhanceSim<'a> {
         float_or_zero(child(child(item, "equipmentDetail"), "noncombatStats"), stat)
     }
 
+    fn enhancement_bonus(&self, hrid: &str, stat: &str) -> f64 {
+        let Some(item) = self.gdc.get_item(hrid).filter(|i| truthy(i)) else { return 0.0 };
+        float_or_zero(child(child(item, "equipmentDetail"), "noncombatEnhancementBonuses"), stat)
+    }
+
     pub fn compute_guzzling_bonus(&self, cfg: &EnhancementConfig) -> f64 {
         if !cfg.use_guzzling {
             return 1.0;
@@ -409,6 +420,7 @@ impl<'a> EnhanceSim<'a> {
         if cfg.use_philo_neck {
             item_bonus += speed(HRID_PHILOSOPHERS_NECKLACE, cfg.philo_neck_level, true);
         }
+        item_bonus += cfg.extra_speed;
         if cfg.use_enhancing_buff {
             item_bonus += 19.5 + cfg.enhancing_buff_level * 0.5;
         }
@@ -450,7 +462,7 @@ impl<'a> EnhanceSim<'a> {
         if cfg.use_experience_buff {
             bonus += 0.195 + cfg.experience_buff_level * 0.005;
         }
-        bonus
+        bonus + cfg.extra_xp
     }
 
     /// XP per attempt at a given pre-attempt level.
@@ -862,21 +874,31 @@ impl<'a> EnhanceSim<'a> {
         let room = child(child(ch, "characterHouseRoomMap"), "/house_rooms/observatory");
         cfg.observatory_level = int_of(room.get("level"), 0).clamp(0, 8) as f64;
 
-        // Python's dict comprehension: the last item per hrid wins, at the first one's position.
-        let mut detected: IndexMap<&str, &Value> = IndexMap::new();
-        for it in list(child(ch, "characterItems")) {
-            if !str_of(it, "itemLocationHrid").starts_with("/item_locations/inventory") {
-                detected.insert(str_of(it, "itemHrid"), it);
+        // The default enhancing loadout's pieces when there is one, else what is worn now;
+        // hrid -> (location, level). For worn items the last per hrid wins, at the first one's position.
+        // shortcut: levels clamp to the 0..20 table; Python would index (or IndexError) past it.
+        let mut detected: IndexMap<String, (String, usize)> = IndexMap::new();
+        let stats = CharacterStats::new(self.gdc);
+        if let Some(lo) = stats.loadout_for_action("/action_types/enhancing") {
+            for (slot, h, l) in stats.resolve_loadout_items(lo) {
+                detected.insert(h, (slot, l.clamp(0, 20) as usize));
+            }
+        } else {
+            for it in list(child(ch, "characterItems")) {
+                let loc = str_of(it, "itemLocationHrid");
+                if !loc.starts_with("/item_locations/inventory") {
+                    detected.insert(str_of(it, "itemHrid").to_string(), (loc.to_string(), int_of(it.get("enhancementLevel"), 0).clamp(0, 20) as usize));
+                }
             }
         }
-        // shortcut: levels clamp to the 0..20 table; Python would index (or IndexError) past it.
-        let enh_level = |it: &Value| int_of(it.get("enhancementLevel"), 0).clamp(0, 20) as usize;
 
-        if let Some(it) = detected.values().find(|it| str_of(it, "itemLocationHrid") == "/item_locations/enhancing_tool") {
-            cfg.enhancer_hrid = str_of(it, "itemHrid").to_string();
-            cfg.enhancer_level = enh_level(it);
+        let mut counted: Vec<&str> = vec![HRID_GUZZLING_POUCH, HRID_ENCHANTED_GLOVES, HRID_ENHANCERS_TOP, HRID_ENHANCERS_BOTTOMS, HRID_PHILOSOPHERS_NECKLACE];
+        if let Some((h, (_, l))) = detected.iter().find(|(_, (loc, _))| loc == "/item_locations/enhancing_tool") {
+            cfg.enhancer_hrid = h.clone();
+            cfg.enhancer_level = *l;
+            counted.push(h);
         }
-        let check = |hrid: &str| detected.get(hrid).map(|it| enh_level(it));
+        let check = |hrid: &str| detected.get(hrid).map(|(_, l)| *l);
         if let Some(l) = check(HRID_GUZZLING_POUCH) {
             (cfg.use_guzzling, cfg.guzzling_level) = (true, l);
         }
@@ -893,12 +915,28 @@ impl<'a> EnhanceSim<'a> {
             (cfg.use_philo_neck, cfg.philo_neck_level) = (true, l);
         }
 
-        for it in detected.values().filter(|it| str_of(it, "itemLocationHrid") == "/item_locations/charm") {
-            let ih = str_of(it, "itemHrid");
-            if let Some(tier) = CHARM_TIERS.iter().find(|t| ih == format!("/items/{t}_enhancing_charm")) {
+        for (ih, (_, l)) in detected.iter().filter(|(_, (loc, _))| loc == "/item_locations/charm") {
+            if let Some(tier) = CHARM_TIERS.iter().find(|t| *ih == format!("/items/{t}_enhancing_charm")) {
                 cfg.use_charm = true;
                 cfg.charm_tier = tier.to_string();
-                cfg.charm_level = enh_level(it);
+                cfg.charm_level = *l;
+                counted.push(ih);
+            }
+        }
+
+        // Every other piece (a cape, say): base + its own per-level bonus x the game's T[level].
+        for (h, (_, l)) in detected.iter().filter(|(h, _)| !counted.contains(&h.as_str())) {
+            let t = (ENHANCE_BONUS[*l] - 1.0) / 0.02;
+            let at = |k: &str| self.stat(h, k) + self.enhancement_bonus(h, k) * t;
+            cfg.extra_speed += at("enhancingSpeed") * 100.0;
+            cfg.extra_xp += at("enhancingExperience");
+        }
+        // House and achievement (and MooPass) wisdom; the community one is use_experience_buff.
+        for m in ["houseActionTypeBuffsMap", "achievementActionTypeBuffsMap", "mooPassActionTypeBuffsMap"] {
+            for b in list(child(child(ch, m), "/action_types/enhancing")) {
+                if str_of(b, "typeHrid") == "/buff_types/wisdom" {
+                    cfg.extra_xp += b.get("flatBoost").and_then(py_float).unwrap_or(0.0);
+                }
             }
         }
 

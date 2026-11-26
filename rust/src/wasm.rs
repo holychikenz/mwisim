@@ -55,8 +55,8 @@ pub fn item_values(client: &str, character: &str, overrides: &str) -> String {
 
 /// The enhancing setup off a raw character (lib.rs `enhance_config`); stateless.
 #[wasm_bindgen]
-pub fn enhance_config(character: &str) -> String {
-    crate::enhance_config(character)
+pub fn enhance_config(client: &str, character: &str) -> String {
+    crate::enhance_config(client, character)
 }
 
 /// One enhancement costing (lib.rs `enhance_calculate`); stateless.

@@ -85,14 +85,15 @@ pub fn item_values(client: &str, character: &str, overrides: &str) -> String {
 }
 
 /// cowstuff's `GET /api/enhance/character`: the EnhancementConfig read off the raw init_character_data.
-pub fn enhance_config(character: &str) -> String {
+/// `client` as `item_values`: the enhancing loadout's pieces are summed from their item stats.
+pub fn enhance_config(client: &str, character: &str) -> String {
     use mwi_econ::{enhance_sim::EnhanceSim, Gdc};
-    use serde_json::{json, Value};
-    let character: Value = match serde_json::from_str(character) {
-        Ok(c) => c,
-        Err(e) => return err_json(&format!("enhance_config: {e}"), false, None),
+    use serde_json::Value;
+    let (data, character) = match (serde_json::from_str::<Value>(client), serde_json::from_str::<Value>(character)) {
+        (Ok(d), Ok(c)) => (d, c),
+        (Err(e), _) | (_, Err(e)) => return err_json(&format!("enhance_config: {e}"), false, None),
     };
-    let gdc = Gdc::new(std::sync::Arc::new(json!({})), std::sync::Arc::new(character));
+    let gdc = Gdc::new(std::sync::Arc::new(data), std::sync::Arc::new(character));
     let market = std::collections::HashMap::new();
     serde_json::to_string(&EnhanceSim::new(&gdc, &market, false, None).config_from_character()).unwrap_or_default()
 }

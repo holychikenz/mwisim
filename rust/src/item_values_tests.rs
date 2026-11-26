@@ -80,9 +80,30 @@ fn enhance_calculate_matches_iron_goldens() {
 
 #[test]
 fn enhance_config_matches_character_golden() {
-    let out: Value = serde_json::from_str(&crate::enhance_config(&read("fixtures/econ/character.json"))).unwrap();
+    let out: Value = serde_json::from_str(&crate::enhance_config(&client(), &read("fixtures/econ/character.json"))).unwrap();
     let want: Value = serde_json::from_str(&read("fixtures/econ/enhance__character.json")).unwrap();
     assert!(close(&out, &want, 1e-9), "{out}");
+}
+
+/// audit-4: the fixture character wears combat gear; its default enhancing loadout has
+/// enchanted gloves +5 and a refined chance cape, which must count.
+#[test]
+fn enhance_config_reads_the_enhancing_loadout() {
+    let ch = read("fixtures/econ/character.json");
+    let cfg: Value = serde_json::from_str(&crate::enhance_config(&client(), &ch)).unwrap();
+    assert_eq!(cfg["use_enchanted"], true, "{cfg}");
+    assert_eq!(cfg["enchanted_level"], 5);
+    assert_eq!(mwi_econ::enhance_sim::ENHANCE_BONUS[0], 1.0);
+    // The loadout lists the refined chance cape at +0 but does not use exact levels, so the owned +3 counts:
+    // base + per-level bonus x T[3] = 3.3.
+    assert!((cfg["extra_speed"].as_f64().unwrap() - (0.058 + 0.0058 * 3.3) * 100.0).abs() < 1e-9, "{cfg}");
+    // The cape's XP plus house (0.0335) and achievement (0.02) wisdom.
+    assert!((cfg["extra_xp"].as_f64().unwrap() - (0.0348 + 0.00348 * 3.3 + 0.0335 + 0.02)).abs() < 1e-9, "{cfg}");
+    let body = serde_json::json!({"config": cfg, "item_hrid": "/items/holy_brush", "target": 10, "iron_cow": true}).to_string();
+    let out: Value = serde_json::from_str(&crate::enhance_calculate(&client(), &ch, &body)).unwrap();
+    let t = out["attempt_time"].as_f64().unwrap();
+    // 7.83 s from the worn gear; the gloves +5 (11.2 points) and the cape +3 (7.714) bring it to 12 / 1.7225.
+    assert!((t - 6.967).abs() < 0.001, "attempt time {t}");
 }
 
 #[test]
@@ -91,7 +112,7 @@ fn enhance_bad_input_is_an_error_not_a_panic() {
         let out: Value = serde_json::from_str(&crate::enhance_calculate(&client(), "{}", body)).unwrap();
         assert_eq!(out["ok"], false, "{body}");
     }
-    let out: Value = serde_json::from_str(&crate::enhance_config("{")).unwrap();
+    let out: Value = serde_json::from_str(&crate::enhance_config("{}", "{")).unwrap();
     assert_eq!(out["ok"], false);
 }
 

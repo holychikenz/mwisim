@@ -33,7 +33,7 @@ test('wasm enhance_*: the fixture character costs an item as the server golden d
   const maps = ['actionDetailMap', 'itemDetailMap', 'enhancementLevelTotalBonusMultiplierTable'];
   const client = '{' + maps.map((m) => `"${m}":${read(`src/combatsimulator/data/${m}.json`)}`).join(',') + '}';
   const character = read('fixtures/econ/character.json');
-  const config = JSON.parse(await b.enhanceConfig(character));
+  const config = JSON.parse(await b.enhanceConfig(client, character));
   assert.equal(config.enhancing_level, JSON.parse(read('fixtures/econ/enhance__character.json')).enhancing_level);
   const body = JSON.stringify({ config: {}, item_hrid: '/items/holy_brush', target: 10, iron_cow: true });
   const out = JSON.parse(await b.enhanceCalculate(client, character, body));

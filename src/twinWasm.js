@@ -56,7 +56,7 @@ export function loadWasmTwin() {
             run: async (json, onProgress) => guard(() => mod.run(json, onProgress ?? null)),
             runSync: (json) => guard(() => mod.run(json, null)),
             itemValues: (character, overrides = "") => guard(() => mod.item_values(clientJson(), character, overrides)),
-            enhanceConfig: (character) => guard(() => mod.enhance_config(character)),
+            enhanceConfig: (character) => guard(() => mod.enhance_config(clientJson(), character)),
             enhanceCalculate: (character, body) => guard(() => mod.enhance_calculate(clientJson(), character, body)),
         };
     })();
