@@ -1109,4 +1109,23 @@ mod tests {
         assert_eq!(c.enhancing_level, 120.5);
         assert_eq!(c.hourly_rate, 5_000_000.0);
     }
+
+    /// audit-17: the Monte Carlo is reproducible under a seed and agrees with the Markov mean.
+    #[test]
+    fn monte_carlo_is_seeded_and_agrees_with_the_markov_mean() {
+        let g = gdc();
+        let item = json!({"itemLevel": 100, "enhancementCosts": []});
+        let run = || {
+            let mut sim = EnhanceSim::new(&g, &NO_MARKET, false, None);
+            sim.monte_carlo(&cfg(100.0), &item, 5, 2, 20_000, None, Some(0.0), Some(0.0), 0.0, &mut Mt19937::new(1)).unwrap()
+        };
+        let (a, b) = (run(), run());
+        assert_eq!(a.percentiles, b.percentiles);
+        let actions = |p: &str| a.percentiles[p]["actions"].as_f64().unwrap();
+        let ps = ["25", "50", "75", "90", "95", "99"].map(actions);
+        assert!(ps.windows(2).all(|w| w[0] <= w[1]), "{ps:?}");
+        let mean = EnhanceSim::new(&g, &NO_MARKET, false, None).expected_outcome(&cfg(100.0), &item, 5, 2).unwrap().actions;
+        assert!((0.5 * mean..=1.5 * mean).contains(&ps[1]), "p50 {} vs mean {mean}", ps[1]);
+        assert_eq!(ps[1], 39.0, "pinned p50 actions under seed 1");
+    }
 }
