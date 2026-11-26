@@ -23,7 +23,8 @@ import {
   GUILD_COMBAT_BUFFS,
   MAX_GUILD_BUFF_LEVEL,
   GUILD_COMBAT_BUILDINGS,
-  MAX_GUILD_BUILDING_LEVEL
+  MAX_GUILD_BUILDING_LEVEL,
+  levelOf
 } from '../utils/guildBuffs';
 import { levelToTierIndex, tierIndexToLevel, MAX_TIER_INDEX } from '../utils/trialTiers';
 import { trialParticipants, MIN_PARTICIPANTS, MAX_PARTICIPANTS } from '../utils/roster';
@@ -170,9 +171,9 @@ export function HeaderControls({
   const enemyScalePct = cfg.enemyScale ?? 100;
   const guildBuildingLevels = cfg.guildBuildingLevels || {};
   const activeShrineCount =
-    GUILD_COMBAT_BUFFS.filter(b => (guildBuffLevels[b.hrid] || 0) > 0).length;
+    GUILD_COMBAT_BUFFS.filter(b => levelOf(guildBuffLevels, b.hrid) > 0).length;
   const activeBuildingCount =
-    GUILD_COMBAT_BUILDINGS.filter(b => (guildBuildingLevels[b.hrid] || 0) > 0).length;
+    GUILD_COMBAT_BUILDINGS.filter(b => levelOf(guildBuildingLevels, b.hrid, MAX_GUILD_BUILDING_LEVEL) > 0).length;
   const trialOptionCount =
     (cfg.participantCount != null ? 1 : 0) +
     (cfg.buildersHallBonus > 0 ? 1 : 0) +

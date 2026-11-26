@@ -277,6 +277,15 @@ export const MAX_GUILD_BUFF_LEVEL = 20;
 export const MAX_GUILD_BUILDING_LEVEL = 20;
 
 /**
+ * The level that is simulated for `hrid` in a level map: floored and clamped to 0..maxLevel;
+ * anything not a finite number (Infinity, NaN) is none. The label and badges count with it too.
+ */
+export function levelOf(levels, hrid, maxLevel = Infinity) {
+  const raw = Math.floor(Number(levels?.[hrid]));
+  return Number.isFinite(raw) ? Math.max(0, Math.min(maxLevel, raw)) : 0;
+}
+
+/**
  * Fold level knobs into finished buff objects (the shape
  * CombatUnit.addPermanentBuff consumes). Level 0 ⇒ the entry is omitted.
  * Shared by shrines and buildings so the two can never drift apart.
@@ -288,8 +297,7 @@ export const MAX_GUILD_BUILDING_LEVEL = 20;
 function resolveLevelledBuffs(defs, levels = {}, maxLevel = 20) {
   const resolved = [];
   for (const def of defs) {
-    const raw = Math.floor(Number(levels?.[def.hrid]));
-    const level = Number.isFinite(raw) ? Math.max(0, Math.min(maxLevel, raw)) : 0; // Infinity/NaN: none
+    const level = levelOf(levels, def.hrid, maxLevel);
     if (level <= 0) continue;
     for (const b of def.buffs) {
       resolved.push({
@@ -389,7 +397,7 @@ export function ownsShrines(build) {
 export function describeShrines(levels) {
   const parts = [];
   for (const def of GUILD_COMBAT_BUFFS) {
-    const level = Math.max(0, Number(levels?.[def.hrid]) || 0);
+    const level = levelOf(levels, def.hrid);
     if (level > 0) parts.push(`${def.name.toLowerCase()} ${level}`);
   }
   return parts.length ? parts.join(' · ') : 'none';
