@@ -859,3 +859,23 @@ fn check_triggers_skips_the_dead() {
     let used = |h: &str| sim.sim_result.consumables_used.get(h).and_then(|m| m.get("/items/stamina_coffee")).copied();
     assert_eq!((used("player1"), used("player2"), used("player3")), (Some(1.0), None, Some(1.0)));
 }
+
+// ---- audit-7: a consumable with no cooldown is refused (it would re-fire forever) ----
+
+/// Runs `players` on a 60 s fly T0 zone request and returns the parsed reply.
+fn run_zone(players: Vec<serde_json::Value>) -> serde_json::Value {
+    let req = serde_json::json!({
+        "kind": "zone", "players": players,
+        "zone": {"zoneHrid": "/actions/combat/fly", "difficultyTier": 0},
+        "simulationTimeLimit": 60e9, "settings": {}, "rngState": 1,
+    });
+    serde_json::from_str(&crate::run(data(), &req.to_string(), None)).unwrap()
+}
+
+#[test]
+fn a_zero_cooldown_consumable_is_refused() {
+    assert!(crate::consumable::Consumable::new(data(), "/items/wisdom_tea", Some(&[])).is_err());
+    let mut p = dto_json("melee", 90.0, 1);
+    p["drinks"] = serde_json::json!([{"hrid": "/items/wisdom_tea", "triggers": []}]);
+    assert_eq!(run_zone(vec![p])["ok"], false);
+}
