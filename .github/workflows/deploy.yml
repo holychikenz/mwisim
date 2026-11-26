@@ -1,9 +1,11 @@
 name: Deploy UI to GitHub Pages
 
-# Triggered by a green ci run on main or test; the triggering branch builds at the tested SHA.
-# Pages holds ONE artifact, so every run builds both sites: main -> /, test -> /test/; the other
-# branch builds at its head. Each branch is built as-is, wasm included (rust/pkg is gitignored, and
-# rust/src/generated.rs follows each branch's data). No test branch means no /test/.
+# Triggered by a green ci run on main or test. Pages holds ONE artifact, so every run builds both
+# sites, each branch at the head SHA of its LATEST GREEN ci push run (looked up at run time, not
+# taken from the trigger): main -> /, test -> /test/. Nothing untested is published, and a ci run
+# that finishes late cannot roll the site back. Each branch is built as-is, wasm included (rust/pkg
+# is gitignored, and rust/src/generated.rs follows each branch's data). A main with no green run
+# fails the deploy; a test with no branch or no green run means no /test/.
 # VITE_SERVER=test only labels the test build and namespaces its storage.
 # workflow_run only fires from main's copy of this file, with github.ref_name always 'main'.
 
@@ -17,11 +19,12 @@ on:
 # Permissions required by actions/deploy-pages.
 permissions:
   contents: read
+  actions: read # gh run list: each branch's latest green ci run
   pages: write
   id-token: write
 
-# One deployment at a time; a queued run replaces an older queued one, and since each run reads both
-# heads at run time, the survivor is always current.
+# One deployment at a time; a queued run replaces an older queued one. Each run looks up both green
+# SHAs when it starts, after the previous run has finished, so the survivor is always current.
 concurrency:
   group: pages
   cancel-in-progress: false
@@ -37,27 +40,33 @@ jobs:
        github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     steps:
+      # Runs are listed newest first, so `.[0]` of the successful push runs is the latest green commit.
+      - name: Latest green ci commit of each branch
+        id: green
+        env: { GH_TOKEN: '${{ github.token }}' }
+        run: |
+          green() {
+            gh run list --repo "$GITHUB_REPOSITORY" --workflow ci.yml --branch "$1" --event push \
+              --status success --limit 1 --json headSha --jq '.[0].headSha // empty'
+          }
+          main=$(green main)
+          test=$(green test)
+          [ -n "$main" ] || { echo "::error::main has no green ci push run; not deploying"; exit 1; }
+          [ -n "$test" ] || echo "::notice::test has no branch or no green ci push run; deploying / only"
+          echo "main=$main" >> "$GITHUB_OUTPUT"
+          echo "test=$test" >> "$GITHUB_OUTPUT"
+
       - name: Checkout main
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_branch == 'main' && github.event.workflow_run.head_sha || 'main' }}
+          ref: ${{ steps.green.outputs.main }}
           path: live
 
-      - name: Is there a test branch?
-        id: test
-        run: |
-          if git -C live ls-remote --exit-code origin refs/heads/test >/dev/null; then
-            echo exists=true >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice::no test branch; deploying / only"
-            echo exists=false >> "$GITHUB_OUTPUT"
-          fi
-
       - name: Checkout test
-        if: steps.test.outputs.exists == 'true'
+        if: steps.green.outputs.test != ''
         uses: actions/checkout@v4
         with:
-          ref: ${{ github.event.workflow_run.head_branch == 'test' && github.event.workflow_run.head_sha || 'test' }}
+          ref: ${{ steps.green.outputs.test }}
           path: test
 
       # A workflow_dispatch run from any other ref executes that ref's copy of this file; refuse to
@@ -102,7 +111,7 @@ jobs:
       # without /test/); from test it fails the run.
       - name: Build /test/ (test)
         id: build_test
-        if: steps.test.outputs.exists == 'true'
+        if: steps.green.outputs.test != ''
         continue-on-error: ${{ (github.event.workflow_run.head_branch || github.ref_name) != 'test' }}
         working-directory: test
         env: { VITE_SERVER: test }
@@ -116,7 +125,7 @@ jobs:
 
       - name: Assemble one site
         env:
-          TEST_EXISTS: ${{ steps.test.outputs.exists }}
+          TEST_EXISTS: ${{ steps.green.outputs.test != '' }}
           TEST_OK: ${{ steps.build_test.outcome == 'success' }}
         run: |
           mkdir site && cp -R live/ui/dist/. site/
