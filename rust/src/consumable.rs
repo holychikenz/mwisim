@@ -26,6 +26,10 @@ impl Consumable {
             .consumable_detail
             .as_ref()
             .ok_or_else(|| format!("TypeError: {hrid} has no consumableDetail"))?;
+        // A skilling tea has no cooldown: it would be ready again at once and check_triggers would never end.
+        if !(det.cooldown_duration > 0.0) {
+            return Err(format!("{hrid} has no cooldown and cannot be used in combat"));
+        }
         let mut buffs = Vec::new();
         for b in det.buffs.iter().flatten() {
             buffs.push(Buff::leveled(b, 1.0)?);

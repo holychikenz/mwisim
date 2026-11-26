@@ -9,6 +9,14 @@
 // =============================================================================
 
 /**
+ * An enhancement level as the engine accepts it: a whole number in 0..20 (the editor's own
+ * bounds; enhancementCosts.js MAX_ENHANCEMENT_LEVEL). A saved or imported 5.5 would be refused.
+ */
+export function wholeEnhancementLevel(level) {
+  return Math.max(0, Math.min(20, Math.round(Number(level) || 0)));
+}
+
+/**
  * @param {object} player   internal player / master-build object
  * @param {object} opts
  * @param {string} [opts.hrid]              unit hrid (e.g. "player1"); trials
@@ -23,7 +31,7 @@ export function toPlayerDTO(player, { hrid, stripConsumables = false } = {}) {
     .filter(([, value]) => value && value.itemHrid)
     .map(([key, value]) => [
       key,
-      { hrid: value.itemHrid, enhancementLevel: value.enhancementLevel || 0 },
+      { hrid: value.itemHrid, enhancementLevel: wholeEnhancementLevel(value.enhancementLevel) },
     ]);
 
   const dto = {

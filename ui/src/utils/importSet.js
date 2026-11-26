@@ -5,6 +5,7 @@
 // (in-game "Open in csim" hash payloads).
 // =============================================================================
 import { ABILITY_MEMORY_VERSION, dropLegacyEmptyMemory } from './characterStore.js';
+import { wholeEnhancementLevel } from './playerDTO.js';
 
 // Convert internal player state to export format (compatible with old UI)
 export function playerToExportFormat(player, zone, difficultyTier, duration) {
@@ -147,7 +148,7 @@ export function exportFormatToPlayer(data, playerId) {
       if (slotKey) {
         player.equipment[slotKey] = {
           itemHrid: item.itemHrid,
-          enhancementLevel: item.enhancementLevel || 0
+          enhancementLevel: wholeEnhancementLevel(item.enhancementLevel)
         };
       }
     }

@@ -14,8 +14,6 @@ ui/src/utils/characterToPlayer.js ──▶ port of tampermonkey/src/kernel/csim
 - **No server required.** The engine runs in a browser Web Worker using
   the `src/worker.js` message protocol (`start_simulation` /
   `simulation_progress` / `simulation_result` / `simulation_error`).
-  The Express API (`csim/api/`) still exists for headless/automation use,
-  but the UI does not depend on it.
 - **The optimisers** (Triggers, Gear, Loadout, Abilities, Progress, Swaps) run
   the API's own tools (`api/lib/tools/*.js`) in the browser:
   `hooks/useOptimizerRun.js` → `src/workers/optimizerHost.js` → a pool of

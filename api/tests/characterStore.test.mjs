@@ -247,6 +247,21 @@ test('a resolved player produces a clean DTO', () => {
   assert.equal(dto.equipment['/equipment_types/main_hand'].hrid, '/items/cheese_sword');
 });
 
+test('a saved or imported enhancement level reaches the engine as a whole number in 0..20', () => {
+  const dtoLevel = (enhancementLevel) => toPlayerDTO({
+    equipment: { '/equipment_types/main_hand': { itemHrid: '/items/cheese_sword', enhancementLevel } }
+  }).equipment['/equipment_types/main_hand'].enhancementLevel;
+  assert.equal(dtoLevel(5.5), 6);
+  assert.equal(dtoLevel(25), 20);
+  assert.equal(dtoLevel(-1), 0);
+  assert.equal(dtoLevel(undefined), 0);
+  assert.equal(dtoLevel('x'), 0);
+  const imported = exportFormatToPlayer({ player: { equipment: [
+    { itemLocationHrid: '/item_locations/main_hand', itemHrid: '/items/cheese_sword', enhancementLevel: 5.5 }
+  ] } }, 1);
+  assert.equal(imported.equipment['/equipment_types/main_hand'].enhancementLevel, 6);
+});
+
 test('the version gate backs up rather than mangles', () => {
   localStorage.clear();
   const FALLBACK = { schemaVersion: 2, party: {}, selectedPlayers: [1] };
@@ -579,4 +594,80 @@ test('legacy trigger memory: a set exported before the [] rule loses its unslott
   const stamped = splitPlayer(exportFormatToPlayer({ ...set, abilityMemoryVersion: 2 }, 1));
   assert.deepEqual(stamped.loadout.triggerMemory['/abilities/cleave'], []);
   assert.equal(playerToExportFormat(resolvePlayer(character(), loadout()), 'z', 0, 24).abilityMemoryVersion, 2);
+});
+
+test('finding 11: re-saving what another tab saved writes the same text, so two tabs cannot ping-pong', async () => {
+  const { loadSession, saveSession, SESSION_KEY } = await import('../../ui/src/utils/session.js');
+  const { loadGuildTrialState, saveGuildTrialState, GUILD_TRIAL_KEY } = await import('../../ui/src/utils/roster.js');
+  localStorage.clear();
+  // One round: an un-normalised blob (no ids, no counts, a partial config) settles after the first re-save.
+  const settles = (key, raw, resave) => {
+    localStorage.setItem(key, raw);
+    resave();
+    const once = localStorage.getItem(key);
+    resave();
+    assert.equal(localStorage.getItem(key), once);
+  };
+  saveCharacters(storeWith(character(), { tank: loadout(), mage: createLoadout() }));
+  settles('csim_characters', localStorage.getItem('csim_characters'), () => {
+    const { status, ...store } = loadCharacters();
+    assert.equal(status, 'ok');
+    saveCharacters(store);
+  });
+  const session = { party: { 1: { characterId: 'c', loadoutName: 'tank' }, 2: null, 3: null, 4: null, 5: null },
+    selectedPlayers: [1], zone: '/actions/combat/swamp_planet', difficultyTier: 2, duration: 42,
+    zoneWorkers: '', dungeonRuns: 10, maxRunHours: 3 };
+  saveSession(session);
+  const savedSession = localStorage.getItem(SESSION_KEY);
+  settles(SESSION_KEY, savedSession, () => saveSession(loadSession().data));
+  assert.equal(localStorage.getItem(SESSION_KEY), savedSession);
+  settles(GUILD_TRIAL_KEY,
+    JSON.stringify({ schemaVersion: 2, roster: [{ characterId: 'c', loadoutName: 'tank' }, { characterId: 'c', loadoutName: 'tank' }],
+      trialConfig: { iterations: 5 } }),
+    () => saveGuildTrialState(loadGuildTrialState().data));
+});
+
+test('a future-version session or trial blob reports incompatible, so another tab\'s copy is not taken', async () => {
+  const { loadSession, SESSION_KEY } = await import('../../ui/src/utils/session.js');
+  const { loadGuildTrialState, GUILD_TRIAL_KEY } = await import('../../ui/src/utils/roster.js');
+  localStorage.clear();
+  localStorage.setItem(SESSION_KEY, JSON.stringify({ schemaVersion: 99, party: {} }));
+  localStorage.setItem(GUILD_TRIAL_KEY, JSON.stringify({ schemaVersion: 99, roster: [] }));
+  assert.equal(loadSession().status, 'incompatible');
+  assert.equal(loadGuildTrialState().status, 'incompatible');
+});
+
+test('an older build never writes over a newer build\'s saved data; older and corrupt blobs are still overwritten', async () => {
+  const { saveSession, SESSION_KEY, SESSION_VERSION } = await import('../../ui/src/utils/session.js');
+  const { saveGuildTrialState, GUILD_TRIAL_KEY, TRIAL_SCHEMA_VERSION } = await import('../../ui/src/utils/roster.js');
+  const { CHARACTERS_KEY, SCHEMA_VERSION } = await import('../../ui/src/utils/characterStore.js');
+  const saves = [
+    [SESSION_KEY, SESSION_VERSION, () => saveSession({ party: {} })],
+    [GUILD_TRIAL_KEY, TRIAL_SCHEMA_VERSION, () => saveGuildTrialState({ roster: [] })],
+    [CHARACTERS_KEY, SCHEMA_VERSION, () => saveCharacters(emptyStore())]
+  ];
+  for (const [key, version, save] of saves) {
+    localStorage.clear();
+    const newer = JSON.stringify({ schemaVersion: version + 1, keep: 'me' });
+    localStorage.setItem(key, newer);
+    save();
+    assert.equal(localStorage.getItem(key), newer, `${key}: newer survives`);
+    for (const stale of [JSON.stringify({ schemaVersion: version - 1 }), '{not json']) {
+      localStorage.setItem(key, stale);
+      save();
+      assert.equal(JSON.parse(localStorage.getItem(key)).schemaVersion, version, `${key}: ${stale} overwritten`);
+    }
+  }
+  localStorage.clear();
+});
+
+test('two incompatible reads leave the first set-aside copy intact', () => {
+  localStorage.clear();
+  const legacy = JSON.stringify({ players: {} });
+  localStorage.setItem('csim_player_data', legacy);
+  loadVersioned('csim_player_data', 2, {});
+  localStorage.setItem('csim_player_data', JSON.stringify({ schemaVersion: 3 }));
+  assert.equal(loadVersioned('csim_player_data', 2, {}).status, 'incompatible');
+  assert.equal(localStorage.getItem('csim_player_data.v1'), legacy);
+  localStorage.clear();
 });

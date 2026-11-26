@@ -11,7 +11,7 @@ import {
 } from '../lib/abilitySearch.js';
 import { descend } from '../lib/descent.js';
 import { rankCandidates } from '../lib/equipmentScan/scan.js';
-import { prepareAbilityRun, runAbilitySearch } from '../routes/optimizeAbilities.js';
+import { prepareAbilityRun, runAbilitySearch } from '../lib/tools/abilities.js';
 
 const { abilityDetailMap } = await import('../../shared/dataProvider.js');
 

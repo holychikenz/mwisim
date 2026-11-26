@@ -859,3 +859,82 @@ fn check_triggers_skips_the_dead() {
     let used = |h: &str| sim.sim_result.consumables_used.get(h).and_then(|m| m.get("/items/stamina_coffee")).copied();
     assert_eq!((used("player1"), used("player2"), used("player3")), (Some(1.0), None, Some(1.0)));
 }
+
+// ---- audit-7: a consumable with no cooldown is refused (it would re-fire forever) ----
+
+/// Runs `players` on a 60 s fly T0 zone request and returns the parsed reply.
+fn run_zone(players: Vec<serde_json::Value>) -> serde_json::Value {
+    let req = serde_json::json!({
+        "kind": "zone", "players": players,
+        "zone": {"zoneHrid": "/actions/combat/fly", "difficultyTier": 0},
+        "simulationTimeLimit": 60e9, "settings": {}, "rngState": 1,
+    });
+    serde_json::from_str(&crate::run(data(), &req.to_string(), None)).unwrap()
+}
+
+#[test]
+fn a_zero_cooldown_consumable_is_refused() {
+    assert!(crate::consumable::Consumable::new(data(), "/items/wisdom_tea", Some(&[])).is_err());
+    let mut p = dto_json("melee", 90.0, 1);
+    p["drinks"] = serde_json::json!([{"hrid": "/items/wisdom_tea", "triggers": []}]);
+    assert_eq!(run_zone(vec![p])["ok"], false);
+}
+
+// ---- audit-6: bad numbers are refused, not run as NaN ----
+
+#[test]
+fn a_missing_level_is_refused() {
+    let mut p = dto_json("melee", 90.0, 1);
+    p.as_object_mut().unwrap().remove("meleeLevel");
+    let out = run_zone(vec![p]);
+    assert_eq!(out["ok"], false, "{out}");
+    assert!(out["error"].as_str().unwrap_or("").contains("meleeLevel"), "{out}");
+}
+
+#[test]
+fn an_enhancement_level_off_the_table_is_refused() {
+    for bad in [serde_json::json!(21), serde_json::json!(-1), serde_json::json!(2.5)] {
+        let mut p = dto_json("melee", 90.0, 1);
+        let slot = p["equipment"].as_object_mut().unwrap().values_mut().find(|v| !v.is_null()).unwrap();
+        slot["enhancementLevel"] = bad.clone();
+        let out = run_zone(vec![p]);
+        assert_eq!(out["ok"], false, "+{bad}: {out}");
+    }
+}
+
+#[test]
+fn a_bad_participant_count_is_a_range_error() {
+    let run_trial = |n: serde_json::Value| -> serde_json::Value {
+        let req = serde_json::json!({
+            "kind": "trial", "players": [dto_json("melee", 90.0, 1)],
+            "guildTrial": {"trialHrid": "/guild_combat/badger", "startTier": 100, "participantCount": n},
+            "settings": {}, "rngState": 1,
+        });
+        serde_json::from_str(&crate::run(data(), &req.to_string(), None)).unwrap()
+    };
+    for bad in [serde_json::json!(-150), serde_json::json!(0), serde_json::json!(2.5)] {
+        let out = run_trial(bad.clone());
+        assert_eq!(out["ok"], false, "participantCount {bad}: ok");
+        assert_eq!(out["errorKind"], "RangeError", "participantCount {bad}: {}", out["error"]);
+    }
+    assert_eq!(run_trial(serde_json::json!(3))["ok"], true);
+}
+
+// ---- audit-8: a caster killed by a parry dies once ----
+
+#[test]
+fn a_caster_killed_by_a_parry_dies_once() {
+    let z = zone("/actions/combat/smelly_planet");
+    let zb = zone_buffs(&z);
+    let mut sim = new_sim(vec![player("melee", 200.0, 1, zb)], Some(z), None, 1);
+    ready(&mut sim);
+    put_enemies(&mut sim, &[("/monsters/alligator", 0.0)]);
+    sim.units[0].cd.cs.parry = 2.0; // beats any draw
+    sim.units[1].cd.current_hitpoints = 1.0;
+    sim.units[1].cd.current_manapoints = 1000.0;
+    let slot = sim.units[1].abilities.iter().position(|a| a.as_ref().is_some_and(|a| &*a.hrid == "/abilities/scratch")).expect("scratch slot");
+    sim.simulation_time = 10e9;
+    assert!(sim.try_use_ability(1, slot).unwrap(), "the cast went off");
+    assert_eq!(sim.units[1].cd.current_hitpoints, 0.0, "the parry killed the caster");
+    assert_eq!(death_count(&sim, "/monsters/alligator"), Some(1.0));
+}

@@ -37,7 +37,7 @@
 // =============================================================================
 
 import { createCharacter, createLoadout, makeCharacterId } from './characterStore.js';
-import { GUILD_COMBAT_BUFFS, MAX_GUILD_BUFF_LEVEL } from './guildBuffs.js';
+import { GUILD_COMBAT_BUFFS } from './guildBuffs.js';
 
 const LEVEL_MAP = {
   staminaLevel: '/skills/stamina',
@@ -97,15 +97,16 @@ function uniqueName(base, taken) {
 /**
  * `characterGuildBuffMap` → { [combatShrineHrid]: level }, or null when the
  * payload says nothing (the map is absent). Entries may be `{ level }` or a
- * bare number; unknown and skilling shrines are dropped.
+ * bare number; unknown and skilling shrines are dropped. Levels are taken as
+ * the game reports them: shrines climb past the UI input's 20.
  */
 export function shrineLevelsFrom(map) {
   if (!map || typeof map !== 'object') return null;
   const levels = {};
   for (const def of GUILD_COMBAT_BUFFS) {
     const entry = map[def.hrid];
-    const raw = Math.floor(Number(entry?.level ?? entry) || 0);
-    const level = Math.max(0, Math.min(MAX_GUILD_BUFF_LEVEL, raw));
+    const raw = Math.floor(Number(entry?.level ?? entry));
+    const level = Number.isFinite(raw) ? Math.max(0, raw) : 0; // Infinity/NaN: none
     if (level > 0) levels[def.hrid] = level;
   }
   return levels;

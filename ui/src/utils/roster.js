@@ -17,7 +17,7 @@
 // character and can be re-added from the picker.
 // =============================================================================
 
-import { loadVersioned, resolveRef } from './characterStore.js';
+import { loadVersioned, resolveRef, storedIsNewer } from './characterStore.js';
 
 export const GUILD_TRIAL_KEY = 'csim_guild_trial';
 export const TRIAL_SCHEMA_VERSION = 2;
@@ -25,6 +25,35 @@ export const TRIAL_SCHEMA_VERSION = 2;
 /** The composite identity of a roster row: which character, wearing what. */
 export function refKey(ref) {
   return `${ref?.characterId || ''}\u0000${ref?.loadoutName || ''}`;
+}
+
+/**
+ * A roster row's build id in the export: the same on every export of the pair (so a
+ * re-import lands on the same character) and distinct per pair (encoding keeps
+ * "tank 1" apart from "tank_1"). The separator is `|` because encodeURIComponent escapes it
+ * and so it never occurs inside a part; it leaves `~` alone, which would let "c~x"+"y" = "c"+"x~y".
+ */
+export function exportBuildId(ref) {
+  // Import makes each build a character whose id is the buildId, with one `default` loadout:
+  // emitting that id bare makes export -> import -> export a fixed point.
+  if (ref?.loadoutName === 'default') return ref?.characterId || '';
+  return `${encodeURIComponent(ref?.characterId || '')}|${encodeURIComponent(ref?.loadoutName || '')}`;
+}
+
+/**
+ * exportBuildId for each row of one export. A bare imported id can equal another pair's encoded
+ * id (`m1|tank`/default beside m1/tank); the later pair gets `#2`, `#3`, ... so builds never merge.
+ */
+export function exportBuildIds(refs) {
+  const owner = new Map(); // build id -> refKey of the row that holds it
+  return refs.map(ref => {
+    const key = refKey(ref);
+    const base = exportBuildId(ref);
+    let id = base;
+    for (let n = 2; owner.has(id) && owner.get(id) !== key; n++) id = `${base}#${n}`;
+    owner.set(id, key);
+    return id;
+  });
 }
 
 export const MAX_ROW_COUNT = 99;
@@ -58,6 +87,21 @@ export const DEFAULT_TRIAL_CONFIG = {
 export function trialIterations(config) {
   const n = config?.iterations;
   return Number.isInteger(n) && n > 0 ? n : DEFAULT_TRIAL_CONFIG.iterations;
+}
+
+/** The Participants input's bounds (HeaderControls). */
+export const MIN_PARTICIPANTS = 1;
+export const MAX_PARTICIPANTS = 200;
+
+/**
+ * The participant count to run: the override, or `rosterCount` when there is
+ * none or it is not a finite number ('', 'auto', false, NaN, Infinity). A saved or
+ * imported override may be a decimal or out of range, which the engine refuses.
+ */
+export function trialParticipants(config, rosterCount) {
+  const n = config?.participantCount;
+  const usable = (typeof n === 'number' || (typeof n === 'string' && n.trim() !== '')) && Number.isFinite(Number(n));
+  return usable ? Math.max(MIN_PARTICIPANTS, Math.min(MAX_PARTICIPANTS, Math.round(Number(n)))) : rosterCount;
 }
 
 
@@ -190,6 +234,7 @@ export function loadGuildTrialState() {
 }
 
 export function saveGuildTrialState(state) {
+  if (storedIsNewer(GUILD_TRIAL_KEY, TRIAL_SCHEMA_VERSION)) return;
   try {
     localStorage.setItem(
       GUILD_TRIAL_KEY,

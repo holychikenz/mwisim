@@ -31,9 +31,11 @@ const dp = await import('../../shared/dataProvider.js');
 const {
   resolveGuildBuffs,
   resolveGuildBuildingBuffs,
+  describeShrines,
   GUILD_COMBAT_BUFFS,
   GUILD_COMBAT_BUILDINGS,
 } = await import('../../ui/src/utils/guildBuffs.js');
+const { shrineLevelsFrom } = await import('../../ui/src/utils/characterToStore.js');
 const {
   convertDropsToCredits,
   pickHighestTierConversion,
@@ -77,11 +79,22 @@ test('level 0 or absent omits the shrine entirely', () => {
   assert.deepEqual(resolveGuildBuffs(), []);
 });
 
-test('levels are clamped to the max and negatives are treated as off', () => {
-  const overMax = resolveGuildBuffs({ [FORCE]: 999 });
-  const atMax = resolveGuildBuffs({ [FORCE]: 20 });
-  assert.equal(overMax[0].ratioBoost, atMax[0].ratioBoost);
+test('shrine levels above 20 count; building levels still cap at 20; negatives are off', () => {
+  const at25 = resolveGuildBuffs({ [FORCE]: 25 })[0];
+  const def = GUILD_COMBAT_BUFFS.find((d) => d.hrid === FORCE).buffs[0];
+  assert.equal(at25.ratioBoost, def.ratioBoost + 24 * def.ratioBoostLevelBonus);
+  assert.deepEqual(shrineLevelsFrom({ [FORCE]: { level: 25 } }), { [FORCE]: 25 });
+  assert.match(describeShrines({ [FORCE]: 25 }), / 25$/, 'the roster label says what is simulated');
+  assert.deepEqual(resolveGuildBuildingBuffs({ [DOJO]: 999 }), resolveGuildBuildingBuffs({ [DOJO]: 20 }));
   assert.deepEqual(resolveGuildBuffs({ [FORCE]: -5 }), []);
+  // Not a finite number: no shrine, rather than an Infinity/NaN boost reaching the engine.
+  for (const bad of [Infinity, NaN]) {
+    assert.deepEqual(resolveGuildBuffs({ [FORCE]: bad }), [], String(bad));
+    assert.deepEqual(shrineLevelsFrom({ [FORCE]: { level: bad } }), {}, String(bad));
+    assert.equal(describeShrines({ [FORCE]: bad }), 'none', String(bad));
+  }
+  // The label shows the level that is simulated (floored).
+  assert.match(describeShrines({ [FORCE]: 5.5 }), / 5$/);
 });
 
 test('resolved buffs zero their per-level bonus fields so nothing double-counts', () => {

@@ -72,9 +72,12 @@ import {
   rosterSize,
   clampCount,
   DEFAULT_TRIAL_CONFIG,
-  trialIterations
+  GUILD_TRIAL_KEY,
+  trialIterations,
+  trialParticipants
 } from './utils/roster';
 import {
+  CHARACTERS_KEY,
   createCharacter,
   dropLegacyEmptyMemory,
   emptyStore,
@@ -128,7 +131,7 @@ import {
   toScan
 } from './utils/equipmentOptimizer';
 import { isTool, toTargetPayload } from './utils/optimizerTarget';
-import { loadSession } from './utils/session';
+import { loadSession, SESSION_KEY } from './utils/session';
 import {
   DEFAULT_ZONE_HRID,
   simulableZones,
@@ -392,6 +395,47 @@ function App() {
   // (one result over workers × duration hours). 1 = a single run, as before.
   const [zoneWorkers, setZoneWorkers] = useState(() => clampZoneWorkers(savedSession?.zoneWorkers));
   const [maxRunHours, setMaxRunHours] = useState(() => clampRunHours(savedSession?.maxRunHours));
+
+  // Another tab saved: take its copy, so our next save does not write our stale one back over it.
+  // Each field is read as its initialiser above reads it, so re-saving what we take writes the same text
+  // and fires no event back (setItem with an unchanged value is silent).
+  useEffect(() => {
+    const onStorage = (e) => {
+      if (e.storageArea !== localStorage) return;
+      // Storage events carry the raw key; the /test/ build's keys are `test::`-prefixed (utils/serverStorage.js).
+      if (e.key !== null && e.key.startsWith('test::') !== TEST_BUILD) return;
+      const key = e.key === null ? null : e.key.replace(/^test::/, ''); // null: clear(), reload all
+      if (key === null || key === CHARACTERS_KEY) {
+        const { status, ...store } = loadCharacters();
+        if (status !== 'incompatible') setCharacters(store);
+      }
+      // An 'incompatible' blob (corrupt, or from a newer build) is skipped: taking its fallback would reset this tab.
+      // Skipping does not stop this tab's next autosave; the saves themselves refuse to overwrite a newer build's blob (storedIsNewer).
+      const session = key === null || key === SESSION_KEY ? loadSession() : null;
+      if (session && session.status !== 'incompatible') {
+        const s = session.data;
+        setParty(normalizeParty(s.party));
+        setSelectedPlayers(Array.isArray(s?.selectedPlayers) && s.selectedPlayers.length ? s.selectedPlayers : [1]);
+        setZone(s?.zone || DEFAULT_ZONE_HRID);
+        setDifficultyTier(typeof s?.difficultyTier === 'number' ? s.difficultyTier : 0);
+        setDuration(typeof s?.duration === 'number' ? clampDuration(s.duration) : 100);
+        // Not clamped, unlike the initialisers: these hold the raw input while the other tab's user is
+        // typing (clamped on blur), and clamping it here would write back over their half-typed value.
+        setDungeonRuns(s?.dungeonRuns ?? clampRunCount());
+        setZoneWorkers(s?.zoneWorkers ?? clampZoneWorkers());
+        setMaxRunHours(s?.maxRunHours ?? clampRunHours());
+      }
+      const trial = key === null || key === GUILD_TRIAL_KEY ? loadGuildTrialState() : null;
+      if (trial && trial.status !== 'incompatible') {
+        const t = trial.data;
+        setRoster(t.roster);
+        setSelectedEntryId(t.selectedEntryId);
+        setTrialConfig(t.trialConfig);
+      }
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
   // Genuinely account- or server-wide only. Seals used to live here and are now
   // a per-character field on each player (see createDefaultPlayer), because a
   // seal is an item ONE character equips.
@@ -845,8 +889,8 @@ function App() {
   // unless explicitly overridden in trial options. Rows whose character or
   // loadout is gone are not simulated (handleStartTrial skips them), so they
   // are not counted either.
-  const participantCount = trialConfig.participantCount
-    ?? rosterSize(roster.filter(entry => resolveRef(characters, entry)));
+  const participantCount = trialParticipants(trialConfig,
+    rosterSize(roster.filter(entry => resolveRef(characters, entry))));
   // The selected trial's monster reference (rendered as cards in the viewport).
   const selectedTrialDetail = (gameData?.guildTrials || []).find(t => t.hrid === trialConfig.trialHrid) || null;
 
@@ -1233,7 +1277,7 @@ function App() {
 
     if (playerDTOs.length === 0) return;
 
-    const effectiveParticipants = trialConfig.participantCount ?? playerDTOs.length;
+    const effectiveParticipants = trialParticipants(trialConfig, playerDTOs.length);
     const trialDetail = (gameData?.guildTrials || []).find(t => t.hrid === trialConfig.trialHrid);
     // Debugging knob: UI stores PERCENT (default 100), engine wants a ratio.
     // Scales enemy effective level (tier × enemyScale) without moving the
@@ -1330,7 +1374,7 @@ function App() {
       // Drop credit: seconds each over the consumable class, only with the Costs
       // page's toggle on and a seconds source (buildDropCreditCosts). The server
       // credits it beside a known bill — a cost table, or nothing slotted to eat
-      // (api/lib/optimizerRoute.js sanitiseDropCreditCosts) — never in a labyrinth.
+      // (api/lib/optimizerTool.js sanitiseDropCreditCosts) — never in a labyrinth.
       dropCreditCosts: buildDropCreditCosts({
         prices: pricing.prices,
         fetchedPrices: pricing.fetchedPrices,
@@ -1712,7 +1756,7 @@ function App() {
     config, onConfigChange: setConfig, subjectOptions, subject: subjectSlot == null ? null : String(subjectSlot),
     onSubjectChange: (value) => setSubjectPick(Number(value)), subjectNotice, pricing, consumableCostRows: costRows
   });
-  // What the server will compare: it caps the list and reports the rest as skipped (api/routes/optimizeLoadout.js).
+  // What the server will compare: it caps the list and reports the rest as skipped (api/lib/tools/loadout.js).
   // Read from a preview of THIS payload; until one arrives, the payload's own list (and Run waits for it).
   const loadoutFresh = useMemo(() => samePayload(loadoutOpt.previewFor, loadoutOptPayload), [loadoutOpt.previewFor, loadoutOptPayload]);
   const loadoutCount = (loadoutFresh ? loadoutOpt.preview?.candidates : loadoutOptPayload?.candidates.length) || 0;

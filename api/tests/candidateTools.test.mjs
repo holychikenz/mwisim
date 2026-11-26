@@ -5,18 +5,18 @@
 // =============================================================================
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import express from 'express';
 import { dirname, join } from 'path';
 import { fileURLToPath } from 'url';
 
 import { loadEngine } from '../eval/engine.mjs';
 import { BUILDS, toCsimPlayer } from '../bench/builds.mjs';
-import loadoutRoutes, { prepareLoadoutRun } from '../routes/optimizeLoadout.js';
-import abilityRoutes from '../routes/optimizeAbilities.js';
-import progressRoutes from '../routes/optimizeProgress.js';
-import swapRoutes from '../routes/optimizeSwaps.js';
-import { prepareEquipmentRun } from '../routes/optimizeEquipment.js';
-import { sanitiseDropCreditCosts, sanitiseFidelity } from '../lib/optimizerRoute.js';
+import loadoutTool, { prepareLoadoutRun } from '../lib/tools/loadout.js';
+import abilityTool from '../lib/tools/abilities.js';
+import progressTool from '../lib/tools/progress.js';
+import swapTool from '../lib/tools/swaps.js';
+import { prepareEquipmentRun } from '../lib/tools/equipment.js';
+import { planTool, previewTool, runPlanned, sanitiseDropCreditCosts, sanitiseFidelity } from '../lib/optimizerTool.js';
+import { createSimulationPool } from '../lib/triggerSearch/pool.js';
 
 const { pickSubjectSlot, loadoutCandidates, progressColumns, applySwapChanges, applyAbilityChanges, headlineRow, samePayload } =
   await import('../../ui/src/utils/candidateOptimizer.js');
@@ -102,27 +102,14 @@ const bare = toCsimPlayer(BUILDS.bare, { level: 100, index: 1, items, abilityDat
 const ranged = toCsimPlayer(BUILDS.ranged, { level: 100, index: 1, items, abilityData });
 const BASE_BODY = { zone: { zoneHrid: '/actions/combat/fly', difficultyTier: 0 }, scan: { hours: 0.1, replicates: 2 }, workers: 1 };
 
-async function serve(t) {
-  const app = express();
-  app.use(express.json({ limit: '10mb' }));
-  app.use('/api', loadoutRoutes);
-  app.use('/api', abilityRoutes);
-  app.use('/api', progressRoutes);
-  app.use('/api', swapRoutes);
-  const server = app.listen(0, '127.0.0.1');
-  await new Promise((r) => server.once('listening', r));
-  t.after(() => { server.closeAllConnections(); server.close(); });
-  return `http://127.0.0.1:${server.address().port}/api`;
-}
-
-const post = (url, body) => fetch(url, {
-  method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body), signal: AbortSignal.timeout(60_000),
-});
-
-/** POST an SSE run and return its frames, in order. */
-async function frames(url, body) {
-  const text = await (await post(url, body)).text();
-  return text.split('\n\n').filter((chunk) => chunk.startsWith('data: ')).map((chunk) => JSON.parse(chunk.slice(6)));
+/** Plan and run a tool as the UI's host does, on the real pool, and return its frames, in order. */
+async function frames(tool, body) {
+  const sent = [];
+  const { planned, json } = planTool(tool, body);
+  if (!planned) return [json];
+  await runPlanned(planned, { poolSize: 1, send: (f) => sent.push(f), signal: new AbortController().signal,
+    createPool: (size) => createSimulationPool({ size }) });
+  return sent;
 }
 
 function assertRunShape(list) {
@@ -134,15 +121,14 @@ function assertRunShape(list) {
 }
 
 test('Loadout route end to end: preview, ranked rows on paired seeds, deterministic', async (t) => {
-  const base = await serve(t);
   const body = { ...BASE_BODY, players: [melee], subjectIndex: 0,
     candidates: [{ name: 'same', player: melee }, { name: 'bare #1', player: bare }] };
-  const preview = await (await post(`${base}/optimize-loadout/preview`, body)).json();
+  const preview = previewTool(loadoutTool, body, 1).json;
   assert.equal(preview.success, true);
   assert.equal(preview.candidates, 2);
   assert.equal(preview.workload.total, 6);
 
-  const result = assertRunShape(await frames(`${base}/optimize-loadout`, body));
+  const result = assertRunShape(await frames(loadoutTool, body));
   assert.deepEqual(result.rows.map((r) => r.label), ['same', 'bare #1']);
   const [same, bareRow] = result.rows;
   assert.equal(same.delta, 0);
@@ -154,30 +140,27 @@ test('Loadout route end to end: preview, ranked rows on paired seeds, determinis
     }
     assert.ok('pValue' in row.statistics);
   }
-  const again = assertRunShape(await frames(`${base}/optimize-loadout`, body));
+  const again = assertRunShape(await frames(loadoutTool, body));
   assert.deepEqual(again.rows, result.rows);
 });
 
 test('drop credit rides the pool: rows carry the breakdown only when the table is posted beside a cost table', async (t) => {
-  const base = await serve(t);
   // Rats drop sugar and wheat; the build's coffee is all that is priced, at a second each.
   const body = { ...BASE_BODY, zone: { zoneHrid: '/actions/combat/rat', difficultyTier: 0 }, players: [melee], subjectIndex: 0,
     candidates: [{ name: 'same', player: melee }], consumableCosts: { '/items/ultra_melee_coffee': 1 } };
   const dropCreditCosts = { '/items/sugar': 1, '/items/wheat': 1 };
-  const on = assertRunShape(await frames(`${base}/optimize-loadout`, { ...body, dropCreditCosts })).baseline.metrics;
+  const on = assertRunShape(await frames(loadoutTool, { ...body, dropCreditCosts })).baseline.metrics;
   assert.ok(on.dropCreditSecondsPerHour > 0, JSON.stringify(on));
   assert.ok(Math.abs(on.netConsumableSecondsPerHour - (on.consumableSecondsPerHour - on.dropCreditSecondsPerHour)) < 1e-6);
   assert.ok(on.effectiveEncountersPerHour > on.encountersPerHour, 'the drops are worth more than the coffee');
-  const off = assertRunShape(await frames(`${base}/optimize-loadout`, body)).baseline.metrics;
+  const off = assertRunShape(await frames(loadoutTool, body)).baseline.metrics;
   assert.equal('dropCreditSecondsPerHour' in off, false);
-  const uncosted = assertRunShape(await frames(`${base}/optimize-loadout`, { ...body, consumableCosts: undefined, dropCreditCosts })).baseline.metrics;
+  const uncosted = assertRunShape(await frames(loadoutTool, { ...body, consumableCosts: undefined, dropCreditCosts })).baseline.metrics;
   assert.equal('dropCreditSecondsPerHour' in uncosted, false);
 });
 
 test('drop credit makes a run costed where the bill is known — nothing slotted — but not beside an unpriced plate', async (t) => {
-  const base = await serve(t);
-  const preview = async (player, extra) => (await post(`${base}/optimize-loadout/preview`,
-    { ...BASE_BODY, players: [player], subjectIndex: 0, candidates: [{ name: 'same', player }], ...extra })).json();
+  const preview = async (player, extra) => previewTool(loadoutTool, { ...BASE_BODY, players: [player], subjectIndex: 0, candidates: [{ name: 'same', player }], ...extra }, 1).json;
   const credit = { dropCreditCosts: { '/items/sugar': 1 } };
   const alone = await preview(bare, credit); // eats nothing: a bill of zero
   assert.equal(alone.consumableCostsKnown, true);
@@ -187,8 +170,7 @@ test('drop credit makes a run costed where the bill is known — nothing slotted
   assert.equal(unpriced.objective, 'encountersPerHour');
   assert.equal((await preview(bare, {})).consumableCostsKnown, false);
   // A Loadout candidate that eats, with nothing priced, leaves the bill as unknown as the party's own plate would.
-  const mixed = await (await post(`${base}/optimize-loadout/preview`,
-    { ...BASE_BODY, players: [bare], subjectIndex: 0, candidates: [{ name: 'eats', player: melee }], ...credit })).json();
+  const mixed = previewTool(loadoutTool, { ...BASE_BODY, players: [bare], subjectIndex: 0, candidates: [{ name: 'eats', player: melee }], ...credit }, 1).json;
   assert.equal(mixed.consumableCostsKnown, false);
   assert.equal(mixed.objective, 'encountersPerHour');
 });
@@ -230,19 +212,18 @@ test('prepareLoadoutRun: under a costed objective a loadout slotting unpriced fo
 });
 
 test('Abilities route end to end: one swap and one cast order, default triggers, deterministic', async (t) => {
-  const base = await serve(t);
   const slot = (hrid) => ({ hrid, level: 10, triggers: abilityData[hrid].defaultCombatTriggers });
   const subject = { ...melee, abilities: [slot('/abilities/critical_aura'), slot('/abilities/berserk'), slot('/abilities/cleave'), null, null] };
   const body = { ...BASE_BODY, players: [subject], subjectIndex: 0, coordinates: ['s0', 'order'],
     ownedAbilities: { '/abilities/critical_aura': 10, '/abilities/fierce_aura': 5, '/abilities/berserk': 10,
       '/abilities/cleave': 10, '/abilities/precision': 10, '/abilities/not_a_thing': 3 } };
-  const preview = await (await post(`${base}/optimize-abilities/preview`, body)).json();
+  const preview = previewTool(abilityTool, body, 1).json;
   assert.equal(preview.success, true);
   assert.equal(preview.candidates, 2);
   assert.equal(preview.slots.length, 6);
   assert.equal(preview.workload.total, 6);
 
-  const result = assertRunShape(await frames(`${base}/optimize-abilities`, body));
+  const result = assertRunShape(await frames(abilityTool, body));
   const byId = Object.fromEntries(result.rows.map((r) => [r.id, r]));
   assert.deepEqual(Object.keys(byId).sort(), ['order:2-1', 's0:/abilities/fierce_aura']);
   assert.deepEqual(byId['s0:/abilities/fierce_aura'].abilities[0],
@@ -252,33 +233,31 @@ test('Abilities route end to end: one swap and one cast order, default triggers,
   assert.equal(order[2].hrid, '/abilities/berserk');
   assert.deepEqual(order[1].triggers, subject.abilities[2].triggers);
   assert.deepEqual(order[2].triggers, subject.abilities[1].triggers);
-  const again = assertRunShape(await frames(`${base}/optimize-abilities`, body));
+  const again = assertRunShape(await frames(abilityTool, body));
   assert.deepEqual(again.rows, result.rows);
 });
 
 test('Loadout route: no candidates, or a subjectIndex outside the party, is a 400', async (t) => {
-  const base = await serve(t);
-  const empty = await post(`${base}/optimize-loadout`, { ...BASE_BODY, players: [melee], subjectIndex: 0, candidates: [] });
+  const empty = planTool(loadoutTool, { ...BASE_BODY, players: [melee], subjectIndex: 0, candidates: [] });
   assert.equal(empty.status, 400);
-  assert.equal((await empty.json()).error, 'This character has no other saved loadout to compare');
-  const outside = await post(`${base}/optimize-loadout`, { ...BASE_BODY, players: [melee], subjectIndex: 3, candidates: [{ name: 'b', player: bare }] });
+  assert.equal(empty.json.error, 'This character has no other saved loadout to compare');
+  const outside = planTool(loadoutTool, { ...BASE_BODY, players: [melee], subjectIndex: 3, candidates: [{ name: 'b', player: bare }] });
   assert.equal(outside.status, 400);
-  assert.equal((await outside.json()).success, false);
+  assert.equal(outside.json.success, false);
 });
 
 test('Abilities route: a best-combination pass bigger than one change at a time is refused, with the reason in the preview', async (t) => {
-  const base = await serve(t);
   const everything = Object.fromEntries(Object.keys(abilityData).map((hrid) => [hrid, 1]));
   const body = { ...BASE_BODY, players: [{ ...melee, intelligenceLevel: 100 }], subjectIndex: 0, search: 'best', ownedAbilities: everything };
-  const preview = await (await post(`${base}/optimize-abilities/preview`, body)).json();
+  const preview = previewTool(abilityTool, body, 1).json;
   assert.equal(preview.success, true); // a 200, so the panel keeps its slot checkboxes
   assert.ok(preview.workload.candidates > 151, `${preview.workload.candidates} per pass`);
   assert.match(preview.refusal, /Untick a slot/);
-  const run = await post(`${base}/optimize-abilities`, body);
+  const run = planTool(abilityTool, body);
   assert.equal(run.status, 400);
-  assert.equal((await run.json()).error, preview.refusal);
-  assert.equal((await (await post(`${base}/optimize-abilities/preview`, { ...body, coordinates: ['s0', 'order'] })).json()).refusal, null);
-  const swaps = await (await post(`${base}/optimize-abilities/preview`, { ...body, search: 'swaps' })).json();
+  assert.equal(run.json.error, preview.refusal);
+  assert.equal((previewTool(abilityTool, { ...body, coordinates: ['s0', 'order'] }, 1).json).refusal, null);
+  const swaps = previewTool(abilityTool, { ...body, search: 'swaps' }, 1).json;
   assert.equal(swaps.refusal, null);
   assert.ok(swaps.skipped > 0);
 });
@@ -309,22 +288,21 @@ test('fidelity: hours, replicates and alpha clamp or fall back to the defaults; 
 });
 
 test('Progress route end to end: the probes, per-level rows with costs, deterministic', async (t) => {
-  const base = await serve(t);
   const subject = { ...ranged, abilities: [null, ranged.abilities[1], null, null, null] };
   const body = { ...BASE_BODY, players: [subject], subjectIndex: 0, levels: 10 };
-  const preview = await (await post(`${base}/optimize-progress/preview`, body)).json();
+  const preview = previewTool(progressTool, body, 1).json;
   assert.equal(preview.success, true);
   assert.deepEqual(preview.probes.map((p) => p.label), ['Ranged +10', 'Attack +10', 'Rain Of Arrows +10 lvls']);
   assert.equal(preview.workload.total, 8);
 
-  const result = assertRunShape(await frames(`${base}/optimize-progress`, body));
+  const result = assertRunShape(await frames(progressTool, body));
   assert.equal(result.rows.length, 3);
   for (const row of result.rows) {
     assert.ok('perLevel' in row, row.id);
     assert.ok(Number.isFinite(row.metrics.encountersPerHour), row.id);
   }
   assert.ok(Number.isFinite(result.rows.find((r) => r.id === 'stat:ranged').xpPerLevel));
-  const again = assertRunShape(await frames(`${base}/optimize-progress`, body));
+  const again = assertRunShape(await frames(progressTool, body));
   assert.deepEqual(again.rows, result.rows);
 });
 
@@ -337,21 +315,20 @@ test('progressColumns: cost and yield always; a book-price column only when the 
 });
 
 test('Swaps route end to end: owned consumables and gear, default ticks, deterministic', async (t) => {
-  const base = await serve(t);
   const owned = [{ itemHrid: '/items/ultra_defense_coffee', enhancementLevel: 0, count: 2 },
     { itemHrid: '/items/anchorbound_plate_body', enhancementLevel: 5, count: 1 }, { itemHrid: '/items/cursed_bow', enhancementLevel: 0, count: 1 }];
   const body = { ...BASE_BODY, players: [melee], subjectIndex: 0, owned };
-  const preview = await (await post(`${base}/optimize-swaps/preview`, body)).json();
+  const preview = previewTool(swapTool, body, 1).json;
   assert.equal(preview.success, true);
   assert.equal(preview.candidates, 4); // the coffee into each of 3 drink slots, and the unrefined body (defense, as worn)
   assert.equal(preview.workload.total, 10);
   const twoHand = preview.groups.find((g) => g.key === '/equipment_types/two_hand');
   assert.equal(twoHand.items.find((i) => i.hrid === '/items/cursed_bow').default, false);
 
-  const result = assertRunShape(await frames(`${base}/optimize-swaps`, body));
+  const result = assertRunShape(await frames(swapTool, body));
   assert.equal(result.rows.length, 4);
   for (const row of result.rows) assert.ok(row.changes?.length, row.id);
-  const again = assertRunShape(await frames(`${base}/optimize-swaps`, body));
+  const again = assertRunShape(await frames(swapTool, body));
   assert.deepEqual(again.rows, result.rows);
 });
 

@@ -21,7 +21,7 @@
 // save writes back exactly what was read.
 // =============================================================================
 
-import { loadVersioned } from './characterStore.js';
+import { loadVersioned, storedIsNewer } from './characterStore.js';
 
 export const SESSION_KEY = 'csim_player_data';
 export const SESSION_VERSION = 2;
@@ -45,6 +45,7 @@ export function loadSession() {
 }
 
 export function saveSession(data) {
+  if (storedIsNewer(SESSION_KEY, SESSION_VERSION)) return;
   try {
     localStorage.setItem(
       SESSION_KEY,

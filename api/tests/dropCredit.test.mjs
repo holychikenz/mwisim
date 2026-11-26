@@ -20,8 +20,9 @@ import {
   partyConsumableSeconds,
   partyNetConsumableSeconds,
 } from '../../shared/consumableCost.js';
+import { calculateExpectedDrops } from '../../shared/drops.js';
 import { rankResults, scoreSimResult } from '../lib/triggerSearch/score.js';
-import { prepareEquipmentRun } from '../routes/optimizeEquipment.js';
+import { prepareEquipmentRun } from '../lib/tools/equipment.js';
 import {
   BEAR_ZONE_ZEROED,
   buildDropCreditCosts,
@@ -247,4 +248,12 @@ for (let dir = dirname(new URL(import.meta.url).pathname); dir !== dirname(dir) 
 test('the bear preset names items the game dump has', { skip: DUMP ? false : 'cowstuff/milkyway_client_info.json not found' }, () => {
   const items = JSON.parse(readFileSync(DUMP, 'utf8')).itemDetailMap;
   for (const hrid of BEAR_ZONE_ZEROED) assert.ok(items[hrid], `${hrid} missing from the dump`);
+});
+
+test('a dungeon pays no monster loot: no drops and no drop credit', () => {
+  const monsters = { '/monsters/m': { dropTable: [{ itemHrid: '/items/sugar', dropRate: 1, minCount: 1, maxCount: 1 }] } };
+  const run = { isDungeon: true, deaths: { '/monsters/m': 100 }, numberOfPlayers: 1, difficultyTier: 0,
+    dropRateMultiplier: {}, rareFindMultiplier: {}, combatDropQuantity: {}, debuffOnLevelGap: {} };
+  assert.deepEqual(calculateExpectedDrops(run, monsters, null), []);
+  assert.deepEqual(dropCreditSeconds(run, monsters, { '/items/sugar': 2 }, ['player1']), { player1: 0 });
 });

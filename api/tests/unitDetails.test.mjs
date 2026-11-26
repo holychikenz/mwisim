@@ -108,7 +108,9 @@ test('checkPlayerDto refuses exactly what Player.createFromDTO threw on (recorde
     ['unknownFood', { ...base, food: [{ hrid: '/items/nope', triggers: [] }] }, false],
     ['unknownHouse', { ...base, houseRooms: { '/house_rooms/nope': 1 } }, false],
     ...['equipment', 'food', 'drinks', 'abilities', 'houseRooms', 'achievements'].map((k) => [`no ${k}`, without(k), false]),
-    ...['hrid', 'staminaLevel'].map((k) => [`no ${k}`, without(k), true]),
+    ['no hrid', without('hrid'), true],
+    // JS ran on with NaN levels; the twin refuses a missing level (audit-6).
+    ['no staminaLevel', without('staminaLevel'), false],
   ];
   for (const [label, dto, jsOk] of cases) assert.equal(checkPlayerDto(dto).ok, jsOk, label);
 });

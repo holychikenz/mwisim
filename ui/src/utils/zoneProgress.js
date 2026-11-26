@@ -37,8 +37,7 @@ export function finderVariants(subject, progressRows, items) {
 export function scoreZoneRow(row, progressRows, subjectHrid, monsters, items) {
   if (!row || row.error || !(row.hours > 0)) return null;
   const xp = row.experienceBySkill?.[subjectHrid] || {};
-  // Dungeon loot comes only from chests, which are not modelled.
-  const drops = new Map(row.isDungeon ? [] : calculateExpectedDrops(row, monsters, items, subjectHrid).map((d) => [d.itemHrid, d.amount]));
+  const drops = new Map(calculateExpectedDrops(row, monsters, items, subjectHrid).map((d) => [d.itemHrid, d.amount]));
   const parts = (progressRows || []).map((p) => {
     const stat = p.kind === 'stat';
     const perHour = (stat ? Number(xp[p.skill]) || 0 : drops.get(p.bookHrid) || 0) / row.hours;

@@ -288,8 +288,8 @@ test('the floor is not claimed when some candidate did finish a run', async () =
 
 test('an unmeasured baseline is not a zero to be rescued from', async () => {
   // The baseline's simulation fails (the evaluator reports an error for it), so
-  // there is no measured starting point, and a candidate that completes runs
-  // must not be declared a rescue "from zero".
+  // there is no measured starting point to pair with, and a candidate that
+  // completes runs must not be declared a rescue "from zero": the search refuses.
   const playerDTOs = [namedParty()[0]];
   const bounds = { players: [{ maxHp: 1000, maxMp: 1000 }], partyMissingHp: 1000 };
   const { params } = collectSearchParams(
@@ -297,7 +297,7 @@ test('an unmeasured baseline is not a zero to be rescued from', async () => {
     [{ playerIndex: 0, slotKind: 'abilities', slotIndex: 0, triggerIndex: 0 }],
     bounds
   );
-  const result = await optimizeTriggers({
+  await assert.rejects(optimizeTriggers({
     playerDTOs,
     params,
     objective: 'completionsPerHour',
@@ -316,15 +316,14 @@ test('an unmeasured baseline is not a zero to be rescued from', async () => {
           ? { id: job.id, error: 'simulated worker failure' }
           : { id: job.id, metrics: { completionsPerHour: 0.5, deathsPerHour: 0 } };
       }),
-  });
-  assert.equal(result.rows.some((row) => row.significant), false);
-  assert.equal(result.inconclusive, true);
+  }), /Every baseline simulation failed/);
 });
 
 test('a rescue needs the baseline measured at verification, not an earlier stage', async () => {
   // The incumbent finishes nothing in the short early stages, then its
   // verification run fails. The fallback baseline is that earlier zero — over a
-  // different window and seed — and must not license a "from zero" gain.
+  // different window and seed — and must not license a "from zero" gain, so
+  // with no verified baseline to pair with, the search refuses.
   const playerDTOs = [namedParty()[0]];
   const bounds = { players: [{ maxHp: 1000, maxMp: 1000 }], partyMissingHp: 1000 };
   const { params } = collectSearchParams(
@@ -332,7 +331,7 @@ test('a rescue needs the baseline measured at verification, not an earlier stage
     [{ playerIndex: 0, slotKind: 'abilities', slotIndex: 0, triggerIndex: 0 }],
     bounds
   );
-  const result = await optimizeTriggers({
+  await assert.rejects(optimizeTriggers({
     playerDTOs,
     params,
     objective: 'completionsPerHour',
@@ -354,9 +353,7 @@ test('a rescue needs the baseline measured at verification, not an earlier stage
         }
         return { id: job.id, metrics: { completionsPerHour: value <= 20 ? 0.5 : 0, deathsPerHour: 0 } };
       }),
-  });
-  assert.equal(result.rows.some((row) => row.significant), false);
-  assert.equal(result.inconclusive, true);
+  }), /Every baseline simulation failed/);
 });
 
 test('a failed verification does not claim that no run ever completes', async () => {

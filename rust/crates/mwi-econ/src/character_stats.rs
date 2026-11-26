@@ -266,7 +266,7 @@ impl<'a> CharacterStats<'a> {
     }
 
     /// `_get_loadout_for_action`: the default loadout for this action type, else the first.
-    fn loadout_for_action(&self, action_type: &str) -> Option<&'a Value> {
+    pub(crate) fn loadout_for_action(&self, action_type: &str) -> Option<&'a Value> {
         let candidates: Vec<&'a Value> = child(self.char(), "characterLoadoutMap")
             .as_object()
             .map(|m| m.values().filter(|lo| lo.get("actionTypeHrid").and_then(Value::as_str) == Some(action_type)).collect())
@@ -282,12 +282,12 @@ impl<'a> CharacterStats<'a> {
             .max()
     }
 
-    /// `_resolve_loadout_items`: slot order, `(item_hrid, effective level)`.
-    fn resolve_loadout_items(&self, loadout: &Value) -> Vec<(String, i64)> {
+    /// `_resolve_loadout_items`: slot order, `(slot, item_hrid, effective level)`.
+    pub(crate) fn resolve_loadout_items(&self, loadout: &Value) -> Vec<(String, String, i64)> {
         let use_exact = truthy(child(loadout, "useExactEnhancement"));
         let mut out = Vec::new();
         let Some(map) = child(loadout, "wearableMap").as_object() else { return out };
-        for item_str in map.values() {
+        for (slot, item_str) in map {
             let Some(s) = item_str.as_str().filter(|s| !s.is_empty()) else { continue };
             // <charID>::<source>::<itemHrid>::<enhanceLevel>
             let parts: Vec<&str> = s.split("::").collect();
@@ -296,7 +296,7 @@ impl<'a> CharacterStats<'a> {
             }
             let encoded = crate::util::py_int_str(parts[3]).unwrap_or(0);
             let lvl = if use_exact { encoded } else { self.highest_owned_enhancement(parts[2]).unwrap_or(encoded) };
-            out.push((parts[2].to_string(), lvl));
+            out.push((slot.clone(), parts[2].to_string(), lvl));
         }
         out
     }
@@ -307,7 +307,7 @@ impl<'a> CharacterStats<'a> {
             return self
                 .resolve_loadout_items(lo)
                 .into_iter()
-                .filter_map(|(h, l)| self.gdc.get_item(&h).map(|i| (i, l)))
+                .filter_map(|(_, h, l)| self.gdc.get_item(&h).map(|i| (i, l)))
                 .collect();
         }
         arr(child(self.char(), "characterItems"))

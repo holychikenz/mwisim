@@ -13,6 +13,9 @@ use std::collections::HashMap;
 
 pub type Error = (u16, String);
 
+/// The Iron Cow essence bootstraps (`iron_bootstraps`); None when not Iron Cow.
+pub type Bootstraps = Option<IndexMap<String, f64>>;
+
 fn bad(msg: impl Into<String>) -> Error {
     (400, msg.into())
 }
@@ -41,10 +44,16 @@ pub fn prepare<'a>(
     body: Value,
     query_overrides: Option<&str>,
 ) -> Result<Prepared<'a>, Error> {
+    let bootstraps = iron_bootstraps(gdc, &body, query_overrides);
+    prepare_with(gdc, market, body, bootstraps)
+}
+
+/// The Iron Cow bootstraps `prepare` computes for this body (None unless `iron_cow`): the refined
+/// essence bootstraps plus the client's overrides (query string first, then the JSON body, as Flask).
+/// Iron Cow prices are seconds. A caller may cache them per (character, iron_cow, overrides).
+pub fn iron_bootstraps(gdc: &Gdc, body: &Value, query_overrides: Option<&str>) -> Bootstraps {
     let iron_cow = truthy(body.get("iron_cow").unwrap_or(&Value::Bool(false)));
-    // Iron Cow prices are seconds: hand the simulator the refined essence bootstraps plus
-    // the client's overrides (query string first, then the JSON body, as Flask).
-    let bootstraps = iron_cow.then(|| {
+    iron_cow.then(|| {
         let raw = query_overrides.map(str::to_string).or_else(|| match body.get("essence_overrides") {
             Some(Value::String(s)) => Some(s.clone()),
             Some(v @ Value::Object(_)) => Some(v.to_string()),
@@ -52,7 +61,17 @@ pub fn prepare<'a>(
         });
         let overrides = parse_essence_overrides(raw.as_deref());
         refined_essence_bootstraps(gdc, "default", ALCHEMY_ESSENCE_BOOTSTRAP_SECONDS, &overrides).0
-    });
+    })
+}
+
+/// `prepare` with the bootstraps already computed (`iron_bootstraps` of the same body).
+pub fn prepare_with<'a>(
+    gdc: &'a Gdc,
+    market: &'a HashMap<String, f64>,
+    body: Value,
+    bootstraps: Bootstraps,
+) -> Result<Prepared<'a>, Error> {
+    let iron_cow = truthy(body.get("iron_cow").unwrap_or(&Value::Bool(false)));
     let cfg = EnhancementConfig::from_json(body.get("config").unwrap_or(&json!({}))).map_err(bad)?;
     let item_hrid = match body.get("item_hrid") {
         Some(Value::String(h)) if !h.is_empty() && gdc.get_item(h).is_some() => h.clone(),
@@ -191,7 +210,7 @@ pub fn simulate(p: &Prepared) -> Result<Value, Error> {
     let mut sim = EnhanceSim::new(gdc, p.market, p.iron_cow, p.bootstraps.clone());
 
     let target = body_int(body, "target", 10)?.clamp(1, 20);
-    let protect_at = body_int(body, "protect_at", 2)?.clamp(0, target);
+    let protect_at = body_int(body, "protect_at", 2)?.clamp(target.min(2), target);
     let n = body_int(body, "n", 32768)?.clamp(1, 200_000) as usize;
     let money = body.get("money_i_have").filter(|v| truthy(v));
     let money_i_have = match money {
@@ -221,4 +240,23 @@ pub fn simulate(p: &Prepared) -> Result<Value, Error> {
     payload["decomp"] = sim.decomposition_value(item_level(item), target as usize, decomp_catalyst(body));
     payload["iron_cow"] = json!(p.iron_cow);
     Ok(payload)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::Arc;
+
+    /// audit-19: simulate clamps protect_at to 2..target as calculate does (0 drove the level negative).
+    #[test]
+    fn simulate_clamps_protect_at() {
+        let data = json!({"itemDetailMap": {"/items/x": {"hrid": "/items/x", "itemLevel": 10, "enhancementCosts": []}}});
+        let gdc = Gdc::new(Arc::new(data), Arc::new(json!({})));
+        let market = HashMap::new();
+        for (target, sent, want) in [(5, 0, 2), (5, 1, 2), (5, 3, 3), (1, 0, 1)] {
+            let body = json!({"item_hrid": "/items/x", "target": target, "protect_at": sent, "n": 10, "seed": 1});
+            let out = prepare(&gdc, &market, body, None).and_then(|p| simulate(&p));
+            assert_eq!(out.map(|v| v["protect_at"].clone()), Ok(json!(want)), "target {target}, protect_at {sent}");
+        }
+    }
 }

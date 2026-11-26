@@ -1,5 +1,5 @@
 import { Alert, Badge, Group, SimpleGrid, Stack, Table, Text, Title, Tooltip } from '@mantine/core';
-import { formatBand, formatNetSeconds, formatSeconds } from '../utils/triggerOptimizer';
+import { formatBand, formatNetSeconds, formatSeconds, replicateHours } from '../utils/triggerOptimizer';
 import { nameOf } from '../utils/names';
 import { ClearResultsButton, NumTd, Section, StatCard } from './ResultParts';
 
@@ -226,7 +226,7 @@ function Recommendation({ row, labyrinth = false, items, abilities }) {
 export function TriggerOptimizerResults({ results, items, abilities, onClear }) {
   if (!results || !Array.isArray(results.rows)) return null;
 
-  const { rows, noise, epsilons, screening, verifyHours, simulationsRun, inconclusive, saturated, objective } =
+  const { rows, noise, screening, verifyHours, verifyReplicates, simulationsRun, inconclusive, saturated, objective } =
     results;
   const leader = rows[0];
   const cvPct = noise?.calibrated ? noise.coefficientOfVariation * 100 : null;
@@ -238,6 +238,7 @@ export function TriggerOptimizerResults({ results, items, abilities, onClear }) 
     ? LABYRINTH_METRIC_COLUMNS
     : (dungeon ? DUNGEON_METRIC_COLUMNS : METRIC_COLUMNS).filter((column) => !column.costed || costed);
   const consumableSeconds = leader?.metrics?.consumableSecondsPerHour || 0;
+  const hoursEach = replicateHours(verifyHours, verifyReplicates);
   const timeShare = leader?.metrics?.consumableTimeShare || 0;
 
   return (
@@ -246,7 +247,9 @@ export function TriggerOptimizerResults({ results, items, abilities, onClear }) 
         <Title order={4}>Trigger Optimizer</Title>
         <Group gap="xs">
           <Badge variant="light">{simulationsRun} simulations</Badge>
-          <Badge variant="light">verified at {verifyHours}h</Badge>
+          <Badge variant="light">
+            {verifyReplicates === 1 ? `verified in one ${hoursEach}h run` : `verified on ${verifyReplicates} paired seeds × ${hoursEach}h`}
+          </Badge>
           <ClearResultsButton onClear={onClear} />
         </Group>
       </Group>
@@ -287,8 +290,10 @@ export function TriggerOptimizerResults({ results, items, abilities, onClear }) 
             <Text size="xs" c="dimmed" mt={6}>
               Run-to-run spread for this build and {labyrinth ? 'room' : dungeon ? 'dungeon' : 'zone'} was {cvPct.toFixed(2)}% at{' '}
               {noise.measuredAtHours}h over{' '}
-              {noise.samples} runs. A candidate had to beat the baseline by more than{' '}
-              {(epsilons.significanceBar * 100).toFixed(2)}% at {verifyHours}h to count.
+              {noise.samples} runs.{' '}
+              {verifyReplicates === 1
+                ? `No candidate differed from your thresholds, so only they were verified, in one ${hoursEach}h run.`
+                : `A candidate counts only when its gain clears a family-wise 95% interval over ${verifyReplicates} paired runs of ${hoursEach}h.`}
             </Text>
           )}
         </Alert>

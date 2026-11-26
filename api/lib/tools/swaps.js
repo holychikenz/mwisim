@@ -1,5 +1,5 @@
 // =============================================================================
-// swaps — optimiser tool (optimizerTool.js; Express: /api/optimize-swaps). other owned food, drinks and gear for ONE party member against
+// swaps — optimiser tool (optimizerTool.js). other owned food, drinks and gear for ONE party member against
 // what it wears now, on shared seeds; or a coordinate descent to the best
 // combination. Candidates: lib/swapSearch.js; the search: lib/descent.js.
 // =============================================================================

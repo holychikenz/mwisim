@@ -19,7 +19,7 @@
     "startTier": 100,
     "metric": "trialMaxTierCleared"
   },
-  "recordedAt": "2026-11-03T10:01:55.329Z",
+  "recordedAt": "2026-11-26T11:18:19.660Z",
   "node": "v26.8.2",
   "platform": "darwin/arm64",
   "seeds": 16,
@@ -41,7 +41,7 @@
   },
   "runs": [
     {"seed":2740519261,"sha256":"667bfe09ca97399cb1c7c26ddff600051c37177eda773d5f303b1bd79c850195","value":110,"deaths":4,"dungeons":0},
-    {"seed":2740527180,"sha256":"0b8fbb05201231e272e37f6dd5df829096880efe7c15783f5c70682d1f6d1294","value":110,"deaths":5,"dungeons":0},
+    {"seed":2740527180,"sha256":"a72604ba0474dd52608e1f7c86c71d79c80484ec5643afb44a30be835ad67988","value":110,"deaths":4,"dungeons":0},
     {"seed":2740535099,"sha256":"555471e3b0b383c8589f8c7bde4ba6c67a3d6f595dc8a7327d52da865a5c677d","value":110,"deaths":4,"dungeons":0},
     {"seed":2740543018,"sha256":"d608462d4a73057b641b1b8e2ca54d10451ae920f36fe04690ee1158514bcc3a","value":110,"deaths":4,"dungeons":0},
     {"seed":2740550937,"sha256":"f129c93dc70697f47e4280c98517a4bb9f08db6fc500b9398631c6cac77ed189","value":110,"deaths":4,"dungeons":0},

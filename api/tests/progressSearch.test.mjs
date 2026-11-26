@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 
 import LEVEL_XP from '../../shared/levelExperienceTable.json';
 import { MAX_LEVEL, applyProgress, mainStatOf, progressRows, xpBetween } from '../lib/progressSearch.js';
-import { prepareProgressRun, runProgress } from '../routes/optimizeProgress.js';
+import { prepareProgressRun, runProgress } from '../lib/tools/progress.js';
 
 const I = (name) => `/items/${name}`;
 const A = (name) => `/abilities/${name}`;

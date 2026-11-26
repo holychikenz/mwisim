@@ -46,6 +46,7 @@ import {
   validateTriggerShape,
 } from '../lib/triggerSearch/params.js';
 
+import { DEFAULT_SCAN } from '../lib/equipmentScan/scan.js';
 import { boundsFromSpawnInfo, deriveBounds, deriveEnemyBounds } from '../lib/triggerSearch/bounds.js';
 
 import {
@@ -847,6 +848,18 @@ test('estimateWorkload is an upper bound that accounts for every stage', () => {
   assert.equal(noCalibration.calibration, 0);
 });
 
+test('the time estimate counts each verification replicate at its own length', async () => {
+  const { estimateSeconds } = await import('../../ui/src/utils/triggerOptimizer.js');
+  const { DEFAULT_STAGES } = await import('../lib/triggerSearch/search.js');
+  const params = [{ kind: 'percentage', maxValue: 100, initialValue: 50 }];
+  const { verify, verifyReplicates } = estimateWorkload(params);
+  // 6 finalists × 6 replicates of 12h = 6 × 72 simulated hours; 3 h/s on one worker.
+  assert.equal(estimateSeconds({ verify, verifyReplicates }, DEFAULT_STAGES, 1) * 3, 6 * 72);
+  // No parameters: one baseline verification at the full length.
+  const empty = estimateWorkload([]);
+  assert.equal(estimateSeconds({ verify: empty.verify, verifyReplicates: empty.verifyReplicates }, DEFAULT_STAGES, 1) * 3, 72);
+});
+
 /**
  * A synthetic search problem: a single percentage threshold whose score peaks at
  * a known value. Noiseless and instant, so the funnel's logic can be asserted
@@ -917,6 +930,21 @@ test('the funnel finds a known optimum', async () => {
   assert.equal(result.inconclusive, false);
   assert.ok(result.simulationsRun > 0);
   assert.ok(result.simulationsRun <= result.estimatedSimulations, 'the estimate is an upper bound');
+});
+
+test('verification pairs every finalist with the baseline on DEFAULT_SCAN.replicates seeds and reports the family-wise verdict', async () => {
+  const { playerDTOs, params, evaluate, stages } = syntheticSetup({ optimum: 60, initial: 0 });
+  const verifyJobs = [];
+  const spy = async (jobs, meta) => {
+    if (meta?.stage === 'verify') for (const job of jobs) verifyJobs.push({ seed: job.seed, limit: job.simulationTimeLimit });
+    return evaluate(jobs, meta);
+  };
+  const result = await optimizeTriggers({ playerDTOs, params, evaluate: spy, stages, seedBase: 7 });
+  assert.equal(new Set(verifyJobs.map((j) => j.seed)).size, DEFAULT_SCAN.replicates);
+  for (const j of verifyJobs) assert.equal(j.limit, stages.verify.hours / DEFAULT_SCAN.replicates * 3600e9);
+  const candidates = result.rows.filter((row) => !row.isBaseline);
+  assert.ok(candidates.length > 0);
+  for (const row of candidates) assert.equal(row.significant, row.statistics.significantFamilywise);
 });
 
 test('the funnel finds an optimum that is off the coarse grid', async () => {
@@ -997,6 +1025,8 @@ test('no searchable parameters still yields a baseline row', async () => {
   assert.equal(result.rows.length, 1);
   assert.equal(result.rows[0].isBaseline, true);
   assert.equal(result.inconclusive, true);
+  // The baseline ran once, at the full verify length, and the result says so.
+  assert.equal(result.verifyReplicates, 1);
 });
 
 test('the reported band and per-stage epsilons reach the caller', async () => {
@@ -1007,7 +1037,7 @@ test('the reported band and per-stage epsilons reach the caller', async () => {
     assert.ok(result.epsilons.byStage[stage].rank > 0, `${stage} epsilon present`);
   }
   assert.equal(result.noise.calibrated, false, 'calibration was switched off for this fixture');
-  assert.ok(result.epsilons.significanceBar > 0);
+  assert.equal(result.verifyReplicates, DEFAULT_SCAN.replicates);
 });
 
 test('noise calibration widens the epsilons it derives', async () => {
@@ -1083,4 +1113,12 @@ test('audit2-19: caller epsilon floors are clamped to [0, MAX_DERIVED_EPSILON]',
   const evaluate = async (jobs) => jobs.map((job) => ({ id: job.id, metrics: { encountersPerHour: 100, deathsPerHour: 0, consumablesPerHour: 0 } }));
   const result = await optimizeTriggers({ playerDTOs, params, evaluate, epsilons: { rank: -1, insensitivity: 7 } });
   assert.deepEqual(result.epsilons.floors, { rank: 0, insensitivity: MAX_DERIVED_EPSILON });
+});
+
+test('per-replicate verification hours never round to 0h', async () => {
+  const { replicateHours } = await import('../../ui/src/utils/triggerOptimizer.js');
+  assert.equal(replicateHours(0.25, 6), 0.042);
+  assert.equal(replicateHours(1, 6), 0.17);
+  assert.equal(replicateHours(100, 6), 16.7);
+  assert.equal(replicateHours(72, 6), 12);
 });

@@ -430,7 +430,7 @@ test('a re-import updates what it knows and does not rename the character', () =
   assert.deepEqual(stored.achievements, incoming.achievements);
   assert.deepEqual(stored.abilityLevels, incoming.abilityLevels);
   assert.equal(stored.debuffOnLevelGap, 0);
-  // patchCharacter's forced name, kept DELIBERATELY: a re-import must not
+  // The forced name, kept DELIBERATELY: a re-import must not
   // silently rename the character the user renamed.
   assert.equal(stored.name, 'main');
   assert.equal(stored.id, 'holychikenz');

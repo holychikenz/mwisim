@@ -15,7 +15,7 @@ import {
   UnstyledButton
 } from '@mantine/core';
 import { Select } from './SearchSelect';
-import { listRosterEntries, buildSummary, refKey, MAX_ROW_COUNT } from '../utils/roster';
+import { listRosterEntries, buildSummary, refKey, exportBuildIds, MAX_ROW_COUNT } from '../utils/roster';
 import { ABILITY_MEMORY_VERSION, listLoadoutRefs } from '../utils/characterStore';
 import { exportFormatToPlayer } from '../utils/importSet';
 import { describeShrines, ownsShrines } from '../utils/guildBuffs';
@@ -102,16 +102,18 @@ export function GuildTrialPanel({
   // two loadouts of one character export as two independent builds, because the
   // receiving wire has no character concept to preserve.
   const handleExport = useCallback(async () => {
-    const masterBuilds = {};
-    const wireRoster = [];
-    for (const entry of entries) {
-      if (!entry.build) continue;
-      const buildId = refKey(entry).replace(/[^\w-]+/g, '_');
-      masterBuilds[buildId] = { ...entry.build, id: buildId, name: entry.displayName };
-      wireRoster.push({ id: entry.id, buildId, count: entry.count });
-    }
-    const payload = { masterBuilds, roster: wireRoster, trialConfig, abilityMemoryVersion: ABILITY_MEMORY_VERSION };
     try {
+      // Inside the try: encodeURIComponent throws URIError on a lone surrogate in a name.
+      const built = entries.filter(entry => entry.build);
+      const buildIds = exportBuildIds(built);
+      const masterBuilds = {};
+      const wireRoster = [];
+      built.forEach((entry, i) => {
+        const buildId = buildIds[i];
+        masterBuilds[buildId] = { ...entry.build, id: buildId, name: entry.displayName };
+        wireRoster.push({ id: entry.id, buildId, count: entry.count });
+      });
+      const payload = { masterBuilds, roster: wireRoster, trialConfig, abilityMemoryVersion: ABILITY_MEMORY_VERSION };
       await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
       showMessage('Roster copied to clipboard');
     } catch (err) {

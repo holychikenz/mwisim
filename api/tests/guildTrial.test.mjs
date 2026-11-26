@@ -313,6 +313,21 @@ test('audit2-14: the UI cleans a saved or imported iteration count before runnin
   assert.equal(trialIterations({ iterations: 250 }), 250);
 });
 
+test('a saved or imported decimal participant count is rounded before it reaches the engine', async () => {
+  const { trialParticipants } = await import('../../ui/src/utils/roster.js');
+  assert.equal(trialParticipants({ participantCount: 30.5 }, 7), 31);
+  assert.equal(trialParticipants({ participantCount: 0.2 }, 7), 1);
+  assert.equal(trialParticipants({ participantCount: null }, 7), 7);
+  assert.equal(trialParticipants({}, 7), 7);
+  // An unusable override means the roster size; a usable one is bounded like the input (1..200).
+  for (const n of ['', 'auto', false, true, NaN, Infinity, 1e999, -Infinity]) {
+    assert.equal(trialParticipants({ participantCount: n }, 7), 7, String(n));
+  }
+  assert.equal(trialParticipants({ participantCount: 0 }, 7), 1);
+  assert.equal(trialParticipants({ participantCount: '30.5' }, 7), 31);
+  assert.equal(trialParticipants({ participantCount: 500 }, 7), 200);
+});
+
 
 // --------------------------------------------------------------------------
 // Healing summary filter
@@ -419,3 +434,35 @@ test('non-regression: the new fields do not disturb the pre-existing ones', () =
   assert.ok(Math.abs(agg.avgPlayerHealing.a - 7 / 2) < 1e-12);
 });
 
+
+test('roster export build ids are stable across exports and unique per (character, loadout)', async () => {
+  const { exportBuildId } = await import('../../ui/src/utils/roster.js');
+  const pairs = [['c', 'tank 1'], ['c', 'tank_1'], ['c', '坦克'], ['c', 'танк'], ['c~x', 'y'], ['c', 'x~y']];
+  const ids = pairs.map(([characterId, loadoutName]) => exportBuildId({ characterId, loadoutName, id: Math.random() }));
+  assert.equal(new Set(ids).size, pairs.length);
+  assert.deepEqual(pairs.map(([characterId, loadoutName]) => exportBuildId({ characterId, loadoutName })), ids);
+});
+
+test('a re-imported roster build exports under the id it was imported with', async () => {
+  const { exportBuildId } = await import('../../ui/src/utils/roster.js');
+  // Import makes buildId the character id, with one loadout named `default`.
+  const first = exportBuildId({ characterId: 'm123', loadoutName: 'default' });
+  assert.equal(first, 'm123');
+  assert.equal(exportBuildId({ characterId: first, loadoutName: 'default' }), first);
+  const reimported = exportBuildId({ characterId: 'm1|tank', loadoutName: 'default' });
+  assert.equal(exportBuildId({ characterId: reimported, loadoutName: 'default' }), reimported);
+});
+
+test('two different rows of one export never share a build id', async () => {
+  const { exportBuildIds } = await import('../../ui/src/utils/roster.js');
+  // An imported build `m1|tank` (loadout default) beside the original m1/tank.
+  const rows = [
+    { characterId: 'm1', loadoutName: 'tank' },
+    { characterId: 'm1|tank', loadoutName: 'default' },
+    { characterId: 'm1', loadoutName: 'tank' }
+  ];
+  const ids = exportBuildIds(rows);
+  assert.equal(ids[0], 'm1|tank');
+  assert.notEqual(ids[1], ids[0]);
+  assert.equal(ids[2], ids[0]); // the same pair is the same build
+});

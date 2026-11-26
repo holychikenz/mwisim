@@ -1,5 +1,5 @@
-// The transport-free optimiser layer both the Express routes and the browser host
-// (ui/src/workers/optimizerHost.js) drive: previewTool/planTool answers, runPlanned's
+// The transport-free optimiser layer the browser host (ui/src/workers/optimizerHost.js)
+// drives: previewTool/planTool answers, runPlanned's
 // frames and pool teardown, and poolCore's queue over a non-worker_threads worker.
 import test from 'node:test';
 import assert from 'node:assert/strict';

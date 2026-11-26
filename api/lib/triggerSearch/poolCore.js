@@ -6,7 +6,7 @@
 // same jobs (runJob.js).
 // =============================================================================
 
-/** A cancelled optimiser run; optimizerRoute.js answers it as 'cancelled'. */
+/** A cancelled optimiser run; runPlanned (optimizerTool.js) answers it as 'cancelled'. */
 export class AbortError extends Error {
   constructor(message = 'Trigger optimisation cancelled') {
     super(message);

@@ -38,7 +38,9 @@ impl Equipment {
             enhancement_level,
             stats: nums(&det.combat_stats),
             bonuses: nums(&det.combat_enhancement_bonuses),
-            multiplier: idx.and_then(|i| data.enhancement_table.get(i).copied()).unwrap_or(f64::NAN),
+            multiplier: idx
+                .and_then(|i| data.enhancement_table.get(i).copied())
+                .ok_or_else(|| format!("{hrid}: enhancementLevel must be an integer 0..20, got {enhancement_level}"))?,
             style0: det
                 .combat_stats
                 .get("combatStyleHrids")

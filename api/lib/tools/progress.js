@@ -1,5 +1,5 @@
 // =============================================================================
-// progress — optimiser tool (optimizerTool.js; Express: /api/optimize-progress). "what should I level next?" for ONE party member: each
+// progress — optimiser tool (optimizerTool.js). "what should I level next?" for ONE party member: each
 // stat and slotted ability raised N levels against the current levels on shared
 // seeds, the gain per level ranked across both, with what a level costs.
 // Probes: lib/progressSearch.js; the paired per-level scan: scanEquipment.

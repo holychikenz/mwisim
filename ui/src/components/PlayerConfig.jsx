@@ -114,7 +114,8 @@ function GearDoll({ items, equipment, onChange }) {
               <NumberInput
                 label="Enhancement"
                 value={enhancementLevel}
-                onChange={(v) => onChange(slot.key, selected, Math.max(0, Math.min(20, Number(v) || 0)))}
+                onChange={(v) => onChange(slot.key, selected, Math.max(0, Math.min(20, Math.round(Number(v) || 0))))}
+                allowDecimal={false}
                 min={0}
                 max={20}
                 size="xs"
@@ -324,8 +325,9 @@ export function PlayerConfig({ gameData, player, onPlayerChange, hideConsumables
   const handleFoodChange = useCallback((index, itemHrid) => {
     const newFood = [...player.food];
     if (itemHrid) {
-      // Preserve existing triggers if just changing the item
-      newFood[index] = { itemHrid, triggers: newFood[index]?.triggers || [] };
+      // Same item keeps its triggers; a new one takes its defaults (an empty list fires on every cooldown).
+      newFood[index] = { itemHrid, triggers: newFood[index]?.itemHrid === itemHrid ? newFood[index].triggers
+        : (items?.[itemHrid]?.consumableDetail?.defaultCombatTriggers || []).map((t) => ({ ...t })) };
     } else {
       newFood[index] = null;
     }
@@ -333,7 +335,7 @@ export function PlayerConfig({ gameData, player, onPlayerChange, hideConsumables
       ...player,
       food: newFood
     });
-  }, [player, onPlayerChange]);
+  }, [player, onPlayerChange, items]);
 
   const handleFoodTriggersChange = useCallback((index, triggers) => {
     const newFood = [...player.food];
@@ -349,7 +351,8 @@ export function PlayerConfig({ gameData, player, onPlayerChange, hideConsumables
   const handleDrinkChange = useCallback((index, itemHrid) => {
     const newDrinks = [...player.drinks];
     if (itemHrid) {
-      newDrinks[index] = { itemHrid, triggers: newDrinks[index]?.triggers || [] };
+      newDrinks[index] = { itemHrid, triggers: newDrinks[index]?.itemHrid === itemHrid ? newDrinks[index].triggers
+        : (items?.[itemHrid]?.consumableDetail?.defaultCombatTriggers || []).map((t) => ({ ...t })) };
     } else {
       newDrinks[index] = null;
     }
@@ -357,7 +360,7 @@ export function PlayerConfig({ gameData, player, onPlayerChange, hideConsumables
       ...player,
       drinks: newDrinks
     });
-  }, [player, onPlayerChange]);
+  }, [player, onPlayerChange, items]);
 
   const handleDrinkTriggersChange = useCallback((index, triggers) => {
     const newDrinks = [...player.drinks];

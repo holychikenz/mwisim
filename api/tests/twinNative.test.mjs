@@ -52,7 +52,8 @@ async function runOn(req) {
   }
 }
 
-/** `jsDigest`: the result's digest as the JS engine produced it under seed 1. */
+/** `jsDigest`: the result's digest as the JS engine produced it under seed 1, re-pinned when audit-8 stopped
+ *  a parry-killed caster dying twice (only monster deaths/timeSpentAlive moved). */
 async function assertSame(req, jsDigest) {
   assert.equal(digest(canonical(await runOn(req))), jsDigest);
 }
@@ -65,13 +66,13 @@ test('a loose DTO (locked/unused slots without triggers, array achievements, nul
   p.abilities[1].level = null;
   p.equipment['/equipment_types/pouch'] = null; // one food slot
   p.food[2] = { hrid: p.food[0].hrid };
-  await assertSame({ players: [p], zone: ZONE, simulationTimeLimit: 3600e9 }, 'd73eee5a4749742bcf503a841a7cd17be942610adbded3b14c9527d67e461f4a');
+  await assertSame({ players: [p], zone: ZONE, simulationTimeLimit: 3600e9 }, 'bcfd83ef2285a681f46282240106fda7d2633494c55873a339ad532f81eecec7');
 });
 
 const dojo = (over) => ({ uniqueHrid: '/buff_uniques/guild_building_dojo', typeHrid: '/buff_types/attack_level', ratioBoost: null, ratioBoostLevelBonus: null, flatBoost: 4, flatBoostLevelBonus: 0, duration: null, ...over });
 
 test('a null buff number is 0, as in JS; a string one is refused', { skip }, async () => {
-  await assertSame({ players: [basePlayer()], zone: ZONE, simulationTimeLimit: 3600e9, guildBuffs: [dojo()] }, '5d9af50f097949e5898fdb6a17d0abc78085d6b21322d7d0363212365866adb8');
+  await assertSame({ players: [basePlayer()], zone: ZONE, simulationTimeLimit: 3600e9, guildBuffs: [dojo()] }, 'f0cb224c4db8cd058f6cf61fc418ee250e024fa62a1962b3d23c378740784b0d');
   await assert.rejects(runOn({ players: [basePlayer()], zone: ZONE, simulationTimeLimit: 3600e9, guildBuffs: [dojo({ flatBoost: '4' })] }), /number or null/);
 });
 

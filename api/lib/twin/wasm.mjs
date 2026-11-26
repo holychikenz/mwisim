@@ -65,7 +65,7 @@ export async function wasmBackend() {
     run: async (json, onProgress) => { const m = await load(); return guard(() => m.run(json, onProgress ?? null)); },
     selftest: async (json) => { const m = await load(); return guard(() => m.selftest(json)); },
     itemValues: async (client, character, overrides = '') => { const m = await load(); return guard(() => m.item_values(client, character, overrides)); },
-    enhanceConfig: async (character) => { const m = await load(); return guard(() => m.enhance_config(character)); },
+    enhanceConfig: async (client, character) => { const m = await load(); return guard(() => m.enhance_config(client, character)); },
     enhanceCalculate: async (client, character, body) => { const m = await load(); return guard(() => m.enhance_calculate(client, character, body)); },
   };
 }

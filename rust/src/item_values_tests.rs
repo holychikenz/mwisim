@@ -80,9 +80,30 @@ fn enhance_calculate_matches_iron_goldens() {
 
 #[test]
 fn enhance_config_matches_character_golden() {
-    let out: Value = serde_json::from_str(&crate::enhance_config(&read("fixtures/econ/character.json"))).unwrap();
+    let out: Value = serde_json::from_str(&crate::enhance_config(&client(), &read("fixtures/econ/character.json"))).unwrap();
     let want: Value = serde_json::from_str(&read("fixtures/econ/enhance__character.json")).unwrap();
     assert!(close(&out, &want, 1e-9), "{out}");
+}
+
+/// audit-4: the fixture character wears combat gear; its default enhancing loadout has
+/// enchanted gloves +5 and a refined chance cape, which must count.
+#[test]
+fn enhance_config_reads_the_enhancing_loadout() {
+    let ch = read("fixtures/econ/character.json");
+    let cfg: Value = serde_json::from_str(&crate::enhance_config(&client(), &ch)).unwrap();
+    assert_eq!(cfg["use_enchanted"], true, "{cfg}");
+    assert_eq!(cfg["enchanted_level"], 5);
+    assert_eq!(mwi_econ::enhance_sim::ENHANCE_BONUS[0], 1.0);
+    // The loadout lists the refined chance cape at +0 but does not use exact levels, so the owned +3 counts:
+    // base + per-level bonus x T[3] = 3.3.
+    assert!((cfg["extra_speed"].as_f64().unwrap() - (0.058 + 0.0058 * 3.3) * 100.0).abs() < 1e-9, "{cfg}");
+    // The cape's XP plus house (0.0335) and achievement (0.02) wisdom.
+    assert!((cfg["extra_xp"].as_f64().unwrap() - (0.0348 + 0.00348 * 3.3 + 0.0335 + 0.02)).abs() < 1e-9, "{cfg}");
+    let body = serde_json::json!({"config": cfg, "item_hrid": "/items/holy_brush", "target": 10, "iron_cow": true}).to_string();
+    let out: Value = serde_json::from_str(&crate::enhance_calculate(&client(), &ch, &body)).unwrap();
+    let t = out["attempt_time"].as_f64().unwrap();
+    // 7.83 s from the worn gear; the gloves +5 (11.2 points) and the cape +3 (7.714) bring it to 12 / 1.7225.
+    assert!((t - 6.967).abs() < 0.001, "attempt time {t}");
 }
 
 #[test]
@@ -91,7 +112,7 @@ fn enhance_bad_input_is_an_error_not_a_panic() {
         let out: Value = serde_json::from_str(&crate::enhance_calculate(&client(), "{}", body)).unwrap();
         assert_eq!(out["ok"], false, "{body}");
     }
-    let out: Value = serde_json::from_str(&crate::enhance_config("{")).unwrap();
+    let out: Value = serde_json::from_str(&crate::enhance_config("{}", "{")).unwrap();
     assert_eq!(out["ok"], false);
 }
 
@@ -99,4 +120,20 @@ fn enhance_bad_input_is_an_error_not_a_panic() {
 fn bad_json_is_an_error_not_a_panic() {
     let out: Value = serde_json::from_str(&crate::item_values("{", "{}", "")).unwrap();
     assert_eq!(out["ok"], false);
+}
+
+/// audit-12: a decompose takes the item's own level-over action time, not the flat alchemy time.
+#[test]
+fn decompose_time_uses_the_level_over_bonus() {
+    use std::sync::Arc;
+    let data: Value = serde_json::from_str(&client()).unwrap();
+    let ch: Value = serde_json::from_str(&read("fixtures/econ/character.json")).unwrap();
+    let gdc = mwi_econ::Gdc::new(Arc::new(data), Arc::new(ch));
+    let (p, sources) = mwi_econ::alchemy::run_decompose_pass(&gdc, "default", None, true);
+    let row = sources.values().flatten().find(|r| r["input_hrid"] == "/items/azure_milk").expect("an azure_milk row");
+    let f = |k: &str| row[k].as_f64().unwrap();
+    let action = f("time_per_unit_seconds") * f("bulk_multiplier") * p.pvalue * f("per_action_count_listed");
+    let want = p.action_time_at(20.0); // azure_milk is itemLevel 20
+    assert!(want < p.action_time, "{want} vs the flat {}", p.action_time);
+    assert!((action - want).abs() <= 1e-3 * want, "the row's action time {action}, want {want} (flat {})", p.action_time);
 }

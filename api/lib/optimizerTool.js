@@ -1,12 +1,11 @@
 // =============================================================================
 // optimizerTool — the optimiser tools without a transport. Each tool
 // (api/lib/tools/*.js) is { path, preview(body), plan(body) }; previewTool and
-// planTool answer a request body as the HTTP routes did, and runPlanned runs a
-// plan on any pool, sending the frames `start`, `progress`, `result`,
-// `error` / `cancelled`. Two transports drive them: the Express routes
-// (optimizerRoute.js: JSON + SSE over worker_threads) and the UI's in-browser
-// host (ui/src/workers/optimizerHost.js: postMessage over Web Workers running
-// the wasm twin). Nothing here may import Node: the browser bundles it.
+// planTool answer a request body, and runPlanned runs a plan on any pool,
+// sending the frames `start`, `progress`, `result`, `error` / `cancelled`. The
+// UI's in-browser host drives them (ui/src/workers/optimizerHost.js:
+// postMessage over Web Workers running the wasm twin), and the api tests drive
+// them on the worker_threads pool (triggerSearch/pool.js). Nothing here may import Node: the browser bundles it.
 // =============================================================================
 
 import { isKnownCost } from '../../shared/consumableCost.js';
