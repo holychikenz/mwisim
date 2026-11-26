@@ -17,7 +17,7 @@
 // character and can be re-added from the picker.
 // =============================================================================
 
-import { loadVersioned, resolveRef } from './characterStore.js';
+import { loadVersioned, resolveRef, storedIsNewer } from './characterStore.js';
 
 export const GUILD_TRIAL_KEY = 'csim_guild_trial';
 export const TRIAL_SCHEMA_VERSION = 2;
@@ -234,6 +234,7 @@ export function loadGuildTrialState() {
 }
 
 export function saveGuildTrialState(state) {
+  if (storedIsNewer(GUILD_TRIAL_KEY, TRIAL_SCHEMA_VERSION)) return;
   try {
     localStorage.setItem(
       GUILD_TRIAL_KEY,

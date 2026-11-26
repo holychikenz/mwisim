@@ -409,7 +409,8 @@ function App() {
         const { status, ...store } = loadCharacters();
         if (status !== 'incompatible') setCharacters(store);
       }
-      // An 'incompatible' blob (corrupt, or from a newer build) is skipped: taking its fallback would reset this tab and save that over it.
+      // An 'incompatible' blob (corrupt, or from a newer build) is skipped: taking its fallback would reset this tab.
+      // Skipping does not stop this tab's next autosave; the saves themselves refuse to overwrite a newer build's blob (storedIsNewer).
       const session = key === null || key === SESSION_KEY ? loadSession() : null;
       if (session && session.status !== 'incompatible') {
         const s = session.data;

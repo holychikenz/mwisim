@@ -537,7 +537,9 @@ export function loadVersioned(key, expectedVersion, fallback) {
   }
   if (isObject(blob) && blob.schemaVersion === expectedVersion) return { data: blob, status: 'ok' };
   try {
-    localStorage.setItem(`${key}.v1`, raw);
+    // The first set-aside copy is kept: a later incompatible read (another build's tab saving)
+    // must not replace a real backup.
+    if (localStorage.getItem(`${key}.v1`) == null) localStorage.setItem(`${key}.v1`, raw);
   } catch {
     // Quota or private browsing. The original key is still untouched.
   }
@@ -628,7 +630,22 @@ function cleanLegacyTriggersOnce(store, stored) {
   return cleaned;
 }
 
+/**
+ * Whether `key` holds a NEWER build's blob (an object whose numeric schemaVersion is above
+ * `version`), which an older build's save must not overwrite. Older and corrupt blobs are not:
+ * overwriting them is the upgrade path.
+ */
+export function storedIsNewer(key, version) {
+  try {
+    const blob = JSON.parse(localStorage.getItem(key));
+    return isObject(blob) && typeof blob.schemaVersion === 'number' && blob.schemaVersion > version;
+  } catch {
+    return false;
+  }
+}
+
 export function saveCharacters(store) {
+  if (storedIsNewer(CHARACTERS_KEY, SCHEMA_VERSION)) return;
   try {
     localStorage.setItem(
       CHARACTERS_KEY,

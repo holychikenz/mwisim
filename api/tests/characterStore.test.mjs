@@ -636,3 +636,38 @@ test('a future-version session or trial blob reports incompatible, so another ta
   assert.equal(loadSession().status, 'incompatible');
   assert.equal(loadGuildTrialState().status, 'incompatible');
 });
+
+test('an older build never writes over a newer build\'s saved data; older and corrupt blobs are still overwritten', async () => {
+  const { saveSession, SESSION_KEY, SESSION_VERSION } = await import('../../ui/src/utils/session.js');
+  const { saveGuildTrialState, GUILD_TRIAL_KEY, TRIAL_SCHEMA_VERSION } = await import('../../ui/src/utils/roster.js');
+  const { CHARACTERS_KEY, SCHEMA_VERSION } = await import('../../ui/src/utils/characterStore.js');
+  const saves = [
+    [SESSION_KEY, SESSION_VERSION, () => saveSession({ party: {} })],
+    [GUILD_TRIAL_KEY, TRIAL_SCHEMA_VERSION, () => saveGuildTrialState({ roster: [] })],
+    [CHARACTERS_KEY, SCHEMA_VERSION, () => saveCharacters(emptyStore())]
+  ];
+  for (const [key, version, save] of saves) {
+    localStorage.clear();
+    const newer = JSON.stringify({ schemaVersion: version + 1, keep: 'me' });
+    localStorage.setItem(key, newer);
+    save();
+    assert.equal(localStorage.getItem(key), newer, `${key}: newer survives`);
+    for (const stale of [JSON.stringify({ schemaVersion: version - 1 }), '{not json']) {
+      localStorage.setItem(key, stale);
+      save();
+      assert.equal(JSON.parse(localStorage.getItem(key)).schemaVersion, version, `${key}: ${stale} overwritten`);
+    }
+  }
+  localStorage.clear();
+});
+
+test('two incompatible reads leave the first set-aside copy intact', () => {
+  localStorage.clear();
+  const legacy = JSON.stringify({ players: {} });
+  localStorage.setItem('csim_player_data', legacy);
+  loadVersioned('csim_player_data', 2, {});
+  localStorage.setItem('csim_player_data', JSON.stringify({ schemaVersion: 3 }));
+  assert.equal(loadVersioned('csim_player_data', 2, {}).status, 'incompatible');
+  assert.equal(localStorage.getItem('csim_player_data.v1'), legacy);
+  localStorage.clear();
+});
