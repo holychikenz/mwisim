@@ -17,7 +17,8 @@
  * All figures are what `playerHrid` alone receives, at that player's own stats.
  */
 export function calculateExpectedDrops(simResult, monsters, items, playerHrid = 'player1') {
-  if (!simResult || !monsters || !simResult.deaths) {
+  // Dungeon loot comes only from chests, which are not modelled; its monsters drop nothing.
+  if (!simResult || !monsters || !simResult.deaths || simResult.isDungeon) {
     return [];
   }
 
