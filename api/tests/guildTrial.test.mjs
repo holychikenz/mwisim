@@ -427,3 +427,11 @@ test('non-regression: the new fields do not disturb the pre-existing ones', () =
   assert.ok(Math.abs(agg.avgPlayerHealing.a - 7 / 2) < 1e-12);
 });
 
+
+test('roster export build ids are stable across exports and unique per (character, loadout)', async () => {
+  const { exportBuildId } = await import('../../ui/src/utils/roster.js');
+  const pairs = [['c', 'tank 1'], ['c', 'tank_1'], ['c', '坦克'], ['c', 'танк'], ['c~x', 'y'], ['c', 'x~y']];
+  const ids = pairs.map(([characterId, loadoutName]) => exportBuildId({ characterId, loadoutName, id: Math.random() }));
+  assert.equal(new Set(ids).size, pairs.length);
+  assert.deepEqual(pairs.map(([characterId, loadoutName]) => exportBuildId({ characterId, loadoutName })), ids);
+});

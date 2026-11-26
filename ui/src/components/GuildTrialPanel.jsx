@@ -15,7 +15,7 @@ import {
   UnstyledButton
 } from '@mantine/core';
 import { Select } from './SearchSelect';
-import { listRosterEntries, buildSummary, refKey, MAX_ROW_COUNT } from '../utils/roster';
+import { listRosterEntries, buildSummary, refKey, exportBuildId, MAX_ROW_COUNT } from '../utils/roster';
 import { ABILITY_MEMORY_VERSION, listLoadoutRefs } from '../utils/characterStore';
 import { exportFormatToPlayer } from '../utils/importSet';
 import { describeShrines, ownsShrines } from '../utils/guildBuffs';
@@ -106,8 +106,7 @@ export function GuildTrialPanel({
     const wireRoster = [];
     for (const entry of entries) {
       if (!entry.build) continue;
-      // The row id: unique and persisted. A cleaned-up name merged "tank 1" with "tank_1".
-      const buildId = entry.id;
+      const buildId = exportBuildId(entry);
       masterBuilds[buildId] = { ...entry.build, id: buildId, name: entry.displayName };
       wireRoster.push({ id: entry.id, buildId, count: entry.count });
     }

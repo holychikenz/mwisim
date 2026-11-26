@@ -27,6 +27,16 @@ export function refKey(ref) {
   return `${ref?.characterId || ''}\u0000${ref?.loadoutName || ''}`;
 }
 
+/**
+ * A roster row's build id in the export: the same on every export of the pair (so a
+ * re-import lands on the same character) and distinct per pair (encoding keeps
+ * "tank 1" apart from "tank_1"). The separator is `|` because encodeURIComponent escapes it
+ * and so it never occurs inside a part; it leaves `~` alone, which would let "c~x"+"y" = "c"+"x~y".
+ */
+export function exportBuildId(ref) {
+  return `${encodeURIComponent(ref?.characterId || '')}|${encodeURIComponent(ref?.loadoutName || '')}`;
+}
+
 export const MAX_ROW_COUNT = 99;
 
 export const DEFAULT_TRIAL_CONFIG = {
