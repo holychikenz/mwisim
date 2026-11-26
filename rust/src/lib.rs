@@ -76,8 +76,13 @@ pub fn item_values(client: &str, character: &str, overrides: &str) -> String {
     let ov = parse_essence_overrides(Some(overrides));
     let (bootstraps, _) = refined_essence_bootstraps(&gdc, "default", ALCHEMY_ESSENCE_BOOTSTRAP_SECONDS, &ov);
     let mut values = Map::new();
-    for row in ItemValueCalculator::new(&gdc, Some(&bootstraps)).calculate_all_item_values() {
-        values.insert(row["hrid"].as_str().unwrap_or("").to_string(), row["value_seconds"].clone());
+    let mut calc = ItemValueCalculator::new(&gdc, Some(&bootstraps));
+    // An input with no source counts 0 in the sum; leave such an item out (the UI's "unknown") rather than undervalue it.
+    for row in calc.calculate_all_item_values() {
+        let h = row["hrid"].as_str().unwrap_or("");
+        if calc.recipe_is_complete(h) {
+            values.insert(h.to_string(), row["value_seconds"].clone());
+        }
     }
     values.insert("/items/coin".into(), json!(0.0));
     let name = gdc.character.get("character").and_then(|c| c.get("name")).cloned().unwrap_or_else(|| json!("Unknown"));
