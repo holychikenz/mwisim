@@ -199,7 +199,7 @@ fn mirror_fib(k: usize) -> u64 {
             for _ in 0..k - 1 {
                 (a, b) = (b, a + b + 1);
             }
-            a
+            b
         }
     }
 }
@@ -991,7 +991,11 @@ mod tests {
     #[test]
     fn mirror_fib_counts() {
         assert_eq!((0..6).map(fib).collect::<Vec<_>>(), [1, 1, 2, 3, 5, 8]);
-        assert_eq!((0..5).map(mirror_fib).collect::<Vec<_>>(), [1, 2, 2, 4, 7]);
+        assert_eq!((0..5).map(mirror_fib).collect::<Vec<_>>(), [1, 2, 4, 7, 12]);
+        // A mirror joins two items, so a plan with lower + upper fodder needs one fewer mirror.
+        for d in 0..8 {
+            assert_eq!(mirror_fib(d), fib(d) + fib(d + 1) - 1);
+        }
     }
 
     #[test]
