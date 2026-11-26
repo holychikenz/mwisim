@@ -245,8 +245,13 @@ test('14: set_consumables', () => {
   const n = commit(s, run(s, 'set_consumables', { food: ['Gummy', 'Donut'], drinks: [] }));
   const p = player(n, 'ada', 'tank');
   assert.equal(p.food[0].itemHrid, I('gummy'));
-  assert.deepEqual(p.food[0].triggers, [{ t: 'keep' }]);
+  // A newly picked item carries its own default triggers, never the old item's.
+  assert.deepEqual(p.food[0].triggers, gameData.items[I('gummy')].consumableDetail.defaultCombatTriggers);
   assert.equal(p.food[1].itemHrid, I('donut'));
+  assert.deepEqual(p.food[1].triggers, gameData.items[I('donut')].consumableDetail.defaultCombatTriggers);
+  // Re-picking the item already in the slot keeps its triggers.
+  const keep = player(commit(s, run(s, 'set_consumables', { food: ['Donut'] })), 'ada', 'tank');
+  assert.deepEqual(keep.food[0].triggers, [{ t: 'keep' }]);
   assert.equal(p.food[2], null);
   assert.deepEqual(p.drinks, [null, null, null]);
   assert.ok(run(s, 'set_consumables', { food: ['Donut', 'Donut'] }).isError);

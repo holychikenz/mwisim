@@ -278,8 +278,12 @@ export const REGISTRY = {
           hrids.push(r.item.hrid);
         }
         const old = flat[key] || [];
-        // Triggers stay with the slot index, as handleFoodChange / handleDrinkChange keep them.
-        flat[key] = [0, 1, 2].map(i => (hrids[i] ? { itemHrid: hrids[i], triggers: old[i]?.triggers || [] } : null));
+        // A slot keeps its triggers only for the same item; a new item takes its own defaults
+        // (an empty list fires on every cooldown), as handleFoodChange / handleDrinkChange do.
+        flat[key] = [0, 1, 2].map(i => (hrids[i]
+          ? { itemHrid: hrids[i], triggers: old[i]?.itemHrid === hrids[i] ? old[i].triggers
+              : (gameData.items[hrids[i]]?.consumableDetail?.defaultCombatTriggers || []).map(t => ({ ...t })) }
+          : null));
         out.push(`${key} ${hrids.map(h => itemName(gameData, h)).join(', ') || 'empty'}`);
       }
       const note = state.simMode === 'labyrinth' ? ' Note: consumables are stripped on labyrinth entry.' : '';
